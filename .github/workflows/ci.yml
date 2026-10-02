@@ -47,6 +47,7 @@ jobs:
           else
             sudo apt-get update && sudo apt-get install -y ripgrep fd-find
           fi
+      - run: cargo xtask js-runtime --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
         env:

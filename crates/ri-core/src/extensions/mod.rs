@@ -7,6 +7,7 @@
 //! the same contract. Each session gets its own extension instances; a
 //! replaced session receives `session_shutdown` before its successor starts.
 
+pub mod discovery;
 pub mod tool_search;
 
 use std::path::PathBuf;

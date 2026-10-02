@@ -147,7 +147,24 @@ Not yet done:
 - Codex's WebSocket transport and zstd request compression. pi falls back to the same SSE requests when WebSockets fail.
 - Amazon Bedrock, Google Vertex, Cloudflare and pi's `pi-messages` (Radius) wire APIs.
 
-## M5 to M7
+## M5: extension host, headless
+
+In progress. The runtime and the registration harness are done.
+
+- `ri-js`, a WebAssembly component with QuickJS-NG, Node shims (`fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `Intl`), pi's extension API with pi's loading errors and per-extension event semantics, and the vendored `pi-tui` and `typebox`. `cargo xtask js-runtime` builds it; CI checks the committed artifact against its inputs.
+- `ri-ext`: one actor thread per instance, a compiled-component cache, epoch-based compute limits, a memory limit, restart and replay after a trap, and grants for files, processes, network and environment.
+- The host-side module loader: Node resolution with oxc, TypeScript stripping, ES module and CommonJS interop, jiti's `require`, `__dirname` and `__filename` in ES modules, and a transpile cache.
+- Extension discovery from `.ri/extensions`, the agent directory and configured paths, with `package.json` manifests.
+
+Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
+
+Not yet done:
+
+- Sessions and the CLI: running extension handlers, tools, commands and shortcuts in ri's sessions, `-e` and extension flags.
+- Packages: npm, git and local sources; the Rust SDK and native extensions; `cargo xtask vendor-pi`.
+- The top 50 npm pi packages.
+
+## M6 and M7
 
 Not started.
 

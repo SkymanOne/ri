@@ -1,0 +1,53 @@
+package ri:extension@0.1.0;
+
+/// Types shared by host and guest. Payloads are JSON documents whose shapes
+/// `ri-types` defines; the WIT carries only the mechanics.
+interface types {
+    /// A JSON document.
+    type json = string;
+
+    /// What the guest produced before going idle.
+    variant outcome {
+        /// Call `id` finished with a JSON result.
+        done(tuple<u64, json>),
+        /// Call `id` failed with a message.
+        failed(tuple<u64, string>),
+    }
+}
+
+/// What the host provides. No host function calls back into the guest.
+interface host {
+    use types.{json};
+
+    /// Starts asynchronous operation `op` (a process, a request, a timer, a
+    /// dialog); its result arrives through `guest.resolve`.
+    start: func(op: u64, kind: string, payload: json);
+
+    /// Answers a synchronous request at once: module sources, registrations,
+    /// state reads, logging.
+    request: func(kind: string, payload: json) -> result<json, string>;
+}
+
+/// What the guest provides. Each export runs until the guest is idle and
+/// returns the outcomes it produced.
+interface guest {
+    use types.{json, outcome};
+
+    /// Starts call `id`: load an extension, deliver an event, run a tool or a
+    /// command.
+    dispatch: func(id: u64, kind: string, payload: json) -> list<outcome>;
+
+    /// Completes operation `op`.
+    resolve: func(op: u64, value: result<json, string>) -> list<outcome>;
+
+    /// The lines of component `handle` at `width` columns.
+    render: func(handle: u32, width: u32) -> list<string>;
+
+    /// Raw terminal input for component `handle`.
+    input: func(handle: u32, data: string) -> list<outcome>;
+}
+
+world extension {
+    import host;
+    export guest;
+}

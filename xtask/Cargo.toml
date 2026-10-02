@@ -10,11 +10,12 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
+clap = { workspace = true, features = ["env"] }
 ri-mock.workspace = true
 ri-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "signal"] }
 
 [lints]

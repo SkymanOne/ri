@@ -27,4 +27,8 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` temp files | `ri` and ri's version; `ri-mcp-*` temp files | Product name. |
 | Sign in with ChatGPT | `agent_name_hint` `Pi` | `ri` | Product name shown on OpenAI's consent page. |
 | `/login` providers | pi's built-in `llama.cpp` extension adds a provider; Radius offers a sign-in | Neither | Not yet ported; the Radius gateway also needs pi's `pi-messages` wire API. |
+| Node APIs in extensions | All of Node | The shims listed in [status.md](status.md); modules ri cannot provide, such as `http`, `net` and `worker_threads`, import but throw when used. `require()` of an ES module fails. | The wasm runtime has no sockets or threads; QuickJS loads ES modules asynchronously. |
+| `Intl` in extensions | ICU in every locale | Unicode segmentation; number, date and plural formatting in `en-US` only | QuickJS has no ICU, and ri carries no locale data. |
+| pi APIs in extensions | All of `pi-coding-agent`, `pi-ai` and `pi-agent-core` | The extension API and the helpers extensions use; other exports import but throw when called. Built-in tool factories run ri's tools and reject custom `operations`. | pi's internals have no counterpart inside the runtime. |
+| Extension console output | Written to pi's stdout and stderr | Written to stderr | Stdout belongs to print, JSON and RPC output. |
 | Codex transport | WebSocket first (`transport` setting), then SSE with a zstd-compressed body | SSE with an uncompressed body | Same requests and events as pi's fallback, without a WebSocket client or zstd encoder in the binary. |
