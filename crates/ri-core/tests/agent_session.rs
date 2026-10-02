@@ -1,4 +1,8 @@
 //! Agent session behavior driven by the faux provider.
+#![allow(
+    clippy::unwrap_used,
+    reason = "test helpers; a panic is a test failure"
+)]
 
 use std::path::Path;
 use std::sync::Arc;
