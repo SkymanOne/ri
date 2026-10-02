@@ -8,7 +8,7 @@ use anyhow::{Context, bail};
 use ri_ai::api::Apis;
 use ri_ai::registry::ModelRegistry;
 use ri_core::agent_session::{AgentSession, Resources, SessionConfig};
-use ri_core::config::{agent_dir, default_session_dir};
+use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
 use ri_core::model_resolver::{DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model};
 use ri_core::resources::{context_files, prompt_templates, skills, system_prompt_file};
 use ri_core::session::{SessionManager, find_by_id};
@@ -173,9 +173,13 @@ pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> 
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
 
+    let env_dir = std::env::var(SESSION_DIR_ENV)
+        .ok()
+        .filter(|dir| !dir.is_empty());
     let sessions_dir = match args
         .session_dir
         .as_deref()
+        .or(env_dir.as_deref())
         .or(settings.settings().session_dir.as_deref())
     {
         Some(dir) => PathBuf::from(expand(dir)),

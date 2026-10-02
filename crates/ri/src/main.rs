@@ -6,6 +6,7 @@
 )]
 
 mod args;
+mod help;
 mod list_models;
 mod modes;
 mod startup;
@@ -49,6 +50,10 @@ fn main() -> ExitCode {
 
 async fn run(parsed: &mut args::Args) -> u8 {
     use std::io::IsTerminal;
+    if parsed.help {
+        help::print();
+        return 0;
+    }
     if let Some(pattern) = &parsed.list_models {
         return list_models::run(pattern.as_deref());
     }

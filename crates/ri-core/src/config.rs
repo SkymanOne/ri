@@ -10,6 +10,8 @@ pub const APP_NAME: &str = "ri";
 pub const PROJECT_DIR: &str = ".ri";
 /// Environment variable overriding the agent directory.
 pub const AGENT_DIR_ENV: &str = "RI_CODING_AGENT_DIR";
+/// Environment variable overriding the session directory; `--session-dir` wins.
+pub const SESSION_DIR_ENV: &str = "RI_CODING_AGENT_SESSION_DIR";
 
 /// The agent directory: `RI_CODING_AGENT_DIR`, else `~/.ri/agent`.
 pub fn agent_dir() -> PathBuf {
