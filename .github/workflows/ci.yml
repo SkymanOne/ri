@@ -49,6 +49,10 @@ jobs:
           fi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+        env:
+          # Hosted runners can pause longer than a desktop; terminal scenarios
+          # wait this long for the screen to settle after each key.
+          RI_SETTLE_MS: "1200"
 
   deny:
     runs-on: ubuntu-latest
