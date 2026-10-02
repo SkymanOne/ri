@@ -15,13 +15,23 @@ ri-agent = { path = "crates/ri-agent" }
 ri-ai = { path = "crates/ri-ai" }
 ri-core = { path = "crates/ri-core" }
 ri-ext = { path = "crates/ri-ext" }
+ri-mock = { path = "crates/ri-mock" }
 ri-tui = { path = "crates/ri-tui" }
 ri-types = { path = "crates/ri-types" }
 
+anyhow = "1"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+http-body-util = { version = "0.1", features = ["channel"] }
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 indexmap = { version = "2", features = ["serde"] }
+reqwest = { version = "0.13", default-features = false }
 ryu-js = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+thiserror = "2"
+tokio = "1"
 
 # Enforces the code rules in AGENTS.md. CI denies all warnings.
 [workspace.lints.rust]

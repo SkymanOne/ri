@@ -56,6 +56,7 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 | `crates/ri-core` | Session manager, compaction, settings, resource loading, built-in tools, system prompt, packages, extension runner, MCP. | `pi-coding-agent` core |
 | `crates/ri-ext` | wasmtime host, WIT bindings, capability grants, JS module loader, codemode, embedded `ri-js.wasm`. | Extension loader, `pi-codemode` |
 | `crates/ri` | Binary: CLI, modes, UI adapters. | `pi-coding-agent` CLI and modes |
+| `crates/ri-mock` | Mock provider server: replays HTTP cassettes and records requests. Test support only. | None |
 | `guest/ri-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
 | `guest/ri-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
@@ -66,6 +67,7 @@ Dependency direction:
 - `ri-tui` ← `ri`.
 - `ri-core` never depends on wasmtime.
 - `guest/` is a separate workspace, so `cargo build` never compiles wasm.
+- `ri-mock` is only ever a dev-dependency.
 
 ### Boundary traits
 
@@ -97,7 +99,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 | TypeScript and resolution | `oxc_transformer`, `oxc_resolver` |
 | MCP | `rmcp` if it covers stdio, streamable HTTP and OAuth; otherwise a port of `pi-mcp` |
 | Logging, errors | `tracing`; `thiserror`, `anyhow` |
-| Tests | `insta`, ratatui `TestBackend` |
+| Tests | `insta`, ratatui `TestBackend`, `ri-mock` (on `hyper`) |
 
 ## Extension system
 
@@ -233,7 +235,7 @@ These are initial targets, calibrated against pi in M0–M1.
 
 ### Testing
 
-- No network access and no real providers in tests. Use the faux provider or the mock SSE server.
+- No network access and no real providers in tests. Use the faux provider, or `ri-mock` with cassettes from `tests/fixtures/cassettes`.
 - pi-produced golden fixtures live in `tests/fixtures/pi`; its README explains how to regenerate them. Formats must round-trip byte-identical.
 - Use `insta` snapshots. Test the built-in UI with ratatui `TestBackend`.
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
@@ -262,7 +264,7 @@ v0.1 is the completion of M7.
 | Milestone | Scope | Exit criteria |
 |---|---|---|
 | M0 | Workspace, CI on Linux and macOS, `ri-types`, `xtask`, mock SSE server. | pi golden files round-trip byte-identical. |
-| M1 | `ri-ai` with Anthropic Messages, OpenAI Completions, OpenAI Responses and Google; catalog; cost; API keys; print and JSON modes. | JSON event streams match pi on recorded cassettes: text, thinking, tools, images, abort. |
+| M1 | `ri-ai` with Anthropic Messages, OpenAI Completions, OpenAI Responses and Google; catalog; cost; API keys; print and JSON modes; `ri-mock` record mode. | JSON event streams match pi on recorded cassettes: text, thinking, tools, images, abort. |
 | M2 | Agent loop, built-in tools, system prompt, context files, session tree, fork and clone, compaction, skills, prompt templates. | Sessions written by either tool open in the other. Scenario suite matches pi. |
 | M3 | Interactive TUI: editor, keybindings, themes, selectors, tree view, regular mode. | Snapshot suite green. First-paint and keystroke budgets met. |
 | M4 | Remaining wire APIs, OAuth subscriptions, RPC mode with extension UI, MCP. | pi's `rpc-client` example drives ri. OAuth checklist passes. MCP fixtures pass. |
