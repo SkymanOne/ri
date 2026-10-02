@@ -40,6 +40,13 @@ jobs:
       - name: Install toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install rg and fd for the grep and find tool scenarios
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install ripgrep fd
+          else
+            sudo apt-get update && sudo apt-get install -y ripgrep fd-find
+          fi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 

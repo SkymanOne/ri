@@ -241,7 +241,8 @@ fn normalize_value(value: &Value, run: &Run) -> Value {
 /// pi serializes live objects, so `message_update.usage` and the partial in an
 /// assistant `message_start` depend on network timing; both are dropped.
 /// `estimatedTokensAfter` estimates the whole prompt, which includes pi's
-/// `docs` section, so it is masked too.
+/// `docs` section, so it is masked too. Parallel tools finish in any order, so
+/// each run of consecutive tool update and end events is sorted.
 pub fn normalize(run: &Run) -> Value {
     let lines: Vec<Value> = run
         .stdout
@@ -251,28 +252,28 @@ pub fn normalize(run: &Run) -> Value {
         .collect();
     let json_mode = !lines.is_empty() && lines.iter().all(Value::is_object);
     let stdout = if json_mode {
-        Value::Array(
-            lines
-                .into_iter()
-                .map(|mut event| {
-                    match event["type"].as_str() {
-                        Some("message_update") => {
-                            if let Some(object) = event.as_object_mut() {
-                                object.shift_remove("usage");
-                            }
+        let mut events: Vec<Value> = lines
+            .into_iter()
+            .map(|mut event| {
+                match event["type"].as_str() {
+                    Some("message_update") => {
+                        if let Some(object) = event.as_object_mut() {
+                            object.shift_remove("usage");
                         }
-                        Some("message_start") if event["message"]["role"] == "assistant" => {
-                            event["message"] = json!({"role": "assistant"});
-                        }
-                        Some("session") => {
-                            event = json!({"type": "session", "version": event["version"]});
-                        }
-                        _ => {}
                     }
-                    normalize_value(&event, run)
-                })
-                .collect(),
-        )
+                    Some("message_start") if event["message"]["role"] == "assistant" => {
+                        event["message"] = json!({"role": "assistant"});
+                    }
+                    Some("session") => {
+                        event = json!({"type": "session", "version": event["version"]});
+                    }
+                    _ => {}
+                }
+                normalize_value(&event, run)
+            })
+            .collect();
+        sort_tool_completions(&mut events);
+        Value::Array(events)
     } else {
         Value::from(normalize_text(&run.stdout, run))
     };
@@ -291,6 +292,28 @@ pub fn normalize(run: &Run) -> Value {
         })
         .collect();
     json!({"exitCode": run.exit_code, "stdout": stdout, "requests": requests})
+}
+
+fn sort_tool_completions(events: &mut [Value]) {
+    let is_completion = |event: &Value| {
+        matches!(
+            event["type"].as_str(),
+            Some("tool_execution_end" | "tool_execution_update")
+        )
+    };
+    let key = |event: &Value| event.to_string();
+    let mut start = 0;
+    while start < events.len() {
+        if !is_completion(&events[start]) {
+            start += 1;
+            continue;
+        }
+        let end = (start..events.len())
+            .find(|&index| !is_completion(&events[index]))
+            .unwrap_or(events.len());
+        events[start..end].sort_by_key(key);
+        start = end;
+    }
 }
 
 /// The first difference between two normalized runs, as a readable path.

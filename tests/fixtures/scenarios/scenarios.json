@@ -131,5 +131,18 @@
     "cassette": "anthropic-messages/overloaded-retry.json",
     "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5:off", "hi"],
     "agentFiles": {"settings.json": "{\"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "search-tools-json",
+    "cassette": "openai-completions/search-tools.json",
+    "args": ["--mode", "json", "--no-session", "--tools", "read,grep,find,ls", "--model", "groq/openai/gpt-oss-120b", "Look around"],
+    "files": {
+      "hello.txt": "hello world\nsecond line\nthird line\n",
+      "src/main.rs": "fn main() {}\n",
+      ".hidden": "x\n",
+      "sub/dir/deep.txt": "nothing\n",
+      "sub/b.txt": "b\n",
+      "Sub2/A.txt": "a\n"
+    }
   }
 ]
