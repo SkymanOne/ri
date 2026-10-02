@@ -1,0 +1,32 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    " escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more",
+    " Press ctrl+o to show full startup help and loaded resources.",
+    "",
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "Thinking Level",
+    "",
+    "Shift+Tab cycles thinking levels in-session",
+    "",
+    ">",
+    "",
+    "    off       No reasoning",
+    "    minimal   Very brief reasoning (~1k tokens)",
+    "    low       Light reasoning (~2k tokens)",
+    "→ ✓ medium    Moderate reasoning (~8k tokens) · default",
+    "    high      Deep reasoning (~16k tokens)",
+    "",
+    "  Enter to select · Ctrl+S to set as default · Escape/Ctrl+C to cancel",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

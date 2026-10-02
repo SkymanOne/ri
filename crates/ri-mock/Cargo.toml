@@ -14,11 +14,13 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 indexmap.workspace = true
+portable-pty.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "process", "rt", "sync", "time"] }
+vt100.workspace = true
 
 [dev-dependencies]
 indexmap.workspace = true

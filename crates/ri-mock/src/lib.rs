@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod cassette;
+pub mod pty;
 mod record;
 pub mod scenario;
 

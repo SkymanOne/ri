@@ -6,6 +6,7 @@
     reason = "command-line tool: results on stdout, status on stderr"
 )]
 
+mod bench;
 mod e2e;
 mod mock_sse;
 mod models;
@@ -23,6 +24,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Bench(bench::Args),
     E2e(e2e::Args),
     MockSse(mock_sse::Args),
     Models(models::Args),
@@ -30,6 +32,7 @@ enum Command {
 
 fn main() -> anyhow::Result<ExitCode> {
     match Cli::parse().command {
+        Command::Bench(args) => bench::run(args),
         Command::E2e(args) => e2e::run_command(args),
         Command::MockSse(args) => mock_sse::run(args),
         Command::Models(args) => models::run(args).map(|()| ExitCode::SUCCESS),

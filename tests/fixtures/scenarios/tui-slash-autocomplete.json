@@ -1,0 +1,24 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    " escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more",
+    " Press ctrl+o to show full startup help and loaded resources.",
+    "",
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "/se",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "→ settings       Open settings menu",
+    "  session        Show session info and stats",
+    "  scoped-models  Enable/disable models for Ctrl+P cycling",
+    "  share          Share session as a secret GitHub gist",
+    "  resume         Resume a different session",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

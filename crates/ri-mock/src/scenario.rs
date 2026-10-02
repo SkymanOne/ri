@@ -34,6 +34,21 @@ pub struct Scenario {
     /// Files to create in the agent directory, such as `settings.json`.
     #[serde(default, rename = "agentFiles")]
     pub agent_files: IndexMap<String, String>,
+    /// Runs the program in a terminal and types into it.
+    #[serde(default)]
+    pub tty: Option<Tty>,
+}
+
+/// A terminal session: its size and what to type. After starting and after
+/// each key the screen is left to settle.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tty {
+    /// Columns.
+    pub cols: u16,
+    /// Rows.
+    pub rows: u16,
+    /// Input to send, one write each, such as `"hello"` or `"\r"`.
+    pub keys: Vec<String>,
 }
 
 /// Which program runs a scenario.
@@ -62,6 +77,8 @@ pub struct Run {
     pub agent_dir: PathBuf,
     /// Session files in the working and agent directories after the run.
     pub sessions: Vec<SessionFile>,
+    /// The final screen of a terminal run, one string per row.
+    pub screen: Option<Vec<String>>,
 }
 
 /// A session file found after a run.
@@ -162,41 +179,70 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     std::fs::write(&models_path, models.to_string()).map_err(io(&models_path))?;
 
     let (executable, dir_var) = match program {
-        Program::Pi(path) => (path, "PI_CODING_AGENT_DIR"),
-        Program::Ri(path) => (path, "RI_CODING_AGENT_DIR"),
+        Program::Pi(path) => (path.clone(), "PI_CODING_AGENT_DIR"),
+        Program::Ri(path) => (path.clone(), "RI_CODING_AGENT_DIR"),
     };
-    let mut command = tokio::process::Command::new(executable);
+    let executable = &executable;
     // A clean environment: ambient credentials on the host must not change what
     // either program sees.
-    command
-        .args(&scenario.args)
-        .current_dir(&cwd)
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env(dir_var, &agent_dir)
-        .env("HOME", &root)
-        .env("PI_OFFLINE", "1")
-        .env("PI_SKIP_VERSION_CHECK", "1")
-        .env("ANTHROPIC_API_KEY", "mock")
-        .env("GROQ_API_KEY", "mock")
-        .env("OPENAI_API_KEY", "mock")
-        .env("GEMINI_API_KEY", "mock")
-        .stdin(if scenario.stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(io(executable))?;
-    if let (Some(text), Some(mut stdin)) = (&scenario.stdin, child.stdin.take()) {
-        use tokio::io::AsyncWriteExt;
-        stdin
-            .write_all(text.as_bytes())
-            .await
-            .map_err(io(executable))?;
-    }
-    let output = child.wait_with_output().await.map_err(io(executable))?;
+    let env: Vec<(&'static str, std::ffi::OsString)> = vec![
+        ("PATH", std::env::var_os("PATH").unwrap_or_default()),
+        (dir_var, agent_dir.clone().into_os_string()),
+        ("HOME", root.clone().into_os_string()),
+        ("PI_OFFLINE", "1".into()),
+        ("PI_SKIP_VERSION_CHECK", "1".into()),
+        ("ANTHROPIC_API_KEY", "mock".into()),
+        ("GROQ_API_KEY", "mock".into()),
+        ("OPENAI_API_KEY", "mock".into()),
+        ("GEMINI_API_KEY", "mock".into()),
+    ];
+    let (exit_code, stdout, stderr, screen) = match &scenario.tty {
+        Some(tty) => {
+            let (path, args, dir, tty) = (
+                executable.clone(),
+                scenario.args.clone(),
+                cwd.clone(),
+                tty.clone(),
+            );
+            let (exit_code, screen) =
+                tokio::task::spawn_blocking(move || run_tty(&path, &args, &dir, &env, &tty))
+                    .await
+                    .map_err(|error| std::io::Error::other(error.to_string()))
+                    .and_then(|result| result)
+                    .map_err(io(executable))?;
+            (exit_code, String::new(), String::new(), Some(screen))
+        }
+        None => {
+            let mut command = tokio::process::Command::new(executable);
+            command.args(&scenario.args).current_dir(&cwd).env_clear();
+            for (key, value) in &env {
+                command.env(key, value);
+            }
+            command
+                .stdin(if scenario.stdin.is_some() {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            let mut child = command.spawn().map_err(io(executable))?;
+            if let (Some(text), Some(mut stdin)) = (&scenario.stdin, child.stdin.take()) {
+                use tokio::io::AsyncWriteExt;
+                stdin
+                    .write_all(text.as_bytes())
+                    .await
+                    .map_err(io(executable))?;
+            }
+            let output = child.wait_with_output().await.map_err(io(executable))?;
+            (
+                output.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                None,
+            )
+        }
+    };
     let requests = server.requests();
     drop(server);
     let mut found = Vec::new();
@@ -214,9 +260,10 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         })
         .collect();
     let run = Run {
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        exit_code,
+        stdout,
+        stderr,
+        screen,
         requests,
         cwd: cwd.clone(),
         agent_dir,
@@ -224,6 +271,26 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     };
     let _ = std::fs::remove_dir_all(&root);
     Ok(run)
+}
+
+/// Runs `executable` in a pseudo-terminal, typing `tty.keys` once the screen
+/// settles each time. Returns the exit code (-1 if it was still running) and
+/// the final screen rows.
+fn run_tty(
+    executable: &Path,
+    args: &[String],
+    cwd: &Path,
+    env: &[(&'static str, std::ffi::OsString)],
+    tty: &Tty,
+) -> std::io::Result<(i32, Vec<String>)> {
+    let mut pty = crate::pty::Pty::spawn(executable, args, cwd, env, (tty.cols, tty.rows), false)?;
+    pty.settle();
+    for key in &tty.keys {
+        pty.write(key)?;
+        pty.settle();
+    }
+    let screen = pty.rows();
+    Ok((pty.finish()?, screen))
 }
 
 /// Normalizes runs for comparison: paths, names, timestamps, and ids, which
@@ -255,6 +322,7 @@ impl Normalizer<'_> {
                 "<agent>",
             )
             .replace(&self.run.cwd.to_string_lossy().into_owned(), "<cwd>")
+            .replace(&encoded_dir(&self.run.cwd), "<cwd-dir>")
             .replace("operating inside ri,", "operating inside pi,");
         for (from, to) in &self.renames {
             text = text.replace(from, to);
@@ -416,6 +484,49 @@ pub fn normalize(run: &Run) -> Value {
     if !sessions.is_empty() {
         out["sessions"] = Value::Array(sessions);
     }
+    if let Some(screen) = &run.screen {
+        out["screen"] = Value::from(normalize_screen(screen, &normalizer));
+    }
+    out
+}
+
+/// Whether `text` is a UUID such as pi and ri use for session ids.
+fn is_uuid(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('-').collect();
+    parts.len() == 5
+        && parts
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(part, len)| part.len() == len && part.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Screen rows without the product-specific startup header (pi's logo, its
+/// docs tip, ri's wordmark), with paths and session ids masked, trailing space
+/// trimmed and blank runs collapsed, so the rest compares across programs.
+fn normalize_screen(rows: &[String], normalizer: &Normalizer<'_>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for row in rows {
+        if row.contains("▀▀█") || row.starts_with(" ri v") || row.contains("Pi can explain") {
+            continue;
+        }
+        let mut row = normalizer.text(row.trim_end()).replacen("█▀ █ ", "", 1);
+        // ri has no cache warming (docs/compat.md), so its status differs.
+        if row.starts_with(" Status: Inactive (") {
+            row = " Status: Inactive (<reason>)".to_owned();
+        }
+        let row = row
+            .split(' ')
+            .map(|word| if is_uuid(word) { "<uuid>" } else { word })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if row.trim().is_empty() && out.last().is_none_or(|last| last.trim().is_empty()) {
+            continue;
+        }
+        out.push(row);
+    }
+    while out.last().is_some_and(|last| last.trim().is_empty()) {
+        out.pop();
+    }
     out
 }
 
@@ -439,6 +550,13 @@ fn sort_tool_completions(events: &mut [Value]) {
         events[start..end].sort_by_key(key);
         start = end;
     }
+}
+
+/// The session directory name pi derives from a working directory.
+fn encoded_dir(cwd: &Path) -> String {
+    let text = cwd.to_string_lossy();
+    let trimmed = text.trim_start_matches(['/', '\\']);
+    format!("--{}--", trimmed.replace(['/', '\\', ':'], "-"))
 }
 
 /// The first difference between two normalized runs, as a readable path.

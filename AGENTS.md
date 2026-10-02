@@ -60,7 +60,7 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 | `guest/ri-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
 | `guest/ri-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
-| `xtask/` | Developer commands: mock server runner, model catalog codegen, pi JS vendoring, `ri-js.wasm` build. | Build scripts |
+| `xtask/` | Developer commands: mock server runner, end-to-end scenarios, benchmarks, model catalog codegen, pi JS vendoring, `ri-js.wasm` build. | Build scripts |
 
 Dependency direction:
 - `ri-types` ← `ri-ai` ← `ri-agent` ← `ri-core` ← `ri-ext` ← `ri`.
@@ -99,7 +99,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 | TypeScript and resolution | `oxc_transformer`, `oxc_resolver` |
 | MCP | `rmcp` if it covers stdio, streamable HTTP and OAuth; otherwise a port of `pi-mcp` |
 | Logging, errors | `tracing`; `thiserror`, `anyhow` |
-| Tests | `insta`, ratatui `TestBackend`, `ri-mock` (on `hyper`) |
+| Tests | pi goldens, `ri-mock` (on `hyper`), `portable-pty` and `vt100` for terminal scenarios |
 
 ## Extension system
 
@@ -188,8 +188,8 @@ These are initial targets, calibrated against pi in M0–M1.
 |---|---|---|
 | `ri --version` | < 5 ms | `hyperfine` |
 | Print mode, start to first request byte | < 25 ms | `hyperfine` against the mock SSE server |
-| Interactive first paint, no extensions | < 40 ms | PTY harness |
-| Keystroke to paint, p99, 10k-line session | < 16 ms | PTY harness |
+| Interactive first paint, no extensions | < 40 ms | `cargo xtask bench` |
+| Keystroke to paint, p99, 10k-line session | < 16 ms | `cargo xtask bench` |
 | Idle RSS, no extensions | < 30 MB | RSS sample 2 s after first paint |
 | Idle RSS, 10 JS extensions | < 70 MB | RSS sample 2 s after first paint |
 | Stripped release binary | < 35 MB | `cargo bloat --crates` |
@@ -241,8 +241,9 @@ These are initial targets, calibrated against pi in M0–M1.
 - End-to-end scenarios in `tests/fixtures/scenarios` run a program against a cassette in a fresh directory and a cleared environment:
   - `cargo test` compares ri's normalized output and requests with goldens recorded from pi;
   - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs;
-  - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios.
-- Use `insta` snapshots. Test the built-in UI with ratatui `TestBackend`.
+  - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios;
+  - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines.
+- Prefer goldens recorded from pi over hand-written expectations. Components with pi counterparts are tested against pi-tui's output (`tests/fixtures/pi/generator`).
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;
   - session files;

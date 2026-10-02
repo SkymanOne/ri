@@ -57,7 +57,7 @@ Not yet done:
 
 ## M3: interactive TUI
 
-In progress. Done:
+Done for the slice below.
 
 - Fullscreen and regular renderers, raw input decoding, Kitty keyboard negotiation, terminal color queries and the system theme.
 - Transcript components: header, resources, messages with markdown and thinking, tool boxes with previews and diffs, `!` command output, summaries, status, warning and error lines, queued messages, editor and footer.
@@ -67,14 +67,22 @@ In progress. Done:
 - Keys: interrupt and double escape, clear and exit, suspend, thinking and model cycling, model selector, tool and thinking toggles, external editor, copy, follow-up and dequeue, fullscreen scrolling.
 - `!` and `!!` commands with streamed output, cancellation and session records.
 
-Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. Screen comparisons against pi in a PTY match, apart from listed deviations, for: startup, a tool-call turn, `/session`, `/tree` and its summary dialog, tree navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, `/resume`, `--resume`, the model and thinking selectors, `/model <ref>`, `!!` commands, `@` and Tab completion.
+Exit criterion. Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. 23 terminal scenarios, recorded from pi and run by `cargo test`, match pi's screens: startup, command autocomplete, a tool-call turn, `/session`, `!` and `!!`, `/tree` with its summary dialog and navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, the model and thinking selectors, `/model <ref>`, `/thinking <level>`, `@` and Tab completion, double escape and regular mode. `--resume` was compared by hand.
+
+Budgets, from `cargo xtask bench` on this machine (release build, 100×40 terminal, a session of about 10,000 transcript lines for keystrokes):
+
+| Metric | Budget | ri | pi |
+|---|---|---|---|
+| First paint | < 40 ms | 10 ms | 399 ms |
+| Keystroke to paint, p50 | | 1.4 ms | 3.9 ms |
+| Keystroke to paint, p99 | < 16 ms | 2.2 ms | 8.7 ms |
 
 Not yet done:
 
 - `/settings`, `/scoped-models`, `/trust`; `/login` and `/logout` arrive with OAuth (M4).
 - HTML export; changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
-- Snapshot tests on the screen buffer, automated PTY comparisons, and the first-paint and keystroke budgets.
+- Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.
 
 ## M4 to M7
 

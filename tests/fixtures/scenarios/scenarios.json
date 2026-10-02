@@ -201,5 +201,166 @@
     "name": "file-argument-missing-print",
     "cassette": "none.json",
     "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b", "@missing.md", "hi"]
+  },
+  {
+    "name": "tui-startup",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": []}
+  },
+  {
+    "name": "tui-slash-autocomplete",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/se"]}
+  },
+  {
+    "name": "tui-tool-call",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r"]}
+  },
+  {
+    "name": "tui-session-info",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5", "--no-session"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 50, "keys": ["Read hello.txt", "\r", "/session\r"]}
+  },
+  {
+    "name": "tui-bash",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["!echo hi there", "\r"]}
+  },
+  {
+    "name": "tui-bash-excluded",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["!!printf 'a\\nb\\n'", "\r"]}
+  },
+  {
+    "name": "tui-tree",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "!echo hi there", "\r", "/tree\r"]}
+  },
+  {
+    "name": "tui-tree-summary-dialog",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/tree\r", "\u001b[A\u001b[A\u001b[A", "\r"]}
+  },
+  {
+    "name": "tui-tree-navigate",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/tree\r", "\u001b[A\u001b[A\u001b[A", "\r", "\r"]}
+  },
+  {
+    "name": "tui-fork-selector",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/fork\r"]}
+  },
+  {
+    "name": "tui-fork",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/fork\r", "\r"]}
+  },
+  {
+    "name": "tui-clone",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/clone\r"]}
+  },
+  {
+    "name": "tui-new-session",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "/new\r"]}
+  },
+  {
+    "name": "tui-name",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/name\r", "/name  my work \r", "/name\r"]}
+  },
+  {
+    "name": "tui-hotkeys",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 60, "keys": ["/hotkeys\r"]}
+  },
+  {
+    "name": "tui-model-selector",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["\f"]}
+  },
+  {
+    "name": "tui-model-reference",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/model claude-opus-4-5", "\r"]}
+  },
+  {
+    "name": "tui-thinking-selector",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/thinking\r"]}
+  },
+  {
+    "name": "tui-thinking-argument",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/thinking hi", "\t", "\r"]}
+  },
+  {
+    "name": "tui-file-completion",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["see @hel"]}
+  },
+  {
+    "name": "tui-path-completion",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["see ", "\t"]}
+  },
+  {
+    "name": "tui-double-escape",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r", "\u001b", "\u001b"]}
+  },
+  {
+    "name": "tui-regular-mode",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5", "--tui-mode", "regular"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r"]}
   }
 ]
