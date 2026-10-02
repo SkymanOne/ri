@@ -60,7 +60,7 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 | `guest/ri-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
 | `guest/ri-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
-| `xtask/` | Model catalog codegen, pi JS vendoring, `ri-js.wasm` build. | Build scripts |
+| `xtask/` | Developer commands: mock server runner, model catalog codegen, pi JS vendoring, `ri-js.wasm` build. | Build scripts |
 
 Dependency direction:
 - `ri-types` ← `ri-ai` ← `ri-agent` ← `ri-core` ← `ri-ext` ← `ri`.
@@ -207,6 +207,7 @@ These are initial targets, calibrated against pi in M0–M1.
 - CI runs the same checks on Linux and macOS for pull requests and pushes to `main`.
 - After changing a guest, rebuild with `cargo xtask js-runtime` and commit the artifact with its inputs hash.
 - Regenerate the model catalog with `cargo xtask models`. Never edit generated files.
+- Serve a cassette to pi or another out-of-process client with `cargo xtask mock-sse --cassette <file>`. It prints the base URL and, on exit, reports requests that did not match.
 
 ### Code
 
