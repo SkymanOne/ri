@@ -13,6 +13,7 @@ futures-util.workspace = true
 getrandom.workspace = true
 indexmap.workspace = true
 ri-agent.workspace = true
+reqwest.workspace = true
 ri-ai.workspace = true
 ri-types.workspace = true
 serde.workspace = true

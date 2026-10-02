@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, format_size, truncate_head,
 };
-use super::{ToolEnv, declaration, node_error, text, text_result};
+use super::{ToolEnv, declaration, js_number, node_error, text, text_result};
 
 /// The `read` tool.
 pub struct Read {
@@ -176,10 +176,6 @@ impl Read {
         };
         Ok(text_result(output, details))
     }
-}
-
-fn js_number(value: f64) -> String {
-    ri_types::json::to_string(&value).unwrap_or_default()
 }
 
 /// The MIME type of a supported image, from its leading bytes.

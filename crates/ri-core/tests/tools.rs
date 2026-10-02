@@ -34,6 +34,7 @@ fn env(cwd: &Path) -> ToolEnv {
     ToolEnv {
         cwd: cwd.to_path_buf(),
         runtime: Arc::default(),
+        bin_dir: cwd.join("bin"),
     }
 }
 

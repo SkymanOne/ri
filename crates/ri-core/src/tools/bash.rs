@@ -356,6 +356,17 @@ impl Tool for Bash {
                 .kill_on_drop(false);
             #[cfg(unix)]
             process.process_group(0);
+            // pi's getShellEnv: the agent's bin directory leads PATH.
+            let path = std::env::var_os("PATH").unwrap_or_default();
+            let mut entries: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
+            if !entries.contains(&self.env.bin_dir) {
+                entries.insert(0, self.env.bin_dir.clone());
+                if let Ok(joined) =
+                    std::env::join_paths(entries.iter().filter(|p| !p.as_os_str().is_empty()))
+                {
+                    process.env("PATH", joined);
+                }
+            }
             for name in [
                 "PI_SESSION_ID",
                 "PI_SESSION_FILE",

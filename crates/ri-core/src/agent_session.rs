@@ -38,7 +38,7 @@ use crate::session::{SessionManager, build_projection};
 use crate::settings::SettingsManager;
 use crate::system_prompt::{PromptOptions, build_sections, diff_sections};
 use crate::time::{now_ms, parse_iso};
-use crate::tools::{PromptTool, Runtime, ToolEnv, builtin};
+use crate::tools::{BUILTIN_TOOLS, PromptTool, Runtime, ToolEnv, builtin};
 
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
@@ -154,7 +154,7 @@ impl AgentSession {
     pub fn new(config: SessionConfig) -> AgentSession {
         let SessionConfig {
             cwd,
-            agent_dir: _,
+            agent_dir,
             settings,
             registry,
             apis,
@@ -168,8 +168,9 @@ impl AgentSession {
         let env = ToolEnv {
             cwd: cwd.clone(),
             runtime: runtime.clone(),
+            bin_dir: crate::config::bin_dir(&agent_dir),
         };
-        let available: Vec<PromptTool> = ["read", "bash", "edit", "write"]
+        let available: Vec<PromptTool> = BUILTIN_TOOLS
             .iter()
             .filter_map(|name| builtin(name, &env))
             .collect();

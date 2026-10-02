@@ -88,6 +88,26 @@ pub fn resolve_lexically(base: &Path, path: &Path) -> PathBuf {
     result
 }
 
+/// Node's `path.relative` for absolute, lexically resolved paths: the steps from
+/// `from` to `to`, `""` when they are the same.
+pub fn relative(from: &Path, to: &Path) -> String {
+    use std::path::Component;
+    let parts = |path: &Path| -> Vec<String> {
+        resolve_lexically(Path::new("/"), path)
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect()
+    };
+    let (from, to) = (parts(from), parts(to));
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut steps: Vec<String> = vec!["..".to_owned(); from.len() - common];
+    steps.extend(to[common..].iter().cloned());
+    steps.join("/")
+}
+
 /// Resolves a tool path against the working directory.
 pub fn resolve_to_cwd(path: &str, cwd: &Path) -> PathBuf {
     resolve_lexically(cwd, Path::new(&normalize(path)))
@@ -134,5 +154,15 @@ mod tests {
             PathBuf::from("/tmp/a b")
         );
         assert_eq!(normalize("a\u{00A0}b"), "a b");
+    }
+
+    #[test]
+    fn relative_paths_like_node() {
+        assert_eq!(
+            relative(Path::new("/a/b"), Path::new("/a/b/c/d.txt")),
+            "c/d.txt"
+        );
+        assert_eq!(relative(Path::new("/a/b"), Path::new("/a/x")), "../x");
+        assert_eq!(relative(Path::new("/a/b/"), Path::new("/a/b")), "");
     }
 }

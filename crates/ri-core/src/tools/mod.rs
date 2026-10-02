@@ -8,6 +8,10 @@
 mod bash;
 mod edit;
 mod edit_diff;
+pub mod external;
+mod find;
+mod grep;
+mod ls;
 mod mutation;
 pub mod path;
 mod read;
@@ -25,11 +29,17 @@ use serde_json::Value;
 
 pub use bash::Bash;
 pub use edit::Edit;
+pub use find::Find;
+pub use grep::Grep;
+pub use ls::Ls;
 pub use read::{Read, base64, image_mime_type};
 pub use write::Write;
 
 /// Names of the tools active by default.
 pub const DEFAULT_TOOLS: [&str; 4] = ["read", "bash", "edit", "write"];
+
+/// Every built-in tool, in pi's registration order.
+pub const BUILTIN_TOOLS: [&str; 7] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
 /// Session state tools read while running.
 #[derive(Clone, Debug, Default)]
@@ -44,13 +54,17 @@ pub struct Runtime {
     pub session_file: Option<PathBuf>,
 }
 
-/// What built-in tools share: the working directory and the session state.
+/// What built-in tools share: the working directory, the session state and
+/// where helper binaries live.
 #[derive(Clone, Debug)]
 pub struct ToolEnv {
     /// Working directory for relative paths and commands.
     pub cwd: PathBuf,
     /// Session state, updated by the session.
     pub runtime: Arc<RwLock<Runtime>>,
+    /// The agent's `bin` directory: prepended to `PATH` for commands, and where
+    /// `rg` and `fd` are installed when missing.
+    pub bin_dir: PathBuf,
 }
 
 impl ToolEnv {
@@ -99,6 +113,21 @@ pub fn builtin(name: &str, env: &ToolEnv) -> Option<PromptTool> {
             "Create or overwrite files",
             &["Use write only for new files or complete rewrites."],
         ),
+        "grep" => (
+            Arc::new(Grep::new(env.clone())),
+            "Search file contents for patterns (respects .gitignore)",
+            &[],
+        ),
+        "find" => (
+            Arc::new(Find::new(env.clone())),
+            "Find files by glob pattern (respects .gitignore)",
+            &[],
+        ),
+        "ls" => (
+            Arc::new(Ls::new(env.clone())),
+            "List directory contents",
+            &[],
+        ),
         _ => return None,
     };
     Some(PromptTool {
@@ -108,13 +137,22 @@ pub fn builtin(name: &str, env: &ToolEnv) -> Option<PromptTool> {
     })
 }
 
-/// A declaration with pi's `constrainedSampling: {type: json_schema, strict: prefer}`.
+/// A declaration with pi's `constrainedSampling: {type: json_schema, strict: prefer}`,
+/// as the core tools declare.
 fn declaration(name: &str, description: String, parameters: Value) -> ToolDeclaration {
+    ToolDeclaration {
+        constrained_sampling: Some(serde_json::json!({"type": "json_schema", "strict": "prefer"})),
+        ..plain_declaration(name, description, parameters)
+    }
+}
+
+/// A declaration without constrained sampling, as the search tools declare.
+fn plain_declaration(name: &str, description: String, parameters: Value) -> ToolDeclaration {
     ToolDeclaration {
         name: name.to_owned(),
         description,
         parameters,
-        constrained_sampling: Some(serde_json::json!({"type": "json_schema", "strict": "prefer"})),
+        constrained_sampling: None,
     }
 }
 
@@ -160,6 +198,43 @@ fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> St
         _ => format!("{err}, {syscall} '{path}'"),
     }
 }
+
+/// A number as JavaScript prints it.
+fn js_number(value: f64) -> String {
+    ri_types::json::to_string(&value).unwrap_or_default()
+}
+
+/// Output capped at the default byte limit with no line limit, then pi's
+/// bracketed notices: `before`, the byte limit if hit, `after`. The truncation
+/// goes into `details` when it applied.
+fn capped_output(
+    raw: &str,
+    before: Vec<String>,
+    after: Vec<String>,
+    details: &mut serde_json::Map<String, Value>,
+) -> String {
+    let mut notices = before;
+    let truncation = truncate::truncate_head(raw, JS_MAX_SAFE_INTEGER, truncate::DEFAULT_MAX_BYTES);
+    let mut output = truncation.content.clone();
+    if truncation.truncated {
+        notices.push(format!(
+            "{} limit reached",
+            truncate::format_size(truncate::DEFAULT_MAX_BYTES)
+        ));
+        details.insert(
+            "truncation".into(),
+            serde_json::to_value(&truncation).unwrap_or_default(),
+        );
+    }
+    notices.extend(after);
+    if !notices.is_empty() {
+        output += &format!("\n\n[{}]", notices.join(". "));
+    }
+    output
+}
+
+/// `Number.MAX_SAFE_INTEGER`, pi's "no line limit".
+const JS_MAX_SAFE_INTEGER: usize = 9_007_199_254_740_991;
 
 fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
