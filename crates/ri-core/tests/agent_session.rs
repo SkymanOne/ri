@@ -107,7 +107,9 @@ async fn navigating_with_a_summary_records_the_abandoned_branch() {
         },
         other => panic!("expected the summary prompt, got {other:?}"),
     };
-    assert!(text.starts_with("<conversation>\n[User]: second\n\n[Assistant]: two\n</conversation>"));
+    assert!(
+        text.starts_with("<conversation>\n[User]: second\n\n[Assistant]: two\n</conversation>")
+    );
     let roles: Vec<&str> = session
         .messages()
         .iter()
