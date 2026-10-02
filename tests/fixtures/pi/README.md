@@ -1,6 +1,6 @@
 # pi golden fixtures
 
-Files written by pi `v1.0.0` (commit `a13d35a`). `crates/ri-types/tests/golden.rs` checks that ri reads and writes them back byte-identically, `crates/ri-core/tests/session.rs` that ri builds the same model context from each session, `crates/ri-tui/tests/keys.rs` that ri decodes terminal input as pi does, and `crates/ri-tui/tests/editor.rs` that ri's editor behaves as pi's. Do not edit them by hand; regenerate instead.
+Files written by pi `v1.0.0` (commit `a13d35a`). `crates/ri-types/tests/golden.rs` checks that ri reads and writes them back byte-identically, `crates/ri-core/tests/session.rs` that ri builds the same model context from each session, `crates/ri-tui/tests/keys.rs` that ri decodes terminal input as pi does, `crates/ri-tui/tests/editor.rs` that ri's editor behaves as pi's, and `crates/ri-tui/tests/theme.rs` that ri's themes produce pi's colors. Do not edit them by hand; regenerate instead.
 
 ## Regenerate
 
@@ -13,6 +13,7 @@ node generate.mjs
 node contexts.mjs
 node keys.mjs
 node editor.mjs
+node theme.mjs
 ```
 
 The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and timestamps change on every run. To cut `legacy/` again from pi's own test sessions, set `PI_SOURCE` to a pi `v1.0.0` checkout.
@@ -35,6 +36,7 @@ The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and
 | `contexts/*.json` | `buildSessionContext` on each session | Compaction, branch summaries, context edits, model and thinking level |
 | `keys/keys.json` | pi-tui `matchesKey`, `parseKey`, `decodePrintableKey` over generated input | Legacy, Kitty and Windows Terminal key decoding; the Kitty and Windows modes list only inputs that decode differently from legacy |
 | `keys/input.json` | pi-tui `StdinBuffer` fed chunk by chunk | Sequence splitting, partial sequences, pastes |
+| `theme/theme.json` | pi's built-in themes in both color modes; `generateSystemThemeColors` | Every token's escape sequence; system themes for no report, black, white, mid-gray and palette terminals |
 | `editor/editor.json` | pi-tui `Editor` driven key by key | Text, cursor, rendered rows and submissions after every key: wrapping, word motion, kill ring, undo, history, pastes and markers, sticky columns, jumps, scrolling |
 
 The excerpts in `legacy/` come from pi, Copyright (c) 2025 Mario Zechner, MIT License.

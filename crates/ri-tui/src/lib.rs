@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod autocomplete;
+pub mod color;
 pub mod editor;
 pub mod fuzzy;
 pub mod input;
@@ -10,3 +11,4 @@ pub mod keys;
 pub mod segment;
 pub mod select_list;
 pub mod text;
+pub mod theme;
