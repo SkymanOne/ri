@@ -1048,6 +1048,9 @@ dependencies = [
 [[package]]
 name = "ri-tui"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "ri-types"

@@ -14,4 +14,4 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | System prompt | Preamble says "operating inside pi"; a `docs` section points to pi's installed documentation | Preamble says "operating inside ri"; no `docs` section | ri installs no documentation. |
 | `--help`, no-models message | Mention `PI_PACKAGE_DIR` and pi's installed docs | Omit both | ri has no package or docs directory. |
 | JSON mode `message_update.usage`, assistant `message_start` | Serialized from the live message, so they show state from later in the stream | State at the moment of the event | pi's values depend on stream timing. |
-
+| Terminal input outside the Basic Multilingual Plane | Delivered as two lone UTF-16 surrogates, one per input event | Delivered as one character | Rust strings hold whole characters; the inserted text is the same. |

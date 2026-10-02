@@ -1,0 +1,540 @@
+[
+	{
+		"chunks": [
+			"abc"
+		],
+		"events": [
+			{
+				"key": "a"
+			},
+			{
+				"key": "b"
+			},
+			{
+				"key": "c"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[A\u001b[B"
+		],
+		"events": [
+			{
+				"key": "\u001b[A"
+			},
+			{
+				"key": "\u001b[B"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b",
+			"[A"
+		],
+		"events": [
+			{
+				"key": "\u001b[A"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b",
+			"<flush>"
+		],
+		"events": [
+			{
+				"key": "\u001b"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b",
+			"<flush>",
+			"x"
+		],
+		"events": [
+			{
+				"key": "\u001b"
+			},
+			{
+				"key": "x"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[<35",
+			";20;5m"
+		],
+		"events": [
+			{
+				"key": "\u001b[<35;20;5m"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[<35;20;5M"
+		],
+		"events": [
+			{
+				"key": "\u001b[<35;20;5M"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[<35;20m"
+		],
+		"events": [],
+		"buffered": "\u001b[<35;20m"
+	},
+	{
+		"chunks": [
+			"\u001b[<35;20m",
+			"<flush>"
+		],
+		"events": [
+			{
+				"key": "\u001b[<35;20m"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[M ab"
+		],
+		"events": [
+			{
+				"key": "\u001b[M ab"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[M a",
+			"b"
+		],
+		"events": [
+			{
+				"key": "\u001b[M ab"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b]11;rgb:0/0/0\u0007x"
+		],
+		"events": [
+			{
+				"key": "\u001b]11;rgb:0/0/0\u0007"
+			},
+			{
+				"key": "x"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b]0;t\u001b\\y"
+		],
+		"events": [
+			{
+				"key": "\u001b]0;t\u001b\\"
+			},
+			{
+				"key": "y"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001bP>|kitty\u001b\\"
+		],
+		"events": [
+			{
+				"key": "\u001bP>|kitty\u001b\\"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b_Gi=1;OK\u001b\\"
+		],
+		"events": [
+			{
+				"key": "\u001b_Gi=1;OK\u001b\\"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001bO",
+			"P"
+		],
+		"events": [
+			{
+				"key": "\u001bOP"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001bOP"
+		],
+		"events": [
+			{
+				"key": "\u001bOP"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001bx\u001b\u001b\r"
+		],
+		"events": [
+			{
+				"key": "\u001bx"
+			},
+			{
+				"key": "\u001b"
+			},
+			{
+				"key": "\u001b\r"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b\u001b"
+		],
+		"events": [
+			{
+				"key": "\u001b\u001b"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b\u001b[27;1:3u"
+		],
+		"events": [
+			{
+				"key": "\u001b"
+			},
+			{
+				"key": "\u001b[27;1:3u"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b\u001bO"
+		],
+		"events": [
+			{
+				"key": "\u001b"
+			}
+		],
+		"buffered": "\u001bO"
+	},
+	{
+		"chunks": [
+			"\u001b\u001bx"
+		],
+		"events": [
+			{
+				"key": "\u001b\u001b"
+			},
+			{
+				"key": "x"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[[5~"
+		],
+		"events": [
+			{
+				"key": "\u001b[["
+			},
+			{
+				"key": "5"
+			},
+			{
+				"key": "~"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97ua"
+		],
+		"events": [
+			{
+				"key": "\u001b[97u"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97u",
+			"a"
+		],
+		"events": [
+			{
+				"key": "\u001b[97u"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97ub"
+		],
+		"events": [
+			{
+				"key": "\u001b[97u"
+			},
+			{
+				"key": "b"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97;2ua"
+		],
+		"events": [
+			{
+				"key": "\u001b[97;2u"
+			},
+			{
+				"key": "a"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97:65ua"
+		],
+		"events": [
+			{
+				"key": "\u001b[97:65u"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[13u\r"
+		],
+		"events": [
+			{
+				"key": "\u001b[13u"
+			},
+			{
+				"key": "\r"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[233ué"
+		],
+		"events": [
+			{
+				"key": "\u001b[233u"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"日本"
+		],
+		"events": [
+			{
+				"key": "日"
+			},
+			{
+				"key": "本"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[200~hello\u001b[201~"
+		],
+		"events": [
+			{
+				"paste": "hello"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"a\u001b[200~multi\nline",
+			" more\u001b[201~b"
+		],
+		"events": [
+			{
+				"key": "a"
+			},
+			{
+				"paste": "multi\nline more"
+			},
+			{
+				"key": "b"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[200~x\u001b[201~\u001b[A"
+		],
+		"events": [
+			{
+				"paste": "x"
+			},
+			{
+				"key": "\u001b[A"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[2",
+			"00~paste\u001b[201~"
+		],
+		"events": [
+			{
+				"paste": "paste"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[<1\u001b[200~p\u001b[201~"
+		],
+		"events": [
+			{
+				"paste": "p"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[200~\u001b[201~"
+		],
+		"events": [
+			{
+				"paste": ""
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[97u\u001b[200~p\u001b[201~a"
+		],
+		"events": [
+			{
+				"key": "\u001b[97u"
+			},
+			{
+				"paste": "p"
+			},
+			{
+				"key": "a"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[1;5",
+			"A"
+		],
+		"events": [
+			{
+				"key": "\u001b[1;5A"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[",
+			"<flush>"
+		],
+		"events": [
+			{
+				"key": "\u001b["
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[?1u\u001b[?62;22c"
+		],
+		"events": [
+			{
+				"key": "\u001b[?1u"
+			},
+			{
+				"key": "\u001b[?62;22c"
+			}
+		],
+		"buffered": ""
+	},
+	{
+		"chunks": [
+			"\u001b[?",
+			"1u"
+		],
+		"events": [
+			{
+				"key": "\u001b[?1u"
+			}
+		],
+		"buffered": ""
+	}
+]
