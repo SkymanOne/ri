@@ -104,6 +104,9 @@ struct Inner {
     follow_up: Mutex<VecDeque<Message>>,
     cancel: Mutex<Option<CancellationToken>>,
     recovery: Mutex<Recovery>,
+    bash: Mutex<Vec<(u64, CancellationToken)>>,
+    pending_bash: Mutex<Vec<Message>>,
+    agent_dir: PathBuf,
 }
 
 /// Post-run bookkeeping for retries and overflow recovery, as pi keeps it.
@@ -177,6 +180,24 @@ pub struct UsageTotals {
     pub cost: f64,
     /// Cache hit rate of the latest assistant message, in percent.
     pub cache_hit_rate: Option<f64>,
+}
+
+/// Message counts and per-model cost, as `/session` shows them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SessionStats {
+    /// Message entries.
+    pub total_messages: usize,
+    /// User messages.
+    pub user_messages: usize,
+    /// Assistant messages.
+    pub assistant_messages: usize,
+    /// Tool calls in assistant messages.
+    pub tool_calls: usize,
+    /// Tool results.
+    pub tool_results: usize,
+    /// Cost and tokens by `provider/model`, costliest first; summaries and
+    /// tool usage are grouped as `Tools/summaries`.
+    pub breakdown: Vec<(String, f64, u64)>,
 }
 
 /// What the compaction check decided.
@@ -271,6 +292,9 @@ impl AgentSession {
                 follow_up: Mutex::new(VecDeque::new()),
                 cancel: Mutex::new(None),
                 recovery: Mutex::new(Recovery::default()),
+                bash: Mutex::new(Vec::new()),
+                pending_bash: Mutex::new(Vec::new()),
+                agent_dir,
             }),
         }
     }
@@ -289,6 +313,14 @@ impl AgentSession {
     /// Runs `f` with the session file.
     pub fn with_session<T>(&self, f: impl FnOnce(&mut SessionManager) -> T) -> T {
         f(&mut lock(&self.inner.state).session)
+    }
+
+    /// Moves the session file out, leaving an empty in-memory one, so a new
+    /// `AgentSession` can take it over.
+    pub fn take_session(&self) -> SessionManager {
+        let mut state = lock(&self.inner.state);
+        let placeholder = SessionManager::in_memory(state.session.cwd());
+        std::mem::replace(&mut state.session, placeholder)
     }
 
     /// Context use of the current branch: `tokens` is `None` after a compaction
@@ -366,6 +398,76 @@ impl AgentSession {
                 }
             }
             totals
+        })
+    }
+
+    /// pi's `getSessionStats` counts and `getUsageCostBreakdown`, over every
+    /// entry of the session file.
+    pub fn session_stats(&self) -> SessionStats {
+        self.with_session(|session| {
+            let mut stats = SessionStats::default();
+            let mut breakdown: Vec<(String, f64, u64)> = Vec::new();
+            let mut add = |key: String, usage: &ri_types::message::Usage| {
+                let tokens = usage.input + usage.output + usage.cache_read + usage.cache_write;
+                match breakdown
+                    .iter_mut()
+                    .find(|(existing, _, _)| *existing == key)
+                {
+                    Some((_, cost, total)) => {
+                        *cost += usage.cost.total;
+                        *total += tokens;
+                    }
+                    None => breakdown.push((key, usage.cost.total, tokens)),
+                }
+            };
+            for entry in session.entries() {
+                match entry {
+                    FileEntry::Usage(entry) => {
+                        add(format!("{}/{}", entry.provider, entry.model), &entry.usage);
+                    }
+                    FileEntry::Compaction(entry) => {
+                        if let Some(usage) = &entry.usage {
+                            add("Tools/summaries".into(), usage);
+                        }
+                    }
+                    FileEntry::BranchSummary(entry) => {
+                        if let Some(usage) = &entry.usage {
+                            add("Tools/summaries".into(), usage);
+                        }
+                    }
+                    FileEntry::Message(entry) => {
+                        stats.total_messages += 1;
+                        match &entry.message {
+                            Message::User(_) => stats.user_messages += 1,
+                            Message::ToolResult(result) => {
+                                stats.tool_results += 1;
+                                if let Some(usage) = &result.usage {
+                                    add("Tools/summaries".into(), usage);
+                                }
+                            }
+                            Message::Assistant(assistant) => {
+                                stats.assistant_messages += 1;
+                                stats.tool_calls += assistant
+                                    .content
+                                    .iter()
+                                    .filter(|block| matches!(block, ContentBlock::ToolCall(_)))
+                                    .count();
+                                let model = assistant
+                                    .response_model
+                                    .as_deref()
+                                    .unwrap_or(&assistant.model);
+                                add(format!("{}/{model}", assistant.provider), &assistant.usage);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            breakdown.retain(|(_, cost, tokens)| *cost > 0.0 || *tokens > 0);
+            breakdown.sort_by(|a, b| b.1.total_cmp(&a.1));
+            stats.breakdown = breakdown;
+            stats
         })
     }
 
@@ -534,6 +636,127 @@ impl AgentSession {
         self.set_thinking_level(level);
     }
 
+    /// Runs a user `!` command in the session's directory, streaming output to
+    /// `on_chunk`, and records it. `exclude_from_context` (`!!`) keeps the
+    /// output from the model. While a run streams, the record waits for its end.
+    pub async fn execute_bash(
+        &self,
+        command: &str,
+        exclude_from_context: bool,
+        on_chunk: impl FnMut(&str),
+    ) -> Result<crate::bash_executor::BashResult, String> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cancel = CancellationToken::new();
+        lock(&self.inner.bash).push((id, cancel.clone()));
+        let settings = self.settings();
+        let resolved = match settings.shell_command_prefix.as_deref() {
+            Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
+            _ => command.to_owned(),
+        };
+        let cwd = self.with_session(|session| session.cwd().to_path_buf());
+        let result = crate::bash_executor::execute(
+            &resolved,
+            &cwd,
+            settings.shell_path.as_deref(),
+            &crate::config::bin_dir(&self.inner.agent_dir),
+            cancel.clone(),
+            on_chunk,
+        )
+        .await;
+        lock(&self.inner.bash).retain(|(running, _)| *running != id);
+        let result = result?;
+        self.record_bash(command, &result, exclude_from_context);
+        Ok(result)
+    }
+
+    fn record_bash(
+        &self,
+        command: &str,
+        result: &crate::bash_executor::BashResult,
+        exclude_from_context: bool,
+    ) {
+        let message = Message::BashExecution(ri_types::message::BashExecutionMessage {
+            command: command.to_owned(),
+            output: result.output.clone(),
+            exit_code: result.exit_code.map(i64::from),
+            cancelled: result.cancelled,
+            truncated: result.truncated,
+            full_output_path: result
+                .full_output_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            timestamp: now_ms(),
+            exclude_from_context: exclude_from_context.then_some(true),
+        });
+        if self.is_streaming() {
+            lock(&self.inner.pending_bash).push(message);
+        } else {
+            let _ = self.with_session(|session| session.append_message(message));
+        }
+    }
+
+    fn flush_pending_bash(&self) {
+        let pending: Vec<Message> = lock(&self.inner.pending_bash).drain(..).collect();
+        for message in pending {
+            let _ = self.with_session(|session| session.append_message(message));
+        }
+    }
+
+    /// Cancels running `!` commands.
+    pub fn abort_bash(&self) {
+        for (_, token) in lock(&self.inner.bash).iter() {
+            token.cancel();
+        }
+    }
+
+    /// Whether a `!` command is running.
+    pub fn is_bash_running(&self) -> bool {
+        !lock(&self.inner.bash).is_empty()
+    }
+
+    /// User messages of every branch with text, in file order, as fork points.
+    pub fn user_messages_for_forking(&self) -> Vec<(String, String)> {
+        self.with_session(|session| {
+            session
+                .entries()
+                .filter_map(|entry| match entry {
+                    FileEntry::Message(entry) => match &entry.message {
+                        Message::User(user) => {
+                            let text = user.content.text("");
+                            (!text.is_empty()).then(|| (entry.meta.id.clone(), text))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    /// pi's `getLastAssistantText`: the text of the last assistant message,
+    /// skipping aborted ones without content.
+    pub fn last_assistant_text(&self) -> Option<String> {
+        self.messages().into_iter().rev().find_map(|message| {
+            let Message::Assistant(assistant) = message else {
+                return None;
+            };
+            if assistant.stop_reason == StopReason::Aborted && assistant.content.is_empty() {
+                return None;
+            }
+            let text: String = assistant
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_owned())
+        })
+    }
+
     /// Cancels the current run.
     pub fn abort(&self) {
         if let Some(cancel) = lock(&self.inner.cancel).as_ref() {
@@ -686,6 +909,9 @@ impl AgentSession {
     /// `/skill:` commands expand first.
     pub async fn prompt(&self, text: &str, images: Vec<ImageContent>) -> Result<(), String> {
         let expanded = self.expand(text);
+        if !self.is_streaming() {
+            self.flush_pending_bash();
+        }
         let (model, active, messages) = {
             let state = lock(&self.inner.state);
             if state.streaming {
@@ -740,6 +966,7 @@ impl AgentSession {
             self.finish_cancelled_retry();
         }
         lock(&self.inner.state).streaming = false;
+        self.flush_pending_bash();
         *lock(&self.inner.cancel) = None;
         self.emit(&AgentEvent::AgentSettled);
     }
@@ -1235,6 +1462,7 @@ impl AgentSession {
     ) -> Result<CompactionResult, String> {
         self.abort();
         let cancel = CancellationToken::new();
+        *lock(&self.inner.cancel) = Some(cancel.clone());
         self.emit(&AgentEvent::CompactionStart {
             reason: CompactionReason::Manual,
         });
@@ -1258,6 +1486,17 @@ impl AgentSession {
             Ok(self.record_compaction(result))
         }
         .await;
+        *lock(&self.inner.cancel) = None;
+        if cancel.is_cancelled() {
+            self.emit(&AgentEvent::CompactionEnd {
+                reason: CompactionReason::Manual,
+                result: None,
+                aborted: true,
+                will_retry: false,
+                error_message: None,
+            });
+            return Err("Compaction cancelled".into());
+        }
         match outcome {
             Ok(result) => {
                 self.emit(&AgentEvent::CompactionEnd {

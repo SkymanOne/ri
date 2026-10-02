@@ -98,10 +98,36 @@ pub struct SessionSummary {
     pub name: Option<String>,
     /// Text of the first user message.
     pub first_message: String,
+    /// Text of every user and assistant message, space-separated, for search.
+    pub all_messages_text: String,
+    /// The session this one was forked from.
+    pub parent_session: Option<String>,
     /// Number of messages.
     pub message_count: usize,
     /// Modification time, Unix milliseconds.
     pub modified_ms: u64,
+}
+
+/// One entry of a [`SessionTree`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct TreeNode {
+    /// The entry.
+    pub entry: FileEntry,
+    /// Indexes of the children, oldest first.
+    pub children: Vec<usize>,
+    /// The entry's label.
+    pub label: Option<String>,
+    /// When the label was last set.
+    pub label_timestamp: Option<String>,
+}
+
+/// Every entry of a session as a tree, stored flat.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SessionTree {
+    /// The nodes, in file order.
+    pub nodes: Vec<TreeNode>,
+    /// Indexes of entries without a known parent.
+    pub roots: Vec<usize>,
 }
 
 /// A session: its entries, where it is stored, and the current leaf.
@@ -700,6 +726,59 @@ impl SessionManager {
             .filter_map(|entry| entry.view.as_ref())
     }
 
+    /// pi's `getTree`: entries under their parents, children oldest first;
+    /// entries whose parent is missing become roots.
+    pub fn tree(&self) -> SessionTree {
+        let entries: Vec<&FileEntry> = self.entries().collect();
+        let index: HashMap<&str, usize> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(position, entry)| entry.meta().map(|meta| (meta.id.as_str(), position)))
+            .collect();
+        let mut tree = SessionTree {
+            nodes: entries
+                .iter()
+                .map(|entry| {
+                    let id = entry
+                        .meta()
+                        .map(|meta| meta.id.as_str())
+                        .unwrap_or_default();
+                    let label = self.labels.get(id);
+                    TreeNode {
+                        entry: (*entry).clone(),
+                        children: Vec::new(),
+                        label: label.map(|(label, _)| label.clone()),
+                        label_timestamp: label.map(|(_, timestamp)| timestamp.clone()),
+                    }
+                })
+                .collect(),
+            roots: Vec::new(),
+        };
+        for (position, entry) in entries.iter().enumerate() {
+            let meta = entry.meta();
+            let parent = meta
+                .and_then(|meta| meta.parent_id.as_deref())
+                .filter(|parent| Some(*parent) != meta.map(|meta| meta.id.as_str()))
+                .and_then(|parent| index.get(parent));
+            match parent {
+                Some(&parent) => tree.nodes[parent].children.push(position),
+                None => tree.roots.push(position),
+            }
+        }
+        let time = |node: &TreeNode| {
+            node.entry
+                .meta()
+                .and_then(|meta| crate::time::parse_iso(&meta.timestamp))
+                .unwrap_or(0)
+        };
+        for position in 0..tree.nodes.len() {
+            let mut children = std::mem::take(&mut tree.nodes[position].children);
+            children.sort_by_key(|child| time(&tree.nodes[*child]));
+            tree.nodes[position].children = children;
+        }
+        tree
+    }
+
     /// The path from the root to `from` (default: the leaf).
     pub fn branch_path(&self, from: Option<&str>) -> Vec<&FileEntry> {
         let mut path = Vec::new();
@@ -715,6 +794,38 @@ impl SessionManager {
         }
         path.reverse();
         path
+    }
+
+    /// pi's `serializeSessionBranch`: a fresh header and the current branch with
+    /// parent ids rechained, as JSONL.
+    pub fn serialize_branch(&self) -> String {
+        let mut positions = Vec::new();
+        let mut current = self.leaf.as_deref().and_then(|id| self.by_id.get(id));
+        while let Some(&position) = current {
+            positions.push(position);
+            current = self.entries[position]
+                .parent_id()
+                .and_then(|parent| self.by_id.get(parent));
+        }
+        positions.reverse();
+        let header = serde_json::json!({
+            "type": "session",
+            "version": CURRENT_VERSION,
+            "id": self.session_id,
+            "timestamp": crate::time::now_iso(),
+            "cwd": self.cwd.display().to_string(),
+        });
+        let mut out = line(&header);
+        let mut parent = Value::Null;
+        for position in positions {
+            let mut doc = self.entries[position].doc.clone();
+            if let Some(object) = doc.as_object_mut() {
+                object.insert("parentId".into(), parent.clone());
+            }
+            parent = doc["id"].clone();
+            out.push_str(&line(&doc));
+        }
+        out
     }
 
     /// Moves the leaf to an existing entry; the next append starts a branch there.
@@ -1169,10 +1280,13 @@ fn summary(path: &Path) -> Option<SessionSummary> {
         cwd: header["cwd"].as_str().unwrap_or_default().to_owned(),
         name: None,
         first_message: String::new(),
+        all_messages_text: String::new(),
+        parent_session: header["parentSession"].as_str().map(str::to_owned),
         message_count: 0,
         modified_ms: 0,
     };
     let mut last_activity: Option<u64> = None;
+    let mut all_messages: Vec<String> = Vec::new();
     for doc in &docs[1..] {
         match doc["type"].as_str() {
             Some("session_info") => {
@@ -1207,10 +1321,13 @@ fn summary(path: &Path) -> Option<SessionSummary> {
                         .join(" "),
                     _ => String::new(),
                 };
-                if !text.is_empty() && summary.first_message.is_empty() && message["role"] == "user"
-                {
-                    summary.first_message = text;
+                if text.is_empty() {
+                    continue;
                 }
+                if summary.first_message.is_empty() && message["role"] == "user" {
+                    summary.first_message = text.clone();
+                }
+                all_messages.push(text);
             }
             _ => {}
         }
@@ -1218,6 +1335,7 @@ fn summary(path: &Path) -> Option<SessionSummary> {
     if summary.first_message.is_empty() {
         summary.first_message = "(no messages)".into();
     }
+    summary.all_messages_text = all_messages.join(" ");
     summary.modified_ms = match last_activity.filter(|time| *time > 0) {
         Some(time) => time,
         None => header["timestamp"]

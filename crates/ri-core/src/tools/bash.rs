@@ -64,6 +64,60 @@ pub fn shell() -> (String, Vec<String>) {
     ("sh".into(), vec!["-c".into()])
 }
 
+/// The shell for `!` commands: the `shellPath` setting when set, else [`shell`].
+pub fn shell_with(custom: Option<&str>) -> Result<(String, Vec<String>), String> {
+    match custom {
+        Some(path) if std::path::Path::new(path).exists() => {
+            Ok((path.to_owned(), vec!["-c".into()]))
+        }
+        Some(path) => Err(format!("Custom shell path not found: {path}")),
+        None => Ok(shell()),
+    }
+}
+
+/// A shell process for `command` in `cwd`, in its own process group, with
+/// piped output, the agent's `bin_dir` leading `PATH` and pi's session
+/// variables removed.
+pub(crate) fn shell_command(
+    (shell, shell_args): (String, Vec<String>),
+    command: &str,
+    cwd: &std::path::Path,
+    bin_dir: &std::path::Path,
+) -> tokio::process::Command {
+    let mut process = tokio::process::Command::new(shell);
+    process
+        .args(shell_args)
+        .arg(command)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(false);
+    #[cfg(unix)]
+    process.process_group(0);
+    // pi's getShellEnv: the agent's bin directory leads PATH.
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut entries: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
+    if !entries.iter().any(|entry| entry == bin_dir) {
+        entries.insert(0, bin_dir.to_path_buf());
+        if let Ok(joined) =
+            std::env::join_paths(entries.iter().filter(|p| !p.as_os_str().is_empty()))
+        {
+            process.env("PATH", joined);
+        }
+    }
+    for name in [
+        "PI_SESSION_ID",
+        "PI_SESSION_FILE",
+        "PI_PROVIDER",
+        "PI_MODEL",
+        "PI_REASONING_LEVEL",
+    ] {
+        process.env_remove(name);
+    }
+    process
+}
+
 /// Collects output: a rolling tail in memory and, past the limits, the full
 /// output in a temp file.
 struct Accumulator {
@@ -287,7 +341,7 @@ fn with_status(text: &str, status: &str) -> String {
 }
 
 #[cfg(unix)]
-fn kill_tree(pid: Option<u32>) {
+pub(crate) fn kill_tree(pid: Option<u32>) {
     use rustix::process::{Pid, Signal, kill_process, kill_process_group};
     let Some(pid) = pid.and_then(|pid| Pid::from_raw(pid as i32)) else {
         return;
@@ -298,7 +352,7 @@ fn kill_tree(pid: Option<u32>) {
 }
 
 #[cfg(not(unix))]
-fn kill_tree(_pid: Option<u32>) {}
+pub(crate) fn kill_tree(_pid: Option<u32>) {}
 
 enum Ending {
     Exited(Option<i32>),
@@ -344,38 +398,7 @@ impl Tool for Bash {
                 ));
             }
 
-            let (shell, shell_args) = shell();
-            let mut process = tokio::process::Command::new(shell);
-            process
-                .args(shell_args)
-                .arg(&command)
-                .current_dir(cwd)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(false);
-            #[cfg(unix)]
-            process.process_group(0);
-            // pi's getShellEnv: the agent's bin directory leads PATH.
-            let path = std::env::var_os("PATH").unwrap_or_default();
-            let mut entries: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
-            if !entries.contains(&self.env.bin_dir) {
-                entries.insert(0, self.env.bin_dir.clone());
-                if let Ok(joined) =
-                    std::env::join_paths(entries.iter().filter(|p| !p.as_os_str().is_empty()))
-                {
-                    process.env("PATH", joined);
-                }
-            }
-            for name in [
-                "PI_SESSION_ID",
-                "PI_SESSION_FILE",
-                "PI_PROVIDER",
-                "PI_MODEL",
-                "PI_REASONING_LEVEL",
-            ] {
-                process.env_remove(name);
-            }
+            let mut process = shell_command(shell(), &command, cwd, &self.env.bin_dir);
             let runtime = self.env.runtime();
             if let Some(id) = &runtime.session_id {
                 process.env("PI_SESSION_ID", id);

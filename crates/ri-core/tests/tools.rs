@@ -157,7 +157,10 @@ async fn bash_reports_output_and_exit_codes() {
     let result = call(&dir.0, "bash", json!({"command": "echo hi; echo err >&2"}))
         .await
         .unwrap();
-    assert_eq!(text(&result), "hi\nerr\n");
+    // stdout and stderr are separate pipes, so their lines may arrive in either order.
+    let mut lines: Vec<String> = text(&result).lines().map(str::to_owned).collect();
+    lines.sort();
+    assert_eq!(lines, ["err", "hi"]);
     assert_eq!(result.structured_content.as_ref().unwrap()["exit_code"], 0);
 
     let result = call(&dir.0, "bash", json!({"command": "exit 3"}))

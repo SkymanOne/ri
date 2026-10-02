@@ -1157,6 +1157,7 @@ dependencies = [
  "anyhow",
  "indexmap",
  "ratatui-core",
+ "regex-lite",
  "ri-ai",
  "ri-core",
  "ri-ext",
@@ -1166,6 +1167,7 @@ dependencies = [
  "serde_json",
  "similar",
  "tokio",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -1203,6 +1205,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "indexmap",
+ "regex-lite",
  "reqwest",
  "ri-agent",
  "ri-ai",

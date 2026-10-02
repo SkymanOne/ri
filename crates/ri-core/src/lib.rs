@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent_session;
+pub mod bash_executor;
 pub mod compaction;
 pub mod config;
 pub mod messages;
