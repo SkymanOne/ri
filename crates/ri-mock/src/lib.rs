@@ -1,12 +1,15 @@
 #![doc = env!("CARGO_PKG_DESCRIPTION")]
 //!
 //! A [`Cassette`] lists the HTTP interactions a client is expected to make, in order.
-//! [`MockServer`] serves them on a local port, one per request, and records every
-//! request it receives. Point a provider's base URL at [`MockServer::url`]: ri's tests
+//! [`MockServer::start`] serves them on a local port, one per request.
+//! [`MockServer::record`] instead forwards every request to a real provider and
+//! records the responses as a cassette. Either way, every request is recorded with
+//! credentials redacted. Point a provider's base URL at [`MockServer::url`]: ri's tests
 //! do so in process, and pi does so through `cargo xtask mock-sse`.
 #![forbid(unsafe_code)]
 
 mod cassette;
+mod record;
 
 use std::collections::VecDeque;
 use std::convert::Infallible;
@@ -56,26 +59,44 @@ pub enum Error {
         /// Underlying error.
         source: io::Error,
     },
-    /// Requests did not match the cassette, or interactions were left unused.
+    /// The HTTP client for recording could not be created.
+    #[error("cannot create the recording client: {0}")]
+    Client(#[from] reqwest::Error),
+    /// Requests did not match the cassette, interactions were left unused, or the
+    /// upstream failed while recording.
     #[error("cassette not satisfied:\n  {}", .0.join("\n  "))]
     Unsatisfied(Vec<String>),
 }
 
-/// A request as the server received it.
+/// A request as the server received it, with credentials redacted.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RecordedRequest {
     /// HTTP method.
     pub method: String,
     /// Path without the query string.
     pub path: String,
-    /// Query string without the leading `?`.
+    /// Query string without the leading `?`; key parameters are redacted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
     /// Headers with lowercase names; repeated headers are joined with `, `.
+    /// Credential headers hold [`REDACTED`].
     pub headers: IndexMap<String, String>,
     /// Body as text; invalid UTF-8 is replaced.
     pub body: String,
 }
+
+/// Value that replaces credentials in recorded requests.
+pub const REDACTED: &str = "<redacted>";
+
+const CREDENTIAL_HEADERS: [&str; 6] = [
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+    "api-key",
+    "x-goog-api-key",
+    "cookie",
+];
+const CREDENTIAL_QUERY_KEYS: [&str; 2] = ["key", "api_key"];
 
 /// A running mock server. Dropping it stops the server.
 #[derive(Debug)]
@@ -85,17 +106,33 @@ pub struct MockServer {
     task: JoinHandle<()>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct State {
-    pending: VecDeque<Interaction>,
+    mode: Mode,
     requests: Vec<RecordedRequest>,
     problems: Vec<String>,
+}
+
+#[derive(Debug)]
+enum Mode {
+    Replay(VecDeque<Interaction>),
+    Record(record::Recorder),
 }
 
 impl MockServer {
     /// Starts serving `cassette` on `addr`; port 0 picks a free port. Must be called
     /// inside a Tokio runtime.
     pub async fn start(addr: SocketAddr, cassette: Cassette) -> Result<Self, Error> {
+        Self::listen(addr, Mode::Replay(cassette.interactions.into())).await
+    }
+
+    /// Starts a recording proxy on `addr` that forwards every request to `upstream`,
+    /// a base URL such as `https://api.anthropic.com`. See [`Self::recording`].
+    pub async fn record(addr: SocketAddr, upstream: &str) -> Result<Self, Error> {
+        Self::listen(addr, Mode::Record(record::Recorder::new(upstream)?)).await
+    }
+
+    async fn listen(addr: SocketAddr, mode: Mode) -> Result<Self, Error> {
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|source| Error::Bind { addr, source })?;
@@ -103,8 +140,9 @@ impl MockServer {
             .local_addr()
             .map_err(|source| Error::Bind { addr, source })?;
         let state = Arc::new(Mutex::new(State {
-            pending: cassette.interactions.into(),
-            ..State::default()
+            mode,
+            requests: Vec::new(),
+            problems: Vec::new(),
         }));
         let task = tokio::spawn(accept(listener, Arc::clone(&state)));
         Ok(Self { addr, state, task })
@@ -120,15 +158,26 @@ impl MockServer {
         lock(&self.state).requests.clone()
     }
 
+    /// Interactions recorded so far, as a cassette; empty when replaying. An
+    /// interaction is added once its response has been fully received.
+    pub fn recording(&self) -> Cassette {
+        match &lock(&self.state).mode {
+            Mode::Record(recorder) => recorder.cassette(),
+            Mode::Replay(_) => Cassette::default(),
+        }
+    }
+
     /// Returns the received requests if every request matched the cassette and every
-    /// interaction was used.
+    /// interaction was used, or, when recording, if every upstream call succeeded.
     pub fn finish(&self) -> Result<Vec<RecordedRequest>, Error> {
         let state = lock(&self.state);
         let mut problems = state.problems.clone();
-        problems.extend(state.pending.iter().map(|interaction| {
-            let RequestMatch { method, path } = &interaction.request;
-            format!("never requested: {method} {path}")
-        }));
+        if let Mode::Replay(pending) = &state.mode {
+            problems.extend(pending.iter().map(|interaction| {
+                let RequestMatch { method, path } = &interaction.request;
+                format!("never requested: {method} {path}")
+            }));
+        }
         if problems.is_empty() {
             Ok(state.requests.clone())
         } else {
@@ -173,6 +222,13 @@ async fn accept(listener: TcpListener, state: Arc<Mutex<State>>) {
     }
 }
 
+/// What to do with a request once it is recorded.
+enum Action {
+    Reply(Response),
+    Forward(record::Upstream),
+    Fail(String),
+}
+
 async fn respond(
     state: Arc<Mutex<State>>,
     request: hyper::Request<Incoming>,
@@ -183,9 +239,47 @@ async fn respond(
         .await
         .map(|body| body.to_bytes())
         .unwrap_or_default();
+    let recorded = recorded_request(&parts, &body);
+
+    let action = {
+        let mut state = lock(&state);
+        let number = state.requests.len() + 1;
+        let label = format!("request {number} ({} {})", recorded.method, recorded.path);
+        let expected = |interaction: &Interaction| matches(&interaction.request, &recorded);
+        let action = match &mut state.mode {
+            Mode::Replay(pending) => match pending.pop_front() {
+                Some(interaction) if expected(&interaction) => Action::Reply(interaction.response),
+                Some(interaction) => {
+                    let RequestMatch { method, path } = interaction.request;
+                    Action::Fail(format!("{label}: expected {method} {path}"))
+                }
+                None => Action::Fail(format!("{label}: no interactions left")),
+            },
+            Mode::Record(recorder) => Action::Forward(recorder.upstream()),
+        };
+        state.requests.push(recorded);
+        action
+    };
+
+    let result = match action {
+        Action::Reply(response) => stream(response).map_err(|err| err.to_string()),
+        Action::Forward(upstream) => upstream.forward(Arc::clone(&state), parts, body).await,
+        Action::Fail(problem) => Err(problem),
+    };
+    Ok(result.unwrap_or_else(|problem| {
+        lock(&state).problems.push(problem.clone());
+        failure(problem)
+    }))
+}
+
+fn recorded_request(parts: &hyper::http::request::Parts, body: &Bytes) -> RecordedRequest {
     let mut headers = IndexMap::<String, String>::new();
     for (name, value) in &parts.headers {
-        let value = String::from_utf8_lossy(value.as_bytes());
+        let value = if CREDENTIAL_HEADERS.contains(&name.as_str()) {
+            REDACTED.into()
+        } else {
+            String::from_utf8_lossy(value.as_bytes())
+        };
         headers
             .entry(name.as_str().to_owned())
             .and_modify(|joined| {
@@ -194,39 +288,24 @@ async fn respond(
             })
             .or_insert_with(|| value.into_owned());
     }
-    let recorded = RecordedRequest {
+    RecordedRequest {
         method: parts.method.to_string(),
         path: parts.uri.path().to_owned(),
-        query: parts.uri.query().map(str::to_owned),
+        query: parts.uri.query().map(redact_query),
         headers,
-        body: String::from_utf8_lossy(&body).into_owned(),
-    };
+        body: String::from_utf8_lossy(body).into_owned(),
+    }
+}
 
-    let reply = {
-        let mut state = lock(&state);
-        let number = state.requests.len() + 1;
-        let label = format!("request {number} ({} {})", recorded.method, recorded.path);
-        state.requests.push(recorded);
-        match state.pending.pop_front() {
-            Some(interaction) if matches(&interaction.request, &state.requests[number - 1]) => {
-                Ok(interaction.response)
-            }
-            Some(interaction) => {
-                let RequestMatch { method, path } = interaction.request;
-                Err(format!("{label}: expected {method} {path}"))
-            }
-            None => Err(format!("{label}: no interactions left")),
-        }
-    };
-    let response = match reply.and_then(|response| stream(response).map_err(|err| err.to_string()))
-    {
-        Ok(response) => response,
-        Err(problem) => {
-            lock(&state).problems.push(problem.clone());
-            failure(problem)
-        }
-    };
-    Ok(response)
+fn redact_query(query: &str) -> String {
+    query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((key, _)) if CREDENTIAL_QUERY_KEYS.contains(&key) => format!("{key}={REDACTED}"),
+            _ => pair.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 fn matches(expected: &RequestMatch, actual: &RecordedRequest) -> bool {

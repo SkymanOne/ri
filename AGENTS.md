@@ -207,7 +207,7 @@ These are initial targets, calibrated against pi in M0–M1.
 - CI runs the same checks on Linux and macOS for pull requests and pushes to `main`.
 - After changing a guest, rebuild with `cargo xtask js-runtime` and commit the artifact with its inputs hash.
 - Regenerate the model catalog with `cargo xtask models`. Never edit generated files.
-- Serve a cassette to pi or another out-of-process client with `cargo xtask mock-sse --cassette <file>`. It prints the base URL and, on exit, reports requests that did not match.
+- Serve a cassette to pi or another out-of-process client with `cargo xtask mock-sse --cassette <file>`. It prints the base URL and, on exit, reports requests that did not match. `--record <upstream-url> --out <file>` records a new cassette through a proxy to a real provider; credentials are never written.
 
 ### Code
 

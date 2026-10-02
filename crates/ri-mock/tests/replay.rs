@@ -73,7 +73,7 @@ async fn streams_chunks_and_records_the_request() {
         ("POST", "/v1/messages")
     );
     assert_eq!(request.query.as_deref(), Some("beta=true"));
-    assert_eq!(request.headers["x-api-key"], "test-key");
+    assert_eq!(request.headers["x-api-key"], ri_mock::REDACTED);
     assert_eq!(
         request.body,
         r#"{"model":"claude-sonnet-4-5","stream":true}"#

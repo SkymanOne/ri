@@ -2,7 +2,13 @@
 
 HTTP exchanges with model providers, replayed by `ri-mock`. Each wire API has a directory and each scenario a file, for example `anthropic-messages/text.json`. The format is defined in `crates/ri-mock/src/cassette.rs`.
 
-Cassettes are hand-written for now. M1 adds a record mode that captures real provider streams.
+Cassettes are hand-written or recorded. To record, run the proxy and point a client at it instead of the provider:
+
+```sh
+cargo xtask mock-sse --record https://opencode.ai/zen/go --out tests/fixtures/cassettes/anthropic-messages/<scenario>.json
+```
+
+The proxy forwards each request with its credentials and stores the response chunks as they arrive. Recorded requests and cassettes never contain credentials: authorization headers and `key` query parameters are redacted, and cookies are dropped.
 
 ## Serve a cassette to pi
 
