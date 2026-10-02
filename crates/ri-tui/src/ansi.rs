@@ -2,8 +2,8 @@
 
 use std::fmt::Write;
 
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui_core::style::{Color, Modifier, Style};
+use ratatui_core::text::Line;
 
 /// Resets all attributes at the end of every line, as pi does, so styles never
 /// leak across lines.
@@ -91,7 +91,7 @@ pub fn line_to_ansi(line: &Line<'_>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::text::Span;
+    use ratatui_core::text::Span;
 
     use super::*;
 

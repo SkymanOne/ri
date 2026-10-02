@@ -81,7 +81,7 @@ Traits exist only where implementations vary across a crate or plugin boundary. 
 | `AgentHooks` | `ri-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `ri-core` session, which dispatches to extensions |
 | `Extension` | `ri-core` | Register capabilities; handle events, tool calls and commands. | Built-ins (MCP); wasm instances in `ri-ext` |
 | `ExtensionUi` | `ri-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
-| `Component` | `ri-tui` | Draw into a ratatui area; handle input. | Built-in widgets; `RemoteComponent` for JS components |
+| `Component` | `ri-tui` | Render styled lines for a width; handle input. | Built-in widgets; `RemoteComponent` for JS components |
 
 Add a trait only when a second implementation or a plugin boundary exists.
 
@@ -91,7 +91,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 |---|---|
 | Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` |
 | Serialization | `serde`, `serde_json` |
-| TUI | `ratatui` (crossterm backend), `ansi-to-tui`, `ratatui-image` |
+| TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ansi-to-tui`, `ratatui-image` |
 | Markdown, diffs, images | `pulldown-cmark`, `similar`, `image` |
 | Syntax highlighting | `syntect` or tree-sitter, chosen in M3 against the size budget |
 | Wasm host | `wasmtime` with the component model |
@@ -171,7 +171,7 @@ Feasibility study, prior art and rejected alternatives: [docs/research/extension
 | 5 | Host-side module loader. | Native-speed transforms, a smaller guest, and codemode carries no compiler. |
 | 6 | Built-in npm client that skips lifecycle scripts. | No Node dependency. Lifecycle scripts mostly build native addons, which the wasm runtime cannot load. |
 | 7 | Instances are trust domains. | Grants cannot be enforced between packages that share one JS realm. |
-| 8 | ratatui with an ANSI bridge. | Mature widgets and a test backend for the built-in UI. Extension components lose only clickable links and inline images, which fall back to text. |
+| 8 | pi-tui's line model on ratatui text types, with an ANSI bridge. | Components render styled lines for a width, as in pi-tui, so regular mode keeps pi's scrollback redraw and extension components map one to one. ratatui supplies styled text and test buffers. Extension components lose only clickable links and inline images, which fall back to text. |
 | 9 | Raw input decoder ported from pi's `keys.ts`. | JS components expect raw terminal bytes in `handleInput`. crossterm's parser discards them. |
 | 10 | pi formats in ri's own directories. | Package and session compatibility without two tools writing one directory. |
 | 11 | `ri-js.wasm` is committed with an inputs hash. | Plain `cargo build` needs no wasm toolchain. CI rejects stale artifacts. |

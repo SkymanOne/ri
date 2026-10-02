@@ -7,8 +7,8 @@
 
 use std::collections::BTreeMap;
 
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui_core::style::{Modifier, Style};
+use ratatui_core::text::{Line, Span};
 
 use crate::autocomplete::{AutocompleteProvider, Completion};
 use crate::keybindings::Keybindings;

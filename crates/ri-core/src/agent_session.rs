@@ -145,6 +145,40 @@ pub struct TreeOutcome {
     pub summary_entry: Option<FileEntry>,
 }
 
+/// How full the context window is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextUsage {
+    /// Estimated context tokens; unknown right after a compaction.
+    pub tokens: Option<u64>,
+    /// The model's context window.
+    pub context_window: u64,
+}
+
+impl ContextUsage {
+    /// Percent of the window in use, when known.
+    pub fn percent(&self) -> Option<f64> {
+        self.tokens
+            .map(|tokens| tokens as f64 / self.context_window as f64 * 100.0)
+    }
+}
+
+/// Session-wide token and cost totals.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UsageTotals {
+    /// Input tokens.
+    pub input: u64,
+    /// Output tokens.
+    pub output: u64,
+    /// Cache read tokens.
+    pub cache_read: u64,
+    /// Cache write tokens.
+    pub cache_write: u64,
+    /// Cost in US dollars.
+    pub cost: f64,
+    /// Cache hit rate of the latest assistant message, in percent.
+    pub cache_hit_rate: Option<f64>,
+}
+
 /// What the compaction check decided.
 enum CompactionCheck {
     None,
@@ -257,6 +291,84 @@ impl AgentSession {
         f(&mut lock(&self.inner.state).session)
     }
 
+    /// Context use of the current branch: `tokens` is `None` after a compaction
+    /// until the model responds again. `None` without a model or window.
+    pub fn context_usage(&self) -> Option<ContextUsage> {
+        let model = self.model()?;
+        let context_window = model.context_window;
+        if context_window == 0 {
+            return None;
+        }
+        self.with_session(|session| {
+            let branch = session.branch_path(None);
+            let projection = build_projection(&branch);
+            let latest_compaction = branch
+                .iter()
+                .rposition(|entry| matches!(entry, FileEntry::Compaction(_)));
+            if let Some(compaction) = latest_compaction {
+                let has_usage = |entry: &&FileEntry| {
+                    let Some(id) = entry.meta().map(|meta| meta.id.as_str()) else {
+                        return false;
+                    };
+                    projection.entries.iter().any(|projected| {
+                        projected.source.meta().is_some_and(|meta| meta.id == id)
+                            && projected.messages.iter().any(|message| {
+                                matches!(message, Message::Assistant(assistant)
+                                    if !matches!(assistant.stop_reason, StopReason::Aborted | StopReason::Error)
+                                        && calculate_context_tokens(&assistant.usage) > 0)
+                            })
+                    })
+                };
+                if !branch[compaction + 1..].iter().any(has_usage) {
+                    return Some(ContextUsage {
+                        tokens: None,
+                        context_window,
+                    });
+                }
+            }
+            let tokens = estimate_projected_context_tokens(&projection, &branch).tokens;
+            Some(ContextUsage {
+                tokens: Some(tokens),
+                context_window,
+            })
+        })
+    }
+
+    /// Token and cost totals over every entry of the session file, and the
+    /// cache hit rate of the latest assistant message.
+    pub fn usage_totals(&self) -> UsageTotals {
+        self.with_session(|session| {
+            let mut totals = UsageTotals::default();
+            for entry in session.entries() {
+                let usage = match entry {
+                    FileEntry::Usage(entry) => Some(&entry.usage),
+                    FileEntry::Message(entry) => match &entry.message {
+                        Message::Assistant(assistant) => {
+                            let usage = &assistant.usage;
+                            let prompt = usage.input + usage.cache_read + usage.cache_write;
+                            totals.cache_hit_rate = (prompt > 0)
+                                .then(|| usage.cache_read as f64 / prompt as f64 * 100.0);
+                            Some(usage)
+                        }
+                        Message::ToolResult(result) => result.usage.as_ref(),
+                        _ => None,
+                    },
+                    FileEntry::Compaction(entry) => entry.usage.as_ref(),
+                    FileEntry::BranchSummary(entry) => entry.usage.as_ref(),
+                    _ => None,
+                };
+                if let Some(usage) = usage {
+                    totals.input += usage.input;
+                    totals.output += usage.output;
+                    totals.cache_read += usage.cache_read;
+                    totals.cache_write += usage.cache_write;
+                    totals.cost += usage.cost.total;
+                }
+            }
+            totals
+        })
+    }
+
     /// The current model.
     pub fn model(&self) -> Option<Model> {
         lock(&self.inner.state).model.clone()
@@ -322,6 +434,104 @@ impl AgentSession {
             session.name()
         });
         self.emit(&AgentEvent::SessionInfoChanged { name });
+    }
+
+    /// A snapshot of the merged settings.
+    pub fn settings(&self) -> ri_types::settings::Settings {
+        lock(&self.inner.settings).settings().clone()
+    }
+
+    /// Sets a global setting and writes `settings.json`.
+    pub fn set_global_setting(
+        &self,
+        key: &str,
+        value: Option<serde_json::Value>,
+    ) -> Result<(), String> {
+        lock(&self.inner.settings)
+            .set(crate::settings::Scope::Global, key, value)
+            .map_err(|err| err.to_string())
+    }
+
+    /// The prompt resources the session was built with.
+    pub fn resources(&self) -> &Resources {
+        &self.inner.resources
+    }
+
+    /// Empties the steering and follow-up queues and returns their texts,
+    /// steering first.
+    pub fn clear_queues(&self) -> Vec<String> {
+        let text = |message: Message| match message {
+            Message::User(user) => match user.content {
+                Content::Text(text) => text,
+                Content::Blocks(blocks) => blocks
+                    .into_iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::Text(text) => Some(text.text),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(""),
+            },
+            _ => String::new(),
+        };
+        let mut texts: Vec<String> = lock(&self.inner.steering).drain(..).map(text).collect();
+        texts.extend(lock(&self.inner.follow_up).drain(..).map(text));
+        self.emit_queue_update();
+        texts
+    }
+
+    /// The thinking levels the current model supports; all of them without a
+    /// model.
+    pub fn available_thinking_levels(&self) -> Vec<ThinkingLevel> {
+        match self.model() {
+            Some(model) => ri_ai::thinking::supported_levels(&model),
+            None => ThinkingLevel::ALL.to_vec(),
+        }
+    }
+
+    /// pi's `cycleThinkingLevel`: the next supported level, wrapping. `None`
+    /// when the model does not reason.
+    pub fn cycle_thinking_level(&self) -> Option<ThinkingLevel> {
+        let model = self.model()?;
+        if !model.reasoning {
+            return None;
+        }
+        let levels = ri_ai::thinking::supported_levels(&model);
+        let current = self.thinking_level();
+        let index = levels.iter().position(|level| *level == current);
+        let next = levels[index.map_or(0, |index| (index + 1) % levels.len())];
+        self.set_thinking_level(next);
+        Some(self.thinking_level())
+    }
+
+    /// Models with credentials, in catalog order.
+    pub fn available_models(&self) -> Vec<Model> {
+        let registry = self
+            .inner
+            .registry
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        registry
+            .models()
+            .iter()
+            .filter(|model| registry.has_auth(&model.provider))
+            .cloned()
+            .collect()
+    }
+
+    /// Switches to `model`, taking the thinking level from settings for that
+    /// model, else the default, else the current one, as pi's `cycleModel`.
+    pub fn switch_model(&self, model: Model) {
+        let settings = self.settings();
+        let level = settings
+            .model_thinking_levels
+            .as_ref()
+            .and_then(|levels| levels.get(&model.reference()))
+            .copied()
+            .or(settings.default_thinking_level)
+            .unwrap_or_else(|| self.thinking_level());
+        self.set_model(model);
+        self.set_thinking_level(level);
     }
 
     /// Cancels the current run.

@@ -200,7 +200,8 @@ fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> St
 }
 
 /// A number as JavaScript prints it.
-fn js_number(value: f64) -> String {
+/// A number as JavaScript prints it.
+pub fn js_number(value: f64) -> String {
     ri_types::json::to_string(&value).unwrap_or_default()
 }
 

@@ -5,8 +5,8 @@
 //! `Spacer` and `DynamicBorder` components, in pi `v1.0.0`. Styles live on
 //! spans, so a style that crosses a line break simply continues.
 
-use ratatui::style::Style;
-use ratatui::text::{Line, Span};
+use ratatui_core::style::Style;
+use ratatui_core::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::text::{grapheme_width, is_cjk, is_js_whitespace};
@@ -356,7 +356,7 @@ pub fn plain(line: &Line<'_>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::style::{Color, Modifier};
+    use ratatui_core::style::{Color, Modifier};
 
     use super::*;
 

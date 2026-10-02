@@ -8,8 +8,8 @@
 use std::ops::Range;
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui_core::style::{Modifier, Style};
+use ratatui_core::text::{Line, Span};
 
 use crate::lines::{StyledLine, pad, raw as raw_line, width as line_width, with_background, wrap};
 use crate::text::visible_width;

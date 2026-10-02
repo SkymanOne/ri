@@ -7,6 +7,7 @@
 
 mod args;
 mod help;
+mod interactive;
 mod list_models;
 mod modes;
 mod startup;
@@ -61,9 +62,32 @@ async fn run(parsed: &mut args::Args) -> u8 {
         && !parsed.print
         && std::io::stdin().is_terminal()
         && std::io::stdout().is_terminal();
+    interactive::keybindings::migrate_file(&ri_core::config::agent_dir());
     if interactive {
-        eprintln!("ri: interactive mode is not implemented yet; use -p or --mode json");
-        return 1;
+        let tui_mode = match parsed.tui_mode.as_deref() {
+            Some("regular") => Some(ri_types::settings::TuiMode::Regular),
+            Some(_) => Some(ri_types::settings::TuiMode::Fullscreen),
+            None => None,
+        };
+        let startup = match startup::start(parsed, None) {
+            Ok(startup) => startup,
+            Err(err) => {
+                eprintln!("{err}");
+                return 1;
+            }
+        };
+        let mut initial: Vec<String> = startup.initial_message.into_iter().collect();
+        initial.extend(startup.messages);
+        return interactive::run(
+            startup.session,
+            ri_core::config::agent_dir(),
+            interactive::Options {
+                tui_mode,
+                verbose: parsed.verbose,
+                initial,
+            },
+        )
+        .await;
     }
     if parsed.mode == Some(Mode::Rpc) {
         eprintln!("ri: rpc mode is not implemented yet");

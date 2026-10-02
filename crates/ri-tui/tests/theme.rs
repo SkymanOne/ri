@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
-use ratatui::style::{Color as TermColor, Modifier, Style};
+use ratatui_core::style::{Color as TermColor, Modifier, Style};
 use ri_tui::color::ColorMode;
 use ri_tui::theme::{
     Appearance, BACKGROUND_TOKENS, SystemThemeInput, SystemValue, Theme, generate_system_theme,

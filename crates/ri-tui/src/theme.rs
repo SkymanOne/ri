@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ratatui::style::{Modifier, Style};
+use ratatui_core::style::{Modifier, Style};
 use serde_json::{Map, Value};
 
 use crate::color::{Color, ColorMode, InvalidColor, okhsl_to_rgb, oklab_to_okhsl_lightness};
@@ -363,10 +363,10 @@ impl Theme {
         self.paints.get(token).copied()
     }
 
-    fn color(&self, token: &str) -> ratatui::style::Color {
+    fn color(&self, token: &str) -> ratatui_core::style::Color {
         match self.paints.get(token) {
             Some(Paint::Color(color)) => color.to_terminal(self.mode),
-            _ => ratatui::style::Color::Reset,
+            _ => ratatui_core::style::Color::Reset,
         }
     }
 
@@ -1393,7 +1393,7 @@ mod tests {
         let light = Theme::builtin("light", ColorMode::Ansi256).unwrap();
         assert!(matches!(
             light.fg("accent").fg,
-            Some(ratatui::style::Color::Indexed(_))
+            Some(ratatui_core::style::Color::Indexed(_))
         ));
     }
 

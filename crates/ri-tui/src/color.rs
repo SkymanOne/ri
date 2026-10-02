@@ -453,17 +453,17 @@ impl Color {
     }
 
     /// The color for a terminal with `mode`.
-    pub fn to_terminal(self, mode: ColorMode) -> ratatui::style::Color {
+    pub fn to_terminal(self, mode: ColorMode) -> ratatui_core::style::Color {
         if let Color::Indexed(index) = self {
-            return ratatui::style::Color::Indexed(index);
+            return ratatui_core::style::Color::Indexed(index);
         }
         let rgb = self.to_rgb();
         match mode {
             ColorMode::TrueColor => {
                 let [r, g, b] = rgb.map(|channel| js_round(channel).clamp(0.0, 255.0) as u8);
-                ratatui::style::Color::Rgb(r, g, b)
+                ratatui_core::style::Color::Rgb(r, g, b)
             }
-            ColorMode::Ansi256 => ratatui::style::Color::Indexed(rgb_to_ansi256(rgb)),
+            ColorMode::Ansi256 => ratatui_core::style::Color::Indexed(rgb_to_ansi256(rgb)),
         }
     }
 }

@@ -10,11 +10,14 @@ publish.workspace = true
 
 [dependencies]
 pulldown-cmark.workspace = true
-ratatui.workspace = true
+ratatui-core.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["stdio", "termios"] }
 
 [lints]
 workspace = true

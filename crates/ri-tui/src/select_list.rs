@@ -2,8 +2,8 @@
 //!
 //! Port of `packages/tui/src/components/select-list.ts` in pi `v1.0.0`.
 
-use ratatui::style::Style;
-use ratatui::text::{Line, Span};
+use ratatui_core::style::Style;
+use ratatui_core::text::{Line, Span};
 
 use crate::keybindings::Keybindings;
 use crate::text::{truncate_to_width, visible_width};
