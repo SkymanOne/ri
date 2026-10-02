@@ -13,23 +13,31 @@ use futures_util::future::BoxFuture;
 use ri_agent::hooks::AgentHooks;
 use ri_agent::{AgentContext, ExecutionMode, LoopConfig, Tool};
 use ri_ai::api::Apis;
+use ri_ai::errors::{is_context_overflow, is_recoverable_length, is_retryable_assistant_error};
 use ri_ai::registry::{Auth, ModelRegistry};
 use ri_ai::stream::{StreamOptions, ThinkingBudgets};
 use ri_types::event::AgentEvent;
+use ri_types::event::{CompactionReason, CompactionResult};
 use ri_types::message::{
-    Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, TextContent,
-    ThinkingLevel, UserMessage,
+    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
+    TextContent, ThinkingLevel, UserMessage,
 };
 use ri_types::model::Model;
+use ri_types::session::FileEntry;
 use ri_types::settings::QueueMode;
 use tokio_util::sync::CancellationToken;
 
+use crate::compaction::{
+    CompactionSettings, Preparation, RetryPolicy, Summarizer, calculate_context_tokens,
+    estimate_context_tokens, estimate_projected_context_tokens, estimate_tokens,
+    prepare_compaction, should_compact,
+};
 use crate::messages::convert_to_llm;
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
-use crate::session::SessionManager;
+use crate::session::{SessionManager, build_projection};
 use crate::settings::SettingsManager;
 use crate::system_prompt::{PromptOptions, build_sections, diff_sections};
-use crate::time::now_ms;
+use crate::time::{now_ms, parse_iso};
 use crate::tools::{PromptTool, Runtime, ToolEnv, builtin};
 
 /// Receives every session event.
@@ -95,6 +103,28 @@ struct Inner {
     steering: Mutex<VecDeque<Message>>,
     follow_up: Mutex<VecDeque<Message>>,
     cancel: Mutex<Option<CancellationToken>>,
+    recovery: Mutex<Recovery>,
+}
+
+/// Post-run bookkeeping for retries and overflow recovery, as pi keeps it.
+#[derive(Default)]
+struct Recovery {
+    retry_attempt: u32,
+    overflow_recovery_attempted: bool,
+    /// The last assistant message of the run and its entry id.
+    last_assistant: Option<(AssistantMessage, Option<String>)>,
+    /// Entry ids of tool results since the last assistant message.
+    turn_tool_results: Vec<String>,
+    /// Entry ids of the last completed turn's tool results.
+    last_tool_results: Vec<String>,
+}
+
+/// What the compaction check decided.
+enum CompactionCheck {
+    None,
+    Overflow { will_retry: bool },
+    OverflowFailed(String),
+    Threshold,
 }
 
 /// A running conversation. Cheap to clone; clones share state.
@@ -179,6 +209,7 @@ impl AgentSession {
                 steering: Mutex::new(VecDeque::new()),
                 follow_up: Mutex::new(VecDeque::new()),
                 cancel: Mutex::new(None),
+                recovery: Mutex::new(Recovery::default()),
             }),
         }
     }
@@ -448,12 +479,67 @@ impl AgentSession {
         Ok(())
     }
 
+    /// Runs prompts, then pi's post-run loop: retries, overflow recovery and
+    /// compaction, and queued messages, until the agent settles.
     async fn run(&self, prompts: Vec<Message>) {
         let cancel = CancellationToken::new();
         *lock(&self.inner.cancel) = Some(cancel.clone());
+        lock(&self.inner.state).streaming = true;
+        self.run_agent(Some(prompts), &cancel).await;
+        while !cancel.is_cancelled() {
+            if self.handle_post_run(&cancel).await {
+                if cancel.is_cancelled() {
+                    break;
+                }
+                self.run_agent(None, &cancel).await;
+                continue;
+            }
+            if cancel.is_cancelled() || !self.has_queued() {
+                break;
+            }
+            self.run_agent(None, &cancel).await;
+        }
+        if cancel.is_cancelled() {
+            self.finish_cancelled_retry();
+        }
+        lock(&self.inner.state).streaming = false;
+        *lock(&self.inner.cancel) = None;
+        self.emit(&AgentEvent::AgentSettled);
+    }
+
+    fn has_queued(&self) -> bool {
+        !lock(&self.inner.steering).is_empty() || !lock(&self.inner.follow_up).is_empty()
+    }
+
+    fn stream_options(&self, session_id: String, cancel: &CancellationToken) -> StreamOptions {
+        let settings = lock(&self.inner.settings).settings().clone();
+        let budgets = settings.thinking_budgets.as_ref();
+        let provider = settings
+            .retry
+            .as_ref()
+            .and_then(|retry| retry.provider.as_ref());
+        StreamOptions {
+            session_id: Some(session_id),
+            thinking_budgets: ThinkingBudgets {
+                minimal: budgets.and_then(|b| b.minimal),
+                low: budgets.and_then(|b| b.low),
+                medium: budgets.and_then(|b| b.medium),
+                high: budgets.and_then(|b| b.high),
+            },
+            max_retry_delay_ms: provider.and_then(|provider| provider.max_retry_delay_ms),
+            max_retries: provider
+                .and_then(|provider| provider.max_retries)
+                .unwrap_or(0),
+            cancel: cancel.clone(),
+            ..StreamOptions::default()
+        }
+    }
+
+    /// One agent run: with `prompts`, or continuing the transcript (or running
+    /// queued messages when it ends with an assistant message).
+    async fn run_agent(&self, prompts: Option<Vec<Message>>, cancel: &CancellationToken) {
         let (model, thinking_level, active, messages, session_id, session_file) = {
-            let mut state = lock(&self.inner.state);
-            state.streaming = true;
+            let state = lock(&self.inner.state);
             (
                 state.model.clone(),
                 state.thinking_level,
@@ -464,7 +550,6 @@ impl AgentSession {
             )
         };
         let Some(model) = model else {
-            lock(&self.inner.state).streaming = false;
             return;
         };
         if let Ok(mut runtime) = self.inner.runtime.write() {
@@ -476,35 +561,12 @@ impl AgentSession {
             };
         }
         let settings = lock(&self.inner.settings).settings().clone();
-        let budgets = settings.thinking_budgets.as_ref();
-        let options = StreamOptions {
-            session_id: Some(session_id),
-            thinking_budgets: ThinkingBudgets {
-                minimal: budgets.and_then(|b| b.minimal),
-                low: budgets.and_then(|b| b.low),
-                medium: budgets.and_then(|b| b.medium),
-                high: budgets.and_then(|b| b.high),
-            },
-            max_retry_delay_ms: settings
-                .retry
-                .as_ref()
-                .and_then(|retry| retry.provider.as_ref())
-                .and_then(|provider| provider.max_retry_delay_ms),
-            max_retries: settings
-                .retry
-                .as_ref()
-                .and_then(|retry| retry.provider.as_ref())
-                .and_then(|provider| provider.max_retries)
-                .unwrap_or(0),
-            cancel: cancel.clone(),
-            ..StreamOptions::default()
-        };
         let apis = self.inner.apis.clone();
         let config = LoopConfig {
             model,
             thinking_level,
             stream: Arc::new(move |request| apis.stream(request)),
-            options,
+            options: self.stream_options(session_id, cancel),
             tool_execution: ExecutionMode::Parallel,
         };
         let mut context = AgentContext {
@@ -520,10 +582,475 @@ impl AgentSession {
             steering_mode: settings.steering_mode,
             follow_up_mode: settings.follow_up_mode,
         };
-        ri_agent::run(prompts, &mut context, config, &hooks).await;
-        lock(&self.inner.state).streaming = false;
-        *lock(&self.inner.cancel) = None;
-        self.emit(&AgentEvent::AgentSettled);
+        let prompts = match prompts {
+            Some(prompts) => Some(prompts),
+            None if matches!(context.messages.last(), Some(Message::Assistant(_))) => {
+                let steering = drain(&self.inner.steering, settings.steering_mode);
+                let queued = if steering.is_empty() {
+                    drain(&self.inner.follow_up, settings.follow_up_mode)
+                } else {
+                    steering
+                };
+                if queued.is_empty() {
+                    return;
+                }
+                self.emit_queue_update();
+                Some(queued)
+            }
+            None => None,
+        };
+        match prompts {
+            Some(prompts) => {
+                ri_agent::run(prompts, &mut context, config, &hooks).await;
+            }
+            None => {
+                let _ = ri_agent::run_continue(&mut context, config, &hooks).await;
+            }
+        }
+    }
+
+    /// The model whose limits apply to a response: the current one when it made it.
+    fn model_for_message(&self, message: &AssistantMessage) -> Option<Model> {
+        self.model()
+            .filter(|model| model.provider == message.provider && model.id == message.model)
+    }
+
+    fn is_retryable(&self, message: &AssistantMessage) -> bool {
+        let window = self
+            .model_for_message(message)
+            .or_else(|| self.model())
+            .map_or(0, |model| model.context_window);
+        !is_context_overflow(message, window) && is_retryable_assistant_error(message)
+    }
+
+    fn retry_policy(&self) -> RetryPolicy {
+        RetryPolicy::resolve(lock(&self.inner.settings).settings())
+    }
+
+    /// Whether the run that just ended will be retried, for `agent_end`.
+    fn will_retry_after(&self, messages: &[Message]) -> bool {
+        let cancelled = lock(&self.inner.cancel)
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled);
+        let policy = self.retry_policy();
+        if cancelled
+            || !policy.enabled
+            || lock(&self.inner.recovery).retry_attempt >= policy.max_retries
+        {
+            return false;
+        }
+        messages
+            .iter()
+            .rev()
+            .find_map(|message| match message {
+                Message::Assistant(assistant) => Some(self.is_retryable(assistant)),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    fn finish_cancelled_retry(&self) {
+        let attempt = std::mem::take(&mut lock(&self.inner.recovery).retry_attempt);
+        if attempt > 0 {
+            self.emit(&AgentEvent::AutoRetryEnd {
+                success: false,
+                attempt,
+                final_error: Some("Retry cancelled".into()),
+            });
+        }
+    }
+
+    /// Drops a failed or truncated attempt from the model's context while keeping
+    /// it in the session history.
+    fn omit_recovery_attempt(&self, entry_ids: &[String]) {
+        for id in entry_ids {
+            let entry = self.with_session(|session| {
+                let edit = session.append_context_edit(id, None).ok()?;
+                session.entry(&edit).cloned()
+            });
+            if let Some(entry) = entry {
+                self.emit(&AgentEvent::EntryAppended { entry });
+            }
+        }
+    }
+
+    async fn prepare_retry(
+        &self,
+        message: &AssistantMessage,
+        entry_id: Option<String>,
+        cancel: &CancellationToken,
+    ) -> bool {
+        let policy = self.retry_policy();
+        if !policy.enabled {
+            return false;
+        }
+        let attempt = {
+            let mut recovery = lock(&self.inner.recovery);
+            if recovery.retry_attempt >= policy.max_retries {
+                return false;
+            }
+            recovery.retry_attempt += 1;
+            recovery.retry_attempt
+        };
+        let delay_ms = policy.delay_ms(attempt);
+        self.emit(&AgentEvent::AutoRetryStart {
+            attempt,
+            max_attempts: policy.max_retries,
+            delay_ms,
+            error_message: message
+                .error_message
+                .clone()
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| "Unknown error".into()),
+        });
+        self.omit_recovery_attempt(&entry_id.into_iter().collect::<Vec<_>>());
+        tokio::select! {
+            () = cancel.cancelled() => {
+                self.finish_cancelled_retry();
+                false
+            }
+            () = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => true,
+        }
+    }
+
+    async fn handle_post_run(&self, cancel: &CancellationToken) -> bool {
+        let (last, tool_results) = {
+            let mut recovery = lock(&self.inner.recovery);
+            (
+                recovery.last_assistant.take(),
+                std::mem::take(&mut recovery.last_tool_results),
+            )
+        };
+        if cancel.is_cancelled() {
+            self.finish_cancelled_retry();
+            return false;
+        }
+        let Some((message, entry_id)) = last else {
+            return self.has_queued();
+        };
+        if self.is_retryable(&message)
+            && self.prepare_retry(&message, entry_id.clone(), cancel).await
+        {
+            return !cancel.is_cancelled();
+        }
+        if cancel.is_cancelled() {
+            self.finish_cancelled_retry();
+            return false;
+        }
+        if message.stop_reason == StopReason::Error {
+            let attempt = std::mem::take(&mut lock(&self.inner.recovery).retry_attempt);
+            if attempt > 0 {
+                self.emit(&AgentEvent::AutoRetryEnd {
+                    success: false,
+                    attempt,
+                    final_error: message.error_message.clone(),
+                });
+            }
+        }
+        if self
+            .check_compaction(&message, entry_id, tool_results, cancel)
+            .await
+        {
+            return !cancel.is_cancelled();
+        }
+        !cancel.is_cancelled() && self.has_queued()
+    }
+
+    /// pi's `_checkCompaction`: overflow recovery, then threshold compaction.
+    async fn check_compaction(
+        &self,
+        message: &AssistantMessage,
+        entry_id: Option<String>,
+        tool_results: Vec<String>,
+        cancel: &CancellationToken,
+    ) -> bool {
+        let Some(model) = self.model() else {
+            return false;
+        };
+        let settings =
+            CompactionSettings::resolve(lock(&self.inner.settings).settings(), Some(&model));
+        if !settings.enabled || message.stop_reason == StopReason::Aborted {
+            return false;
+        }
+        let message_model = self.model_for_message(message);
+        let context_window = message_model.as_ref().unwrap_or(&model).context_window;
+        let overflow_attempted = lock(&self.inner.recovery).overflow_recovery_attempted;
+        let check = self.with_session(|session| {
+            let branch = session.branch_path(None);
+            let latest_compaction = branch.iter().rev().find_map(|entry| match entry {
+                FileEntry::Compaction(compaction) => Some(compaction),
+                _ => None,
+            });
+            let compaction_time =
+                latest_compaction.and_then(|compaction| parse_iso(&compaction.meta.timestamp));
+            if compaction_time.is_some_and(|time| message.timestamp <= time) {
+                return CompactionCheck::None;
+            }
+            let projection = build_projection(&branch);
+            let entry_id = entry_id.as_deref();
+            let projected = entry_id.is_none_or(|id| {
+                projection.entries.iter().any(|entry| {
+                    entry.source.meta().is_some_and(|meta| meta.id == id)
+                        && entry
+                            .messages
+                            .iter()
+                            .any(|message| matches!(message, Message::Assistant(_)))
+                })
+            });
+            let after: Vec<&FileEntry> = entry_id
+                .and_then(|id| {
+                    branch
+                        .iter()
+                        .position(|entry| entry.meta().is_some_and(|meta| meta.id == id))
+                })
+                .map(|index| branch[index + 1..].to_vec())
+                .unwrap_or_default();
+            let post_edit = after
+                .iter()
+                .any(|entry| matches!(entry, FileEntry::ContextEdit(_)));
+            let latest_edit = after.iter().rev().find_map(|entry| match entry {
+                FileEntry::ContextEdit(edit) if Some(edit.target_id.as_str()) == entry_id => {
+                    Some(edit)
+                }
+                _ => None,
+            });
+            let retained = entry_id.is_none()
+                || (!after
+                    .iter()
+                    .any(|entry| matches!(entry, FileEntry::Compaction(_)))
+                    && latest_edit.is_none_or(|edit| edit.replacement.is_some()));
+            let usage_matches = projected && !post_edit;
+            let explicit = message.stop_reason == StopReason::Error && is_context_overflow(message, 0);
+            let same_model = message_model.is_some();
+            let overflow = same_model
+                && ((explicit && retained)
+                    || (usage_matches && is_context_overflow(message, context_window)));
+            let length = message_model.as_ref().is_some_and(|model| {
+                projected && is_recoverable_length(message, model.max_tokens)
+            });
+            if overflow || length {
+                let will_retry = message.stop_reason != StopReason::Stop;
+                if !will_retry {
+                    return CompactionCheck::Overflow { will_retry: false };
+                }
+                if overflow_attempted {
+                    return CompactionCheck::OverflowFailed(if overflow {
+                        "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.".into()
+                    } else {
+                        "Truncated response recovery failed after one compact-and-retry attempt.".into()
+                    });
+                }
+                return CompactionCheck::Overflow { will_retry: true };
+            }
+            let has_edits = projection
+                .entries
+                .iter()
+                .any(|entry| matches!(entry.source, FileEntry::ContextEdit(_)));
+            let direct = calculate_context_tokens(&message.usage);
+            let tokens = if has_edits {
+                estimate_projected_context_tokens(&projection, &branch).tokens
+            } else if message.stop_reason == StopReason::Error || direct == 0 {
+                let estimate = estimate_context_tokens(&projection.messages);
+                if let Some(index) = estimate.last_usage_index
+                    && let Message::Assistant(usage_message) = &projection.messages[index]
+                    && compaction_time.is_some_and(|time| usage_message.timestamp <= time)
+                {
+                    return CompactionCheck::None;
+                }
+                estimate.tokens
+            } else {
+                direct
+            };
+            if should_compact(tokens, context_window, &settings) {
+                CompactionCheck::Threshold
+            } else {
+                CompactionCheck::None
+            }
+        });
+        match check {
+            CompactionCheck::None => false,
+            CompactionCheck::Threshold => {
+                self.run_auto_compaction(CompactionReason::Threshold, false, cancel)
+                    .await
+            }
+            CompactionCheck::OverflowFailed(error_message) => {
+                self.emit(&AgentEvent::CompactionEnd {
+                    reason: CompactionReason::Overflow,
+                    result: None,
+                    aborted: false,
+                    will_retry: false,
+                    error_message: Some(error_message),
+                });
+                false
+            }
+            CompactionCheck::Overflow { will_retry } => {
+                if will_retry {
+                    lock(&self.inner.recovery).overflow_recovery_attempted = true;
+                    let ids: Vec<String> = entry_id.into_iter().chain(tool_results).collect();
+                    self.omit_recovery_attempt(&ids);
+                }
+                self.run_auto_compaction(CompactionReason::Overflow, will_retry, cancel)
+                    .await
+            }
+        }
+    }
+
+    async fn summarize(
+        &self,
+        model: &Model,
+        preparation: &Preparation,
+        custom_instructions: Option<&str>,
+        cancel: &CancellationToken,
+    ) -> Result<CompactionResult, String> {
+        let auth = self.registry().auth(model).await;
+        let summarizer = Summarizer {
+            model,
+            apis: &self.inner.apis,
+            auth: &auth,
+            thinking_level: self.thinking_level(),
+            session_id: None,
+            retry: self.retry_policy(),
+            cancel: cancel.clone(),
+        };
+        summarizer.compact(preparation, custom_instructions).await
+    }
+
+    /// Records a compaction result and fills in the estimate after it.
+    fn record_compaction(&self, mut result: CompactionResult) -> CompactionResult {
+        let estimate = self.with_session(|session| {
+            let _ = session.append_compaction(
+                result.summary.clone(),
+                Some(result.first_kept_entry_id.clone()),
+                result.tokens_before,
+                result.details.clone(),
+                Some(false),
+                result.usage.clone(),
+            );
+            session
+                .build_context()
+                .messages
+                .iter()
+                .map(estimate_tokens)
+                .sum()
+        });
+        result.estimated_tokens_after = Some(estimate);
+        result
+    }
+
+    async fn run_auto_compaction(
+        &self,
+        reason: CompactionReason,
+        will_retry: bool,
+        cancel: &CancellationToken,
+    ) -> bool {
+        let Some(model) = self.model() else {
+            return false;
+        };
+        let settings =
+            CompactionSettings::resolve(lock(&self.inner.settings).settings(), Some(&model));
+        let Some(preparation) =
+            self.with_session(|session| prepare_compaction(&session.branch_path(None), settings))
+        else {
+            return false;
+        };
+        self.emit(&AgentEvent::CompactionStart { reason });
+        let outcome = self.summarize(&model, &preparation, None, cancel).await;
+        match outcome {
+            Ok(result) if !cancel.is_cancelled() => {
+                let result = self.record_compaction(result);
+                self.emit(&AgentEvent::CompactionEnd {
+                    reason,
+                    result: Some(result),
+                    aborted: false,
+                    will_retry,
+                    error_message: None,
+                });
+                will_retry || self.has_queued()
+            }
+            outcome => {
+                let aborted = cancel.is_cancelled();
+                let message = outcome
+                    .err()
+                    .unwrap_or_else(|| "Compaction cancelled".into());
+                let error_message = (!aborted).then(|| match reason {
+                    CompactionReason::Overflow => {
+                        format!("Context overflow recovery failed: {message}")
+                    }
+                    _ => format!("Auto-compaction failed: {message}"),
+                });
+                self.emit(&AgentEvent::CompactionEnd {
+                    reason,
+                    result: None,
+                    aborted,
+                    will_retry: false,
+                    error_message,
+                });
+                false
+            }
+        }
+    }
+
+    /// Compacts the session now, optionally focused by `custom_instructions`.
+    /// Aborts a running response first.
+    pub async fn compact(
+        &self,
+        custom_instructions: Option<&str>,
+    ) -> Result<CompactionResult, String> {
+        self.abort();
+        let cancel = CancellationToken::new();
+        self.emit(&AgentEvent::CompactionStart {
+            reason: CompactionReason::Manual,
+        });
+        let outcome = async {
+            let model = self.model().ok_or(NO_MODEL_MESSAGE)?;
+            let settings =
+                CompactionSettings::resolve(lock(&self.inner.settings).settings(), Some(&model));
+            let preparation = self.with_session(|session| {
+                let branch = session.branch_path(None);
+                match prepare_compaction(&branch, settings) {
+                    Some(preparation) => Ok(preparation),
+                    None if matches!(branch.last(), Some(FileEntry::Compaction(_))) => {
+                        Err("Already compacted".to_owned())
+                    }
+                    None => Err("Nothing to compact (session too small)".to_owned()),
+                }
+            })?;
+            let result = self
+                .summarize(&model, &preparation, custom_instructions, &cancel)
+                .await?;
+            Ok(self.record_compaction(result))
+        }
+        .await;
+        match outcome {
+            Ok(result) => {
+                self.emit(&AgentEvent::CompactionEnd {
+                    reason: CompactionReason::Manual,
+                    result: Some(result.clone()),
+                    aborted: false,
+                    will_retry: false,
+                    error_message: None,
+                });
+                Ok(result)
+            }
+            Err(message) => {
+                self.emit(&AgentEvent::CompactionEnd {
+                    reason: CompactionReason::Manual,
+                    result: None,
+                    aborted: false,
+                    will_retry: false,
+                    error_message: Some(format!("Compaction failed: {message}")),
+                });
+                Err(message)
+            }
+        }
+    }
+
+    fn registry(&self) -> Arc<ModelRegistry> {
+        self.inner
+            .registry
+            .read()
+            .map(|registry| Arc::clone(&registry))
+            .unwrap_or_default()
     }
 
     /// The session header line as JSON mode prints it.
@@ -583,25 +1110,72 @@ fn drain(queue: &Mutex<VecDeque<Message>>, mode: Option<QueueMode>) -> Vec<Messa
 
 impl AgentHooks for Hooks {
     fn on_event<'a>(&'a self, event: &'a AgentEvent) -> BoxFuture<'a, ()> {
-        self.session.emit(event);
-        if let AgentEvent::MessageEnd { message } = event {
-            self.session.with_session(|session| match message {
-                Message::Custom(custom) => {
-                    let _ = session.append_custom_message(
-                        &custom.custom_type,
-                        custom.content.clone(),
-                        custom.display,
-                        custom.details.clone(),
-                    );
+        let session = &self.session;
+        match event {
+            AgentEvent::AgentEnd { messages, .. } => {
+                session.emit(&AgentEvent::AgentEnd {
+                    messages: messages.clone(),
+                    will_retry: session.will_retry_after(messages),
+                });
+            }
+            _ => session.emit(event),
+        }
+        match event {
+            AgentEvent::MessageEnd { message } => {
+                let entry_id = session.with_session(|file| match message {
+                    Message::Custom(custom) => file
+                        .append_custom_message(
+                            &custom.custom_type,
+                            custom.content.clone(),
+                            custom.display,
+                            custom.details.clone(),
+                        )
+                        .ok(),
+                    Message::System(_)
+                    | Message::User(_)
+                    | Message::Assistant(_)
+                    | Message::ToolResult(_) => file.append_message(message.clone()).ok(),
+                    _ => None,
+                });
+                match message {
+                    Message::Assistant(assistant) => {
+                        let finished_retry = {
+                            let mut recovery = lock(&session.inner.recovery);
+                            recovery.last_assistant = Some(((**assistant).clone(), entry_id));
+                            recovery.turn_tool_results.clear();
+                            if !matches!(
+                                assistant.stop_reason,
+                                StopReason::Error | StopReason::Length
+                            ) {
+                                recovery.overflow_recovery_attempted = false;
+                            }
+                            if assistant.stop_reason != StopReason::Error {
+                                std::mem::take(&mut recovery.retry_attempt)
+                            } else {
+                                0
+                            }
+                        };
+                        if finished_retry > 0 {
+                            session.emit(&AgentEvent::AutoRetryEnd {
+                                success: true,
+                                attempt: finished_retry,
+                                final_error: None,
+                            });
+                        }
+                    }
+                    Message::ToolResult(_) => {
+                        if let Some(id) = entry_id {
+                            lock(&session.inner.recovery).turn_tool_results.push(id);
+                        }
+                    }
+                    _ => {}
                 }
-                Message::System(_)
-                | Message::User(_)
-                | Message::Assistant(_)
-                | Message::ToolResult(_) => {
-                    let _ = session.append_message(message.clone());
-                }
-                _ => {}
-            });
+            }
+            AgentEvent::TurnEnd { .. } => {
+                let mut recovery = lock(&session.inner.recovery);
+                recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
+            }
+            _ => {}
         }
         Box::pin(async {})
     }
@@ -611,21 +1185,9 @@ impl AgentHooks for Hooks {
     }
 
     fn auth<'a>(&'a self, model: &'a Model) -> BoxFuture<'a, Auth> {
-        Box::pin(async move {
-            // The registry is read under a short lock; credential commands run
-            // outside it.
-            let registry = self
-                .session
-                .inner
-                .registry
-                .read()
-                .map(|registry| Arc::clone(&registry))
-                .ok();
-            match registry {
-                Some(registry) => registry.auth(model).await,
-                None => Auth::default(),
-            }
-        })
+        // The registry is read under a short lock; credential commands run outside it.
+        let registry = self.session.registry();
+        Box::pin(async move { registry.auth(model).await })
     }
 
     fn steering_messages(&self) -> BoxFuture<'_, Vec<Message>> {

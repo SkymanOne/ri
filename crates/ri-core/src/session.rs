@@ -15,9 +15,9 @@ use ri_types::message::{
     TextContent, Usage,
 };
 use ri_types::session::{
-    BranchSummaryEntry, CURRENT_VERSION, CompactionEntry, CustomEntry, CustomMessageEntry,
-    EntryMeta, FileEntry, LabelEntry, MessageEntry, ModelChangeEntry, SessionHeader,
-    SessionInfoEntry, ThinkingLevelChangeEntry,
+    BranchSummaryEntry, CURRENT_VERSION, CompactionEntry, ContextEditEntry, CustomEntry,
+    CustomMessageEntry, EntryMeta, FileEntry, LabelEntry, MessageEntry, ModelChangeEntry,
+    Replacement, SessionHeader, SessionInfoEntry, ThinkingLevelChangeEntry,
 };
 use serde_json::Value;
 
@@ -40,6 +40,9 @@ pub enum SessionError {
     /// An entry id that does not exist.
     #[error("Entry {0} not found")]
     NotFound(String),
+    /// An operation the target entry does not allow.
+    #[error("{0}")]
+    Rejected(String),
     /// A JSON conversion failed.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
@@ -539,6 +542,58 @@ impl SessionManager {
         }))
     }
 
+    /// Edits an earlier model-visible entry on the active branch: `None` drops it
+    /// from the context, a replacement swaps its content. Text replacing an
+    /// assistant or tool result becomes a text block.
+    pub fn append_context_edit(
+        &mut self,
+        target_id: &str,
+        replacement: Option<Content>,
+    ) -> Result<String> {
+        let target = self
+            .entry(target_id)
+            .ok_or_else(|| SessionError::NotFound(target_id.to_owned()))?;
+        if !self
+            .branch_path(None)
+            .iter()
+            .any(|entry| entry.meta().is_some_and(|meta| meta.id == target_id))
+        {
+            return Err(SessionError::Rejected(format!(
+                "Entry {target_id} is not on the active branch"
+            )));
+        }
+        let role = match target {
+            FileEntry::CustomMessage(_) => "custom",
+            FileEntry::Message(entry) => match &entry.message {
+                Message::User(_) => "user",
+                Message::Assistant(_) => "assistant",
+                Message::ToolResult(_) => "toolResult",
+                _ => "",
+            },
+            _ => "",
+        };
+        if role.is_empty() {
+            return Err(SessionError::Rejected(format!(
+                "Entry {target_id} does not contribute editable model content"
+            )));
+        }
+        let replacement = replacement.map(|content| match content {
+            Content::Text(text) if matches!(role, "assistant" | "toolResult") => {
+                Content::Blocks(vec![ContentBlock::Text(TextContent {
+                    text,
+                    text_signature: None,
+                })])
+            }
+            content => content,
+        });
+        let meta = self.new_meta();
+        self.append(FileEntry::ContextEdit(ContextEditEntry {
+            meta,
+            target_id: target_id.to_owned(),
+            replacement: replacement.map(|content| Replacement { content }),
+        }))
+    }
+
     /// Sets or clears the label of an entry.
     pub fn append_label(&mut self, target_id: &str, label: Option<String>) -> Result<String> {
         if !self.by_id.contains_key(target_id) {
@@ -698,6 +753,11 @@ impl SessionManager {
     /// The model context of the current branch.
     pub fn build_context(&self) -> SessionContext {
         build_context(&self.branch_path(None))
+    }
+
+    /// The current branch's context, entry by entry.
+    pub fn build_projection(&self) -> Projection<'_> {
+        build_projection(&self.branch_path(None))
     }
 
     /// Starts a new session file holding the branch up to `leaf_id`, with labels on
@@ -886,10 +946,37 @@ fn edited(
         .collect()
 }
 
-/// The model context of a branch path: from the last compaction on, entries kept
-/// by it, then later entries; context edits applied; model and thinking level as
-/// last set.
-pub fn build_context(path: &[&FileEntry]) -> SessionContext {
+/// One context entry of a branch and the messages it contributes after edits.
+#[derive(Clone, Debug)]
+pub struct ProjectedEntry<'a> {
+    /// The entry.
+    pub source: &'a FileEntry,
+    /// Its model-visible messages; empty when edited out or not visible.
+    pub messages: Vec<Message>,
+}
+
+/// The context of a branch, entry by entry.
+#[derive(Clone, Debug)]
+pub struct Projection<'a> {
+    /// Context entries: the last compaction first, then the entries it keeps and
+    /// the later ones.
+    pub entries: Vec<ProjectedEntry<'a>>,
+    /// Every projected message, in order.
+    pub messages: Vec<Message>,
+    /// The last thinking level set on the branch; `off` when none.
+    pub thinking_level: String,
+    /// The last model used or selected on the branch, as (provider, model id).
+    pub model: Option<(String, String)>,
+}
+
+/// The messages an entry contributes to the context before edits.
+pub fn entry_context_messages(entry: &FileEntry) -> Vec<Message> {
+    entry_messages(entry)
+}
+
+/// Projects a branch path: from the last compaction on, entries kept by it, then
+/// later entries; context edits applied; model and thinking level as last set.
+pub fn build_projection<'a>(path: &[&'a FileEntry]) -> Projection<'a> {
     let mut thinking_level = "off".to_owned();
     let mut model = None;
     for entry in path {
@@ -912,7 +999,7 @@ pub fn build_context(path: &[&FileEntry]) -> SessionContext {
     let compaction = path
         .iter()
         .rposition(|entry| matches!(entry, FileEntry::Compaction(_)));
-    let context: Vec<&FileEntry> = match compaction {
+    let context: Vec<&'a FileEntry> = match compaction {
         None => path.to_vec(),
         Some(index) => {
             let FileEntry::Compaction(entry) = path[index] else {
@@ -941,21 +1028,44 @@ pub fn build_context(path: &[&FileEntry]) -> SessionContext {
             edits.insert(&edit.target_id, edit.replacement.as_ref());
         }
     }
-    let mut messages = Vec::new();
-    for (index, entry) in context.iter().enumerate() {
-        if matches!(entry, FileEntry::Compaction(_)) && index > 0 {
-            continue;
-        }
-        let entry_messages = entry_messages(entry);
-        match entry.meta().and_then(|meta| edits.get(meta.id.as_str())) {
-            Some(replacement) => messages.extend(edited(entry_messages, *replacement)),
-            None => messages.extend(entry_messages),
-        }
-    }
-    SessionContext {
-        messages,
+    let entries: Vec<ProjectedEntry<'a>> = context
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            // Only the newest compaction, first in the context, contributes.
+            let messages = if matches!(entry, FileEntry::Compaction(_)) && index > 0 {
+                Vec::new()
+            } else {
+                let messages = entry_messages(entry);
+                match entry.meta().and_then(|meta| edits.get(meta.id.as_str())) {
+                    Some(replacement) => edited(messages, *replacement),
+                    None => messages,
+                }
+            };
+            ProjectedEntry {
+                source: entry,
+                messages,
+            }
+        })
+        .collect();
+    Projection {
+        messages: entries
+            .iter()
+            .flat_map(|entry| entry.messages.iter().cloned())
+            .collect(),
+        entries,
         thinking_level,
         model,
+    }
+}
+
+/// The model context of a branch path; see [`build_projection`].
+pub fn build_context(path: &[&FileEntry]) -> SessionContext {
+    let projection = build_projection(path);
+    SessionContext {
+        messages: projection.messages,
+        thinking_level: projection.thinking_level,
+        model: projection.model,
     }
 }
 
