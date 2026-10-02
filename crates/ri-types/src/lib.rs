@@ -8,8 +8,10 @@
 
 pub mod auth;
 pub mod config;
+pub mod event;
 pub mod json;
 pub mod message;
+pub mod model;
 pub mod models;
 pub mod session;
 pub mod settings;

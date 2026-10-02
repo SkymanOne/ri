@@ -309,20 +309,13 @@ pub struct ImageContent {
 }
 
 /// Token usage and cost of one request.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub input: u64,
     pub output: u64,
     pub cache_read: u64,
     pub cache_write: u64,
-    /// Part of `cacheWrite` with one-hour retention; Anthropic only.
-    #[serde(
-        default,
-        rename = "cacheWrite1h",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub cache_write_1h: Option<u64>,
     /// Reasoning tokens, already included in `output`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<u64>,
@@ -330,10 +323,17 @@ pub struct Usage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u64>,
     pub cost: Cost,
+    /// Part of `cacheWrite` with one-hour retention; Anthropic only.
+    #[serde(
+        default,
+        rename = "cacheWrite1h",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cache_write_1h: Option<u64>,
 }
 
 /// Cost in US dollars.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cost {
     pub input: f64,
@@ -355,8 +355,8 @@ pub enum StopReason {
     Deferred,
 }
 
-/// pi thinking level, from `off` to `max`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// pi thinking level, from `off` to `max`, ordered by effort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThinkingLevel {
     Off,
@@ -366,4 +366,108 @@ pub enum ThinkingLevel {
     High,
     Xhigh,
     Max,
+}
+
+impl ThinkingLevel {
+    /// Every level, in order.
+    pub const ALL: [ThinkingLevel; 7] = [
+        ThinkingLevel::Off,
+        ThinkingLevel::Minimal,
+        ThinkingLevel::Low,
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+        ThinkingLevel::Xhigh,
+        ThinkingLevel::Max,
+    ];
+
+    /// The name pi uses in JSON and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ThinkingLevel::Off => "off",
+            ThinkingLevel::Minimal => "minimal",
+            ThinkingLevel::Low => "low",
+            ThinkingLevel::Medium => "medium",
+            ThinkingLevel::High => "high",
+            ThinkingLevel::Xhigh => "xhigh",
+            ThinkingLevel::Max => "max",
+        }
+    }
+
+    /// Parses a name from [`ThinkingLevel::as_str`].
+    pub fn parse(name: &str) -> Option<ThinkingLevel> {
+        ThinkingLevel::ALL
+            .into_iter()
+            .find(|level| level.as_str() == name)
+    }
+}
+
+impl Message {
+    /// Unix time in milliseconds.
+    pub fn timestamp(&self) -> u64 {
+        match self {
+            Message::System(message) => message.timestamp,
+            Message::User(message) => message.timestamp,
+            Message::Assistant(message) => message.timestamp,
+            Message::ToolResult(message) => message.timestamp,
+            Message::BashExecution(message) => message.timestamp,
+            Message::Custom(message) => message.timestamp,
+            Message::BranchSummary(message) => message.timestamp,
+            Message::CompactionSummary(message) => message.timestamp,
+        }
+    }
+}
+
+impl Content {
+    /// The text blocks joined by `separator`; images and other blocks are skipped.
+    pub fn text(&self, separator: &str) -> String {
+        match self {
+            Content::Text(text) => text.clone(),
+            Content::Blocks(blocks) => blocks_text(blocks, separator),
+        }
+    }
+}
+
+/// The text blocks of `blocks` joined by `separator`.
+pub fn blocks_text(blocks: &[ContentBlock], separator: &str) -> String {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+impl SystemMessage {
+    /// The prompt text: content, then each present section, separated by blank lines.
+    pub fn text(&self) -> String {
+        let mut parts = vec![self.content.text("\n")];
+        for text in self
+            .sections
+            .iter()
+            .flatten()
+            .filter_map(|(_, text)| text.clone())
+        {
+            parts.push(text);
+        }
+        parts.retain(|part| !part.is_empty());
+        parts.join("\n\n")
+    }
+
+    /// How a later system message reads as a mid-conversation update.
+    pub fn render_update(&self) -> String {
+        let mut parts = Vec::new();
+        let text = self.content.text("\n");
+        if !text.is_empty() {
+            parts.push(text);
+        }
+        for (name, value) in self.sections.iter().flatten() {
+            parts.push(match value {
+                None => format!("Removed system prompt section \"{name}\"."),
+                Some(value) => format!("Updated system prompt section \"{name}\":\n\n{value}"),
+            });
+        }
+        parts.join("\n\n")
+    }
 }
