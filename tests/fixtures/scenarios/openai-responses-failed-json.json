@@ -337,7 +337,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "failed",
         "errorMessage": "server_error: The server had an error processing your request.",
         "thinkingLevel": "medium"
@@ -367,7 +367,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "failed",
         "errorMessage": "server_error: The server had an error processing your request.",
         "thinkingLevel": "medium"
@@ -541,7 +541,7 @@
           },
           "stopReason": "error",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "rawStopReason": "failed",
           "errorMessage": "server_error: The server had an error processing your request.",
           "thinkingLevel": "medium"
@@ -560,10 +560,10 @@
       "type": "entry_appended",
       "entry": {
         "type": "context_edit",
-        "id": "<id>",
-        "parentId": "<parentId>",
+        "id": "<id-2>",
+        "parentId": "<id-3>",
         "timestamp": "<timestamp>",
-        "targetId": "<targetId>",
+        "targetId": "<id-3>",
         "replacement": null
       }
     },
@@ -678,10 +678,10 @@
       "type": "entry_appended",
       "entry": {
         "type": "context_edit",
-        "id": "<id>",
-        "parentId": "<parentId>",
+        "id": "<id-4>",
+        "parentId": "<id-5>",
         "timestamp": "<timestamp>",
-        "targetId": "<targetId>",
+        "targetId": "<id-5>",
         "replacement": null
       }
     },
@@ -796,10 +796,10 @@
       "type": "entry_appended",
       "entry": {
         "type": "context_edit",
-        "id": "<id>",
-        "parentId": "<parentId>",
+        "id": "<id-6>",
+        "parentId": "<id-7>",
         "timestamp": "<timestamp>",
-        "targetId": "<targetId>",
+        "targetId": "<id-7>",
         "replacement": null
       }
     },
@@ -936,7 +936,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-8>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [
@@ -1112,7 +1112,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-8>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [
@@ -1288,7 +1288,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-8>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [
@@ -1464,7 +1464,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-8>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [

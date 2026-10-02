@@ -367,7 +367,7 @@
         },
         "stopReason": "length",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "incomplete.max_output_tokens",
         "thinkingLevel": "off"
       }
@@ -403,7 +403,7 @@
         },
         "stopReason": "length",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "incomplete.max_output_tokens",
         "thinkingLevel": "off"
       },
@@ -583,7 +583,7 @@
           },
           "stopReason": "length",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "rawStopReason": "incomplete.max_output_tokens",
           "thinkingLevel": "off"
         }
@@ -594,10 +594,10 @@
       "type": "entry_appended",
       "entry": {
         "type": "context_edit",
-        "id": "<id>",
-        "parentId": "<parentId>",
+        "id": "<id-2>",
+        "parentId": "<id-3>",
         "timestamp": "<timestamp>",
-        "targetId": "<targetId>",
+        "targetId": "<id-3>",
         "replacement": null
       }
     },
@@ -628,7 +628,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-4>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [

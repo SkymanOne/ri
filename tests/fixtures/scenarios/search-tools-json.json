@@ -298,7 +298,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 0,
-        "id": "<id>",
+        "id": "<id-1>",
         "toolName": "ls"
       }
     },
@@ -315,7 +315,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 1,
-        "id": "<id>",
+        "id": "<id-2>",
         "toolName": "ls"
       }
     },
@@ -332,7 +332,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 2,
-        "id": "<id>",
+        "id": "<id-3>",
         "toolName": "grep"
       }
     },
@@ -349,7 +349,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 3,
-        "id": "<id>",
+        "id": "<id-4>",
         "toolName": "grep"
       }
     },
@@ -366,7 +366,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 4,
-        "id": "<id>",
+        "id": "<id-5>",
         "toolName": "find"
       }
     },
@@ -383,7 +383,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 5,
-        "id": "<id>",
+        "id": "<id-6>",
         "toolName": "find"
       }
     },
@@ -400,7 +400,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 6,
-        "id": "<id>",
+        "id": "<id-7>",
         "toolName": "ls"
       }
     },
@@ -419,7 +419,7 @@
         "contentIndex": 0,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-1>",
           "name": "ls",
           "arguments": {}
         }
@@ -432,7 +432,7 @@
         "contentIndex": 1,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-2>",
           "name": "ls",
           "arguments": {
             "path": "sub",
@@ -448,7 +448,7 @@
         "contentIndex": 2,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-3>",
           "name": "grep",
           "arguments": {
             "pattern": "second",
@@ -464,7 +464,7 @@
         "contentIndex": 3,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-4>",
           "name": "grep",
           "arguments": {
             "pattern": "absent-text"
@@ -479,7 +479,7 @@
         "contentIndex": 4,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-5>",
           "name": "find",
           "arguments": {
             "pattern": "deep.txt"
@@ -494,7 +494,7 @@
         "contentIndex": 5,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-6>",
           "name": "find",
           "arguments": {
             "pattern": "src/**/*.rs"
@@ -509,7 +509,7 @@
         "contentIndex": 6,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-7>",
           "name": "ls",
           "arguments": {
             "path": "missing"
@@ -524,13 +524,13 @@
         "content": [
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "ls",
             "arguments": {}
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-2>",
             "name": "ls",
             "arguments": {
               "path": "sub",
@@ -539,7 +539,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-3>",
             "name": "grep",
             "arguments": {
               "pattern": "second",
@@ -548,7 +548,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-4>",
             "name": "grep",
             "arguments": {
               "pattern": "absent-text"
@@ -556,7 +556,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-5>",
             "name": "find",
             "arguments": {
               "pattern": "deep.txt"
@@ -564,7 +564,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-6>",
             "name": "find",
             "arguments": {
               "pattern": "src/**/*.rs"
@@ -572,7 +572,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-7>",
             "name": "ls",
             "arguments": {
               "path": "missing"
@@ -599,20 +599,20 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-8>",
         "rawStopReason": "tool_calls",
         "thinkingLevel": "medium"
       }
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "ls",
       "args": {}
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-2>",
       "toolName": "ls",
       "args": {
         "path": "sub",
@@ -621,7 +621,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-3>",
       "toolName": "grep",
       "args": {
         "pattern": "second",
@@ -630,7 +630,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-4>",
       "toolName": "grep",
       "args": {
         "pattern": "absent-text"
@@ -638,7 +638,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-5>",
       "toolName": "find",
       "args": {
         "pattern": "deep.txt"
@@ -646,7 +646,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-6>",
       "toolName": "find",
       "args": {
         "pattern": "src/**/*.rs"
@@ -654,7 +654,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-7>",
       "toolName": "ls",
       "args": {
         "path": "missing"
@@ -662,63 +662,7 @@
     },
     {
       "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
-      "toolName": "find",
-      "result": {
-        "content": [
-          {
-            "type": "text",
-            "text": "src/main.rs"
-          }
-        ]
-      },
-      "isError": false
-    },
-    {
-      "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
-      "toolName": "find",
-      "result": {
-        "content": [
-          {
-            "type": "text",
-            "text": "sub/dir/deep.txt"
-          }
-        ]
-      },
-      "isError": false
-    },
-    {
-      "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
-      "toolName": "grep",
-      "result": {
-        "content": [
-          {
-            "type": "text",
-            "text": "No matches found"
-          }
-        ]
-      },
-      "isError": false
-    },
-    {
-      "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
-      "toolName": "grep",
-      "result": {
-        "content": [
-          {
-            "type": "text",
-            "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
-          }
-        ]
-      },
-      "isError": false
-    },
-    {
-      "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "ls",
       "result": {
         "content": [
@@ -732,22 +676,7 @@
     },
     {
       "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
-      "toolName": "ls",
-      "result": {
-        "content": [
-          {
-            "type": "text",
-            "text": "Path not found: <cwd>/missing"
-          }
-        ],
-        "details": {}
-      },
-      "isError": true
-    },
-    {
-      "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-2>",
       "toolName": "ls",
       "result": {
         "content": [
@@ -763,10 +692,81 @@
       "isError": false
     },
     {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-3>",
+      "toolName": "grep",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-4>",
+      "toolName": "grep",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "No matches found"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-5>",
+      "toolName": "find",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "sub/dir/deep.txt"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-6>",
+      "toolName": "find",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "src/main.rs"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-7>",
+      "toolName": "ls",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Path not found: <cwd>/missing"
+          }
+        ],
+        "details": {}
+      },
+      "isError": true
+    },
+    {
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "ls",
         "content": [
           {
@@ -782,7 +782,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "ls",
         "content": [
           {
@@ -798,7 +798,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-2>",
         "toolName": "ls",
         "content": [
           {
@@ -817,7 +817,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-2>",
         "toolName": "ls",
         "content": [
           {
@@ -836,7 +836,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-3>",
         "toolName": "grep",
         "content": [
           {
@@ -852,7 +852,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-3>",
         "toolName": "grep",
         "content": [
           {
@@ -868,7 +868,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-4>",
         "toolName": "grep",
         "content": [
           {
@@ -884,7 +884,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-4>",
         "toolName": "grep",
         "content": [
           {
@@ -900,7 +900,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-5>",
         "toolName": "find",
         "content": [
           {
@@ -916,7 +916,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-5>",
         "toolName": "find",
         "content": [
           {
@@ -932,7 +932,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-6>",
         "toolName": "find",
         "content": [
           {
@@ -948,7 +948,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-6>",
         "toolName": "find",
         "content": [
           {
@@ -964,7 +964,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-7>",
         "toolName": "ls",
         "content": [
           {
@@ -981,7 +981,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-7>",
         "toolName": "ls",
         "content": [
           {
@@ -1001,13 +1001,13 @@
         "content": [
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "ls",
             "arguments": {}
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-2>",
             "name": "ls",
             "arguments": {
               "path": "sub",
@@ -1016,7 +1016,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-3>",
             "name": "grep",
             "arguments": {
               "pattern": "second",
@@ -1025,7 +1025,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-4>",
             "name": "grep",
             "arguments": {
               "pattern": "absent-text"
@@ -1033,7 +1033,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-5>",
             "name": "find",
             "arguments": {
               "pattern": "deep.txt"
@@ -1041,7 +1041,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-6>",
             "name": "find",
             "arguments": {
               "pattern": "src/**/*.rs"
@@ -1049,7 +1049,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-7>",
             "name": "ls",
             "arguments": {
               "path": "missing"
@@ -1076,14 +1076,14 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-8>",
         "rawStopReason": "tool_calls",
         "thinkingLevel": "medium"
       },
       "toolResults": [
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "ls",
           "content": [
             {
@@ -1096,7 +1096,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-2>",
           "toolName": "ls",
           "content": [
             {
@@ -1112,7 +1112,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-3>",
           "toolName": "grep",
           "content": [
             {
@@ -1125,7 +1125,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-4>",
           "toolName": "grep",
           "content": [
             {
@@ -1138,7 +1138,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-5>",
           "toolName": "find",
           "content": [
             {
@@ -1151,7 +1151,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-6>",
           "toolName": "find",
           "content": [
             {
@@ -1164,7 +1164,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-7>",
           "toolName": "ls",
           "content": [
             {
@@ -1240,7 +1240,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-9>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       }
@@ -1275,7 +1275,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-9>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       },
@@ -1421,13 +1421,13 @@
           "content": [
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-1>",
               "name": "ls",
               "arguments": {}
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-2>",
               "name": "ls",
               "arguments": {
                 "path": "sub",
@@ -1436,7 +1436,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-3>",
               "name": "grep",
               "arguments": {
                 "pattern": "second",
@@ -1445,7 +1445,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-4>",
               "name": "grep",
               "arguments": {
                 "pattern": "absent-text"
@@ -1453,7 +1453,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-5>",
               "name": "find",
               "arguments": {
                 "pattern": "deep.txt"
@@ -1461,7 +1461,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-6>",
               "name": "find",
               "arguments": {
                 "pattern": "src/**/*.rs"
@@ -1469,7 +1469,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-7>",
               "name": "ls",
               "arguments": {
                 "path": "missing"
@@ -1496,13 +1496,13 @@
           },
           "stopReason": "toolUse",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-8>",
           "rawStopReason": "tool_calls",
           "thinkingLevel": "medium"
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "ls",
           "content": [
             {
@@ -1515,7 +1515,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-2>",
           "toolName": "ls",
           "content": [
             {
@@ -1531,7 +1531,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-3>",
           "toolName": "grep",
           "content": [
             {
@@ -1544,7 +1544,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-4>",
           "toolName": "grep",
           "content": [
             {
@@ -1557,7 +1557,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-5>",
           "toolName": "find",
           "content": [
             {
@@ -1570,7 +1570,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-6>",
           "toolName": "find",
           "content": [
             {
@@ -1583,7 +1583,7 @@
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-7>",
           "toolName": "ls",
           "content": [
             {
@@ -1623,7 +1623,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-9>",
           "rawStopReason": "stop",
           "thinkingLevel": "medium"
         }
@@ -1830,7 +1830,7 @@
             "content": null,
             "tool_calls": [
               {
-                "id": "<id>",
+                "id": "<id-1>",
                 "type": "function",
                 "function": {
                   "name": "ls",
@@ -1838,7 +1838,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-2>",
                 "type": "function",
                 "function": {
                   "name": "ls",
@@ -1846,7 +1846,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-3>",
                 "type": "function",
                 "function": {
                   "name": "grep",
@@ -1854,7 +1854,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-4>",
                 "type": "function",
                 "function": {
                   "name": "grep",
@@ -1862,7 +1862,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-5>",
                 "type": "function",
                 "function": {
                   "name": "find",
@@ -1870,7 +1870,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-6>",
                 "type": "function",
                 "function": {
                   "name": "find",
@@ -1878,7 +1878,7 @@
                 }
               },
               {
-                "id": "<id>",
+                "id": "<id-7>",
                 "type": "function",
                 "function": {
                   "name": "ls",

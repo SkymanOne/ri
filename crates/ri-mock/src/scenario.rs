@@ -5,6 +5,7 @@
 //! working directory. The agent directory gets a `models.json` pointing the
 //! providers at the mock server; credentials are dummy environment variables.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -59,6 +60,36 @@ pub struct Run {
     pub cwd: PathBuf,
     /// The agent directory, for normalization.
     pub agent_dir: PathBuf,
+    /// Session files in the working and agent directories after the run.
+    pub sessions: Vec<SessionFile>,
+}
+
+/// A session file found after a run.
+#[derive(Clone, Debug)]
+pub struct SessionFile {
+    /// File name.
+    pub name: String,
+    /// Whether the scenario created it before the run.
+    pub seeded: bool,
+    /// Contents.
+    pub content: String,
+}
+
+fn session_files(dir: &Path, found: &mut Vec<(PathBuf, String)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            session_files(&path, found);
+        } else if path.extension().is_some_and(|ext| ext == "jsonl")
+            && let Ok(content) = std::fs::read_to_string(&path)
+        {
+            found.push((path, content));
+        }
+    }
 }
 
 /// The repository's `tests/fixtures` directory.
@@ -110,11 +141,16 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
                 .iter()
                 .map(|(relative, content)| (agent_dir.join(relative), content)),
         );
+    let mut seeded = Vec::new();
     for (path, content) in files {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io(parent))?;
         }
+        let content = content
+            .replace("{{cwd}}", &cwd.to_string_lossy())
+            .replace("{{agent}}", &agent_dir.to_string_lossy());
         std::fs::write(&path, content).map_err(io(&path))?;
+        seeded.push(path);
     }
     let models = json!({"providers": {
         "anthropic": {"baseUrl": url},
@@ -163,6 +199,20 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     let output = child.wait_with_output().await.map_err(io(executable))?;
     let requests = server.requests();
     drop(server);
+    let mut found = Vec::new();
+    session_files(&cwd, &mut found);
+    session_files(&agent_dir, &mut found);
+    let sessions = found
+        .into_iter()
+        .map(|(path, content)| SessionFile {
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            seeded: seeded.contains(&path),
+            content,
+        })
+        .collect();
     let run = Run {
         exit_code: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -170,73 +220,108 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         requests,
         cwd: cwd.clone(),
         agent_dir,
+        sessions,
     };
     let _ = std::fs::remove_dir_all(&root);
     Ok(run)
 }
 
-/// Text normalization: paths, ri's name in the prompt, pi's docs section.
-fn normalize_text(text: &str, run: &Run) -> String {
-    let mut text = text
-        .replace(&run.agent_dir.to_string_lossy().into_owned(), "<agent>")
-        .replace(&run.cwd.to_string_lossy().into_owned(), "<cwd>")
-        .replace("operating inside ri,", "operating inside pi,");
-    // pi's documentation section points into pi's install; ri has none.
-    while let Some(start) = text.find("\n\n<docs>\n") {
-        match text[start..].find("\n</docs>") {
-            Some(end) => text.replace_range(start..start + end + "\n</docs>".len(), ""),
-            None => break,
-        }
-    }
-    text
+/// Normalizes runs for comparison: paths, names, timestamps, and ids, which
+/// become sequential placeholders so references between them still compare.
+struct Normalizer<'a> {
+    run: &'a Run,
+    ids: HashMap<String, String>,
+    renames: Vec<(String, String)>,
 }
 
-fn normalize_value(value: &Value, run: &Run) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut out = Map::new();
-            for (key, item) in object {
-                let normalized = match (key.as_str(), item) {
-                    (
-                        "timestamp"
-                        | "id"
-                        | "parentId"
-                        | "targetId"
-                        | "firstKeptEntryId"
-                        | "responseId"
-                        | "toolCallId"
-                        | "prompt_cache_key"
-                        | "estimatedTokensAfter",
-                        Value::String(_) | Value::Number(_),
-                    ) => Value::from(format!("<{key}>")),
-                    ("sections", Value::Object(sections)) => {
-                        let mut kept = Map::new();
-                        for (name, text) in sections {
-                            if name != "docs" {
-                                kept.insert(name.clone(), normalize_value(text, run));
-                            }
-                        }
-                        Value::Object(kept)
-                    }
-                    _ => normalize_value(item, run),
-                };
-                out.insert(key.clone(), normalized);
-            }
-            Value::Object(out)
+const ID_KEYS: &[&str] = &[
+    "id",
+    "parentId",
+    "targetId",
+    "fromId",
+    "firstKeptEntryId",
+    "responseId",
+    "toolCallId",
+    "prompt_cache_key",
+];
+
+impl Normalizer<'_> {
+    /// Text normalization: paths, new session file names, ri's name in the
+    /// prompt, pi's docs section.
+    fn text(&self, text: &str) -> String {
+        let mut text = text
+            .replace(
+                &self.run.agent_dir.to_string_lossy().into_owned(),
+                "<agent>",
+            )
+            .replace(&self.run.cwd.to_string_lossy().into_owned(), "<cwd>")
+            .replace("operating inside ri,", "operating inside pi,");
+        for (from, to) in &self.renames {
+            text = text.replace(from, to);
         }
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(|item| normalize_value(item, run))
-                .collect(),
-        ),
-        Value::String(text) => Value::String(normalize_text(text, run)),
-        other => other.clone(),
+        // pi's documentation section points into pi's install; ri has none.
+        while let Some(start) = text.find("\n\n<docs>\n") {
+            match text[start..].find("\n</docs>") {
+                Some(end) => text.replace_range(start..start + end + "\n</docs>".len(), ""),
+                None => break,
+            }
+        }
+        text
+    }
+
+    fn id(&mut self, value: &Value) -> Value {
+        let raw = match value {
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
+        let next = self.ids.len() + 1;
+        Value::from(
+            self.ids
+                .entry(raw)
+                .or_insert_with(|| format!("<id-{next}>"))
+                .clone(),
+        )
+    }
+
+    fn value(&mut self, value: &Value) -> Value {
+        match value {
+            Value::Object(object) => {
+                let mut out = Map::new();
+                for (key, item) in object {
+                    let normalized = match (key.as_str(), item) {
+                        (key, Value::String(_) | Value::Number(_)) if ID_KEYS.contains(&key) => {
+                            self.id(item)
+                        }
+                        (
+                            "timestamp" | "estimatedTokensAfter",
+                            Value::String(_) | Value::Number(_),
+                        ) => Value::from(format!("<{key}>")),
+                        ("sections", Value::Object(sections)) => {
+                            let mut kept = Map::new();
+                            for (name, text) in sections {
+                                if name != "docs" {
+                                    kept.insert(name.clone(), self.value(text));
+                                }
+                            }
+                            Value::Object(kept)
+                        }
+                        _ => self.value(item),
+                    };
+                    out.insert(key.clone(), normalized);
+                }
+                Value::Object(out)
+            }
+            Value::Array(items) => {
+                Value::Array(items.iter().map(|item| self.value(item)).collect())
+            }
+            Value::String(text) => Value::String(self.text(text)),
+            other => other.clone(),
+        }
     }
 }
 
 /// The comparable form of a run: exit code, stdout as events (JSON mode) or
-/// text, and the requests' method, path, query and body.
+/// text, the requests' method, path, query and body, and session files.
 ///
 /// pi serializes live objects, so `message_update.usage` and the partial in an
 /// assistant `message_start` depend on network timing; both are dropped.
@@ -244,6 +329,19 @@ fn normalize_value(value: &Value, run: &Run) -> Value {
 /// `docs` section, so it is masked too. Parallel tools finish in any order, so
 /// each run of consecutive tool update and end events is sorted.
 pub fn normalize(run: &Run) -> Value {
+    let mut new_files: Vec<&SessionFile> =
+        run.sessions.iter().filter(|file| !file.seeded).collect();
+    new_files.sort_by(|a, b| a.name.cmp(&b.name));
+    let renames = new_files
+        .iter()
+        .enumerate()
+        .map(|(index, file)| (file.name.clone(), format!("new-{}.jsonl", index + 1)))
+        .collect();
+    let mut normalizer = Normalizer {
+        run,
+        ids: HashMap::new(),
+        renames,
+    };
     let lines: Vec<Value> = run
         .stdout
         .lines()
@@ -269,13 +367,13 @@ pub fn normalize(run: &Run) -> Value {
                     }
                     _ => {}
                 }
-                normalize_value(&event, run)
+                normalizer.value(&event)
             })
             .collect();
         sort_tool_completions(&mut events);
         Value::Array(events)
     } else {
-        Value::from(normalize_text(&run.stdout, run))
+        Value::from(normalizer.text(&run.stdout))
     };
     let requests: Vec<Value> = run
         .requests
@@ -287,11 +385,32 @@ pub fn normalize(run: &Run) -> Value {
                 "method": request.method,
                 "path": request.path,
                 "query": request.query,
-                "body": normalize_value(&body, run),
+                "body": normalizer.value(&body),
             })
         })
         .collect();
-    json!({"exitCode": run.exit_code, "stdout": stdout, "requests": requests})
+    let mut sessions: Vec<Value> = run
+        .sessions
+        .iter()
+        .map(|file| {
+            let lines: Vec<Value> = file
+                .content
+                .lines()
+                .map(|line| {
+                    let value =
+                        serde_json::from_str::<Value>(line).unwrap_or_else(|_| Value::from(line));
+                    normalizer.value(&value)
+                })
+                .collect();
+            json!({"file": normalizer.text(&file.name), "lines": lines})
+        })
+        .collect();
+    sessions.sort_by(|a, b| a["file"].to_string().cmp(&b["file"].to_string()));
+    let mut out = json!({"exitCode": run.exit_code, "stdout": stdout, "requests": requests});
+    if !sessions.is_empty() {
+        out["sessions"] = Value::Array(sessions);
+    }
+    out
 }
 
 fn sort_tool_completions(events: &mut [Value]) {

@@ -374,7 +374,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       }
@@ -409,7 +409,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       },
@@ -588,7 +588,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "rawStopReason": "stop",
           "thinkingLevel": "medium"
         }

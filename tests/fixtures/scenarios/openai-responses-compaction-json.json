@@ -367,7 +367,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "completed",
         "thinkingLevel": "off"
       }
@@ -403,7 +403,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "completed",
         "thinkingLevel": "off"
       },
@@ -583,7 +583,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "rawStopReason": "completed",
           "thinkingLevel": "off"
         }
@@ -599,7 +599,7 @@
       "reason": "threshold",
       "result": {
         "summary": "No prior history.\n\n---\n\n**Turn Context (split turn):**\n\n## Original Request\nThe user said hello.",
-        "firstKeptEntryId": "<firstKeptEntryId>",
+        "firstKeptEntryId": "<id-2>",
         "tokensBefore": 1240,
         "estimatedTokensAfter": "<estimatedTokensAfter>",
         "usage": {
@@ -652,7 +652,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-3>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [

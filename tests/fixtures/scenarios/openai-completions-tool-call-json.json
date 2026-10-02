@@ -341,7 +341,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 1,
-        "id": "<id>",
+        "id": "<id-1>",
         "toolName": "read"
       }
     },
@@ -384,7 +384,7 @@
         "contentIndex": 1,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-1>",
           "name": "read",
           "arguments": {
             "path": "hello.txt",
@@ -406,7 +406,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "read",
             "arguments": {
               "path": "hello.txt",
@@ -435,14 +435,14 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "rawStopReason": "tool_calls",
         "thinkingLevel": "medium"
       }
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "read",
       "args": {
         "path": "hello.txt",
@@ -452,7 +452,7 @@
     },
     {
       "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "read",
       "result": {
         "content": [
@@ -468,7 +468,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "read",
         "content": [
           {
@@ -484,7 +484,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "read",
         "content": [
           {
@@ -508,7 +508,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "read",
             "arguments": {
               "path": "hello.txt",
@@ -537,14 +537,14 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "rawStopReason": "tool_calls",
         "thinkingLevel": "medium"
       },
       "toolResults": [
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "read",
           "content": [
             {
@@ -619,7 +619,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       }
@@ -654,7 +654,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "rawStopReason": "stop",
         "thinkingLevel": "medium"
       },
@@ -815,7 +815,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-1>",
               "name": "read",
               "arguments": {
                 "path": "hello.txt",
@@ -844,13 +844,13 @@
           },
           "stopReason": "toolUse",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-2>",
           "rawStopReason": "tool_calls",
           "thinkingLevel": "medium"
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "read",
           "content": [
             {
@@ -889,7 +889,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-2>",
           "rawStopReason": "stop",
           "thinkingLevel": "medium"
         }
@@ -1107,7 +1107,7 @@
             "reasoning": "Need to read the file.",
             "tool_calls": [
               {
-                "id": "<id>",
+                "id": "<id-1>",
                 "type": "function",
                 "function": {
                   "name": "read",

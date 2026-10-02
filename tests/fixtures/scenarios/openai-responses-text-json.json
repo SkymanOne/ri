@@ -419,7 +419,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "completed",
         "thinkingLevel": "medium"
       }
@@ -460,7 +460,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "rawStopReason": "completed",
         "thinkingLevel": "medium"
       },
@@ -645,7 +645,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "rawStopReason": "completed",
           "thinkingLevel": "medium"
         }
@@ -679,7 +679,7 @@
           }
         ],
         "stream": true,
-        "prompt_cache_key": "<prompt_cache_key>",
+        "prompt_cache_key": "<id-2>",
         "store": false,
         "max_output_tokens": 128000,
         "tools": [

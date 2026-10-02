@@ -372,7 +372,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_start",
         "contentIndex": 2,
-        "id": "<id>",
+        "id": "<id-1>",
         "toolName": "read"
       }
     },
@@ -407,7 +407,7 @@
         "contentIndex": 2,
         "toolCall": {
           "type": "toolCall",
-          "id": "<id>",
+          "id": "<id-1>",
           "name": "read",
           "arguments": {
             "path": "hello.txt"
@@ -431,7 +431,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "read",
             "arguments": {
               "path": "hello.txt"
@@ -458,7 +458,7 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "tool_use",
         "thinkingLevel": "medium"
@@ -466,7 +466,7 @@
     },
     {
       "type": "tool_execution_start",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "read",
       "args": {
         "path": "hello.txt"
@@ -474,7 +474,7 @@
     },
     {
       "type": "tool_execution_end",
-      "toolCallId": "<toolCallId>",
+      "toolCallId": "<id-1>",
       "toolName": "read",
       "result": {
         "content": [
@@ -490,7 +490,7 @@
       "type": "message_start",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "read",
         "content": [
           {
@@ -506,7 +506,7 @@
       "type": "message_end",
       "message": {
         "role": "toolResult",
-        "toolCallId": "<toolCallId>",
+        "toolCallId": "<id-1>",
         "toolName": "read",
         "content": [
           {
@@ -534,7 +534,7 @@
           },
           {
             "type": "toolCall",
-            "id": "<id>",
+            "id": "<id-1>",
             "name": "read",
             "arguments": {
               "path": "hello.txt"
@@ -561,7 +561,7 @@
         },
         "stopReason": "toolUse",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-2>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "tool_use",
         "thinkingLevel": "medium"
@@ -569,7 +569,7 @@
       "toolResults": [
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "read",
           "content": [
             {
@@ -644,7 +644,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-3>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "end_turn",
         "thinkingLevel": "medium"
@@ -680,7 +680,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-3>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "end_turn",
         "thinkingLevel": "medium"
@@ -846,7 +846,7 @@
             },
             {
               "type": "toolCall",
-              "id": "<id>",
+              "id": "<id-1>",
               "name": "read",
               "arguments": {
                 "path": "hello.txt"
@@ -873,14 +873,14 @@
           },
           "stopReason": "toolUse",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-2>",
           "responseModel": "claude-sonnet-4-5-20250929",
           "rawStopReason": "tool_use",
           "thinkingLevel": "medium"
         },
         {
           "role": "toolResult",
-          "toolCallId": "<toolCallId>",
+          "toolCallId": "<id-1>",
           "toolName": "read",
           "content": [
             {
@@ -919,7 +919,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-3>",
           "responseModel": "claude-sonnet-4-5-20250929",
           "rawStopReason": "end_turn",
           "thinkingLevel": "medium"
@@ -1145,7 +1145,7 @@
               },
               {
                 "type": "tool_use",
-                "id": "<id>",
+                "id": "<id-1>",
                 "name": "read",
                 "input": {
                   "path": "hello.txt"

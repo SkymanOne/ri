@@ -144,5 +144,51 @@
       "sub/b.txt": "b\n",
       "Sub2/A.txt": "a\n"
     }
+  },
+  {
+    "name": "session-new-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session-dir", "sessions", "--model", "groq/openai/gpt-oss-120b", "Say hello"]
+  },
+  {
+    "name": "session-continue-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "-c", "--session-dir", "sessions", "What word?"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "session-by-prefix-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session-dir", "sessions", "--session", "019a0000-0000-7000-8000-00000000ab", "What word?"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "session-by-path-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session", "sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl", "What word?"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "session-fork-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session-dir", "sessions", "--fork", "019a0000-0000-7000-8000-00000000abcd", "What word?"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "session-id-new-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session-dir", "sessions", "--session-id", "my-session-1", "--model", "groq/openai/gpt-oss-120b", "Say hello"]
+  },
+  {
+    "name": "session-id-existing-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--session-dir", "sessions", "--session-id", "019a0000-0000-7000-8000-00000000abcd", "What word?"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "session-not-found-print",
+    "cassette": "openai-completions/text.json",
+    "args": ["-p", "--session-dir", "sessions", "--session", "nope", "hi"],
+    "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
   }
 ]

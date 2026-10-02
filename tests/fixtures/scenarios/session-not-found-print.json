@@ -1,0 +1,84 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "requests": [],
+  "sessions": [
+    {
+      "file": "2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl",
+      "lines": [
+        {
+          "type": "session",
+          "version": 3,
+          "id": "<id-1>",
+          "timestamp": "<timestamp>",
+          "cwd": "<cwd>"
+        },
+        {
+          "type": "model_change",
+          "id": "<id-2>",
+          "parentId": null,
+          "timestamp": "<timestamp>",
+          "provider": "groq",
+          "modelId": "openai/gpt-oss-120b"
+        },
+        {
+          "type": "thinking_level_change",
+          "id": "<id-3>",
+          "parentId": "<id-2>",
+          "timestamp": "<timestamp>",
+          "thinkingLevel": "medium"
+        },
+        {
+          "type": "message",
+          "id": "<id-4>",
+          "parentId": "<id-3>",
+          "timestamp": "<timestamp>",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Remember the word pineapple."
+              }
+            ],
+            "timestamp": "<timestamp>"
+          }
+        },
+        {
+          "type": "message",
+          "id": "<id-5>",
+          "parentId": "<id-4>",
+          "timestamp": "<timestamp>",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Noted: pineapple."
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "usage": {
+              "input": 120,
+              "output": 8,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 128,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": "<timestamp>"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -358,7 +358,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "errorMessage": "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}",
         "thinkingLevel": "off"
@@ -394,7 +394,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-1>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "errorMessage": "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}",
         "thinkingLevel": "off"
@@ -574,7 +574,7 @@
           },
           "stopReason": "error",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-1>",
           "responseModel": "claude-sonnet-4-5-20250929",
           "errorMessage": "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}",
           "thinkingLevel": "off"
@@ -593,10 +593,10 @@
       "type": "entry_appended",
       "entry": {
         "type": "context_edit",
-        "id": "<id>",
-        "parentId": "<parentId>",
+        "id": "<id-2>",
+        "parentId": "<id-3>",
         "timestamp": "<timestamp>",
-        "targetId": "<targetId>",
+        "targetId": "<id-3>",
         "replacement": null
       }
     },
@@ -665,7 +665,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-4>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "end_turn",
         "thinkingLevel": "off"
@@ -706,7 +706,7 @@
         },
         "stopReason": "stop",
         "timestamp": "<timestamp>",
-        "responseId": "<responseId>",
+        "responseId": "<id-4>",
         "responseModel": "claude-sonnet-4-5-20250929",
         "rawStopReason": "end_turn",
         "thinkingLevel": "off"
@@ -744,7 +744,7 @@
           },
           "stopReason": "stop",
           "timestamp": "<timestamp>",
-          "responseId": "<responseId>",
+          "responseId": "<id-4>",
           "responseModel": "claude-sonnet-4-5-20250929",
           "rawStopReason": "end_turn",
           "thinkingLevel": "off"
