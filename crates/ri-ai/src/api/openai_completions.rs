@@ -7,12 +7,13 @@
 use indexmap::IndexMap;
 use ri_types::event::AssistantMessageEvent;
 use ri_types::message::{
-    ContentBlock, Message, StopReason, TextContent, ThinkingContent, ThinkingLevel, ToolCall,
-    ToolDeclaration, Usage,
+    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
+    ThinkingLevel, ToolCall, ToolDeclaration, Usage,
 };
 use ri_types::model::{Model, OpenAiCompletionsCompat};
 use serde_json::{Map, Value, json};
 
+use super::sanitize_id_part;
 use crate::cost::calculate_cost;
 use crate::http::{self, Failure, SseReader};
 use crate::json_parse::parse_streaming_json;
@@ -24,9 +25,7 @@ use crate::stream::{
 use crate::thinking::{
     MIN_ANSWER_TOKENS, budget_for_level, clamp_level, clamp_max_tokens_to_context,
 };
-use crate::transcript::{
-    current_tools, initial_system_message, resolve_transcript, transform_messages,
-};
+use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// The `openai-completions` wire API.
 #[derive(Debug, Default)]
@@ -212,68 +211,10 @@ impl Compat {
     }
 }
 
-fn cache_retention(options: &StreamOptions) -> CacheRetention {
-    options.cache_retention.unwrap_or_else(|| {
-        if std::env::var("PI_CACHE_RETENTION").as_deref() == Ok("long") {
-            CacheRetention::Long
-        } else {
-            CacheRetention::Short
-        }
-    })
-}
-
-fn has_header(headers: &IndexMap<String, Option<String>>, name: &str) -> bool {
-    headers.iter().any(|(key, value)| {
-        key.eq_ignore_ascii_case(name)
-            && value
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-    })
-}
-
-/// pi's `shortHash`: two 32-bit mixes over UTF-16 units, in base 36.
-fn short_hash(text: &str) -> String {
-    let (mut h1, mut h2): (u32, u32) = (0xdead_beef, 0x41c6_ce57);
-    for unit in text.encode_utf16() {
-        let unit = u32::from(unit);
-        h1 = (h1 ^ unit).wrapping_mul(2_654_435_761);
-        h2 = (h2 ^ unit).wrapping_mul(1_597_334_677);
-    }
-    h1 = (h1 ^ (h1 >> 16)).wrapping_mul(2_246_822_507)
-        ^ (h2 ^ (h2 >> 13)).wrapping_mul(3_266_489_909);
-    h2 = (h2 ^ (h2 >> 16)).wrapping_mul(2_246_822_507)
-        ^ (h1 ^ (h1 >> 13)).wrapping_mul(3_266_489_909);
-    format!("{}{}", base36(h2), base36(h1))
-}
-
-fn base36(mut value: u32) -> String {
-    if value == 0 {
-        return "0".into();
-    }
-    let mut digits = Vec::new();
-    while value > 0 {
-        digits.push(std::char::from_digit(value % 36, 36).unwrap_or('0'));
-        value /= 36;
-    }
-    digits.iter().rev().collect()
-}
-
-fn sanitize_id(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 fn normalize_tool_call_id(id: &str, provider: &str) -> String {
     if let Some((call, item)) = id.split_once('|') {
-        let call = sanitize_id(call);
-        let item = sanitize_id(item);
+        let call = sanitize_id_part(call);
+        let item = sanitize_id_part(item);
         let combined = if item.is_empty() {
             call.clone()
         } else {
@@ -282,7 +223,7 @@ fn normalize_tool_call_id(id: &str, provider: &str) -> String {
         if combined.len() <= 40 {
             return combined;
         }
-        let hash: String = short_hash(id).chars().take(8).collect();
+        let hash: String = crate::hash::short_hash(id).chars().take(8).collect();
         let prefix: String = call
             .chars()
             .take(40usize.saturating_sub(hash.len() + 1).max(1))
@@ -400,42 +341,6 @@ fn convert_tools(tools: &[ToolDeclaration], compat: &Compat) -> Result<Vec<Value
         .collect()
 }
 
-/// Tools to declare in the request, and whether later additions arrive as
-/// mid-conversation tool messages.
-fn transcript_tools(
-    messages: &[Message],
-    supports_additions: bool,
-) -> (Vec<ToolDeclaration>, bool) {
-    let mut declared: Vec<String> = Vec::new();
-    let mut additive = true;
-    for message in messages {
-        if let Message::System(system) = message {
-            if system
-                .tools_removed
-                .as_ref()
-                .is_some_and(|removed| !removed.is_empty())
-            {
-                additive = false;
-            }
-            for tool in system.tools_added.iter().flatten() {
-                if declared.contains(&tool.name) {
-                    additive = false;
-                }
-                declared.push(tool.name.clone());
-            }
-        }
-    }
-    let anchors = supports_additions && additive;
-    let tools = if anchors {
-        initial_system_message(messages)
-            .and_then(|system| system.tools_added.clone())
-            .unwrap_or_default()
-    } else {
-        current_tools(messages)
-    };
-    (tools, anchors)
-}
-
 fn image_url(mime_type: &str, data: &str) -> Value {
     json!({"type": "image_url", "image_url": {"url": format!("data:{mime_type};base64,{data}")}})
 }
@@ -446,9 +351,9 @@ fn convert_messages(
     compat: &Compat,
 ) -> Result<Vec<Value>, String> {
     let provider = model.provider.clone();
-    let normalize = move |id: &str| normalize_tool_call_id(id, &provider);
+    let normalize = move |id: &str, _: &AssistantMessage| normalize_tool_call_id(id, &provider);
     let transformed = transform_messages(messages, model, Some(&normalize), now_ms());
-    let (_, anchors) = transcript_tools(
+    let (_, anchors) = resolve_transcript_tools(
         messages,
         compat.supports_mid_convo_system_messages && compat.supports_mid_convo_tool_additions,
     );
@@ -776,7 +681,7 @@ fn build_params(
     max_tokens: u64,
     effort: Option<ThinkingLevel>,
 ) -> Result<Value, String> {
-    let (request_tools, _) = transcript_tools(
+    let (request_tools, _) = resolve_transcript_tools(
         messages,
         compat.supports_mid_convo_system_messages && compat.supports_mid_convo_tool_additions,
     );
@@ -1096,8 +1001,8 @@ async fn run(request: Request, sender: EventSender) {
     let output = new_output(&model, now_ms());
     let api_key = match options.api_key.clone().filter(|key| !key.is_empty()) {
         Some(key) => key,
-        None if has_header(&options.headers, "authorization")
-            || has_header(&options.headers, "cf-aig-authorization") =>
+        None if options.has_header("authorization")
+            || options.has_header("cf-aig-authorization") =>
         {
             "unused".to_owned()
         }
@@ -1121,7 +1026,7 @@ async fn run(request: Request, sender: EventSender) {
         .reasoning
         .map(|level| clamp_level(&model, level))
         .filter(|level| *level != ThinkingLevel::Off);
-    let retention = cache_retention(&options);
+    let retention = options.resolved_cache_retention();
     let params = match build_params(
         &model,
         &normalized,
@@ -1220,7 +1125,7 @@ fn failure_message(failure: Failure) -> String {
             Ok(json) => {
                 let error = json.get("error");
                 let message = http::sdk_status_message(status, error, None);
-                let mut message = http::provider_error_message(&message, Some(status), error);
+                let mut message = http::provider_error_message(&message, Some(status), error, None);
                 if let Some(raw) = error
                     .and_then(|error| error.get("metadata"))
                     .and_then(|metadata| metadata.get("raw"))
@@ -1249,7 +1154,7 @@ struct CallState {
 }
 
 struct State {
-    output: ri_types::message::AssistantMessage,
+    output: AssistantMessage,
     text: Option<usize>,
     thinking: Option<usize>,
     calls: Vec<CallState>,
@@ -1404,27 +1309,7 @@ impl State {
         sender: &EventSender,
         options: &StreamOptions,
     ) -> Result<(), String> {
-        while let Some(sse) = reader.next(&options.cancel).await? {
-            let data = sse.data.trim();
-            if data.starts_with("[DONE]") {
-                break;
-            }
-            if sse
-                .event
-                .as_deref()
-                .is_some_and(|name| name.starts_with("thread."))
-                || data.is_empty()
-            {
-                continue;
-            }
-            let chunk: Value = serde_json::from_str(data)
-                .map_err(|err| format!("Could not parse JSON chunk: {err}"))?;
-            if let Some(error) = chunk.get("error").filter(|error| !error.is_null()) {
-                return Err(match error.get("message").and_then(Value::as_str) {
-                    Some(message) => message.to_owned(),
-                    None => ri_types::json::to_string(error).unwrap_or_default(),
-                });
-            }
+        while let Some(chunk) = http::next_openai_chunk(&mut reader, &options.cancel).await? {
             self.handle(&chunk, model, sender);
         }
         self.finish_blocks(sender);
@@ -1574,13 +1459,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hashes_like_pi() {
+    fn normalizes_tool_call_ids() {
         // Values computed with pi's shortHash in Node.
-        assert_eq!(short_hash(""), "k4n83c7h0j2b");
-        assert_eq!(
-            short_hash("call_abc|fc_0123456789abcdefghijklmnopqrstuvwxyz"),
-            "zdt65wxpmvl8"
-        );
         assert_eq!(
             normalize_tool_call_id("call_1|item 2", "openai"),
             "call_1_item_2"

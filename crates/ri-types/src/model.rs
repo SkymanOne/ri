@@ -134,6 +134,7 @@ pub struct OpenAiCompletionsCompat {
     pub zai_tool_stream: Option<bool>,
     pub thinking_token_budget_field: Option<String>,
     pub supports_thinking_token_budget: Option<bool>,
+    #[serde(rename = "supportsOpenAIGrammarTools")]
     pub supports_open_ai_grammar_tools: Option<bool>,
     pub supports_mid_convo_system_messages: Option<bool>,
     pub supports_mid_convo_tool_additions: Option<bool>,
@@ -154,6 +155,7 @@ pub struct OpenAiResponsesCompat {
     pub session_affinity_format: Option<String>,
     pub supports_long_cache_retention: Option<bool>,
     pub supports_strict_mode: Option<bool>,
+    #[serde(rename = "supportsOpenAIGrammarTools")]
     pub supports_open_ai_grammar_tools: Option<bool>,
     pub supports_additional_tools: Option<bool>,
     pub supports_tool_search: Option<bool>,
@@ -171,13 +173,14 @@ mod tests {
             r#"{"id":"m","name":"M","api":"openai-completions","provider":"p","baseUrl":"u",
                 "reasoning":true,"input":["text"],"cost":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0},
                 "contextWindow":10,"maxTokens":5,
-                "compat":{"maxTokensField":"max_tokens","supportsStore":false,"unknown":1},
+                "compat":{"maxTokensField":"max_tokens","supportsStore":false,"supportsOpenAIGrammarTools":true,"unknown":1},
                 "thinkingLevelMap":{"minimal":null,"high":"high"}}"#,
         )
         .unwrap();
         let compat: OpenAiCompletionsCompat = model.compat();
         assert_eq!(compat.max_tokens_field.as_deref(), Some("max_tokens"));
         assert_eq!(compat.supports_store, Some(false));
+        assert_eq!(compat.supports_open_ai_grammar_tools, Some(true));
         assert_eq!(compat.supports_developer_role, None);
         assert_eq!(
             model.thinking_level_value(ThinkingLevel::Minimal),

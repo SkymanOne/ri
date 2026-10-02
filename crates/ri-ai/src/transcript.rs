@@ -101,6 +101,45 @@ pub fn has_tool_redefinitions(messages: &[Message]) -> bool {
     false
 }
 
+/// Whether any system message removes a tool or declares a name a second time.
+pub fn has_non_additive_tool_changes(messages: &[Message]) -> bool {
+    let mut declared: Vec<&str> = Vec::new();
+    for system in system_messages(messages) {
+        if system
+            .tools_removed
+            .as_ref()
+            .is_some_and(|removed| !removed.is_empty())
+        {
+            return true;
+        }
+        for tool in system.tools_added.iter().flatten() {
+            if declared.contains(&tool.name.as_str()) {
+                return true;
+            }
+            declared.push(&tool.name);
+        }
+    }
+    false
+}
+
+/// Tools for the top-level request field, and whether later system messages carry
+/// their own additions in place. Anchoring needs API support and a transcript that
+/// only ever adds tools; otherwise the request lists the current tools.
+pub fn resolve_transcript_tools(
+    messages: &[Message],
+    supports_tool_additions: bool,
+) -> (Vec<ToolDeclaration>, bool) {
+    let anchors = supports_tool_additions && !has_non_additive_tool_changes(messages);
+    let tools = if anchors {
+        initial_system_message(messages)
+            .and_then(|system| system.tools_added.clone())
+            .unwrap_or_default()
+    } else {
+        current_tools(messages)
+    };
+    (tools, anchors)
+}
+
 /// All system messages folded into one: their text joined, sections merged (a
 /// removed then re-added section moves to the end), and the current tools. `None`
 /// when the transcript has no system message and no tools.
@@ -189,17 +228,22 @@ fn text_block(text: &str) -> ContentBlock {
     })
 }
 
+/// Maps a tool-call id from another model to one the target API accepts, given
+/// the assistant message that made the call.
+pub type NormalizeToolCallId<'a> = dyn Fn(&str, &AssistantMessage) -> String + 'a;
+
 /// Rewrites a transcript for `model`:
 /// - images become placeholders when the model is text-only;
 /// - thinking from other models becomes text, or is dropped when empty or redacted;
-/// - tool-call ids are normalized for the target API and tool results follow;
+/// - tool-call ids from other models are normalized for the target API, given the
+///   id and its source message, and tool results follow;
 /// - failed and aborted assistant messages are dropped;
 /// - tool calls without a result get an error result before the next turn, and system
 ///   messages between a call and its results move after the results.
 pub fn transform_messages(
     messages: &[Message],
     model: &Model,
-    normalize_tool_call_id: Option<&dyn Fn(&str) -> String>,
+    normalize_tool_call_id: Option<&NormalizeToolCallId<'_>>,
     now_ms: u64,
 ) -> Vec<Message> {
     let mut id_map: IndexMap<String, String> = IndexMap::new();
@@ -307,7 +351,7 @@ pub fn transform_messages(
 fn transform_assistant(
     assistant: &AssistantMessage,
     model: &Model,
-    normalize_tool_call_id: Option<&dyn Fn(&str) -> String>,
+    normalize_tool_call_id: Option<&NormalizeToolCallId<'_>>,
     id_map: &mut IndexMap<String, String>,
 ) -> AssistantMessage {
     let same_model = assistant.provider == model.provider
@@ -347,7 +391,7 @@ fn transform_assistant(
                 if !same_model {
                     call.thought_signature = None;
                     if let Some(normalize) = normalize_tool_call_id {
-                        let id = normalize(&call.id);
+                        let id = normalize(&call.id, assistant);
                         if id != call.id {
                             id_map.insert(call.id.clone(), id.clone());
                             call.id = id;
@@ -552,7 +596,7 @@ mod tests {
             ),
             assistant("error", json!([])),
         ];
-        let normalize = |id: &str| id.replace('|', "_");
+        let normalize = |id: &str, _: &AssistantMessage| id.replace('|', "_");
         let out = transform_messages(&messages, &model, Some(&normalize), 9);
         let roles: Vec<_> = out
             .iter()

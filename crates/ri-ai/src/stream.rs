@@ -69,6 +69,30 @@ pub struct StreamOptions {
     pub cancel: CancellationToken,
 }
 
+impl StreamOptions {
+    /// The cache retention to use: the option, else `long` when
+    /// `PI_CACHE_RETENTION=long`, else `short`.
+    pub fn resolved_cache_retention(&self) -> CacheRetention {
+        self.cache_retention.unwrap_or_else(|| {
+            if std::env::var("PI_CACHE_RETENTION").as_deref() == Ok("long") {
+                CacheRetention::Long
+            } else {
+                CacheRetention::Short
+            }
+        })
+    }
+
+    /// Whether `headers` sets `name` (case-insensitive) to a non-blank value.
+    pub fn has_header(&self, name: &str) -> bool {
+        self.headers.iter().any(|(key, value)| {
+            key.eq_ignore_ascii_case(name)
+                && value
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+        })
+    }
+}
+
 /// Overrides for budget-based thinking, in tokens.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThinkingBudgets {

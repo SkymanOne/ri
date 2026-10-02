@@ -224,6 +224,7 @@ pub enum AgentEvent {
     },
     CompactionEnd {
         reason: CompactionReason,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<CompactionResult>,
         aborted: bool,
         will_retry: bool,

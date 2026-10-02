@@ -182,6 +182,53 @@ pub fn sdk_status_message(status: u16, error: Option<&Value>, raw: Option<&str>)
     }
 }
 
+/// The message of an error the OpenAI SDK raises without a status, such as an
+/// error payload inside a stream: its `message`, or the error as JSON.
+pub fn sdk_error_message(error: &Value) -> String {
+    match error.get("message") {
+        Some(Value::String(message)) if !message.is_empty() => message.clone(),
+        Some(message) if is_truthy(message) => {
+            ri_types::json::to_string(message).unwrap_or_default()
+        }
+        _ if is_truthy(error) => ri_types::json::to_string(error).unwrap_or_default(),
+        _ => "(no status code or body)".to_owned(),
+    }
+}
+
+/// Message for a stream event whose data is not JSON, as the OpenAI SDK words it.
+pub const MALFORMED_SSE_JSON: &str = "Error reading response: malformed server-sent event JSON.";
+
+/// The next JSON chunk of an OpenAI SDK stream. Ends at `[DONE]` or the end of
+/// the body; skips `thread.*` events; fails on malformed JSON, an `error` event
+/// or a payload with a truthy `error`.
+pub async fn next_openai_chunk(
+    reader: &mut SseReader,
+    cancel: &CancellationToken,
+) -> Result<Option<Value>, String> {
+    loop {
+        let Some(sse) = reader.next(cancel).await? else {
+            return Ok(None);
+        };
+        if sse.data == "[DONE]" {
+            return Ok(None);
+        }
+        let data: Value =
+            serde_json::from_str(&sse.data).map_err(|_| MALFORMED_SSE_JSON.to_owned())?;
+        match sse.event.as_deref() {
+            Some(event) if event.starts_with("thread.") => continue,
+            Some("error") => {
+                let error = data.get("error").filter(|error| !error.is_null());
+                return Err(sdk_error_message(error.unwrap_or(&data)));
+            }
+            _ => {}
+        }
+        if let Some(error) = data.get("error").filter(|error| is_truthy(error)) {
+            return Err(sdk_error_message(error));
+        }
+        return Ok(Some(data));
+    }
+}
+
 fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -194,15 +241,24 @@ fn is_truthy(value: &Value) -> bool {
 
 const MAX_ERROR_BODY_CHARS: usize = 4000;
 
-/// pi's `formatProviderError`: the SDK message, or `<status>: <body>` when the
-/// message does not already carry the error body.
-pub fn provider_error_message(message: &str, status: Option<u16>, body: Option<&Value>) -> String {
+/// pi's `formatProviderError`: the SDK message, or the status and body when the
+/// message does not already carry the error body. With a prefix, either form reads
+/// `<prefix> (<status>): <text>`; without one, a body reads `<status>: <body>`.
+pub fn provider_error_message(
+    message: &str,
+    status: Option<u16>,
+    body: Option<&Value>,
+    prefix: Option<&str>,
+) -> String {
     let body = body
         .filter(|body| body.as_object().is_some_and(|object| !object.is_empty()))
         .and_then(|body| ri_types::json::to_string(body).ok())
-        .map(|text| truncate_chars(text.trim(), MAX_ERROR_BODY_CHARS));
-    match (status, body) {
-        (Some(status), Some(body)) if !message.contains(&body) => format!("{status}: {body}"),
+        .map(|text| truncate_chars(text.trim(), MAX_ERROR_BODY_CHARS))
+        .filter(|body| !body.is_empty() && !message.contains(body.as_str()));
+    match (status, body, prefix) {
+        (Some(status), Some(body), Some(prefix)) => format!("{prefix} ({status}): {body}"),
+        (Some(status), Some(body), None) => format!("{status}: {body}"),
+        (Some(status), None, Some(prefix)) => format!("{prefix} ({status}): {message}"),
         _ => message.to_owned(),
     }
 }
@@ -301,12 +357,30 @@ mod tests {
     fn provider_errors_carry_the_body() {
         let error = json!({"message": "Invalid model", "type": "invalid_request_error"});
         assert_eq!(
-            provider_error_message("400 Invalid model", Some(400), Some(&error)),
+            provider_error_message("400 Invalid model", Some(400), Some(&error), None),
             r#"400: {"message":"Invalid model","type":"invalid_request_error"}"#
         );
         assert_eq!(
-            provider_error_message("Connection error.", None, None),
+            provider_error_message("Connection error.", None, None, None),
             "Connection error."
+        );
+        assert_eq!(
+            provider_error_message(
+                "400 Invalid model",
+                Some(400),
+                Some(&error),
+                Some("OpenAI API error")
+            ),
+            r#"OpenAI API error (400): {"message":"Invalid model","type":"invalid_request_error"}"#
+        );
+        assert_eq!(
+            provider_error_message(
+                "502 status code (no body)",
+                Some(502),
+                None,
+                Some("xai API error")
+            ),
+            "xai API error (502): 502 status code (no body)"
         );
     }
 

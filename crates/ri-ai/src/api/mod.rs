@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod openai_completions;
+pub mod openai_responses;
 
 use std::sync::Arc;
 
@@ -14,8 +15,21 @@ pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
     match api {
         "anthropic-messages" => Some(Arc::new(anthropic::AnthropicMessages)),
         "openai-completions" => Some(Arc::new(openai_completions::OpenAiCompletions)),
+        "openai-responses" => Some(Arc::new(openai_responses::OpenAiResponses)),
         _ => None,
     }
+}
+
+/// Replaces every UTF-16 unit outside `[a-zA-Z0-9_-]` with `_`, as pi's id
+/// sanitizers do; a character outside the BMP becomes two underscores.
+pub(crate) fn sanitize_id_part(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| {
+            let keep = c.is_ascii_alphanumeric() || c == '_' || c == '-';
+            let (c, count) = if keep { (c, 1) } else { ('_', c.len_utf16()) };
+            std::iter::repeat_n(c, count)
+        })
+        .collect()
 }
 
 /// Wire APIs by id: the built-ins plus any registered by extensions.

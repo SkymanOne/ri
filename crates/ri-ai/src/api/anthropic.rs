@@ -187,16 +187,6 @@ fn effort_for_level(model: &Model, level: ThinkingLevel) -> String {
     .to_owned()
 }
 
-fn cache_retention(options: &StreamOptions) -> CacheRetention {
-    options.cache_retention.unwrap_or_else(|| {
-        if std::env::var("PI_CACHE_RETENTION").as_deref() == Ok("long") {
-            CacheRetention::Long
-        } else {
-            CacheRetention::Short
-        }
-    })
-}
-
 fn cache_control(compat: &Compat, retention: CacheRetention) -> Option<Value> {
     match retention {
         CacheRetention::None => None,
@@ -225,15 +215,6 @@ fn from_claude_code_name(name: &str, tools: &[ToolDeclaration]) -> String {
         .map_or_else(|| name.to_owned(), |tool| tool.name.clone())
 }
 
-fn has_header(headers: &IndexMap<String, Option<String>>, name: &str) -> bool {
-    headers.iter().any(|(key, value)| {
-        key.eq_ignore_ascii_case(name)
-            && value
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-    })
-}
-
 async fn run(request: Request, sender: EventSender) {
     let Request {
         model,
@@ -259,9 +240,9 @@ async fn run(request: Request, sender: EventSender) {
         .map(|(key, value)| (key.clone(), Some(value.clone())))
         .collect();
     if api_key.is_none()
-        && !has_header(&option_headers, "authorization")
-        && !has_header(&option_headers, "x-api-key")
-        && !has_header(&option_headers, "cf-aig-authorization")
+        && !options.has_header("authorization")
+        && !options.has_header("x-api-key")
+        && !options.has_header("cf-aig-authorization")
     {
         send_error(
             &sender,
@@ -274,7 +255,7 @@ async fn run(request: Request, sender: EventSender) {
 
     let oauth =
         model.provider != "github-copilot" && api_key.as_deref().is_some_and(is_oauth_token);
-    let retention = cache_retention(&options);
+    let retention = options.resolved_cache_retention();
     let params = match build_params(
         &model,
         &compat,
@@ -838,16 +819,7 @@ fn native_tool_changes(compat: &Compat, messages: &[Message]) -> bool {
 }
 
 fn normalize_tool_call_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .take(64)
-        .collect()
+    super::sanitize_id_part(id).chars().take(64).collect()
 }
 
 #[allow(clippy::too_many_arguments, reason = "mirrors pi's buildParams inputs")]
@@ -864,7 +836,8 @@ fn build_params(
     let cache_control = cache_control(compat, retention);
     let initial = initial_system_message(messages);
     let initial_text = initial.map(|system| system.text()).unwrap_or_default();
-    let transformed = transform_messages(messages, model, Some(&normalize_tool_call_id), now_ms());
+    let normalize = |id: &str, _: &AssistantMessage| normalize_tool_call_id(id);
+    let transformed = transform_messages(messages, model, Some(&normalize), now_ms());
     let conversation = if initial.is_some() {
         &transformed[1..]
     } else {
