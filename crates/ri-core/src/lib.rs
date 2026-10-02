@@ -2,7 +2,6 @@
 #![forbid(unsafe_code)]
 
 pub mod agent_session;
-pub mod collate;
 pub mod compaction;
 pub mod config;
 pub mod messages;

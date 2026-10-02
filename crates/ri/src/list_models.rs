@@ -5,9 +5,9 @@
 use std::io::Write;
 
 use ri_ai::registry::ModelRegistry;
-use ri_core::collate::locale_compare;
 use ri_core::config::agent_dir;
 use ri_tui::fuzzy::fuzzy_filter;
+use ri_types::collate::locale_compare;
 use ri_types::model::Model;
 
 /// `x.toFixed(1)`: rounds half up on the exact value, as JavaScript does.

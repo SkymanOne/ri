@@ -15,6 +15,7 @@ node keys.mjs
 node editor.mjs
 node theme.mjs
 node text.mjs
+node autocomplete.mjs   # needs fd on PATH
 ```
 
 The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and timestamps change on every run. To cut `legacy/` again from pi's own test sessions, set `PI_SOURCE` to a pi `v1.0.0` checkout.
@@ -40,5 +41,6 @@ The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and
 | `theme/theme.json` | pi's built-in themes in both color modes; `generateSystemThemeColors` | Every token's escape sequence; system themes for no report, black, white, mid-gray and palette terminals |
 | `text/text.json` | pi-tui `wrapTextWithAnsi`, `truncateToWidth` and `Markdown` with an identity theme | Wrapping, truncation and markdown blocks at three widths, with and without preserved list markers and escapes |
 | `editor/editor.json` | pi-tui `Editor` driven key by key | Text, cursor, rendered rows and submissions after every key: wrapping, word motion, kill ring, undo, history, pastes and markers, sticky columns, jumps, scrolling |
+| `autocomplete/cases.json` | pi-tui `CombinedAutocompleteProvider` over a generated tree | Slash commands and arguments, skill names, path and quoted completion, `@` search through `fd`, applying the first item |
 
 The excerpts in `legacy/` come from pi, Copyright (c) 2025 Mario Zechner, MIT License.

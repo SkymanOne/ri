@@ -13,6 +13,7 @@ use ratatui_core::text::{Line, Span};
 use crate::autocomplete::{AutocompleteProvider, Completion};
 use crate::keybindings::Keybindings;
 use crate::keys::decode_printable;
+use crate::kill_ring::KillRing;
 use crate::segment::{
     Granularity, find_word_backward, find_word_forward, is_paste_marker, parse_paste_marker,
     paste_marker_spans, segment,
@@ -303,7 +304,7 @@ pub struct Editor {
     history: Vec<String>,
     history_index: isize,
     history_draft: Option<State>,
-    kill_ring: Vec<String>,
+    kill_ring: KillRing,
     last_action: Option<LastAction>,
     jump: Option<Jump>,
     preferred_visual_col: Option<usize>,
@@ -344,7 +345,7 @@ impl Editor {
             history: Vec::new(),
             history_index: -1,
             history_draft: None,
-            kill_ring: Vec::new(),
+            kill_ring: KillRing::default(),
             last_action: None,
             jump: None,
             preferred_visual_col: None,
@@ -1152,22 +1153,6 @@ impl Editor {
         }
     }
 
-    fn kill(&mut self, text: &str, prepend: bool, accumulate: bool) {
-        if text.is_empty() {
-            return;
-        }
-        match self.kill_ring.last_mut() {
-            Some(last) if accumulate => {
-                if prepend {
-                    last.insert_str(0, text);
-                } else {
-                    last.push_str(text);
-                }
-            }
-            _ => self.kill_ring.push(text.to_owned()),
-        }
-    }
-
     fn delete_to_line_start(&mut self) {
         self.exit_history();
         let accumulate = self.last_action == Some(LastAction::Kill);
@@ -1175,13 +1160,13 @@ impl Editor {
         let col = floor_boundary(&line, self.state.cursor_col);
         if col > 0 {
             self.push_undo();
-            self.kill(&line[..col], true, accumulate);
+            self.kill_ring.push(&line[..col], true, accumulate);
             self.last_action = Some(LastAction::Kill);
             self.state.lines[self.state.cursor_line] = line[col..].to_owned();
             self.set_cursor_col(0);
         } else if self.state.cursor_line > 0 {
             self.push_undo();
-            self.kill("\n", true, accumulate);
+            self.kill_ring.push("\n", true, accumulate);
             self.last_action = Some(LastAction::Kill);
             self.merge_with_previous_line();
         }
@@ -1194,12 +1179,12 @@ impl Editor {
         let col = floor_boundary(&line, self.state.cursor_col);
         if col < line.len() {
             self.push_undo();
-            self.kill(&line[col..], false, accumulate);
+            self.kill_ring.push(&line[col..], false, accumulate);
             self.last_action = Some(LastAction::Kill);
             self.state.lines[self.state.cursor_line] = line[..col].to_owned();
         } else if self.state.cursor_line + 1 < self.state.lines.len() {
             self.push_undo();
-            self.kill("\n", false, accumulate);
+            self.kill_ring.push("\n", false, accumulate);
             self.last_action = Some(LastAction::Kill);
             self.merge_with_next_line();
         }
@@ -1211,7 +1196,7 @@ impl Editor {
         if self.state.cursor_col == 0 {
             if self.state.cursor_line > 0 {
                 self.push_undo();
-                self.kill("\n", true, accumulate);
+                self.kill_ring.push("\n", true, accumulate);
                 self.last_action = Some(LastAction::Kill);
                 self.merge_with_previous_line();
             }
@@ -1221,7 +1206,7 @@ impl Editor {
         let line = self.current_line().to_owned();
         let col = floor_boundary(&line, self.state.cursor_col);
         let from = find_word_backward(&line, col, &self.valid_ids());
-        self.kill(&line[from..col], true, accumulate);
+        self.kill_ring.push(&line[from..col], true, accumulate);
         self.last_action = Some(LastAction::Kill);
         self.state.lines[self.state.cursor_line] = format!("{}{}", &line[..from], &line[col..]);
         self.set_cursor_col(from);
@@ -1235,7 +1220,7 @@ impl Editor {
         if col >= line.len() {
             if self.state.cursor_line + 1 < self.state.lines.len() {
                 self.push_undo();
-                self.kill("\n", false, accumulate);
+                self.kill_ring.push("\n", false, accumulate);
                 self.last_action = Some(LastAction::Kill);
                 self.merge_with_next_line();
             }
@@ -1243,13 +1228,13 @@ impl Editor {
         }
         self.push_undo();
         let to = find_word_forward(&line, col, &self.valid_ids());
-        self.kill(&line[col..to], false, accumulate);
+        self.kill_ring.push(&line[col..to], false, accumulate);
         self.last_action = Some(LastAction::Kill);
         self.state.lines[self.state.cursor_line] = format!("{}{}", &line[..col], &line[to..]);
     }
 
     fn yank(&mut self) {
-        let Some(text) = self.kill_ring.last().cloned() else {
+        let Some(text) = self.kill_ring.peek().map(str::to_owned) else {
             return;
         };
         self.push_undo();
@@ -1264,17 +1249,15 @@ impl Editor {
         }
         self.push_undo();
         self.delete_yanked();
-        if let Some(last) = self.kill_ring.pop() {
-            self.kill_ring.insert(0, last);
-        }
-        let text = self.kill_ring.last().cloned().unwrap_or_default();
+        self.kill_ring.rotate();
+        let text = self.kill_ring.peek().unwrap_or_default().to_owned();
         self.exit_history();
         self.insert_text(&text);
         self.last_action = Some(LastAction::Yank);
     }
 
     fn delete_yanked(&mut self) {
-        let Some(yanked) = self.kill_ring.last().cloned() else {
+        let Some(yanked) = self.kill_ring.peek().map(str::to_owned) else {
             return;
         };
         let parts: Vec<&str> = yanked.split('\n').collect();

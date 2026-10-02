@@ -1,0 +1,1095 @@
+{
+	"tree": [
+		"src/",
+		"src/main.rs",
+		"src/lib.rs",
+		"src/modes/",
+		"src/modes/print.rs",
+		"src/modes/interactive.rs",
+		"docs/",
+		"docs/README.md",
+		"docs/guide one.md",
+		"README.md",
+		"Cargo.toml",
+		"Cargo.lock",
+		".hidden",
+		"tests/",
+		"tests/fixtures/",
+		"tests/fixtures/a.json",
+		"notes.txt"
+	],
+	"levels": [
+		"off",
+		"minimal",
+		"low",
+		"medium",
+		"high",
+		"xhigh",
+		"max"
+	],
+	"commands": [
+		{
+			"name": "model",
+			"description": "Select model (opens selector UI)",
+			"argumentHint": "<provider/model>"
+		},
+		{
+			"name": "thinking",
+			"description": "Set thinking level",
+			"argumentHint": "<level>",
+			"levels": true
+		},
+		{
+			"name": "tree",
+			"description": "Navigate session tree (switch branches)"
+		},
+		{
+			"name": "new",
+			"description": "Start a new session"
+		},
+		{
+			"name": "name",
+			"description": "Set session display name"
+		},
+		{
+			"name": "skill:commit",
+			"description": "[u] Write a commit"
+		},
+		{
+			"name": "skill:review",
+			"description": "Review code"
+		},
+		{
+			"name": "quit",
+			"description": "Quit pi"
+		}
+	],
+	"cases": [
+		{
+			"lines": [
+				"/"
+			],
+			"line": 0,
+			"col": 1,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "model",
+						"label": "model",
+						"description": "<provider/model> — Select model (opens selector UI)"
+					},
+					{
+						"value": "thinking",
+						"label": "thinking",
+						"description": "<level> — Set thinking level"
+					},
+					{
+						"value": "tree",
+						"label": "tree",
+						"description": "Navigate session tree (switch branches)"
+					},
+					{
+						"value": "new",
+						"label": "new",
+						"description": "Start a new session"
+					},
+					{
+						"value": "name",
+						"label": "name",
+						"description": "Set session display name"
+					},
+					{
+						"value": "skill:commit",
+						"label": "skill:commit",
+						"description": "[u] Write a commit"
+					},
+					{
+						"value": "skill:review",
+						"label": "skill:review",
+						"description": "Review code"
+					},
+					{
+						"value": "quit",
+						"label": "quit",
+						"description": "Quit pi"
+					}
+				],
+				"prefix": "/"
+			},
+			"applied": {
+				"lines": [
+					"/model "
+				],
+				"cursorLine": 0,
+				"cursorCol": 7
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/mo"
+			],
+			"line": 0,
+			"col": 3,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "model",
+						"label": "model",
+						"description": "<provider/model> — Select model (opens selector UI)"
+					}
+				],
+				"prefix": "/mo"
+			},
+			"applied": {
+				"lines": [
+					"/model "
+				],
+				"cursorLine": 0,
+				"cursorCol": 7
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/th"
+			],
+			"line": 0,
+			"col": 3,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "thinking",
+						"label": "thinking",
+						"description": "<level> — Set thinking level"
+					}
+				],
+				"prefix": "/th"
+			},
+			"applied": {
+				"lines": [
+					"/thinking "
+				],
+				"cursorLine": 0,
+				"cursorCol": 10
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/rev"
+			],
+			"line": 0,
+			"col": 4,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "skill:review",
+						"label": "skill:review",
+						"description": "Review code"
+					}
+				],
+				"prefix": "/rev"
+			},
+			"applied": {
+				"lines": [
+					"/skill:review "
+				],
+				"cursorLine": 0,
+				"cursorCol": 14
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/skill:c"
+			],
+			"line": 0,
+			"col": 8,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "skill:commit",
+						"label": "skill:commit",
+						"description": "[u] Write a commit"
+					}
+				],
+				"prefix": "/skill:c"
+			},
+			"applied": {
+				"lines": [
+					"/skill:commit "
+				],
+				"cursorLine": 0,
+				"cursorCol": 14
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/thinking "
+			],
+			"line": 0,
+			"col": 10,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "off",
+						"label": "off"
+					},
+					{
+						"value": "minimal",
+						"label": "minimal"
+					},
+					{
+						"value": "low",
+						"label": "low"
+					},
+					{
+						"value": "medium",
+						"label": "medium"
+					},
+					{
+						"value": "high",
+						"label": "high"
+					},
+					{
+						"value": "xhigh",
+						"label": "xhigh"
+					},
+					{
+						"value": "max",
+						"label": "max"
+					}
+				],
+				"prefix": ""
+			},
+			"applied": {
+				"lines": [
+					"/thinking off"
+				],
+				"cursorLine": 0,
+				"cursorCol": 13
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/thinking hi"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "high",
+						"label": "high"
+					},
+					{
+						"value": "xhigh",
+						"label": "xhigh"
+					}
+				],
+				"prefix": "hi"
+			},
+			"applied": {
+				"lines": [
+					"/thinking high"
+				],
+				"cursorLine": 0,
+				"cursorCol": 14
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"/thinking zz"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": null,
+			"applied": null,
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"/new x"
+			],
+			"line": 0,
+			"col": 6,
+			"force": false,
+			"fd": false,
+			"suggestions": null,
+			"applied": null,
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"  /na"
+			],
+			"line": 0,
+			"col": 5,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "name",
+						"label": "name",
+						"description": "Set session display name"
+					}
+				],
+				"prefix": "/na"
+			},
+			"applied": {
+				"lines": [
+					"  /name "
+				],
+				"cursorLine": 0,
+				"cursorCol": 8
+			},
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"/zzz"
+			],
+			"line": 0,
+			"col": 4,
+			"force": false,
+			"fd": false,
+			"suggestions": null,
+			"applied": null,
+			"fileCompletion": false
+		},
+		{
+			"lines": [
+				"look at src/"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/",
+						"label": "modes/"
+					},
+					{
+						"value": "src/lib.rs",
+						"label": "lib.rs"
+					},
+					{
+						"value": "src/main.rs",
+						"label": "main.rs"
+					}
+				],
+				"prefix": "src/"
+			},
+			"applied": {
+				"lines": [
+					"look at src/modes/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 18
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"look at src/m"
+			],
+			"line": 0,
+			"col": 13,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/",
+						"label": "modes/"
+					},
+					{
+						"value": "src/main.rs",
+						"label": "main.rs"
+					}
+				],
+				"prefix": "src/m"
+			},
+			"applied": {
+				"lines": [
+					"look at src/modes/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 18
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"look at ./"
+			],
+			"line": 0,
+			"col": 10,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "./docs/",
+						"label": "docs/"
+					},
+					{
+						"value": "./src/",
+						"label": "src/"
+					},
+					{
+						"value": "./tests/",
+						"label": "tests/"
+					},
+					{
+						"value": "./.hidden",
+						"label": ".hidden"
+					},
+					{
+						"value": "./Cargo.lock",
+						"label": "Cargo.lock"
+					},
+					{
+						"value": "./Cargo.toml",
+						"label": "Cargo.toml"
+					},
+					{
+						"value": "./notes.txt",
+						"label": "notes.txt"
+					},
+					{
+						"value": "./README.md",
+						"label": "README.md"
+					}
+				],
+				"prefix": "./"
+			},
+			"applied": {
+				"lines": [
+					"look at ./docs/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 15
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"look at ./do"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "./docs/",
+						"label": "docs/"
+					}
+				],
+				"prefix": "./do"
+			},
+			"applied": {
+				"lines": [
+					"look at ./docs/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 15
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"see "
+			],
+			"line": 0,
+			"col": 4,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "docs/",
+						"label": "docs/"
+					},
+					{
+						"value": "src/",
+						"label": "src/"
+					},
+					{
+						"value": "tests/",
+						"label": "tests/"
+					},
+					{
+						"value": ".hidden",
+						"label": ".hidden"
+					},
+					{
+						"value": "Cargo.lock",
+						"label": "Cargo.lock"
+					},
+					{
+						"value": "Cargo.toml",
+						"label": "Cargo.toml"
+					},
+					{
+						"value": "notes.txt",
+						"label": "notes.txt"
+					},
+					{
+						"value": "README.md",
+						"label": "README.md"
+					}
+				],
+				"prefix": ""
+			},
+			"applied": {
+				"lines": [
+					"see docs/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 9
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				""
+			],
+			"line": 0,
+			"col": 0,
+			"force": true,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "docs/",
+						"label": "docs/"
+					},
+					{
+						"value": "src/",
+						"label": "src/"
+					},
+					{
+						"value": "tests/",
+						"label": "tests/"
+					},
+					{
+						"value": ".hidden",
+						"label": ".hidden"
+					},
+					{
+						"value": "Cargo.lock",
+						"label": "Cargo.lock"
+					},
+					{
+						"value": "Cargo.toml",
+						"label": "Cargo.toml"
+					},
+					{
+						"value": "notes.txt",
+						"label": "notes.txt"
+					},
+					{
+						"value": "README.md",
+						"label": "README.md"
+					}
+				],
+				"prefix": ""
+			},
+			"applied": {
+				"lines": [
+					"docs/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 5
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"Car"
+			],
+			"line": 0,
+			"col": 3,
+			"force": true,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "Cargo.lock",
+						"label": "Cargo.lock"
+					},
+					{
+						"value": "Cargo.toml",
+						"label": "Cargo.toml"
+					}
+				],
+				"prefix": "Car"
+			},
+			"applied": {
+				"lines": [
+					"Cargo.lock"
+				],
+				"cursorLine": 0,
+				"cursorCol": 10
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"open (src/mo"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/",
+						"label": "modes/"
+					}
+				],
+				"prefix": "src/mo"
+			},
+			"applied": {
+				"lines": [
+					"open (src/modes/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 16
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"open \"docs/gu"
+			],
+			"line": 0,
+			"col": 13,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "\"docs/guide one.md\"",
+						"label": "guide one.md"
+					}
+				],
+				"prefix": "\"docs/gu"
+			},
+			"applied": {
+				"lines": [
+					"open \"docs/guide one.md\""
+				],
+				"cursorLine": 0,
+				"cursorCol": 24
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"x src/modes/"
+			],
+			"line": 0,
+			"col": 12,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/interactive.rs",
+						"label": "interactive.rs"
+					},
+					{
+						"value": "src/modes/print.rs",
+						"label": "print.rs"
+					}
+				],
+				"prefix": "src/modes/"
+			},
+			"applied": {
+				"lines": [
+					"x src/modes/interactive.rs"
+				],
+				"cursorLine": 0,
+				"cursorCol": 26
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"/model src/"
+			],
+			"line": 0,
+			"col": 11,
+			"force": true,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/",
+						"label": "modes/"
+					},
+					{
+						"value": "src/lib.rs",
+						"label": "lib.rs"
+					},
+					{
+						"value": "src/main.rs",
+						"label": "main.rs"
+					}
+				],
+				"prefix": "src/"
+			},
+			"applied": {
+				"lines": [
+					"/model src/modes/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 17
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"two",
+				"lines src/"
+			],
+			"line": 1,
+			"col": 10,
+			"force": false,
+			"fd": false,
+			"suggestions": {
+				"items": [
+					{
+						"value": "src/modes/",
+						"label": "modes/"
+					},
+					{
+						"value": "src/lib.rs",
+						"label": "lib.rs"
+					},
+					{
+						"value": "src/main.rs",
+						"label": "main.rs"
+					}
+				],
+				"prefix": "src/"
+			},
+			"applied": {
+				"lines": [
+					"two",
+					"lines src/modes/"
+				],
+				"cursorLine": 1,
+				"cursorCol": 16
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"read"
+			],
+			"line": 0,
+			"col": 4,
+			"force": false,
+			"fd": false,
+			"suggestions": null,
+			"applied": null,
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"@"
+			],
+			"line": 0,
+			"col": 1,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@src/",
+						"label": "src/",
+						"description": "src"
+					},
+					{
+						"value": "@docs/",
+						"label": "docs/",
+						"description": "docs"
+					},
+					{
+						"value": "@tests/",
+						"label": "tests/",
+						"description": "tests"
+					},
+					{
+						"value": "@.hidden",
+						"label": ".hidden",
+						"description": ".hidden"
+					},
+					{
+						"value": "@notes.txt",
+						"label": "notes.txt",
+						"description": "notes.txt"
+					},
+					{
+						"value": "@README.md",
+						"label": "README.md",
+						"description": "README.md"
+					},
+					{
+						"value": "@Cargo.lock",
+						"label": "Cargo.lock",
+						"description": "Cargo.lock"
+					},
+					{
+						"value": "@Cargo.toml",
+						"label": "Cargo.toml",
+						"description": "Cargo.toml"
+					},
+					{
+						"value": "@src/lib.rs",
+						"label": "lib.rs",
+						"description": "src/lib.rs"
+					},
+					{
+						"value": "@src/modes/",
+						"label": "modes/",
+						"description": "src/modes"
+					},
+					{
+						"value": "@src/main.rs",
+						"label": "main.rs",
+						"description": "src/main.rs"
+					},
+					{
+						"value": "@docs/README.md",
+						"label": "README.md",
+						"description": "docs/README.md"
+					},
+					{
+						"value": "@tests/fixtures/",
+						"label": "fixtures/",
+						"description": "tests/fixtures"
+					},
+					{
+						"value": "@\"docs/guide one.md\"",
+						"label": "guide one.md",
+						"description": "docs/guide one.md"
+					},
+					{
+						"value": "@src/modes/print.rs",
+						"label": "print.rs",
+						"description": "src/modes/print.rs"
+					},
+					{
+						"value": "@tests/fixtures/a.json",
+						"label": "a.json",
+						"description": "tests/fixtures/a.json"
+					},
+					{
+						"value": "@src/modes/interactive.rs",
+						"label": "interactive.rs",
+						"description": "src/modes/interactive.rs"
+					}
+				],
+				"prefix": "@"
+			},
+			"applied": {
+				"lines": [
+					"@src/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 5
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"see @mai"
+			],
+			"line": 0,
+			"col": 8,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@src/main.rs",
+						"label": "main.rs",
+						"description": "src/main.rs"
+					}
+				],
+				"prefix": "@mai"
+			},
+			"applied": {
+				"lines": [
+					"see @src/main.rs "
+				],
+				"cursorLine": 0,
+				"cursorCol": 17
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"see @src/"
+			],
+			"line": 0,
+			"col": 9,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@src/lib.rs",
+						"label": "lib.rs",
+						"description": "src/lib.rs"
+					},
+					{
+						"value": "@src/modes/",
+						"label": "modes/",
+						"description": "src/modes"
+					},
+					{
+						"value": "@src/main.rs",
+						"label": "main.rs",
+						"description": "src/main.rs"
+					},
+					{
+						"value": "@src/modes/print.rs",
+						"label": "print.rs",
+						"description": "src/modes/print.rs"
+					},
+					{
+						"value": "@src/modes/interactive.rs",
+						"label": "interactive.rs",
+						"description": "src/modes/interactive.rs"
+					}
+				],
+				"prefix": "@src/"
+			},
+			"applied": {
+				"lines": [
+					"see @src/lib.rs "
+				],
+				"cursorLine": 0,
+				"cursorCol": 16
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"@\"guide"
+			],
+			"line": 0,
+			"col": 7,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@\"docs/guide one.md\"",
+						"label": "guide one.md",
+						"description": "docs/guide one.md"
+					}
+				],
+				"prefix": "@\"guide"
+			},
+			"applied": {
+				"lines": [
+					"@\"docs/guide one.md\" "
+				],
+				"cursorLine": 0,
+				"cursorCol": 21
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"@read"
+			],
+			"line": 0,
+			"col": 5,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@README.md",
+						"label": "README.md",
+						"description": "README.md"
+					},
+					{
+						"value": "@docs/README.md",
+						"label": "README.md",
+						"description": "docs/README.md"
+					}
+				],
+				"prefix": "@read"
+			},
+			"applied": {
+				"lines": [
+					"@README.md "
+				],
+				"cursorLine": 0,
+				"cursorCol": 11
+			},
+			"fileCompletion": true
+		},
+		{
+			"lines": [
+				"@tests/fix"
+			],
+			"line": 0,
+			"col": 10,
+			"force": false,
+			"fd": true,
+			"suggestions": {
+				"items": [
+					{
+						"value": "@tests/fixtures/",
+						"label": "fixtures/",
+						"description": "tests/fixtures"
+					}
+				],
+				"prefix": "@tests/fix"
+			},
+			"applied": {
+				"lines": [
+					"@tests/fixtures/"
+				],
+				"cursorLine": 0,
+				"cursorCol": 16
+			},
+			"fileCompletion": true
+		}
+	]
+}

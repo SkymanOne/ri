@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use super::path::resolve_to_cwd;
 use super::truncate::DEFAULT_MAX_BYTES;
 use super::{ToolEnv, capped_output, js_number, node_error, plain_declaration, text_result};
-use crate::collate::locale_compare;
+use ri_types::collate::locale_compare;
 
 const DEFAULT_LIMIT: f64 = 500.0;
 

@@ -180,14 +180,14 @@ pub fn listing(
         .iter()
         .map(|skill| skill.name.clone())
         .collect();
-    skills.sort_by(|a, b| ri_core::collate::locale_compare(a, b));
+    skills.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
     section(&mut out, "Skills", skills);
     let mut prompts: Vec<String> = resources
         .templates
         .iter()
         .map(|template| format!("/{}", template.name))
         .collect();
-    prompts.sort_by(|a, b| ri_core::collate::locale_compare(a, b));
+    prompts.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
     section(&mut out, "Prompts", prompts);
     out
 }
