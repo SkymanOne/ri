@@ -18,6 +18,11 @@ ri-ext = { path = "crates/ri-ext" }
 ri-tui = { path = "crates/ri-tui" }
 ri-types = { path = "crates/ri-types" }
 
+indexmap = { version = "2", features = ["serde"] }
+ryu-js = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+
 # Enforces the code rules in AGENTS.md. CI denies all warnings.
 [workspace.lints.rust]
 missing_docs = "warn"

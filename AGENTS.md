@@ -174,6 +174,7 @@ Feasibility study, prior art and rejected alternatives: [docs/research/extension
 | 10 | pi formats in ri's own directories. | Package and session compatibility without two tools writing one directory. |
 | 11 | `ri-js.wasm` is committed with an inputs hash. | Plain `cargo build` needs no wasm toolchain. CI rejects stale artifacts. |
 | 12 | Linux and macOS are tier 1. | Windows specifics (PowerShell tool, console input) follow once the core is stable. |
+| 13 | pi JSON files are order-preserving documents; `ri-types` structs are views over them. | pi's key order depends on the code path and on user edits, so only the document round-trips byte-identically. |
 
 ## Performance budgets
 
@@ -210,6 +211,7 @@ These are initial targets, calibrated against pi in M0–M1.
 - Rust stable, pinned in `rust-toolchain.toml`, edition 2024.
 - KISS: choose the simplest design that matches pi's behavior. No speculative generality.
 - DRY: one definition per concept. pi JSON shapes live only in `ri-types`.
+- Serialize pi JSON only through `ri_types::json`, which matches `JSON.stringify`. Clippy rejects direct `serde_json::to_*` calls.
 - Errors:
   - `thiserror` in libraries; `anyhow` only in `ri` and `xtask`.
   - No `unwrap` or `expect` outside tests unless the invariant is stated at the call site.
@@ -232,7 +234,7 @@ These are initial targets, calibrated against pi in M0–M1.
 ### Testing
 
 - No network access and no real providers in tests. Use the faux provider or the mock SSE server.
-- pi-produced golden fixtures live in `tests/fixtures/pi`. Formats must round-trip byte-identical.
+- pi-produced golden fixtures live in `tests/fixtures/pi`; its README explains how to regenerate them. Formats must round-trip byte-identical.
 - Use `insta` snapshots. Test the built-in UI with ratatui `TestBackend`.
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;
