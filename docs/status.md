@@ -36,19 +36,25 @@ Not yet done:
 
 ## M2: agent loop, tools, sessions
 
-In progress.
-
-Done:
+Done for the slice below.
 
 - Agent loop with parallel tool execution, steering and follow-up queues, `AgentHooks`.
-- Tools `read`, `bash`, `edit`, `write` with pi's truncation, fuzzy edit matching and mutation queue.
+- All seven built-in tools. `grep` and `find` run `rg` and `fd` as pi does, downloading them when missing unless offline.
 - System prompt sections, context files, skills, prompt templates, settings with project trust.
 - Session manager: JSONL v3 tree, migration, branching, fork, clone, context edits, projection.
+- Session selection: `--continue`, `--session` by path or id prefix, `--fork`, `--session-id`, custom session directories.
 - Post-run recovery as in pi: auto-retry with backoff, omission of failed and truncated attempts, overflow recovery, threshold compaction with split-turn summaries, manual compaction.
+- Tree navigation with branch summaries and labels.
 
-Differential scenarios: auto-retry exhausted, auto-retry recovered, length stop, threshold compaction.
+Differential scenarios compare stdout, stderr, requests and the session files each program writes. Covered: new, continued, opened, forked and id-addressed sessions; retry exhausted and recovered; length stop; threshold compaction; parallel `ls`, `grep` and `find`; `@file` arguments.
 
-Not yet done: `grep`, `find`, `ls`; branch summaries; `--continue`, `--resume`, `--session`, `--fork` scenarios; session file interop in both directions.
+Interop: the scenarios show ri writing the same session files as pi, line by line, and continuing sessions written in pi's format.
+
+Not yet done:
+
+- Steering, follow-up and abort have no differential scenario yet; they need RPC mode (M4).
+- Tree navigation is tested with the faux provider only, until `/tree` exists (M3) or RPC (M4).
+- `--resume` needs the interactive session selector (M3).
 
 ## M3 to M7
 

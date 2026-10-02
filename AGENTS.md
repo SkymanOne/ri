@@ -240,7 +240,8 @@ These are initial targets, calibrated against pi in M0–M1.
 - pi-produced golden fixtures live in `tests/fixtures/pi`; its README explains how to regenerate them. Formats must round-trip byte-identical.
 - End-to-end scenarios in `tests/fixtures/scenarios` run a program against a cassette in a fresh directory and a cleared environment:
   - `cargo test` compares ri's normalized output and requests with goldens recorded from pi;
-  - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs.
+  - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs;
+  - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios.
 - Use `insta` snapshots. Test the built-in UI with ratatui `TestBackend`.
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;
