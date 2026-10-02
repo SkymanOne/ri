@@ -114,5 +114,22 @@
     "name": "list-models-no-match",
     "cassette": "none.json",
     "args": ["--list-models", "zzzz"]
+  },
+  {
+    "name": "anthropic-tool-call-json",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"}
+  },
+  {
+    "name": "anthropic-error-json",
+    "cassette": "anthropic-messages/error.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "hi"]
+  },
+  {
+    "name": "anthropic-overloaded-retry-json",
+    "cassette": "anthropic-messages/overloaded-retry.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5:off", "hi"],
+    "agentFiles": {"settings.json": "{\"retry\": {\"baseDelayMs\": 5}}"}
   }
 ]
