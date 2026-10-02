@@ -1,0 +1,6791 @@
+[
+	{
+		"name": "typing",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "h",
+				"text": "h",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"h                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "he",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"he                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "hel",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hel                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "hell",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hell                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "hello",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "hello ",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "hello w",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello w                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "hello wo",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello wo                                ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "hello wor",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello wor                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "hello worl",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello worl                              ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "hello world",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hello world                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": [
+					"hello world"
+				]
+			}
+		]
+	},
+	{
+		"name": "wrap",
+		"width": 12,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "t",
+				"text": "t",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────",
+					"t           ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "th",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────",
+					"th          ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "the",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────",
+					"the         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────",
+					"the         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "q",
+				"text": "the q",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────",
+					"the q       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "the qu",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────",
+					"the qu      ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "the qui",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────",
+					"the qui     ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "the quic",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────",
+					"the quic    ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "k",
+				"text": "the quick",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick ",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "the quick b",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────",
+					"the quick b ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "the quick br",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"br          ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "the quick bro",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"bro         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "the quick brow",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brow        ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "the quick brown",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown ",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "f",
+				"text": "the quick brown f",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown f     ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "the quick brown fo",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fo    ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "the quick brown fox",
+				"cursor": [
+					0,
+					19
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown fox ",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "j",
+				"text": "the quick brown fox j",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox j ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "the quick brown fox ju",
+				"cursor": [
+					0,
+					22
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"ju          ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "m",
+				"text": "the quick brown fox jum",
+				"cursor": [
+					0,
+					23
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jum         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "p",
+				"text": "the quick brown fox jump",
+				"cursor": [
+					0,
+					24
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jump        ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "s",
+				"text": "the quick brown fox jumps",
+				"cursor": [
+					0,
+					25
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown fox jumps ",
+				"cursor": [
+					0,
+					26
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "the quick brown fox jumps o",
+				"cursor": [
+					0,
+					27
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps o     ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "v",
+				"text": "the quick brown fox jumps ov",
+				"cursor": [
+					0,
+					28
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps ov    ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "the quick brown fox jumps ove",
+				"cursor": [
+					0,
+					29
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps ove   ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "the quick brown fox jumps over",
+				"cursor": [
+					0,
+					30
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown fox jumps over ",
+				"cursor": [
+					0,
+					31
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "the quick brown fox jumps over t",
+				"cursor": [
+					0,
+					32
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"t           ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "the quick brown fox jumps over th",
+				"cursor": [
+					0,
+					33
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"th          ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "the quick brown fox jumps over the",
+				"cursor": [
+					0,
+					34
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown fox jumps over the ",
+				"cursor": [
+					0,
+					35
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the         ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "the quick brown fox jumps over the l",
+				"cursor": [
+					0,
+					36
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the l       ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "the quick brown fox jumps over the la",
+				"cursor": [
+					0,
+					37
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the la      ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "z",
+				"text": "the quick brown fox jumps over the laz",
+				"cursor": [
+					0,
+					38
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the laz     ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "y",
+				"text": "the quick brown fox jumps over the lazy",
+				"cursor": [
+					0,
+					39
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the lazy    ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "the quick brown fox jumps over the lazy ",
+				"cursor": [
+					0,
+					40
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the lazy    ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "the quick brown fox jumps over the lazy d",
+				"cursor": [
+					0,
+					41
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the lazy d  ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "the quick brown fox jumps over the lazy do",
+				"cursor": [
+					0,
+					42
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the lazy do ",
+					"────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "g",
+				"text": "the quick brown fox jumps over the lazy dog",
+				"cursor": [
+					0,
+					43
+				],
+				"render": [
+					"────────────",
+					"the quick   ",
+					"brown fox   ",
+					"jumps over  ",
+					"the lazy    ",
+					"dog         ",
+					"────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "wrap-long-word",
+		"width": 10,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"──────────",
+					"a         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"──────────",
+					"ab        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abc",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"──────────",
+					"abc       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "abcd",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"──────────",
+					"abcd      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "abcde",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"──────────",
+					"abcde     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "f",
+				"text": "abcdef",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"──────────",
+					"abcdef    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "g",
+				"text": "abcdefg",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"──────────",
+					"abcdefg   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "abcdefgh",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "abcdefghi",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "j",
+				"text": "abcdefghij",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"j         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "k",
+				"text": "abcdefghijk",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jk        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "abcdefghijkl",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jkl       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "m",
+				"text": "abcdefghijklm",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklm      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "abcdefghijklmn",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmn     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "abcdefghijklmno",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmno    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "p",
+				"text": "abcdefghijklmnop",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnop   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "q",
+				"text": "abcdefghijklmnopq",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopq  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "abcdefghijklmnopqr",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "s",
+				"text": "abcdefghijklmnopqrs",
+				"cursor": [
+					0,
+					19
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"s         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "abcdefghijklmnopqrst",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"st        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "abcdefghijklmnopqrstu",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stu       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "v",
+				"text": "abcdefghijklmnopqrstuv",
+				"cursor": [
+					0,
+					22
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuv      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "abcdefghijklmnopqrstuvw",
+				"cursor": [
+					0,
+					23
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvw     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "abcdefghijklmnopqrstuvwx",
+				"cursor": [
+					0,
+					24
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwx    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "y",
+				"text": "abcdefghijklmnopqrstuvwxy",
+				"cursor": [
+					0,
+					25
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxy   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "z",
+				"text": "abcdefghijklmnopqrstuvwxyz",
+				"cursor": [
+					0,
+					26
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "abcdefghijklmnopqrstuvwxyz ",
+				"cursor": [
+					0,
+					27
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "abcdefghijklmnopqrstuvwxyz a",
+				"cursor": [
+					0,
+					28
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"a         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "abcdefghijklmnopqrstuvwxyz an",
+				"cursor": [
+					0,
+					29
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"an        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "abcdefghijklmnopqrstuvwxyz and",
+				"cursor": [
+					0,
+					30
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "abcdefghijklmnopqrstuvwxyz and ",
+				"cursor": [
+					0,
+					31
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "m",
+				"text": "abcdefghijklmnopqrstuvwxyz and m",
+				"cursor": [
+					0,
+					32
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and m     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "abcdefghijklmnopqrstuvwxyz and mo",
+				"cursor": [
+					0,
+					33
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and mo    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "abcdefghijklmnopqrstuvwxyz and mor",
+				"cursor": [
+					0,
+					34
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and mor   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "abcdefghijklmnopqrstuvwxyz and more",
+				"cursor": [
+					0,
+					35
+				],
+				"render": [
+					"──────────",
+					"abcdefghi ",
+					"jklmnopqr ",
+					"stuvwxyz  ",
+					"and more  ",
+					"──────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "cjk",
+		"width": 10,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "日",
+				"text": "日",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"──────────",
+					"日        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "本",
+				"text": "日本",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"──────────",
+					"日本      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "語",
+				"text": "日本語",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"──────────",
+					"日本語    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "の",
+				"text": "日本語の",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "テ",
+				"text": "日本語のテ",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テ        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "キ",
+				"text": "日本語のテキ",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキ      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "ス",
+				"text": "日本語のテキス",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキス    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "ト",
+				"text": "日本語のテキスト",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "を",
+				"text": "日本語のテキストを",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"を        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "折",
+				"text": "日本語のテキストを折",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"を折      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "り",
+				"text": "日本語のテキストを折り",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"を折り    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "返",
+				"text": "日本語のテキストを折り返",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"を折り返  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "す",
+				"text": "日本語のテキストを折り返す",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"──────────",
+					"日本語の  ",
+					"テキスト  ",
+					"を折り返  ",
+					"す        ",
+					"──────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "padding",
+		"width": 20,
+		"rows": 24,
+		"paddingX": 2,
+		"history": [],
+		"states": [
+			{
+				"key": "p",
+				"text": "p",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────",
+					"  p                 ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "pa",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────",
+					"  pa                ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "pad",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────",
+					"  pad               ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "padd",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────",
+					"  padd              ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "padde",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────",
+					"  padde             ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "padded",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────",
+					"  padded            ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "padded ",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────",
+					"  padded            ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "padded t",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────",
+					"  padded t          ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "padded te",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────",
+					"  padded te         ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "padded tex",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────",
+					"  padded tex        ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "padded text",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "padded text ",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "padded text t",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────",
+					"  padded text t     ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "padded text th",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"────────────────────",
+					"  padded text th    ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "padded text tha",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"────────────────────",
+					"  padded text tha   ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "padded text that",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"────────────────────",
+					"  padded text that  ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "padded text that ",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that              ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "padded text that w",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that w            ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "padded text that wr",
+				"cursor": [
+					0,
+					19
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wr           ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "padded text that wra",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wra          ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "p",
+				"text": "padded text that wrap",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wrap         ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "s",
+				"text": "padded text that wraps",
+				"cursor": [
+					0,
+					22
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps        ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "padded text that wraps ",
+				"cursor": [
+					0,
+					23
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps        ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "padded text that wraps a",
+				"cursor": [
+					0,
+					24
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps a      ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "padded text that wraps ar",
+				"cursor": [
+					0,
+					25
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps ar     ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "padded text that wraps aro",
+				"cursor": [
+					0,
+					26
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps aro    ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "padded text that wraps arou",
+				"cursor": [
+					0,
+					27
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps arou   ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "padded text that wraps aroun",
+				"cursor": [
+					0,
+					28
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps aroun  ",
+					"────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "padded text that wraps around",
+				"cursor": [
+					0,
+					29
+				],
+				"render": [
+					"────────────────────",
+					"  padded text       ",
+					"  that wraps        ",
+					"  around            ",
+					"────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "word-motion",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "f",
+				"text": "f",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"f                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "fo",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"fo                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "foo",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": ".",
+				"text": "foo.",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "foo.b",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.b                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "foo.ba",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.ba                                  ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "foo.bar",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "foo.bar ",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "foo.bar b",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar b                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "foo.bar ba",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar ba                              ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "z",
+				"text": "foo.bar baz",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "foo.bar baz ",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "foo.bar baz  ",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "q",
+				"text": "foo.bar baz  q",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  q                          ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "foo.bar baz  qu",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qu                         ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001bb",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001bb",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001bb",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001bf",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[1;5D",
+				"text": "foo.bar baz  qux",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foo.bar baz  qux                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0017",
+				"text": "foobar baz  qux",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"foobar baz  qux                         ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "kill-yank",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "o",
+				"text": "o",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"o                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "on",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"on                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "one",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "one ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "one t",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one t                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "one tw",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one tw                                  ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "one two",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "one two ",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "one two t",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two t                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "one two th",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two th                              ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "one two thr",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two thr                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "one two thre",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two thre                            ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "one two three",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two three                           ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0017",
+				"text": "one two ",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one two                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0017",
+				"text": "one ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "one ",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"one                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0019",
+				"text": "two threeone ",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"two threeone                            ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0005",
+				"text": "two threeone ",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"two threeone                            ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0015",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0019",
+				"text": "two threeone ",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"two threeone                            ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001by",
+				"text": "two three",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"two three                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "kill-lines",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "ab\n",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "ab\nc",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"c                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "ab\ncd",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"cd                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "ab\ncd",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"cd                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0015",
+				"text": "abcd",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcd                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u000b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u000b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0019",
+				"text": "ab\ncd",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"cd                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "undo",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "ab ",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "ab c",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab c                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "ab cd",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab cd                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001f",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001f",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "x",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "y",
+				"text": "xy",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"xy                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0017",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001f",
+				"text": "xy",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"xy                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "delete",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "h",
+				"text": "h",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"h                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "é",
+				"text": "hé",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hé                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "hél",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hél                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "héll",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héll                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "héllo",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "héllo ",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "héllo w",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo w                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "ö",
+				"text": "héllo wö",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wö                                ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "héllo wör",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wör                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "héllo wörl",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wörl                              ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "héllo wörld",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wörld                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[D",
+				"text": "héllo wörld",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wörld                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[D",
+				"text": "héllo wörld",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wörld                             ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "",
+				"text": "héllo wöld",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wöld                              ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[3~",
+				"text": "héllo wöd",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wöd                               ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0004",
+				"text": "héllo wö",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wö                                ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001bd",
+				"text": "héllo wö",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wö                                ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "héllo wö",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"héllo wö                                ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[3~",
+				"text": "éllo wö",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"éllo wö                                 ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "history",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [
+			"first",
+			"second line\nmore"
+		],
+		"states": [
+			{
+				"key": "\u001b[A",
+				"text": "second line\nmore",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"second line                             ",
+					"more                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "first",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"first                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "first",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"first                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "second line\nmore",
+				"cursor": [
+					1,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"second line                             ",
+					"more                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "x",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "x",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "vertical",
+		"width": 30,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"──────────────────────────────",
+					"a                             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a ",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"──────────────────────────────",
+					"a                             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "a l",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"──────────────────────────────",
+					"a l                           ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "a lo",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"──────────────────────────────",
+					"a lo                          ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "a lon",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"──────────────────────────────",
+					"a lon                         ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "g",
+				"text": "a long",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long                        ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a long ",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long                        ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "f",
+				"text": "a long f",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long f                      ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "a long fi",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long fi                     ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "a long fir",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long fir                    ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "s",
+				"text": "a long firs",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long firs                   ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "a long first",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first                  ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a long first ",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first                  ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "a long first l",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first l                ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "a long first li",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first li               ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "a long first lin",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first lin              ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "a long first line",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a long first line ",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "a long first line h",
+				"cursor": [
+					0,
+					19
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line h           ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "a long first line he",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line he          ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "a long first line her",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line her         ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "a long first line here",
+				"cursor": [
+					0,
+					22
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "a long first line here\n",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"                              ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "a long first line here\na",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"a                             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "a long first line here\nab",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "a long first line here\nab\n",
+				"cursor": [
+					2,
+					0
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"                              ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "a long first line here\nab\na",
+				"cursor": [
+					2,
+					1
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"a                             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "a long first line here\nab\nan",
+				"cursor": [
+					2,
+					2
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"an                            ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "a long first line here\nab\nano",
+				"cursor": [
+					2,
+					3
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"ano                           ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "a long first line here\nab\nanot",
+				"cursor": [
+					2,
+					4
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"anot                          ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "a long first line here\nab\nanoth",
+				"cursor": [
+					2,
+					5
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"anoth                         ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "a long first line here\nab\nanothe",
+				"cursor": [
+					2,
+					6
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"anothe                        ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "a long first line here\nab\nanother",
+				"cursor": [
+					2,
+					7
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another                       ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a long first line here\nab\nanother ",
+				"cursor": [
+					2,
+					8
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another                       ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "a long first line here\nab\nanother l",
+				"cursor": [
+					2,
+					9
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another l                     ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "a long first line here\nab\nanother lo",
+				"cursor": [
+					2,
+					10
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another lo                    ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "a long first line here\nab\nanother lon",
+				"cursor": [
+					2,
+					11
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another lon                   ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "g",
+				"text": "a long first line here\nab\nanother long",
+				"cursor": [
+					2,
+					12
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long                  ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "a long first line here\nab\nanother long ",
+				"cursor": [
+					2,
+					13
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long                  ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "a long first line here\nab\nanother long l",
+				"cursor": [
+					2,
+					14
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long l                ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "a long first line here\nab\nanother long li",
+				"cursor": [
+					2,
+					15
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long li               ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "a long first line here\nab\nanother long lin",
+				"cursor": [
+					2,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long lin              ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					2,
+					17
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[D",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					2,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[5~",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[6~",
+				"text": "a long first line here\nab\nanother long line",
+				"cursor": [
+					2,
+					16
+				],
+				"render": [
+					"──────────────────────────────",
+					"a long first line here        ",
+					"ab                            ",
+					"another long line             ",
+					"──────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "vertical-wrapped",
+		"width": 10,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"──────────",
+					"a         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"──────────",
+					"ab        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abc",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"──────────",
+					"abc       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "d",
+				"text": "abcd",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"──────────",
+					"abcd      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "abcde",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"──────────",
+					"abcde     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "f",
+				"text": "abcdef",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"──────────",
+					"abcdef    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "g",
+				"text": "abcdefg",
+				"cursor": [
+					0,
+					7
+				],
+				"render": [
+					"──────────",
+					"abcdefg   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "h",
+				"text": "abcdefgh",
+				"cursor": [
+					0,
+					8
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "abcdefgh ",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "i",
+				"text": "abcdefgh i",
+				"cursor": [
+					0,
+					10
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"i         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "j",
+				"text": "abcdefgh ij",
+				"cursor": [
+					0,
+					11
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ij        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "k",
+				"text": "abcdefgh ijk",
+				"cursor": [
+					0,
+					12
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijk       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "l",
+				"text": "abcdefgh ijkl",
+				"cursor": [
+					0,
+					13
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijkl      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "m",
+				"text": "abcdefgh ijklm",
+				"cursor": [
+					0,
+					14
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklm     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "n",
+				"text": "abcdefgh ijklmn",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmn    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "abcdefgh ijklmno",
+				"cursor": [
+					0,
+					16
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmno   ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "p",
+				"text": "abcdefgh ijklmnop",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "abcdefgh ijklmnop ",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "q",
+				"text": "abcdefgh ijklmnop q",
+				"cursor": [
+					0,
+					19
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"q         ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "abcdefgh ijklmnop qr",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qr        ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "s",
+				"text": "abcdefgh ijklmnop qrs",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrs       ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "t",
+				"text": "abcdefgh ijklmnop qrst",
+				"cursor": [
+					0,
+					22
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrst      ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "u",
+				"text": "abcdefgh ijklmnop qrstu",
+				"cursor": [
+					0,
+					23
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstu     ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "v",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					24
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					15
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					9
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					18
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[B",
+				"text": "abcdefgh ijklmnop qrstuv",
+				"cursor": [
+					0,
+					24
+				],
+				"render": [
+					"──────────",
+					"abcdefgh  ",
+					"ijklmnop  ",
+					"qrstuv    ",
+					"──────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "newlines",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\\",
+				"text": "a\\",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a\\                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "a\n",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "a\nb",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"b                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[13;2u",
+				"text": "a\nb\n",
+				"cursor": [
+					2,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"b                                       ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "a\nb\nc",
+				"cursor": [
+					2,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"b                                       ",
+					"c                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b\r",
+				"text": "a\nb\nc\n",
+				"cursor": [
+					3,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"b                                       ",
+					"c                                       ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "a\nb\nc\n\n",
+				"cursor": [
+					4,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"b                                       ",
+					"c                                       ",
+					"                                        ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": [
+					"a\nb\nc"
+				]
+			}
+		]
+	},
+	{
+		"name": "small-paste",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~x\ty\r\nz\u0007\u001b[201~",
+				"text": "abx    y\nz",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abx    y                                ",
+					"z                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": [
+					"abx    y\nz"
+				]
+			}
+		]
+	},
+	{
+		"name": "path-paste",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "s",
+				"text": "s",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"s                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "se",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"se                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "e",
+				"text": "see",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"see                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~/tmp/file.txt\u001b[201~",
+				"text": "see /tmp/file.txt",
+				"cursor": [
+					0,
+					17
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"see /tmp/file.txt                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "large-paste",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "x",
+				"text": "x",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\u001b[201~",
+				"text": "x[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[D",
+				"text": "x[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[C",
+				"text": "x[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "",
+				"text": "x",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\u001b[201~",
+				"text": "x[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\u001b[201~",
+				"text": "x[paste #1 +12 lines][paste #2 1200 chars]",
+				"cursor": [
+					0,
+					42
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"[paste #2 1200 chars]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "x[paste #1 +12 lines][paste #2 1200 chars]",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"[paste #2 1200 chars]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[C",
+				"text": "x[paste #1 +12 lines][paste #2 1200 chars]",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"[paste #2 1200 chars]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[C",
+				"text": "x[paste #1 +12 lines][paste #2 1200 chars]",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"[paste #2 1200 chars]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[3~",
+				"text": "x[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					21
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"x[paste #1 +12 lines]                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": [
+					"xline 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11"
+				]
+			}
+		]
+	},
+	{
+		"name": "marker-renumber",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "\u001b[200~line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\u001b[201~",
+				"text": "[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"[paste #1 +12 lines]                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[200~line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\u001b[201~",
+				"text": "[paste #1 +12 lines][paste #2 +12 lines]",
+				"cursor": [
+					0,
+					40
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"[paste #1 +12 lines]                    ",
+					"[paste #2 +12 lines]                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "[paste #1 +12 lines][paste #2 +12 lines]",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"[paste #1 +12 lines]                    ",
+					"[paste #2 +12 lines]                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[C",
+				"text": "[paste #1 +12 lines][paste #2 +12 lines]",
+				"cursor": [
+					0,
+					20
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"[paste #1 +12 lines]                    ",
+					"[paste #2 +12 lines]                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "",
+				"text": "[paste #1 +12 lines]",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"[paste #1 +12 lines]                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\r",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": [
+					"line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11"
+				]
+			}
+		]
+	},
+	{
+		"name": "jump",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abc",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abc                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "a",
+				"text": "abca",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abca                                    ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "abcab",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcab                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abcabc",
+				"cursor": [
+					0,
+					6
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "abcabc\n",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "x",
+				"text": "abcabc\nx",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"x                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "abcabc\nxb",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xb                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "z",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					1,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "z",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "c",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001d",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0001",
+				"text": "abcabc\nxbz",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"abcabc                                  ",
+					"xbz                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "scroll",
+		"width": 40,
+		"rows": 10,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "r",
+				"text": "r",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "ro",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "0",
+				"text": "row 0",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\n",
+				"cursor": [
+					1,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nr",
+				"cursor": [
+					1,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nro",
+				"cursor": [
+					1,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow",
+				"cursor": [
+					1,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow ",
+				"cursor": [
+					1,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "1",
+				"text": "row 0\nrow 1",
+				"cursor": [
+					1,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\n",
+				"cursor": [
+					2,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nr",
+				"cursor": [
+					2,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nro",
+				"cursor": [
+					2,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow",
+				"cursor": [
+					2,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow ",
+				"cursor": [
+					2,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "2",
+				"text": "row 0\nrow 1\nrow 2",
+				"cursor": [
+					2,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\n",
+				"cursor": [
+					3,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nr",
+				"cursor": [
+					3,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nro",
+				"cursor": [
+					3,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow",
+				"cursor": [
+					3,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow ",
+				"cursor": [
+					3,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "3",
+				"text": "row 0\nrow 1\nrow 2\nrow 3",
+				"cursor": [
+					3,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\n",
+				"cursor": [
+					4,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nr",
+				"cursor": [
+					4,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nro",
+				"cursor": [
+					4,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow",
+				"cursor": [
+					4,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow ",
+				"cursor": [
+					4,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "4",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4",
+				"cursor": [
+					4,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"row 0                                   ",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\n",
+				"cursor": [
+					5,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nr",
+				"cursor": [
+					5,
+					1
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nro",
+				"cursor": [
+					5,
+					2
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow",
+				"cursor": [
+					5,
+					3
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow ",
+				"cursor": [
+					5,
+					4
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "5",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5",
+				"cursor": [
+					5,
+					5
+				],
+				"render": [
+					"─────────────── ↑ 1 more ───────────────",
+					"row 1                                   ",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\n",
+				"cursor": [
+					6,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nr",
+				"cursor": [
+					6,
+					1
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nro",
+				"cursor": [
+					6,
+					2
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow",
+				"cursor": [
+					6,
+					3
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow ",
+				"cursor": [
+					6,
+					4
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "6",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6",
+				"cursor": [
+					6,
+					5
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\n",
+				"cursor": [
+					7,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nr",
+				"cursor": [
+					7,
+					1
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nro",
+				"cursor": [
+					7,
+					2
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow",
+				"cursor": [
+					7,
+					3
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow ",
+				"cursor": [
+					7,
+					4
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "7",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7",
+				"cursor": [
+					7,
+					5
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\n",
+				"cursor": [
+					8,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "r",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nr",
+				"cursor": [
+					8,
+					1
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"r                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "o",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nro",
+				"cursor": [
+					8,
+					2
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"ro                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "w",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow",
+				"cursor": [
+					8,
+					3
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": " ",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow ",
+				"cursor": [
+					8,
+					4
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "8",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8",
+				"cursor": [
+					8,
+					5
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\n",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					9,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 5 more ───────────────",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					8,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 5 more ───────────────",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					7,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 5 more ───────────────",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					6,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 5 more ───────────────",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					5,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 5 more ───────────────",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					4,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 4 more ───────────────",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"row 8                                   ",
+					"─────────────── ↓ 1 more ───────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					3,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 3 more ───────────────",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"row 7                                   ",
+					"─────────────── ↓ 2 more ───────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[A",
+				"text": "row 0\nrow 1\nrow 2\nrow 3\nrow 4\nrow 5\nrow 6\nrow 7\nrow 8\n",
+				"cursor": [
+					2,
+					0
+				],
+				"render": [
+					"─────────────── ↑ 2 more ───────────────",
+					"row 2                                   ",
+					"row 3                                   ",
+					"row 4                                   ",
+					"row 5                                   ",
+					"row 6                                   ",
+					"─────────────── ↓ 3 more ───────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "kitty-keys",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "\u001b[104u",
+				"text": "h",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"h                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[105;2u",
+				"text": "hi",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hi                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[97:65;2u",
+				"text": "hiA",
+				"cursor": [
+					0,
+					3
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hiA                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[32;2u",
+				"text": "hiA ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hiA                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[99;5u",
+				"text": "hiA ",
+				"cursor": [
+					0,
+					4
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hiA                                     ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b[27;2;66~",
+				"text": "hiA B",
+				"cursor": [
+					0,
+					5
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"hiA B                                   ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "ctrl-chars",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"states": [
+			{
+				"key": "a",
+				"text": "a",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"a                                       ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0003",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001b",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0002",
+				"text": "ab",
+				"cursor": [
+					0,
+					1
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0006",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u000e",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u0010",
+				"text": "ab",
+				"cursor": [
+					0,
+					2
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"ab                                      ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	},
+	{
+		"name": "set-text",
+		"width": 40,
+		"rows": 24,
+		"paddingX": 0,
+		"history": [],
+		"setText": "pre\tset\r\ntext",
+		"states": [
+			{
+				"key": "\u001f",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			},
+			{
+				"key": "\u001f",
+				"text": "",
+				"cursor": [
+					0,
+					0
+				],
+				"render": [
+					"────────────────────────────────────────",
+					"                                        ",
+					"────────────────────────────────────────"
+				],
+				"submitted": []
+			}
+		]
+	}
+]

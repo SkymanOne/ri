@@ -6,7 +6,7 @@ ignore = []
 [licenses]
 # Add a license together with the dependency that needs it. It must be
 # compatible with MIT OR Apache-2.0.
-allow = ["Apache-2.0", "BSD-3-Clause", "CDLA-Permissive-2.0", "ISC", "MIT", "Unicode-3.0"]
+allow = ["Apache-2.0", "BSD-3-Clause", "CDLA-Permissive-2.0", "ISC", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.8
 
 [bans]
