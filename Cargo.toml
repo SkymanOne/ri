@@ -22,6 +22,7 @@ ri-types = { path = "crates/ri-types" }
 anyhow = "1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 http-body-util = { version = "0.1", features = ["channel"] }
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }

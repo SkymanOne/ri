@@ -21,7 +21,7 @@ use serde::{Deserialize, Deserializer};
 /// Deserializes a field that pi writes as a value, as `null`, or not at all: a
 /// present key becomes `Some`, even when `null`. Combine with `#[serde(default)]`
 /// for the absent case and `skip_serializing_if = "Option::is_none"` to omit it.
-fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(crate) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

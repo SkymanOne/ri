@@ -957,7 +957,12 @@ dependencies = [
 name = "ri-agent"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "ri-ai",
+ "ri-types",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

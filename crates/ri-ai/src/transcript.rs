@@ -57,6 +57,35 @@ pub fn declarations_equal(left: &ToolDeclaration, right: &ToolDeclaration) -> bo
     ri_types::json::to_string(left).ok() == ri_types::json::to_string(right).ok()
 }
 
+/// Declarations to add and names to remove to get from `previous` to `current`.
+/// A changed declaration is both removed and added.
+pub fn tool_state_changes(
+    previous: &[ToolDeclaration],
+    current: &[ToolDeclaration],
+) -> (Vec<ToolDeclaration>, Vec<ri_types::message::ToolReference>) {
+    let added = current
+        .iter()
+        .filter(|tool| {
+            !previous
+                .iter()
+                .any(|old| old.name == tool.name && declarations_equal(old, tool))
+        })
+        .cloned()
+        .collect();
+    let removed = previous
+        .iter()
+        .filter(|tool| {
+            !current
+                .iter()
+                .any(|new| new.name == tool.name && declarations_equal(tool, new))
+        })
+        .map(|tool| ri_types::message::ToolReference {
+            name: tool.name.clone(),
+        })
+        .collect();
+    (added, removed)
+}
+
 /// Whether a tool name is declared twice with different declarations.
 pub fn has_tool_redefinitions(messages: &[Message]) -> bool {
     let mut declared: IndexMap<&str, &ToolDeclaration> = IndexMap::new();

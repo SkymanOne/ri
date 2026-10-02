@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::message::{Message, ThinkingLevel, ToolCall, ToolResultMessage, Usage};
+use crate::message::{ContentBlock, Message, ThinkingLevel, ToolCall, ToolResultMessage, Usage};
 use crate::session::FileEntry;
 
 /// One step of a streamed assistant message, as carried by `message_update`.
@@ -63,6 +63,30 @@ pub enum AssistantMessageEvent {
         content_index: usize,
         tool_call: ToolCall,
     },
+}
+
+/// What a tool returns: content for the model, details for the UI and session.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolResult {
+    /// Text and images sent to the model.
+    pub content: Vec<ContentBlock>,
+    /// Tool-specific data, stored with the result but not sent to the model.
+    #[serde(
+        default,
+        deserialize_with = "crate::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub details: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+    /// Ends the run after this batch when every result in it asks to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminate: Option<bool>,
 }
 
 /// Why a compaction ran.
@@ -130,14 +154,14 @@ pub enum AgentEvent {
         tool_call_id: String,
         tool_name: String,
         args: Value,
-        partial_result: Value,
+        partial_result: ToolResult,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent_tool_call_id: Option<String>,
     },
     ToolExecutionEnd {
         tool_call_id: String,
         tool_name: String,
-        result: Value,
+        result: ToolResult,
         is_error: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent_tool_call_id: Option<String>,
