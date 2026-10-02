@@ -1,0 +1,8 @@
+{
+	"name": "ri-pi-fixtures",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "1.0.0"
+	}
+}

@@ -1,0 +1,142 @@
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-5",
+  "defaultThinkingLevel": "high",
+  "modelThinkingLevels": {
+    "openai/gpt-5": "xhigh"
+  },
+  "enabledModels": [
+    "anthropic/*"
+  ],
+  "thinkingBudgets": {
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 8192,
+    "high": 16384
+  },
+  "transport": "websocket-cached",
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "all",
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000,
+    "modelOverrides": {
+      "anthropic/claude-haiku-4-5": {
+        "reserveTokens": 8192,
+        "keepRecentTokens": 10000
+      }
+    }
+  },
+  "branchSummary": {
+    "reserveTokens": 16384,
+    "skipPrompt": true
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000,
+    "maxAgentDelayMs": 60000,
+    "provider": {
+      "timeoutMs": 600000,
+      "maxRetries": 2,
+      "maxRetryDelayMs": 60000
+    }
+  },
+  "defaultTools": [
+    "+grep",
+    "-write"
+  ],
+  "doubleEscapeAction": "fork",
+  "treeFilterMode": "no-tools",
+  "codemode": {
+    "mode": "on",
+    "inlineBudget": 3000
+  },
+  "cacheWarming": "idle",
+  "defaultProjectTrust": "always",
+  "theme": "light",
+  "hideThinkingBlock": false,
+  "showCacheMissNotices": true,
+  "collapseChangelog": true,
+  "showHardwareCursor": false,
+  "quietStartup": true,
+  "editorPaddingX": 2,
+  "outputPad": 1,
+  "autocompleteMaxVisible": 8,
+  "terminal": {
+    "showImages": true,
+    "imageWidthCells": 60,
+    "clearOnShrink": false,
+    "showTerminalProgress": true,
+    "hyperlinks": "auto",
+    "images": "kitty",
+    "trueColor": "auto"
+  },
+  "images": {
+    "autoResize": true,
+    "blockImages": false
+  },
+  "markdown": {
+    "codeBlockIndent": "  ",
+    "mermaid": "final"
+  },
+  "warnings": {
+    "anthropicExtraUsage": true
+  },
+  "tuiMode": "fullscreen",
+  "fullscreenExitOutput": "resume-hint",
+  "fullscreenScrollbar": "auto",
+  "fullscreenCopyOnSelect": true,
+  "fullscreenWheelScrollLines": 3,
+  "externalEditor": "vim",
+  "shellPath": "/bin/zsh",
+  "shellCommandPrefix": "shopt -s expand_aliases",
+  "sessionDir": "~/sessions",
+  "httpProxy": "http://proxy.local:8080",
+  "npmCommand": [
+    "mise",
+    "exec",
+    "node@22",
+    "--",
+    "npm"
+  ],
+  "httpIdleTimeoutMs": "disabled",
+  "websocketConnectTimeoutMs": 15000,
+  "packages": [
+    "npm:@scope/pi-pack",
+    {
+      "source": "./vendor/pack",
+      "autoload": false,
+      "extensions": [
+        "+ext/main.ts"
+      ],
+      "skills": [],
+      "prompts": [
+        "!draft-*"
+      ],
+      "themes": [
+        "dark.json"
+      ]
+    }
+  ],
+  "extensions": [
+    "-builtin:mcp",
+    "~/ext/tool.ts"
+  ],
+  "skills": [
+    "~/skills"
+  ],
+  "prompts": [
+    "prompts"
+  ],
+  "themes": [
+    "themes"
+  ],
+  "enableSkillCommands": false,
+  "lastChangelogVersion": "1.0.0",
+  "trackingId": "00000000-0000-0000-0000-000000000000",
+  "enableAnalytics": false,
+  "enableInstallTelemetry": false,
+  "deviceId": "11111111-1111-1111-1111-111111111111"
+}

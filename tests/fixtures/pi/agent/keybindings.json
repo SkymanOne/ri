@@ -1,0 +1,8 @@
+{
+  "tui.editor.cursorUp": [
+    "up",
+    "ctrl+p"
+  ],
+  "tui.editor.cursorDown": "ctrl+n",
+  "app.interrupt": "escape"
+}
