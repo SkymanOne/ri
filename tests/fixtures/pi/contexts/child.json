@@ -1,0 +1,47 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Continue from the parent."
+        }
+      ],
+      "timestamp": 1790947556543
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Continuing."
+        }
+      ],
+      "api": "faux",
+      "provider": "faux",
+      "model": "faux-1",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "stop",
+      "timestamp": 1790947556543
+    }
+  ],
+  "thinkingLevel": "off",
+  "model": {
+    "provider": "faux",
+    "modelId": "faux-1"
+  }
+}

@@ -229,3 +229,41 @@ pub struct SessionInfoEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
+
+impl FileEntry {
+    /// The id, parent and timestamp of a session entry; `None` for the header.
+    pub fn meta(&self) -> Option<&EntryMeta> {
+        Some(match self {
+            FileEntry::Session(_) => return None,
+            FileEntry::Message(entry) => &entry.meta,
+            FileEntry::ThinkingLevelChange(entry) => &entry.meta,
+            FileEntry::ModelChange(entry) => &entry.meta,
+            FileEntry::Usage(entry) => &entry.meta,
+            FileEntry::Compaction(entry) => &entry.meta,
+            FileEntry::BranchSummary(entry) => &entry.meta,
+            FileEntry::Custom(entry) => &entry.meta,
+            FileEntry::CustomMessage(entry) => &entry.meta,
+            FileEntry::ContextEdit(entry) => &entry.meta,
+            FileEntry::Label(entry) => &entry.meta,
+            FileEntry::SessionInfo(entry) => &entry.meta,
+        })
+    }
+
+    /// Mutable access to [`FileEntry::meta`].
+    pub fn meta_mut(&mut self) -> Option<&mut EntryMeta> {
+        Some(match self {
+            FileEntry::Session(_) => return None,
+            FileEntry::Message(entry) => &mut entry.meta,
+            FileEntry::ThinkingLevelChange(entry) => &mut entry.meta,
+            FileEntry::ModelChange(entry) => &mut entry.meta,
+            FileEntry::Usage(entry) => &mut entry.meta,
+            FileEntry::Compaction(entry) => &mut entry.meta,
+            FileEntry::BranchSummary(entry) => &mut entry.meta,
+            FileEntry::Custom(entry) => &mut entry.meta,
+            FileEntry::CustomMessage(entry) => &mut entry.meta,
+            FileEntry::ContextEdit(entry) => &mut entry.meta,
+            FileEntry::Label(entry) => &mut entry.meta,
+            FileEntry::SessionInfo(entry) => &mut entry.meta,
+        })
+    }
+}
