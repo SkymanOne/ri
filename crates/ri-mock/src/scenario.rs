@@ -130,9 +130,13 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         Program::Ri(path) => (path, "RI_CODING_AGENT_DIR"),
     };
     let mut command = tokio::process::Command::new(executable);
+    // A clean environment: ambient credentials on the host must not change what
+    // either program sees.
     command
         .args(&scenario.args)
         .current_dir(&cwd)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env(dir_var, &agent_dir)
         .env("HOME", &root)
         .env("PI_OFFLINE", "1")
