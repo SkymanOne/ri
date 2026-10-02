@@ -197,6 +197,11 @@ struct App {
     dialog: Option<Dialog>,
     chat: Vec<Item>,
     cache: Vec<Option<(usize, u64, Vec<StyledLine>)>>,
+    flat: Vec<StyledLine>,
+    flat_header: Vec<StyledLine>,
+    flat_key: Option<(usize, usize)>,
+    flat_offsets: Vec<usize>,
+    footer_cache: Option<(usize, Vec<StyledLine>)>,
     generation: u64,
     streaming: Option<usize>,
     tool_items: HashMap<String, usize>,
@@ -447,7 +452,7 @@ impl App {
                 }
                 Message::ToolResult(result) => {
                     if let Some(&index) = self.tool_items.get(&result.tool_call_id)
-                        && let Some(Item::Tool(view)) = self.chat.get_mut(index)
+                        && let Some(view) = self.tool_view(index)
                     {
                         view.result = Some(tool_result_of(result));
                         view.is_error = result.is_error;
@@ -531,8 +536,10 @@ impl App {
         ])
     }
 
-    fn transcript(&mut self, width: usize) -> Vec<StyledLine> {
-        let mut out = header::render(
+    /// Brings the flattened transcript (header, resources and chat) up to date
+    /// for `width`, re-rendering only items that changed or animate.
+    fn refresh_transcript(&mut self, width: usize) {
+        let mut header = header::render(
             &self.theme,
             &self.keys,
             self.expanded,
@@ -540,7 +547,7 @@ impl App {
             width,
         );
         if self.show_details {
-            out.extend(header::listing(
+            header.extend(header::listing(
                 &self.theme,
                 self.session.resources(),
                 &self.cwd,
@@ -550,19 +557,59 @@ impl App {
             ));
         }
         let generation = self.generation;
+        let reusable = self
+            .flat_key
+            .is_some_and(|(cached, items)| cached == width && items <= self.chat.len())
+            && self.flat_header == header;
+        // Rows before the first changed item are kept.
+        let mut first_changed = match self.flat_key {
+            Some((_, items)) if reusable => items,
+            _ => 0,
+        };
         for index in 0..self.chat.len() {
             let fresh =
                 matches!(&self.cache[index], Some((w, g, _)) if *w == width && *g == generation);
-            let dynamic = matches!(self.chat[index], Item::Tool(_) | Item::Bash(_));
-            if !fresh || dynamic {
+            let animating = match &self.chat[index] {
+                Item::Tool(view) => view.result.is_none() && view.started.is_some(),
+                Item::Bash(view) => view.running(),
+                _ => false,
+            };
+            if !fresh || animating {
                 let lines = self.chat[index].render(width, index == 0, &self.ctx());
                 self.cache[index] = Some((width, generation, lines));
-            }
-            if let Some((_, _, lines)) = &self.cache[index] {
-                out.extend(lines.iter().cloned());
+                first_changed = first_changed.min(index);
             }
         }
-        out
+        if reusable && first_changed == self.chat.len() && self.flat_offsets.len() == first_changed
+        {
+            return;
+        }
+        if reusable && first_changed > 0 && first_changed <= self.flat_offsets.len() {
+            let keep = self
+                .flat_offsets
+                .get(first_changed)
+                .copied()
+                .unwrap_or(self.flat.len());
+            self.flat.truncate(keep);
+            self.flat_offsets.truncate(first_changed);
+        } else {
+            self.flat = header.clone();
+            self.flat_offsets.clear();
+        }
+        for index in self.flat_offsets.len()..self.chat.len() {
+            self.flat_offsets.push(self.flat.len());
+            if let Some((_, _, lines)) = &self.cache[index] {
+                self.flat.extend(lines.iter().cloned());
+            }
+        }
+        self.flat_header = header;
+        self.flat_key = Some((width, self.chat.len()));
+    }
+
+    /// The transcript rows at `width`.
+    fn transcript(&mut self, width: usize) -> Vec<StyledLine> {
+        self.refresh_transcript(width);
+        self.flat.clone()
     }
 
     /// The dock rows and the cursor within them.
@@ -649,7 +696,15 @@ impl App {
                 .map(|(row, col)| (out.len() + row, col));
             out.extend(editor);
         }
-        out.extend(self.footer(width));
+        let footer = match &self.footer_cache {
+            Some((cached, lines)) if *cached == width => lines.clone(),
+            _ => {
+                let lines = self.footer(width);
+                self.footer_cache = Some((width, lines.clone()));
+                lines
+            }
+        };
+        out.extend(footer);
         (out, cursor)
     }
 
@@ -695,13 +750,13 @@ impl App {
             selector.tick();
         }
         let (width, height) = self.size;
-        let transcript = self.transcript(width);
         let (dock, cursor) = self.dock(width);
+        self.refresh_transcript(width);
         let frame = if self.fullscreen {
-            self.alt.frame(&transcript, &dock, cursor, width, height)
+            self.alt.frame(&self.flat, &dock, cursor, width, height)
         } else {
-            let offset = transcript.len();
-            let mut document = transcript;
+            let offset = self.flat.len();
+            let mut document = self.flat.clone();
             document.extend(dock);
             self.main.frame(
                 &document,
@@ -846,7 +901,7 @@ impl App {
         }
         if let Some(call) = finished_tool
             && let Some(&index) = self.tool_items.get(&call.id)
-            && let Some(Item::Tool(view)) = self.chat.get_mut(index)
+            && let Some(view) = self.tool_view(index)
         {
             view.args = Value::Object(call.arguments);
         }
@@ -905,7 +960,7 @@ impl App {
                 if failed {
                     for id in ids {
                         if let Some(&index) = self.tool_items.get(&id)
-                            && let Some(Item::Tool(view)) = self.chat.get_mut(index)
+                            && let Some(view) = self.tool_view(index)
                             && view.result.is_none()
                         {
                             view.result = Some(error_result(&error));
@@ -931,7 +986,7 @@ impl App {
                         index
                     }
                 };
-                if let Some(Item::Tool(view)) = self.chat.get_mut(index) {
+                if let Some(view) = self.tool_view(index) {
                     view.args = args;
                     view.started = Some(Instant::now());
                 }
@@ -942,7 +997,7 @@ impl App {
                 ..
             } => {
                 if let Some(&index) = self.tool_items.get(&tool_call_id)
-                    && let Some(Item::Tool(view)) = self.chat.get_mut(index)
+                    && let Some(view) = self.tool_view(index)
                 {
                     view.partial = Some(partial_result);
                 }
@@ -954,7 +1009,7 @@ impl App {
                 ..
             } => {
                 if let Some(&index) = self.tool_items.get(&tool_call_id)
-                    && let Some(Item::Tool(view)) = self.chat.get_mut(index)
+                    && let Some(view) = self.tool_view(index)
                 {
                     view.result = Some(result);
                     view.is_error = is_error;
@@ -1168,7 +1223,7 @@ impl App {
         tokio::spawn(async move {
             let chunks = tx.clone();
             let result = session
-                .execute_bash(&command, exclude, move |chunk| {
+                .execute_bash(&command, Some(exclude), move |chunk| {
                     let _ = chunks.send(Event::BashChunk(epoch, id, chunk.to_owned()));
                 })
                 .await;
@@ -1176,14 +1231,29 @@ impl App {
         });
     }
 
-    fn bash_view(&mut self, id: u64) -> Option<&mut BashView> {
-        if let Some(view) = self.pending_bash.iter_mut().find(|view| view.id == id) {
-            return Some(view);
-        }
-        self.chat.iter_mut().find_map(|item| match item {
-            Item::Bash(view) if view.id == id => Some(view.as_mut()),
+    /// The tool view at `index`, marked for re-rendering.
+    fn tool_view(&mut self, index: usize) -> Option<&mut ToolView> {
+        self.touch(index);
+        match self.chat.get_mut(index) {
+            Some(Item::Tool(view)) => Some(view),
             _ => None,
-        })
+        }
+    }
+
+    /// The `!` command view with `id`, marked for re-rendering.
+    fn bash_view(&mut self, id: u64) -> Option<&mut BashView> {
+        if let Some(position) = self.pending_bash.iter().position(|view| view.id == id) {
+            return self.pending_bash.get_mut(position);
+        }
+        let index = self
+            .chat
+            .iter()
+            .position(|item| matches!(item, Item::Bash(view) if view.id == id))?;
+        self.touch(index);
+        match self.chat.get_mut(index) {
+            Some(Item::Bash(view)) => Some(view.as_mut()),
+            _ => None,
+        }
     }
 
     fn restore_queue(&mut self, abort: bool) -> usize {
@@ -1247,21 +1317,28 @@ impl App {
     }
 
     fn handle_key(&mut self, data: &str, terminal: &mut Terminal) {
+        if self.dispatch_key(data, terminal) {
+            self.footer_cache = None;
+        }
+    }
+
+    /// Handles a key; whether it may have changed more than the editor.
+    fn dispatch_key(&mut self, data: &str, terminal: &mut Terminal) -> bool {
         if self.fullscreen && self.handle_viewport_key(data) {
-            return;
+            return true;
         }
         if self.selector.is_some() {
             self.handle_selector_key(data);
-            return;
+            return true;
         }
         let keys = &self.keys;
         if keys.matches(data, "app.interrupt") && !self.editor.is_showing_autocomplete() {
             self.on_escape();
-            return;
+            return true;
         }
         if keys.matches(data, "app.exit") && self.editor.text().is_empty() {
             self.quit = true;
-            return;
+            return true;
         }
         if !(keys.matches(data, "tui.editor.historyPrevious")
             || keys.matches(data, "tui.editor.historyNext"))
@@ -1276,33 +1353,33 @@ impl App {
                     self.editor.set_text("");
                     self.last_clear = Some(Instant::now());
                 }
-                return;
+                return true;
             }
             if keys.matches(data, "app.suspend") {
                 self.suspend(terminal);
-                return;
+                return true;
             }
             if keys.matches(data, "app.thinking.cycle") {
                 match self.session.cycle_thinking_level() {
                     Some(level) => self.status(format!("Thinking level: {}", level.as_str())),
                     None => self.status("Current model does not support thinking"),
                 }
-                return;
+                return true;
             }
             if keys.matches(data, "app.model.cycleForward")
                 || keys.matches(data, "app.model.cycleBackward")
             {
                 let forward = keys.matches(data, "app.model.cycleForward");
                 self.cycle_model(forward);
-                return;
+                return true;
             }
             if keys.matches(data, "app.model.select") {
                 self.open_model_selector("");
-                return;
+                return true;
             }
             if keys.matches(data, "app.tools.expand") {
                 self.toggle_tools();
-                return;
+                return true;
             }
             if keys.matches(data, "app.thinking.toggle") {
                 self.hide_thinking = !self.hide_thinking;
@@ -1315,20 +1392,20 @@ impl App {
                 } else {
                     "Thinking blocks: visible"
                 });
-                return;
+                return true;
             }
             if keys.matches(data, "app.editor.external") {
                 self.external_editor(terminal);
-                return;
+                return true;
             }
             if keys.matches(data, "app.message.copy") {
                 self.copy_last();
-                return;
+                return true;
             }
             if keys.matches(data, "app.message.followUp") {
                 let text = self.editor.expanded_text().trim().to_owned();
                 if text.is_empty() {
-                    return;
+                    return true;
                 }
                 if self.manual_compaction {
                     self.editor.add_to_history(&text);
@@ -1343,7 +1420,7 @@ impl App {
                     self.editor.set_text("");
                     self.on_submit(text);
                 }
-                return;
+                return true;
             }
             if keys.matches(data, "app.message.dequeue") {
                 let count = self.restore_queue(false);
@@ -1355,27 +1432,31 @@ impl App {
                         if count > 1 { "s" } else { "" }
                     ));
                 }
-                return;
+                return true;
             }
             if keys.matches(data, "app.session.new") {
                 self.new_session();
-                return;
+                return true;
             }
             if keys.matches(data, "app.session.tree") {
                 self.open_tree(None);
-                return;
+                return true;
             }
             if keys.matches(data, "app.session.fork") {
                 self.open_fork();
-                return;
+                return true;
             }
             if keys.matches(data, "app.session.resume") {
                 self.open_resume();
-                return;
+                return true;
             }
         }
-        if let EditorEvent::Submit(text) = self.editor.handle_input(data, &self.keys) {
-            self.on_submit(text);
+        match self.editor.handle_input(data, &self.keys) {
+            EditorEvent::Submit(text) => {
+                self.on_submit(text);
+                true
+            }
+            EditorEvent::None => false,
         }
     }
 
@@ -2243,6 +2324,11 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         dialog: None,
         chat: Vec::new(),
         cache: Vec::new(),
+        flat: Vec::new(),
+        flat_header: Vec::new(),
+        flat_key: None,
+        flat_offsets: Vec::new(),
+        footer_cache: None,
         generation: 0,
         streaming: None,
         tool_items: HashMap::new(),
@@ -2466,6 +2552,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
 impl App {
     /// Handles everything but input.
     fn on_event(&mut self, event: Event, _terminal: &mut Terminal) {
+        self.footer_cache = None;
         match event {
             Event::Input(_) => {}
             Event::InputClosed => self.quit = true,

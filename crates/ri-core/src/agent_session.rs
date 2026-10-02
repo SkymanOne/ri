@@ -638,11 +638,12 @@ impl AgentSession {
 
     /// Runs a user `!` command in the session's directory, streaming output to
     /// `on_chunk`, and records it. `exclude_from_context` (`!!`) keeps the
-    /// output from the model. While a run streams, the record waits for its end.
+    /// output from the model; it is recorded as given. While a run streams, the
+    /// record waits for its end.
     pub async fn execute_bash(
         &self,
         command: &str,
-        exclude_from_context: bool,
+        exclude_from_context: Option<bool>,
         on_chunk: impl FnMut(&str),
     ) -> Result<crate::bash_executor::BashResult, String> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -674,7 +675,7 @@ impl AgentSession {
         &self,
         command: &str,
         result: &crate::bash_executor::BashResult,
-        exclude_from_context: bool,
+        exclude_from_context: Option<bool>,
     ) {
         let message = Message::BashExecution(ri_types::message::BashExecutionMessage {
             command: command.to_owned(),
@@ -687,7 +688,7 @@ impl AgentSession {
                 .as_ref()
                 .map(|path| path.display().to_string()),
             timestamp: now_ms(),
-            exclude_from_context: exclude_from_context.then_some(true),
+            exclude_from_context,
         });
         if self.is_streaming() {
             lock(&self.inner.pending_bash).push(message);
