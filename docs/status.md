@@ -54,9 +54,29 @@ Not yet done:
 
 - Steering, follow-up and abort have no differential scenario yet; they need RPC mode (M4).
 - Tree navigation is tested with the faux provider only, until `/tree` exists (M3) or RPC (M4).
-- `--resume` needs the interactive session selector (M3).
 
-## M3 to M7
+## M3: interactive TUI
+
+In progress. Done:
+
+- Fullscreen and regular renderers, raw input decoding, Kitty keyboard negotiation, terminal color queries and the system theme.
+- Transcript components: header, resources, messages with markdown and thinking, tool boxes with previews and diffs, `!` command output, summaries, status, warning and error lines, queued messages, editor and footer.
+- Editor with autocomplete for commands, arguments, paths and `@` files.
+- Selectors: model, thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
+- Commands: `/model`, `/thinking`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
+- Keys: interrupt and double escape, clear and exit, suspend, thinking and model cycling, model selector, tool and thinking toggles, external editor, copy, follow-up and dequeue, fullscreen scrolling.
+- `!` and `!!` commands with streamed output, cancellation and session records.
+
+Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. Screen comparisons against pi in a PTY match, apart from listed deviations, for: startup, a tool-call turn, `/session`, `/tree` and its summary dialog, tree navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, `/resume`, `--resume`, the model and thinking selectors, `/model <ref>`, `!!` commands, `@` and Tab completion.
+
+Not yet done:
+
+- `/settings`, `/scoped-models`, `/trust`; `/login` and `/logout` arrive with OAuth (M4).
+- HTML export; changelog entries.
+- Clipboard image paste, terminal images, mermaid, mouse selection.
+- Snapshot tests on the screen buffer, automated PTY comparisons, and the first-paint and keystroke budgets.
+
+## M4 to M7
 
 Not started.
 

@@ -16,3 +16,10 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | Terminal input outside the Basic Multilingual Plane | Delivered as two lone UTF-16 surrogates, one per input event | Delivered as one character | Rust strings hold whole characters; the inserted text is the same. |
 | Markdown | marked: LaTeX shown as Unicode math, GFM bare URLs become links, code blocks syntax-highlighted | pulldown-cmark: LaTeX shown as written, bare URLs stay plain text, code blocks in the code block color | Not yet ported; text and layout otherwise match pi's renderer. |
 | Startup header | pi logo, version, key hints and "Pi can explain its own features and look up its docs" | `ri` wordmark, version and key hints | ri is not pi and ships no documentation for the model to read. |
+| Model catalogs | `/model` and the model selector refresh provider catalogs over the network | The catalog is built in; the selector reports it refreshed and `/model <ref>` searches it directly | ri has no runtime catalog sources yet. |
+| Cache warming | `/session` reports the cache warming state and cache-miss costs | `/session` reports cache warming as unavailable and omits cache-miss costs | ri does not keep provider caches warm. |
+| Completion timing | Suggestions resolve after the current input chunk, so an Enter in the same chunk as the text submits it | Suggestions are computed at once, so that Enter applies the highlighted completion first | Synchronous completion keeps the editor single-threaded; typed input behaves the same. |
+| Clipboard | Native clipboard addon first, then platform commands and OSC 52; fullscreen flashes "Copied!" | Platform commands and OSC 52; a status line confirms the copy | ri loads no native addons. |
+| Tree label times | Local time | UTC | ri carries no time zone database. |
+| `/share`, `/bug`, `/arminsayshi`, `/dementedelves` | Upload to pi's services; easter eggs | Report that the command is not available | They belong to pi's services and brand. |
+| Debug log, external editor | `pi-debug.log`; "Pi will resume when the editor exits." | `ri-debug.log`; "ri will resume when the editor exits." | Product name. |

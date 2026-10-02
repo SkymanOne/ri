@@ -245,34 +245,96 @@ fn tool_names(args: &Args, settings: &SettingsManager) -> Vec<String> {
     names
 }
 
-/// Builds the session for a run. Errors are user-facing messages.
-pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> {
-    let cwd = std::env::current_dir().context("reading the working directory")?;
-    let agent_dir = agent_dir();
-    let trust = TrustStore::new(&agent_dir);
-    let global_settings = SettingsManager::load(&agent_dir, &cwd, false)?;
+/// The session directory from `--session-dir`, the environment or settings.
+fn custom_session_dir(args: &Args, settings: &SettingsManager, cwd: &Path) -> Option<PathBuf> {
+    let env_dir = std::env::var(SESSION_DIR_ENV)
+        .ok()
+        .filter(|dir| !dir.is_empty());
+    args.session_dir
+        .as_deref()
+        .or(env_dir.as_deref())
+        .or(settings.settings().session_dir.as_deref())
+        .map(|dir| resolve_to_cwd(dir, cwd))
+}
+
+/// Settings for `cwd`, with project settings when the project is trusted, and
+/// whether it is.
+fn load_settings(
+    args: &Args,
+    cwd: &Path,
+    agent_dir: &Path,
+) -> anyhow::Result<(SettingsManager, bool)> {
+    let trust = TrustStore::new(agent_dir);
+    let global_settings = SettingsManager::load(agent_dir, cwd, false)?;
     let trusted = resolve_trusted(
-        &cwd,
+        cwd,
         &trust,
         args.project_trust_override,
         global_settings.settings().default_project_trust,
     );
-    let settings = SettingsManager::load(&agent_dir, &cwd, trusted)?;
+    Ok((SettingsManager::load(agent_dir, cwd, trusted)?, trusted))
+}
+
+/// Where `--resume` looks: the working directory, the custom session
+/// directory if any, and the theme setting.
+pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<String>)> {
+    let cwd = std::env::current_dir().context("reading the working directory")?;
+    let (settings, _) = load_settings(args, &cwd, &agent_dir())?;
+    let custom = custom_session_dir(args, &settings, &cwd);
+    Ok((cwd, custom, settings.settings().theme.clone()))
+}
+
+/// Builds the session for a run. Errors are user-facing messages.
+pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> {
+    let cwd = std::env::current_dir().context("reading the working directory")?;
+    let agent_dir = agent_dir();
+    let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
+    let custom_dir = custom_session_dir(args, &settings, &cwd);
+    let session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
+    let session = create(args, session, true)?;
+
+    let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
+    let mut parts = Vec::new();
+    if let Some(stdin) = stdin {
+        parts.push(stdin);
+    }
+    if !file_text.is_empty() {
+        parts.push(file_text);
+    }
+    if !args.messages.is_empty() {
+        parts.push(args.messages.remove(0));
+    }
+    let initial_message = (!parts.is_empty()).then(|| parts.concat());
+
+    if let Some(name) = args
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        session.set_name(name);
+    }
+    Ok(Startup {
+        session,
+        initial_message,
+        initial_images: images,
+        messages: std::mem::take(&mut args.messages),
+    })
+}
+
+/// Builds a session around `session` in its working directory, as pi's
+/// runtime factory does for the first session and every one that replaces it:
+/// settings, model, thinking level, tools and prompt resources follow the
+/// arguments. `warn` reports model problems on stderr, which only the first
+/// session may do.
+pub fn create(args: &Args, session: SessionManager, warn: bool) -> anyhow::Result<AgentSession> {
+    let cwd = session.cwd().to_path_buf();
+    let agent_dir = agent_dir();
+    let (settings, trusted) = load_settings(args, &cwd, &agent_dir)?;
     let mut registry = ModelRegistry::load(&agent_dir);
-    if let Some(error) = registry.error() {
+    if warn && let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
-
-    let env_dir = std::env::var(SESSION_DIR_ENV)
-        .ok()
-        .filter(|dir| !dir.is_empty());
-    let custom_dir = args
-        .session_dir
-        .as_deref()
-        .or(env_dir.as_deref())
-        .or(settings.settings().session_dir.as_deref())
-        .map(|dir| resolve_to_cwd(dir, &cwd));
-    let session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
     let existing = session.entries().next().is_some();
 
     // Model: --model, then the session's last model, then defaults.
@@ -281,7 +343,7 @@ pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> 
     if let Some(pattern) = &args.model {
         let resolved =
             resolve_cli_model(args.provider.as_deref(), pattern, args.thinking, &registry);
-        if let Some(warning) = &resolved.warning {
+        if warn && let Some(warning) = &resolved.warning {
             eprintln!("Warning: {warning}");
         }
         if let Some(error) = resolved.error {
@@ -386,20 +448,7 @@ pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> 
         append_prompt: (!appends.is_empty()).then(|| appends.join("\n\n")),
     };
 
-    let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
-    let mut parts = Vec::new();
-    if let Some(stdin) = stdin {
-        parts.push(stdin);
-    }
-    if !file_text.is_empty() {
-        parts.push(file_text);
-    }
-    if !args.messages.is_empty() {
-        parts.push(args.messages.remove(0));
-    }
-    let initial_message = (!parts.is_empty()).then(|| parts.concat());
-
-    let session = AgentSession::new(SessionConfig {
+    Ok(AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
         settings,
@@ -410,19 +459,5 @@ pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> 
         thinking_level,
         tools,
         resources,
-    });
-    if let Some(name) = args
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    {
-        session.set_name(name);
-    }
-    Ok(Startup {
-        session,
-        initial_message,
-        initial_images: images,
-        messages: std::mem::take(&mut args.messages),
-    })
+    }))
 }

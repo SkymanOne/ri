@@ -69,6 +69,22 @@ async fn run(parsed: &mut args::Args) -> u8 {
             Some(_) => Some(ri_types::settings::TuiMode::Fullscreen),
             None => None,
         };
+        if parsed.resume {
+            match pick_session(parsed) {
+                Ok(Some(path)) => {
+                    parsed.session = Some(path.display().to_string());
+                    parsed.resume = false;
+                }
+                Ok(None) => {
+                    let _ = writeln!(std::io::stdout(), "\x1b[2mNo session selected\x1b[22m");
+                    return 0;
+                }
+                Err(err) => {
+                    eprintln!("{err}");
+                    return 1;
+                }
+            }
+        }
         let startup = match startup::start(parsed, None) {
             Ok(startup) => startup,
             Err(err) => {
@@ -78,6 +94,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
         };
         let mut initial: Vec<String> = startup.initial_message.into_iter().collect();
         initial.extend(startup.messages);
+        let args = parsed.clone();
         return interactive::run(
             startup.session,
             ri_core::config::agent_dir(),
@@ -85,6 +102,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 tui_mode,
                 verbose: parsed.verbose,
                 initial,
+                factory: Box::new(move |session| startup::create(&args, session, false)),
             },
         )
         .await;
@@ -102,4 +120,18 @@ async fn run(parsed: &mut args::Args) -> u8 {
         }
     };
     modes::print::run(startup, parsed.mode == Some(Mode::Json)).await
+}
+
+/// pi's `--resume` picker over this project's sessions, then all of them.
+fn pick_session(parsed: &args::Args) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let agent_dir = ri_core::config::agent_dir();
+    let (cwd, custom, theme) = startup::resume_context(parsed)?;
+    let default_dir = ri_core::config::default_session_dir(&agent_dir, &cwd);
+    let custom = custom.filter(|dir| *dir != default_dir);
+    let sources = interactive::session_sources(&agent_dir, &cwd, custom);
+    Ok(interactive::picker::pick_session(
+        &agent_dir,
+        sources,
+        theme.as_deref(),
+    )?)
 }

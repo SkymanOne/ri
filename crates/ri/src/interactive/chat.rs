@@ -11,6 +11,7 @@ use ri_tui::markdown::{self, MarkdownOptions, MarkdownTheme};
 use ri_tui::theme::Theme;
 use ri_types::message::{AssistantMessage, ContentBlock, StopReason};
 
+use super::bash_view::BashView;
 use super::tools::ToolView;
 
 /// What rendering needs besides the item.
@@ -27,6 +28,8 @@ pub struct RenderContext<'a> {
     pub output_pad: usize,
     /// The expand key, as shown in hints.
     pub expand_key: &'a str,
+    /// The cancel keys, as shown in hints.
+    pub cancel_key: &'a str,
     /// The home directory, shown as `~`.
     pub home: Option<&'a str>,
 }
@@ -39,6 +42,8 @@ pub enum Item {
     Assistant(Box<AssistantMessage>),
     /// A tool call and its result.
     Tool(Box<ToolView>),
+    /// A user `!` command.
+    Bash(Box<BashView>),
     /// A compaction summary.
     Compaction {
         /// Context tokens before compaction.
@@ -50,6 +55,8 @@ pub enum Item {
     BranchSummary(String),
     /// A dim status line.
     Status(String),
+    /// A warning line.
+    Warning(String),
     /// An error line.
     Error(String),
     /// Lines rendered elsewhere, with their own spacing.
@@ -97,6 +104,7 @@ impl Item {
             }
             Item::Assistant(message) => render_assistant(message, width, ctx),
             Item::Tool(tool) => tool.render(width, ctx),
+            Item::Bash(bash) => bash.render(width, ctx),
             Item::Compaction {
                 tokens_before,
                 summary,
@@ -173,6 +181,15 @@ impl Item {
             Item::Status(text) => {
                 let mut out = lines::spacer(1);
                 out.extend(padded_text(styled(text.clone(), theme.fg("dim")), width, 1));
+                out
+            }
+            Item::Warning(text) => {
+                let mut out = lines::spacer(1);
+                out.extend(padded_text(
+                    styled(format!("Warning: {text}"), theme.fg("warning")),
+                    width,
+                    1,
+                ));
                 out
             }
             Item::Error(text) => {
