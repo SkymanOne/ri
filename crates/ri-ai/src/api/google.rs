@@ -44,7 +44,7 @@ impl Provider for GoogleGenerativeAi {
 }
 
 /// Message when a request is cancelled, as `fetch` reports it.
-const ABORTED: &str = "This operation was aborted";
+const ABORTED: &str = http::ABORTED_READ;
 
 /// Thinking control for a request.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -779,7 +779,7 @@ async fn consume(
     let mut pending: Vec<u8> = Vec::new();
     let mut buffer = String::new();
     loop {
-        let chunk = match http::read_chunk(&mut response, &options.cancel).await {
+        let chunk = match http::read_chunk(&mut response, &options.cancel, ABORTED).await {
             Ok(chunk) => chunk,
             Err(_) if options.cancel.is_cancelled() => return Err(ABORTED.into()),
             Err(message) => return Err(message),

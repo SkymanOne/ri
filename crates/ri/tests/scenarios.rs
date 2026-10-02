@@ -14,6 +14,13 @@ async fn scenarios_match_pi() {
     let ri = Program::Ri(env!("CARGO_BIN_EXE_ri").into());
     let mut failures = Vec::new();
     for scenario in load_scenarios().unwrap() {
+        if !scenario.runnable() {
+            eprintln!(
+                "skipped {}: needs the fixture generator's packages",
+                scenario.name
+            );
+            continue;
+        }
         let golden = fixtures_dir()
             .join("scenarios")
             .join(format!("{}.json", scenario.name));

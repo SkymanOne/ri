@@ -242,7 +242,9 @@ These are initial targets, calibrated against pi in M0–M1.
   - `cargo test` compares ri's normalized output and requests with goldens recorded from pi;
   - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs;
   - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios;
-  - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines.
+  - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines;
+  - RPC scenarios send each command once the previous one's response or awaited event has arrived;
+  - client scenarios run a Node script from the fixture generator, such as pi's `RpcClient` example, against the program; `cargo test` skips them when the generator's packages are not installed.
 - Prefer goldens recorded from pi over hand-written expectations. Components with pi counterparts are tested against pi-tui's output (`tests/fixtures/pi/generator`).
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;

@@ -10,6 +10,7 @@ mod help;
 mod interactive;
 mod list_models;
 mod modes;
+mod runtime;
 mod startup;
 
 use std::io::Write;
@@ -108,8 +109,27 @@ async fn run(parsed: &mut args::Args) -> u8 {
         .await;
     }
     if parsed.mode == Some(Mode::Rpc) {
-        eprintln!("ri: rpc mode is not implemented yet");
-        return 1;
+        if !parsed.file_args.is_empty() {
+            eprintln!("Error: @file arguments are not supported in RPC mode");
+            return 1;
+        }
+        let startup = match startup::start(parsed, None) {
+            Ok(startup) => startup,
+            Err(err) => {
+                eprintln!("{err}");
+                return 1;
+            }
+        };
+        if startup.session.model().is_none() {
+            eprintln!("{}", startup::NO_MODELS_MESSAGE);
+            return 1;
+        }
+        let args = parsed.clone();
+        return modes::rpc::run(
+            startup.session,
+            Box::new(move |session| startup::create(&args, session, false)),
+        )
+        .await;
     }
     let stdin = startup::read_piped_stdin();
     let startup = match startup::start(parsed, stdin) {

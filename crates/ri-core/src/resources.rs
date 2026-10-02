@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+pub use ri_types::rpc::SourceInfo;
 
 use crate::config::PROJECT_DIR;
 use crate::tools::path::home_dir;
@@ -33,6 +34,8 @@ pub struct Skill {
     pub base_dir: PathBuf,
     /// Hidden from the prompt; only usable as `/skill:name`.
     pub disable_model_invocation: bool,
+    /// Where it was found.
+    pub source: SourceInfo,
 }
 
 /// A prompt template, expanded by `/name args`.
@@ -48,6 +51,8 @@ pub struct PromptTemplate {
     pub content: String,
     /// The file.
     pub file_path: PathBuf,
+    /// Where it was found.
+    pub source: SourceInfo,
 }
 
 /// Frontmatter values ri reads: strings and booleans.
@@ -195,7 +200,44 @@ pub fn context_files(cwd: &Path, agent_dir: &Path) -> Vec<ContextFile> {
     files
 }
 
-fn load_skill(path: &Path) -> Option<Skill> {
+/// Discovery metadata for resources under one directory; the path is filled
+/// in per resource.
+#[derive(Clone)]
+struct Origin {
+    source: &'static str,
+    scope: &'static str,
+    base_dir: Option<PathBuf>,
+}
+
+impl Origin {
+    fn auto(scope: &'static str, base_dir: PathBuf) -> Origin {
+        Origin {
+            source: "auto",
+            scope,
+            base_dir: Some(base_dir),
+        }
+    }
+
+    fn cli() -> Origin {
+        Origin {
+            source: "cli",
+            scope: "temporary",
+            base_dir: None,
+        }
+    }
+
+    fn info(&self, path: &Path) -> SourceInfo {
+        SourceInfo {
+            path: path.display().to_string(),
+            source: self.source.to_owned(),
+            scope: self.scope.to_owned(),
+            origin: "top-level".to_owned(),
+            base_dir: self.base_dir.as_ref().map(|dir| dir.display().to_string()),
+        }
+    }
+}
+
+fn load_skill(path: &Path, origin: &Origin) -> Option<Skill> {
     let (frontmatter, _) = parse_frontmatter(&read_text(path)?);
     let description = frontmatter
         .get("description")
@@ -220,16 +262,17 @@ fn load_skill(path: &Path) -> Option<Skill> {
         base_dir,
         disable_model_invocation: frontmatter.get("disable-model-invocation")
             == Some(&FrontmatterValue::Bool(true)),
+        source: origin.info(path),
     })
 }
 
 /// Skills under `dir`: a directory with `SKILL.md` is one skill; otherwise
 /// subdirectories are searched, and at the top level other `.md` files with a
 /// description are skills too. Hidden entries and `node_modules` are skipped.
-fn skills_in(dir: &Path, top: bool, skills: &mut Vec<Skill>) {
+fn skills_in(dir: &Path, top: bool, origin: &Origin, skills: &mut Vec<Skill>) {
     let skill_file = dir.join("SKILL.md");
     if skill_file.is_file() {
-        skills.extend(load_skill(&skill_file));
+        skills.extend(load_skill(&skill_file, origin));
         return;
     }
     let Ok(read) = std::fs::read_dir(dir) else {
@@ -246,9 +289,9 @@ fn skills_in(dir: &Path, top: bool, skills: &mut Vec<Skill>) {
             continue;
         }
         if path.is_dir() {
-            skills_in(&path, false, skills);
+            skills_in(&path, false, origin, skills);
         } else if top && path.is_file() && name.ends_with(".md") {
-            skills.extend(load_skill(&path));
+            skills.extend(load_skill(&path, origin));
         }
     }
 }
@@ -262,22 +305,44 @@ pub fn skills(
     extra: &[PathBuf],
 ) -> Vec<Skill> {
     let mut found = Vec::new();
-    skills_in(&agent_dir.join("skills"), true, &mut found);
-    skills_in(&home_dir().join(".agents").join("skills"), true, &mut found);
+    let user_agents = home_dir().join(".agents");
+    skills_in(
+        &agent_dir.join("skills"),
+        true,
+        &Origin::auto("user", agent_dir.to_path_buf()),
+        &mut found,
+    );
+    skills_in(
+        &user_agents.join("skills"),
+        true,
+        &Origin::auto("user", user_agents.clone()),
+        &mut found,
+    );
     if project_trusted {
-        skills_in(&cwd.join(PROJECT_DIR).join("skills"), true, &mut found);
+        let project = cwd.join(PROJECT_DIR);
+        skills_in(
+            &project.join("skills"),
+            true,
+            &Origin::auto("project", project.clone()),
+            &mut found,
+        );
         for dir in cwd.ancestors() {
-            let skills_dir = dir.join(".agents").join("skills");
-            if skills_dir != home_dir().join(".agents").join("skills") {
-                skills_in(&skills_dir, true, &mut found);
+            let agents = dir.join(".agents");
+            if agents != user_agents {
+                skills_in(
+                    &agents.join("skills"),
+                    true,
+                    &Origin::auto("project", agents.clone()),
+                    &mut found,
+                );
             }
         }
     }
     for path in extra {
         if path.is_dir() {
-            skills_in(path, true, &mut found);
+            skills_in(path, true, &Origin::cli(), &mut found);
         } else if path.is_file() {
-            found.extend(load_skill(path));
+            found.extend(load_skill(path, &Origin::cli()));
         }
     }
     let mut unique: Vec<Skill> = Vec::new();
@@ -340,7 +405,7 @@ pub fn format_skills(skills: &[Skill], read_tool: &str) -> String {
     lines.join("\n")
 }
 
-fn templates_in(dir: &Path, templates: &mut Vec<PromptTemplate>) {
+fn templates_in(dir: &Path, origin: &Origin, templates: &mut Vec<PromptTemplate>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -380,6 +445,7 @@ fn templates_in(dir: &Path, templates: &mut Vec<PromptTemplate>) {
                 .and_then(FrontmatterValue::as_str)
                 .map(str::to_owned),
             content: body,
+            source: origin.info(&path),
             file_path: path,
         });
     }
@@ -394,13 +460,22 @@ pub fn prompt_templates(
     extra: &[PathBuf],
 ) -> Vec<PromptTemplate> {
     let mut templates = Vec::new();
-    templates_in(&agent_dir.join("prompts"), &mut templates);
+    templates_in(
+        &agent_dir.join("prompts"),
+        &Origin::auto("user", agent_dir.to_path_buf()),
+        &mut templates,
+    );
     if project_trusted {
-        templates_in(&cwd.join(PROJECT_DIR).join("prompts"), &mut templates);
+        let project = cwd.join(PROJECT_DIR);
+        templates_in(
+            &project.join("prompts"),
+            &Origin::auto("project", project.clone()),
+            &mut templates,
+        );
     }
     for path in extra {
         if path.is_dir() {
-            templates_in(path, &mut templates);
+            templates_in(path, &Origin::cli(), &mut templates);
         }
     }
     templates

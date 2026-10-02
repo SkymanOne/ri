@@ -14,6 +14,7 @@ pub mod json;
 pub mod message;
 pub mod model;
 pub mod models;
+pub mod rpc;
 pub mod session;
 pub mod settings;
 

@@ -37,7 +37,45 @@ pub struct Scenario {
     /// Runs the program in a terminal and types into it.
     #[serde(default)]
     pub tty: Option<Tty>,
+    /// Commands for RPC mode, sent one at a time; stdin closes after the last.
+    #[serde(default)]
+    pub rpc: Option<Vec<RpcStep>>,
+    /// A Node script in the fixture generator that runs instead, with the
+    /// program as its first argument, followed by `args`. It needs the
+    /// generator's `node_modules`.
+    #[serde(default)]
+    pub client: Option<String>,
 }
+
+impl Scenario {
+    /// Whether this machine can run the scenario: client scripts need Node
+    /// and the fixture generator's packages.
+    pub fn runnable(&self) -> bool {
+        self.client.is_none() || generator_dir().join("node_modules").is_dir()
+    }
+}
+
+/// The pi fixture generator, with pi installed in its `node_modules`.
+pub fn generator_dir() -> PathBuf {
+    fixtures_dir().join("pi").join("generator")
+}
+
+/// One command of an RPC scenario.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RpcStep {
+    /// The command, written as one JSON line; a string is written verbatim
+    /// and `null` writes nothing. A string value `{{<id>:<pointer>}}` inside
+    /// the command becomes the value at that JSON pointer of the response to
+    /// command `<id>`.
+    pub send: Value,
+    /// Waits for an output line of this `type` before the next step. Without
+    /// it, waits for the response to the command's `id`, if it has one.
+    #[serde(default)]
+    pub until: Option<String>,
+}
+
+/// The longest wait for one RPC step.
+const RPC_STEP_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// A terminal session: its size and what to type. After starting and after
 /// each key the screen is left to settle.
@@ -79,6 +117,8 @@ pub struct Run {
     pub sessions: Vec<SessionFile>,
     /// The final screen of a terminal run, one string per row.
     pub screen: Option<Vec<String>>,
+    /// The mock server's URL, for normalization.
+    pub url: String,
 }
 
 /// A session file found after a run.
@@ -182,6 +222,17 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         Program::Pi(path) => (path.clone(), "PI_CODING_AGENT_DIR"),
         Program::Ri(path) => (path.clone(), "RI_CODING_AGENT_DIR"),
     };
+    let (executable, args) = match &scenario.client {
+        Some(client) => {
+            let mut args = vec![
+                generator_dir().join(client).display().to_string(),
+                executable.display().to_string(),
+            ];
+            args.extend(scenario.args.iter().cloned());
+            (PathBuf::from("node"), args)
+        }
+        None => (executable, scenario.args.clone()),
+    };
     let executable = &executable;
     // A clean environment: ambient credentials on the host must not change what
     // either program sees.
@@ -198,12 +249,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     ];
     let (exit_code, stdout, stderr, screen) = match &scenario.tty {
         Some(tty) => {
-            let (path, args, dir, tty) = (
-                executable.clone(),
-                scenario.args.clone(),
-                cwd.clone(),
-                tty.clone(),
-            );
+            let (path, args, dir, tty) = (executable.clone(), args, cwd.clone(), tty.clone());
             let (exit_code, screen) =
                 tokio::task::spawn_blocking(move || run_tty(&path, &args, &dir, &env, &tty))
                     .await
@@ -212,9 +258,16 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
                     .map_err(io(executable))?;
             (exit_code, String::new(), String::new(), Some(screen))
         }
+        None if scenario.rpc.is_some() => {
+            let steps = scenario.rpc.as_deref().unwrap_or_default();
+            let (exit_code, stdout, stderr) = run_rpc(executable, &args, &cwd, &env, steps)
+                .await
+                .map_err(io(executable))?;
+            (exit_code, stdout, stderr, None)
+        }
         None => {
             let mut command = tokio::process::Command::new(executable);
-            command.args(&scenario.args).current_dir(&cwd).env_clear();
+            command.args(&args).current_dir(&cwd).env_clear();
             for (key, value) in &env {
                 command.env(key, value);
             }
@@ -264,6 +317,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         stdout,
         stderr,
         screen,
+        url,
         requests,
         cwd: cwd.clone(),
         agent_dir,
@@ -271,6 +325,138 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     };
     let _ = std::fs::remove_dir_all(&root);
     Ok(run)
+}
+
+/// Replaces `{{<id>:<pointer>}}` strings in `value` from `responses`.
+fn substitute(value: &Value, responses: &HashMap<String, Value>) -> Value {
+    match value {
+        Value::String(text) => text
+            .strip_prefix("{{")
+            .and_then(|rest| rest.strip_suffix("}}"))
+            .and_then(|reference| reference.split_once(':'))
+            .and_then(|(id, pointer)| responses.get(id)?.pointer(pointer).cloned())
+            .unwrap_or_else(|| value.clone()),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| substitute(item, responses))
+                .collect(),
+        ),
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, item)| (key.clone(), substitute(item, responses)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Runs `executable` with piped stdio, writing each step's command once the
+/// previous step's awaited line has appeared, then closing stdin. Returns the
+/// exit code, stdout and stderr.
+async fn run_rpc(
+    executable: &Path,
+    args: &[String],
+    cwd: &Path,
+    env: &[(&'static str, std::ffi::OsString)],
+    steps: &[RpcStep],
+) -> std::io::Result<(i32, String, String)> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+    let mut command = tokio::process::Command::new(executable);
+    command.args(args).current_dir(cwd).env_clear();
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = command.spawn()?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| std::io::Error::other("no stdin"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other("no stdout"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other("no stderr"))?;
+    let (lines_tx, mut lines) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let reader = tokio::spawn(async move {
+        let mut all = String::new();
+        let mut stdout = tokio::io::BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = stdout.next_line().await {
+            all.push_str(&line);
+            all.push('\n');
+            let _ = lines_tx.send(line);
+        }
+        all
+    });
+    let errors = tokio::spawn(async move {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text).await;
+        text
+    });
+    let mut responses: HashMap<String, Value> = HashMap::new();
+    for step in steps {
+        let send = substitute(&step.send, &responses);
+        let line = match &send {
+            Value::String(text) => text.clone(),
+            command => command.to_string(),
+        };
+        if !send.is_null() {
+            stdin.write_all(format!("{line}\n").as_bytes()).await?;
+            stdin.flush().await?;
+        }
+        let id = send.get("id").cloned();
+        let awaited = |line: &str| {
+            let Ok(output) = serde_json::from_str::<Value>(line) else {
+                return false;
+            };
+            match (&step.until, &id) {
+                (Some(kind), _) => output["type"] == *kind.as_str(),
+                (None, Some(id)) => output["type"] == "response" && output["id"] == *id,
+                (None, None) => true,
+            }
+        };
+        if step.until.is_none() && id.is_none() {
+            continue;
+        }
+        let wait = async {
+            while let Some(line) = lines.recv().await {
+                if let Ok(output) = serde_json::from_str::<Value>(&line)
+                    && output["type"] == "response"
+                    && let Some(id) = output["id"].as_str()
+                {
+                    responses.insert(id.to_owned(), output.clone());
+                }
+                if awaited(&line) {
+                    return true;
+                }
+            }
+            false
+        };
+        if !tokio::time::timeout(RPC_STEP_LIMIT, wait)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(std::io::Error::other(format!(
+                "RPC step {line} got no awaited output"
+            )));
+        }
+    }
+    drop(stdin);
+    let status = tokio::time::timeout(RPC_STEP_LIMIT, child.wait())
+        .await
+        .map_err(|_| std::io::Error::other("RPC process did not exit after stdin closed"))??;
+    let stdout = reader.await.map_err(std::io::Error::other)?;
+    let stderr = errors.await.map_err(std::io::Error::other)?;
+    Ok((status.code().unwrap_or(-1), stdout, stderr))
 }
 
 /// Runs `executable` in a pseudo-terminal, typing `tty.keys` once the screen
@@ -303,6 +489,9 @@ struct Normalizer<'a> {
 
 const ID_KEYS: &[&str] = &[
     "id",
+    "sessionId",
+    "leafId",
+    "entryId",
     "parentId",
     "targetId",
     "fromId",
@@ -315,13 +504,14 @@ const ID_KEYS: &[&str] = &[
 impl Normalizer<'_> {
     /// Text normalization: paths, new session file names, ri's name in the
     /// prompt, pi's docs section.
-    fn text(&self, text: &str) -> String {
+    fn text(&mut self, text: &str) -> String {
         let mut text = text
             .replace(
                 &self.run.agent_dir.to_string_lossy().into_owned(),
                 "<agent>",
             )
             .replace(&self.run.cwd.to_string_lossy().into_owned(), "<cwd>")
+            .replace(&self.run.url, "<mock>")
             .replace(&encoded_dir(&self.run.cwd), "<cwd-dir>")
             .replace("operating inside ri,", "operating inside pi,");
         for (from, to) in &self.renames {
@@ -334,7 +524,39 @@ impl Normalizer<'_> {
                 None => break,
             }
         }
-        text
+        self.unsaved_session_files(&text)
+    }
+
+    /// Names of new session files that were never written, such as an empty
+    /// fork's, as `<session <id>>.jsonl` with the id normalized.
+    fn unsaved_session_files(&mut self, text: &str) -> String {
+        const STAMP: usize = "2026-01-01T00-00-00-000Z_".len();
+        const UUID: usize = 36;
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(end) = rest.find(".jsonl") {
+            let start = end.saturating_sub(STAMP + UUID);
+            let candidate = rest.get(start..end).unwrap_or_default();
+            let seeded = self.run.sessions.iter().any(|file| {
+                file.seeded && file.name.strip_suffix(".jsonl") == Some(candidate)
+            });
+            let named = candidate.len() == STAMP + UUID
+                && !seeded
+                && candidate.as_bytes()[STAMP - 1] == b'_'
+                && candidate.as_bytes()[STAMP - 2] == b'Z'
+                && is_uuid(&candidate[STAMP..]);
+            if named {
+                out.push_str(&rest[..start]);
+                let id = self.id(&Value::from(&candidate[STAMP..]));
+                out.push_str(&format!("<session {}>", id.as_str().unwrap_or_default()));
+            } else {
+                out.push_str(&rest[..end]);
+            }
+            out.push_str(".jsonl");
+            rest = &rest[end + ".jsonl".len()..];
+        }
+        out.push_str(rest);
+        out
     }
 
     fn id(&mut self, value: &Value) -> Value {
@@ -433,6 +655,10 @@ pub fn normalize(run: &Run) -> Value {
                     Some("session") => {
                         event = json!({"type": "session", "version": event["version"]});
                     }
+                    // JSON parser messages differ between implementations.
+                    Some("response") if event["command"] == "parse" => {
+                        event["error"] = json!("<parse error>");
+                    }
                     _ => {}
                 }
                 normalizer.value(&event)
@@ -485,7 +711,7 @@ pub fn normalize(run: &Run) -> Value {
         out["sessions"] = Value::Array(sessions);
     }
     if let Some(screen) = &run.screen {
-        out["screen"] = Value::from(normalize_screen(screen, &normalizer));
+        out["screen"] = Value::from(normalize_screen(screen, &mut normalizer));
     }
     out
 }
@@ -503,7 +729,7 @@ fn is_uuid(text: &str) -> bool {
 /// Screen rows without the product-specific startup header (pi's logo, its
 /// docs tip, ri's wordmark), with paths and session ids masked, trailing space
 /// trimmed and blank runs collapsed, so the rest compares across programs.
-fn normalize_screen(rows: &[String], normalizer: &Normalizer<'_>) -> Vec<String> {
+fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for row in rows {
         if row.contains("▀▀█") || row.starts_with(" ri v") || row.contains("Pi can explain") {

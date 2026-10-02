@@ -47,8 +47,7 @@ use ri_tui::theme::{
 };
 use ri_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolResult};
 use ri_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ToolCall,
+    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
 };
 use ri_types::settings::{DoubleEscapeAction, TuiMode};
 use serde_json::{Map, Value};
@@ -104,8 +103,7 @@ enum Dialog {
     Import(String),
 }
 
-/// Builds a session around a session file, as pi's runtime factory does.
-pub type SessionFactory = Box<dyn Fn(SessionManager) -> anyhow::Result<AgentSession>>;
+use crate::runtime::{SessionFactory, user_text};
 
 /// What the run needs from startup.
 pub struct Options {
@@ -149,20 +147,6 @@ fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
-}
-
-fn user_text(content: &Content) -> String {
-    match content {
-        Content::Text(text) => text.clone(),
-        Content::Blocks(blocks) => blocks
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text(text) => Some(text.text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-    }
 }
 
 fn tool_result_of(message: &ri_types::message::ToolResultMessage) -> ToolResult {
@@ -1223,7 +1207,7 @@ impl App {
         tokio::spawn(async move {
             let chunks = tx.clone();
             let result = session
-                .execute_bash(&command, Some(exclude), move |chunk| {
+                .execute_bash(&command, Some(exclude), None, move |chunk| {
                     let _ = chunks.send(Event::BashChunk(epoch, id, chunk.to_owned()));
                 })
                 .await;
@@ -1257,7 +1241,8 @@ impl App {
     }
 
     fn restore_queue(&mut self, abort: bool) -> usize {
-        let mut queued = self.session.clear_queues();
+        let (mut queued, follow_up) = self.session.clear_queues();
+        queued.extend(follow_up);
         queued.extend(
             std::mem::take(&mut self.compaction_queue)
                 .into_iter()
@@ -1482,35 +1467,17 @@ impl App {
     }
 
     fn cycle_model(&mut self, forward: bool) {
-        let models = self.session.available_models();
-        if models.len() <= 1 {
+        let Some(model) = self.session.cycle_model(forward) else {
             self.status("Only one model available");
             return;
-        }
-        let current = self.session.model();
-        let index = current
-            .as_ref()
-            .and_then(|current| {
-                models
-                    .iter()
-                    .position(|model| model.provider == current.provider && model.id == current.id)
-            })
-            .unwrap_or(0);
-        let next = if forward {
-            (index + 1) % models.len()
-        } else {
-            (index + models.len() - 1) % models.len()
         };
-        let model = models[next].clone();
         let name = if model.name.is_empty() {
             model.id.clone()
         } else {
             model.name.clone()
         };
-        let reasoning = model.reasoning;
-        self.session.switch_model(model);
         let level = self.session.thinking_level();
-        if reasoning && level.as_str() != "off" {
+        if model.reasoning && level.as_str() != "off" {
             self.status(format!("Switched to {name} (thinking: {})", level.as_str()));
         } else {
             self.status(format!("Switched to {name}"));
@@ -1584,7 +1551,10 @@ impl App {
             Action::Model { model, default } => {
                 let id = model.id.clone();
                 let provider = model.provider.clone();
-                self.session.set_model(*model);
+                if let Err(error) = self.session.set_model(*model) {
+                    self.error(error);
+                    return;
+                }
                 if default {
                     let _ = self.session.set_global_setting(
                         "defaultProvider",
@@ -1882,25 +1852,10 @@ impl App {
 
     fn new_session(&mut self) {
         self.indicator = None;
-        let (persisted, cwd, dir) = self.session.with_session(|session| {
-            (
-                session.is_persisted(),
-                session.cwd().to_path_buf(),
-                session.dir().to_path_buf(),
-            )
-        });
-        let manager = if persisted {
-            match SessionManager::create(&cwd, &dir, None) {
-                Ok(manager) => manager,
-                Err(error) => {
-                    self.fatal("Failed to create session", &error.to_string());
-                    return;
-                }
-            }
-        } else {
-            SessionManager::in_memory(&cwd)
-        };
-        match self.replace_session(manager) {
+        let result = crate::runtime::new_session(&self.session, None)
+            .map_err(|error| error.to_string())
+            .and_then(|manager| self.replace_session(manager));
+        match result {
             Ok(()) => {
                 let mut out = lines::spacer(1);
                 out.extend(lines::text(
@@ -1922,73 +1877,13 @@ impl App {
     /// pi's `runtimeHost.fork`: `at` keeps the entry (`/clone`), otherwise the
     /// branch ends before the user message (`/fork`).
     fn fork(&mut self, id: &str, at: bool) {
-        let prepared = self.session.with_session(|session| {
-            let entry = session
-                .entry(id)
-                .cloned()
-                .ok_or_else(|| "Invalid entry ID for forking".to_owned())?;
-            let (target, text) = if at {
-                (Some(id.to_owned()), None)
-            } else {
-                match &entry {
-                    ri_types::session::FileEntry::Message(message) => match &message.message {
-                        Message::User(user) => (
-                            message.meta.parent_id.clone(),
-                            Some(user_text(&user.content)),
-                        ),
-                        _ => return Err("Invalid entry ID for forking".to_owned()),
-                    },
-                    _ => return Err("Invalid entry ID for forking".to_owned()),
-                }
-            };
-            Ok((
-                target,
-                text,
-                session.is_persisted(),
-                session.file().map(Path::to_path_buf),
-                session.cwd().to_path_buf(),
-                session.dir().to_path_buf(),
-            ))
+        let result = crate::runtime::plan_fork(&self.session, id, at).and_then(|fork| {
+            let manager = fork.build(&self.session)?;
+            self.replace_session(manager)?;
+            Ok(fork.text)
         });
-        let (target, text, persisted, file, cwd, dir) = match prepared {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.error(error);
-                return;
-            }
-        };
-        let manager: Result<SessionManager, String> = (|| {
-            if !persisted {
-                return Err(
-                    "This session has not been saved yet. Send a message before cloning or forking it."
-                        .to_owned(),
-                );
-            }
-            let file = file.ok_or("Persisted session is missing a session file")?;
-            match &target {
-                None => {
-                    let mut manager =
-                        SessionManager::create(&cwd, &dir, None).map_err(|e| e.to_string())?;
-                    manager.new_session(None, Some(file.display().to_string()));
-                    Ok(manager)
-                }
-                Some(target) => {
-                    if !file.exists() {
-                        return Err("This session has not been saved yet. Send a message before cloning or forking it.".to_owned());
-                    }
-                    let mut manager =
-                        SessionManager::open(&file, Some(&dir), None).map_err(|e| e.to_string())?;
-                    manager
-                        .create_branched_session(target)
-                        .map_err(|e| e.to_string())?
-                        .ok_or("Failed to create forked session")?;
-                    Ok(manager)
-                }
-            }
-        })();
-        let result = manager.and_then(|manager| self.replace_session(manager));
         match result {
-            Ok(()) => {
+            Ok(text) => {
                 if at {
                     self.editor.set_text("");
                     self.status("Cloned to new session");
@@ -2002,26 +1897,30 @@ impl App {
     }
 
     fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
-        let manager = match SessionManager::open(path, None, cwd_override.as_deref()) {
+        let fallback = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
+        let manager = match crate::runtime::open_session(path, cwd_override.as_deref(), &fallback) {
             Ok(manager) => manager,
+            Err(crate::runtime::SwitchError::MissingCwd {
+                session_cwd,
+                fallback,
+                ..
+            }) => {
+                self.dialog = Some(Dialog::ResumeMissingCwd(path.to_path_buf()));
+                self.selector = Some(Selector::Choice(ChoiceDialog::new(
+                    &format!(
+                        "Session cwd not found\ncwd from session file does not exist\n{}\n\ncontinue in current cwd\n{}",
+                        session_cwd.display(),
+                        fallback.display()
+                    ),
+                    &["Yes", "No"],
+                )));
+                return;
+            }
             Err(error) => {
                 self.fatal("Failed to resume session", &error.to_string());
                 return;
             }
         };
-        if cwd_override.is_none() && !manager.cwd().exists() {
-            let fallback = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
-            self.dialog = Some(Dialog::ResumeMissingCwd(path.to_path_buf()));
-            self.selector = Some(Selector::Choice(ChoiceDialog::new(
-                &format!(
-                    "Session cwd not found\ncwd from session file does not exist\n{}\n\ncontinue in current cwd\n{}",
-                    manager.cwd().display(),
-                    fallback.display()
-                ),
-                &["Yes", "No"],
-            )));
-            return;
-        }
         match self.replace_session(manager) {
             Ok(()) if cwd_override.is_some() => self.status("Resumed session in current cwd"),
             Ok(()) => self.status("Resumed session"),

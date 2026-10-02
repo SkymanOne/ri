@@ -16,20 +16,7 @@ use crate::tools::truncate::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncate_tail
 
 const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 
-/// What a command produced.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BashResult {
-    /// Combined, sanitized output; the tail when truncated.
-    pub output: String,
-    /// The exit code; `None` when cancelled.
-    pub exit_code: Option<i32>,
-    /// The command was cancelled.
-    pub cancelled: bool,
-    /// The output was truncated.
-    pub truncated: bool,
-    /// The full output, when it was too long to keep.
-    pub full_output_path: Option<PathBuf>,
-}
+pub use ri_types::rpc::BashResult;
 
 static ANSI: LazyLock<Option<Regex>> = LazyLock::new(|| {
     // OSC up to the first string terminator (BEL, ESC \ or 0x9c), or CSI.
@@ -130,7 +117,7 @@ impl Output {
             exit_code: if cancelled { None } else { exit_code },
             cancelled,
             truncated: truncation.truncated,
-            full_output_path: self.file.map(|(path, _)| path),
+            full_output_path: self.file.map(|(path, _)| path.display().to_string()),
         }
     }
 }

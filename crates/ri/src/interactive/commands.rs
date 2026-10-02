@@ -645,8 +645,10 @@ impl super::App {
             [model] => {
                 let model = (*model).clone();
                 let id = model.id.clone();
-                self.session.set_model(model);
-                self.status(format!("Model: {id}"));
+                match self.session.set_model(model) {
+                    Ok(()) => self.status(format!("Model: {id}")),
+                    Err(error) => self.error(error),
+                }
             }
             _ => self.open_model_selector(reference),
         }

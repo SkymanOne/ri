@@ -14,6 +14,9 @@ use crate::stream::StreamOptions;
 pub const ABORTED_BEFORE_RESPONSE: &str = "Request aborted";
 /// Message when the request is cancelled while the response streams.
 pub const ABORTED_DURING_STREAM: &str = "Request was aborted";
+/// Message of the DOM `AbortError` that `fetch` raises when it is cancelled
+/// during a pending body read.
+pub const ABORTED_READ: &str = "This operation was aborted";
 
 const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
 
@@ -276,16 +279,18 @@ fn truncate_chars(text: &str, max: usize) -> String {
 }
 
 /// The next chunk of a response body; `None` at the end. Fails with pi's
-/// message when `cancel` fires or the connection drops.
+/// message when `cancel` fires or the connection drops: `interrupted` when it
+/// fires during the read.
 pub async fn read_chunk(
     response: &mut reqwest::Response,
     cancel: &CancellationToken,
+    interrupted: &str,
 ) -> Result<Option<Vec<u8>>, String> {
     if cancel.is_cancelled() {
         return Err(ABORTED_DURING_STREAM.to_owned());
     }
     let chunk = tokio::select! {
-        () = cancel.cancelled() => return Err(ABORTED_DURING_STREAM.to_owned()),
+        () = cancel.cancelled() => return Err(interrupted.to_owned()),
         chunk = response.chunk() => chunk,
     };
     chunk
@@ -299,16 +304,28 @@ pub struct SseReader {
     decoder: sse::Decoder,
     queue: std::collections::VecDeque<sse::Event>,
     done: bool,
+    interrupted: &'static str,
 }
 
 impl SseReader {
-    /// Reads `response` as an event stream.
+    /// Reads `response` as an event stream, as the provider SDKs do: a
+    /// cancelled read fails with [`ABORTED_DURING_STREAM`].
     pub fn new(response: reqwest::Response) -> SseReader {
         SseReader {
             response,
             decoder: sse::Decoder::default(),
             queue: Default::default(),
             done: false,
+            interrupted: ABORTED_DURING_STREAM,
+        }
+    }
+
+    /// Reads with plain `fetch`, as pi's Anthropic client does: a cancelled
+    /// read fails with [`ABORTED_READ`].
+    pub fn fetch(response: reqwest::Response) -> SseReader {
+        SseReader {
+            interrupted: ABORTED_READ,
+            ..SseReader::new(response)
         }
     }
 
@@ -321,7 +338,7 @@ impl SseReader {
             if self.done {
                 return Ok(None);
             }
-            match read_chunk(&mut self.response, cancel).await? {
+            match read_chunk(&mut self.response, cancel, self.interrupted).await? {
                 Some(bytes) => self.queue.extend(self.decoder.push(&bytes)),
                 None => {
                     self.done = true;

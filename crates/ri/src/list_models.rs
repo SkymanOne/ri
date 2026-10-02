@@ -74,10 +74,7 @@ pub fn run(pattern: Option<&str>) -> u8 {
         .filter(|model| registry.has_auth(&model.provider))
         .collect();
     if available.is_empty() {
-        let _ = writeln!(
-            out,
-            "No models available. Use /login to log into a provider via OAuth or API key."
-        );
+        let _ = writeln!(out, "{}", crate::startup::NO_MODELS_MESSAGE);
         return 0;
     }
     let mut models = match pattern {

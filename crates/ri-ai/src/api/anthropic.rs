@@ -380,7 +380,7 @@ async fn run(request: Request, sender: EventSender) {
         oauth,
     };
     match state
-        .consume(SseReader::new(response), &model, &sender, &options)
+        .consume(SseReader::fetch(response), &model, &sender, &options)
         .await
     {
         Ok(()) => {

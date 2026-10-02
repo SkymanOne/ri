@@ -84,7 +84,26 @@ Not yet done:
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.
 
-## M4 to M7
+## M4: RPC, MCP, OAuth, remaining wire APIs
+
+In progress.
+
+RPC mode is done for the slice below.
+
+- pi's JSONL protocol: LF framing, every command of `rpc-types.ts`, responses emitted as pi does (the prompt's at preflight, with its disposition), events in the JSON mode shapes, concurrent command handling, session replacement through the startup factory, and exit on end of input, SIGTERM (143) or SIGHUP (129).
+- Shared with interactive mode: pi's runtime rules for new, forked, cloned and switched sessions, including forks of sessions that are not saved; pi's model and thinking level switching, which records a level only when it changes; and the queue display, which drops a queued message when it starts.
+
+Exit criterion. Nine scenarios recorded from pi match: prompting and queries, steering, follow-up, clearing the queue, abort, session commands (entries, tree, fork messages, fork, switch, clone, new, naming), user bash commands, and settings, model and thinking commands. pi's `RpcClient` example (`tests/fixtures/pi/generator/rpc-client.mjs`) drives ri to the same output and requests as pi.
+
+Not yet done:
+
+- `export_html` (as `/export` to HTML in M3).
+- `get_commands` lists prompt templates and skills; pi also lists its built-in `llama` and `mcp` extension commands.
+- `extension_ui_request` events and `extension_ui_response` handling, which need extensions (M5, M6).
+- `cycle_model` over scoped models (`--models`, `enabledModels`).
+- MCP client, OAuth subscriptions, and the openai-codex-responses, azure-openai-responses and mistral wire APIs.
+
+## M5 to M7
 
 Not started.
 

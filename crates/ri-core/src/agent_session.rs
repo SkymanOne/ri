@@ -7,6 +7,7 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use futures_util::future::BoxFuture;
@@ -23,6 +24,7 @@ use ri_types::message::{
     TextContent, ThinkingLevel, UserMessage,
 };
 use ri_types::model::Model;
+use ri_types::rpc::{PromptDisposition, StreamingBehavior};
 use ri_types::session::FileEntry;
 use ri_types::settings::QueueMode;
 use tokio_util::sync::CancellationToken;
@@ -102,11 +104,38 @@ struct Inner {
     listeners: Mutex<Vec<Listener>>,
     steering: Mutex<VecDeque<Message>>,
     follow_up: Mutex<VecDeque<Message>>,
+    /// Texts of queued steering and follow-up messages until they start, as
+    /// `queue_update` reports them.
+    queued: Mutex<(Vec<String>, Vec<String>)>,
     cancel: Mutex<Option<CancellationToken>>,
     recovery: Mutex<Recovery>,
     bash: Mutex<Vec<(u64, CancellationToken)>>,
     pending_bash: Mutex<Vec<Message>>,
     agent_dir: PathBuf,
+    /// Woken when a run ends.
+    idle: tokio::sync::Notify,
+    /// Compactions and branch summaries in progress.
+    compacting: AtomicUsize,
+    /// A manual compaction is running.
+    manual_compaction: std::sync::atomic::AtomicBool,
+    /// Cancels the wait before an automatic retry.
+    retry_cancel: Mutex<Option<CancellationToken>>,
+}
+
+/// Counts an operation in [`Inner::compacting`] while alive.
+struct Compacting<'a>(&'a AtomicUsize);
+
+impl<'a> Compacting<'a> {
+    fn start(counter: &'a AtomicUsize) -> Compacting<'a> {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Compacting(counter)
+    }
+}
+
+impl Drop for Compacting<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Post-run bookkeeping for retries and overflow recovery, as pi keeps it.
@@ -290,11 +319,16 @@ impl AgentSession {
                 listeners: Mutex::new(Vec::new()),
                 steering: Mutex::new(VecDeque::new()),
                 follow_up: Mutex::new(VecDeque::new()),
+                queued: Mutex::new((Vec::new(), Vec::new())),
                 cancel: Mutex::new(None),
                 recovery: Mutex::new(Recovery::default()),
                 bash: Mutex::new(Vec::new()),
                 pending_bash: Mutex::new(Vec::new()),
                 agent_dir,
+                idle: tokio::sync::Notify::new(),
+                compacting: AtomicUsize::new(0),
+                manual_compaction: std::sync::atomic::AtomicBool::new(false),
+                retry_cancel: Mutex::new(None),
             }),
         }
     }
@@ -502,27 +536,73 @@ impl AgentSession {
             })
     }
 
-    /// Switches the model and records it.
-    pub fn set_model(&self, model: Model) {
-        let mut state = lock(&self.inner.state);
-        let _ = state
-            .session
-            .append_model_change(&model.provider, &model.id);
-        let level = ri_ai::thinking::clamp_level(&model, state.thinking_level);
-        if level != state.thinking_level {
-            state.thinking_level = level;
-            let _ = state.session.append_thinking_level_change(level.as_str());
+    /// pi's `setModel`: switches to `model` and records it, then applies the
+    /// thinking level for it. Fails when its provider has no credential.
+    pub fn set_model(&self, model: Model) -> Result<(), String> {
+        if !self.registry().has_auth(&model.provider) {
+            return Err(format!("No API key for {}/{}", model.provider, model.id));
         }
-        state.model = Some(model);
+        self.apply_model(model);
+        Ok(())
     }
 
-    /// Sets the thinking level, clamped to what the model supports, and records it.
+    /// Records `model` and applies the thinking level for it: its level in
+    /// settings, else the default level, else the current one.
+    fn apply_model(&self, model: Model) {
+        let settings = self.settings();
+        let level = settings
+            .model_thinking_levels
+            .as_ref()
+            .and_then(|levels| levels.get(&model.reference()))
+            .copied()
+            .or(settings.default_thinking_level)
+            .unwrap_or_else(|| self.thinking_level());
+        {
+            let mut state = lock(&self.inner.state);
+            let _ = state
+                .session
+                .append_model_change(&model.provider, &model.id);
+            state.model = Some(model);
+        }
+        self.set_thinking_level(level);
+    }
+
+    /// pi's `cycleModel` over the models with credentials, forward or
+    /// backward. `None` when there is at most one.
+    pub fn cycle_model(&self, forward: bool) -> Option<Model> {
+        let models = self.available_models();
+        if models.len() <= 1 {
+            return None;
+        }
+        let index = self
+            .model()
+            .and_then(|current| {
+                models
+                    .iter()
+                    .position(|model| model.provider == current.provider && model.id == current.id)
+            })
+            .unwrap_or(0);
+        let next = if forward {
+            (index + 1) % models.len()
+        } else {
+            (index + models.len() - 1) % models.len()
+        };
+        let model = models[next].clone();
+        self.apply_model(model.clone());
+        Some(model)
+    }
+
+    /// Sets the thinking level, clamped to what the model supports; a change
+    /// is recorded and announced.
     pub fn set_thinking_level(&self, level: ThinkingLevel) {
         let mut state = lock(&self.inner.state);
         let level = match &state.model {
             Some(model) => ri_ai::thinking::clamp_level(model, level),
             None => level,
         };
+        if level == state.thinking_level {
+            return;
+        }
         state.thinking_level = level;
         let _ = state.session.append_thinking_level_change(level.as_str());
         drop(state);
@@ -559,27 +639,92 @@ impl AgentSession {
         &self.inner.resources
     }
 
-    /// Empties the steering and follow-up queues and returns their texts,
-    /// steering first.
-    pub fn clear_queues(&self) -> Vec<String> {
-        let text = |message: Message| match message {
-            Message::User(user) => match user.content {
-                Content::Text(text) => text,
-                Content::Blocks(blocks) => blocks
-                    .into_iter()
-                    .filter_map(|block| match block {
-                        ContentBlock::Text(text) => Some(text.text),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join(""),
-            },
-            _ => String::new(),
-        };
-        let mut texts: Vec<String> = lock(&self.inner.steering).drain(..).map(text).collect();
-        texts.extend(lock(&self.inner.follow_up).drain(..).map(text));
+    /// Empties the steering and follow-up queues and returns their texts.
+    pub fn clear_queues(&self) -> (Vec<String>, Vec<String>) {
+        lock(&self.inner.steering).clear();
+        lock(&self.inner.follow_up).clear();
+        let queued = std::mem::take(&mut *lock(&self.inner.queued));
         self.emit_queue_update();
-        texts
+        queued
+    }
+
+    /// Queued steering and follow-up messages.
+    pub fn pending_message_count(&self) -> usize {
+        let queued = lock(&self.inner.queued);
+        queued.0.len() + queued.1.len()
+    }
+
+    /// How queued steering messages are delivered.
+    pub fn steering_mode(&self) -> QueueMode {
+        self.settings()
+            .steering_mode
+            .unwrap_or(QueueMode::OneAtATime)
+    }
+
+    /// How queued follow-up messages are delivered.
+    pub fn follow_up_mode(&self) -> QueueMode {
+        self.settings()
+            .follow_up_mode
+            .unwrap_or(QueueMode::OneAtATime)
+    }
+
+    /// Sets the steering mode in the global settings.
+    pub fn set_steering_mode(&self, mode: QueueMode) -> Result<(), String> {
+        self.set_global_setting("steeringMode", serde_json::to_value(mode).ok())
+    }
+
+    /// Sets the follow-up mode in the global settings.
+    pub fn set_follow_up_mode(&self, mode: QueueMode) -> Result<(), String> {
+        self.set_global_setting("followUpMode", serde_json::to_value(mode).ok())
+    }
+
+    /// Whether threshold and overflow compaction run.
+    pub fn auto_compaction_enabled(&self) -> bool {
+        CompactionSettings::resolve(lock(&self.inner.settings).settings(), None).enabled
+    }
+
+    /// Turns automatic compaction on or off in the global settings.
+    pub fn set_auto_compaction(&self, enabled: bool) -> Result<(), String> {
+        self.set_nested_global_setting("compaction", "enabled", enabled.into())
+    }
+
+    /// Turns automatic retries on or off in the global settings.
+    pub fn set_auto_retry(&self, enabled: bool) -> Result<(), String> {
+        self.set_nested_global_setting("retry", "enabled", enabled.into())
+    }
+
+    fn set_nested_global_setting(
+        &self,
+        field: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<(), String> {
+        lock(&self.inner.settings)
+            .set_nested(crate::settings::Scope::Global, field, key, value)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Cancels the wait before an automatic retry; the failed response stands.
+    pub fn abort_retry(&self) {
+        if let Some(cancel) = lock(&self.inner.retry_cancel).as_ref() {
+            cancel.cancel();
+        }
+    }
+
+    /// Whether a compaction or branch summary is running.
+    pub fn is_compacting(&self) -> bool {
+        self.inner.compacting.load(Ordering::SeqCst) > 0
+    }
+
+    /// Waits until no run is in progress.
+    pub async fn wait_for_idle(&self) {
+        loop {
+            let idle = self.inner.idle.notified();
+            if !self.is_streaming() {
+                return;
+            }
+            idle.await;
+        }
     }
 
     /// The thinking levels the current model supports; all of them without a
@@ -621,35 +766,22 @@ impl AgentSession {
             .collect()
     }
 
-    /// Switches to `model`, taking the thinking level from settings for that
-    /// model, else the default, else the current one, as pi's `cycleModel`.
-    pub fn switch_model(&self, model: Model) {
-        let settings = self.settings();
-        let level = settings
-            .model_thinking_levels
-            .as_ref()
-            .and_then(|levels| levels.get(&model.reference()))
-            .copied()
-            .or(settings.default_thinking_level)
-            .unwrap_or_else(|| self.thinking_level());
-        self.set_model(model);
-        self.set_thinking_level(level);
-    }
-
     /// Runs a user `!` command in the session's directory, streaming output to
-    /// `on_chunk`, and records it. `exclude_from_context` (`!!`) keeps the
-    /// output from the model; it is recorded as given. While a run streams, the
-    /// record waits for its end.
+    /// `on_chunk` and as `bash_execution_update` events tagged `id`, and
+    /// records it. `exclude_from_context` (`!!`) keeps the output from the
+    /// model; it is recorded as given. While a run streams, the record waits
+    /// for its end.
     pub async fn execute_bash(
         &self,
         command: &str,
         exclude_from_context: Option<bool>,
-        on_chunk: impl FnMut(&str),
+        id: Option<String>,
+        mut on_chunk: impl FnMut(&str),
     ) -> Result<crate::bash_executor::BashResult, String> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let token = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let cancel = CancellationToken::new();
-        lock(&self.inner.bash).push((id, cancel.clone()));
+        lock(&self.inner.bash).push((token, cancel.clone()));
         let settings = self.settings();
         let resolved = match settings.shell_command_prefix.as_deref() {
             Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
@@ -662,10 +794,16 @@ impl AgentSession {
             settings.shell_path.as_deref(),
             &crate::config::bin_dir(&self.inner.agent_dir),
             cancel.clone(),
-            on_chunk,
+            |delta| {
+                on_chunk(delta);
+                self.emit(&AgentEvent::BashExecutionUpdate {
+                    id: id.clone(),
+                    delta: delta.to_owned(),
+                });
+            },
         )
         .await;
-        lock(&self.inner.bash).retain(|(running, _)| *running != id);
+        lock(&self.inner.bash).retain(|(running, _)| *running != token);
         let result = result?;
         self.record_bash(command, &result, exclude_from_context);
         Ok(result)
@@ -683,10 +821,7 @@ impl AgentSession {
             exit_code: result.exit_code.map(i64::from),
             cancelled: result.cancelled,
             truncated: result.truncated,
-            full_output_path: result
-                .full_output_path
-                .as_ref()
-                .map(|path| path.display().to_string()),
+            full_output_path: result.full_output_path.clone(),
             timestamp: now_ms(),
             exclude_from_context,
         });
@@ -778,34 +913,63 @@ impl AgentSession {
     }
 
     fn emit_queue_update(&self) {
-        let text = |queue: &VecDeque<Message>| {
-            queue
-                .iter()
-                .map(|message| match message {
-                    Message::User(user) => user.content.text("\n"),
-                    _ => String::new(),
-                })
-                .collect::<Vec<_>>()
-        };
-        let steering = text(&lock(&self.inner.steering));
-        let follow_up = text(&lock(&self.inner.follow_up));
+        let (steering, follow_up) = lock(&self.inner.queued).clone();
         self.emit(&AgentEvent::QueueUpdate {
             steering,
             follow_up,
         });
     }
 
+    /// pi's queue display: a queued message leaves it when it starts.
+    fn dequeue_started(&self, message: &Message) {
+        let Message::User(user) = message else {
+            return;
+        };
+        let text = user.content.text("");
+        if text.is_empty() {
+            return;
+        }
+        let removed = {
+            let mut queued = lock(&self.inner.queued);
+            let (steering, follow_up) = &mut *queued;
+            if let Some(index) = steering.iter().position(|queued| *queued == text) {
+                steering.remove(index);
+                true
+            } else if let Some(index) = follow_up.iter().position(|queued| *queued == text) {
+                follow_up.remove(index);
+                true
+            } else {
+                false
+            }
+        };
+        if removed {
+            self.emit_queue_update();
+        }
+    }
+
     /// Queues a message to steer the current run after its current tool calls.
     pub fn steer(&self, text: &str, images: Vec<ImageContent>) {
-        let text = self.expand(text);
-        lock(&self.inner.steering).push_back(Self::user_message(text, images));
-        self.emit_queue_update();
+        self.queue(StreamingBehavior::Steer, self.expand(text), images);
     }
 
     /// Queues a message for when the current run would otherwise end.
     pub fn follow_up(&self, text: &str, images: Vec<ImageContent>) {
-        let text = self.expand(text);
-        lock(&self.inner.follow_up).push_back(Self::user_message(text, images));
+        self.queue(StreamingBehavior::FollowUp, self.expand(text), images);
+    }
+
+    fn queue(&self, behavior: StreamingBehavior, text: String, images: Vec<ImageContent>) {
+        {
+            let mut queued = lock(&self.inner.queued);
+            match behavior {
+                StreamingBehavior::Steer => queued.0.push(text.clone()),
+                StreamingBehavior::FollowUp => queued.1.push(text.clone()),
+            }
+        }
+        let queue = match behavior {
+            StreamingBehavior::Steer => &self.inner.steering,
+            StreamingBehavior::FollowUp => &self.inner.follow_up,
+        };
+        lock(queue).push_back(Self::user_message(text, images));
         self.emit_queue_update();
     }
 
@@ -909,15 +1073,33 @@ impl AgentSession {
     /// Sends a user prompt and runs until the agent settles. Templates and
     /// `/skill:` commands expand first.
     pub async fn prompt(&self, text: &str, images: Vec<ImageContent>) -> Result<(), String> {
-        let expanded = self.expand(text);
-        if !self.is_streaming() {
-            self.flush_pending_bash();
+        self.prompt_with(text, images, None, |_| {}).await
+    }
+
+    /// pi's `prompt`: while a run streams, `behavior` queues the message, and
+    /// without one it is an error; otherwise the message starts a run that
+    /// lasts until the agent settles. `preflight` learns which, before any
+    /// event of the run.
+    pub async fn prompt_with(
+        &self,
+        text: &str,
+        images: Vec<ImageContent>,
+        behavior: Option<StreamingBehavior>,
+        preflight: impl FnOnce(PromptDisposition),
+    ) -> Result<(), String> {
+        if self.inner.manual_compaction.load(Ordering::SeqCst) {
+            return Err("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.".into());
         }
+        let expanded = self.expand(text);
+        if self.is_streaming() {
+            let behavior = behavior.ok_or("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")?;
+            self.queue(behavior, expanded, images);
+            preflight(PromptDisposition::Queued);
+            return Ok(());
+        }
+        self.flush_pending_bash();
         let (model, active, messages) = {
             let state = lock(&self.inner.state);
-            if state.streaming {
-                return Err("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.".into());
-            }
             let model = state.model.clone().ok_or(NO_MODEL_MESSAGE)?;
             (
                 model,
@@ -939,6 +1121,7 @@ impl AgentSession {
             prompts.push(update);
         }
         prompts.push(Self::user_message(expanded, images));
+        preflight(PromptDisposition::Started);
         self.run(prompts).await;
         Ok(())
     }
@@ -970,6 +1153,7 @@ impl AgentSession {
         self.flush_pending_bash();
         *lock(&self.inner.cancel) = None;
         self.emit(&AgentEvent::AgentSettled);
+        self.inner.idle.notify_waiters();
     }
 
     fn has_queued(&self) -> bool {
@@ -1059,7 +1243,6 @@ impl AgentSession {
                 if queued.is_empty() {
                     return;
                 }
-                self.emit_queue_update();
                 Some(queued)
             }
             None => None,
@@ -1169,13 +1352,17 @@ impl AgentSession {
                 .unwrap_or_else(|| "Unknown error".into()),
         });
         self.omit_recovery_attempt(&entry_id.into_iter().collect::<Vec<_>>());
-        tokio::select! {
-            () = cancel.cancelled() => {
+        let retry = cancel.child_token();
+        *lock(&self.inner.retry_cancel) = Some(retry.clone());
+        let waited = tokio::select! {
+            () = retry.cancelled() => {
                 self.finish_cancelled_retry();
                 false
             }
             () = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => true,
-        }
+        };
+        *lock(&self.inner.retry_cancel) = None;
+        waited
     }
 
     async fn handle_post_run(&self, cancel: &CancellationToken) -> bool {
@@ -1419,7 +1606,9 @@ impl AgentSession {
             return false;
         };
         self.emit(&AgentEvent::CompactionStart { reason });
+        let compacting = Compacting::start(&self.inner.compacting);
         let outcome = self.summarize(&model, &preparation, None, cancel).await;
+        drop(compacting);
         match outcome {
             Ok(result) if !cancel.is_cancelled() => {
                 let result = self.record_compaction(result);
@@ -1462,8 +1651,11 @@ impl AgentSession {
         custom_instructions: Option<&str>,
     ) -> Result<CompactionResult, String> {
         self.abort();
+        self.wait_for_idle().await;
         let cancel = CancellationToken::new();
         *lock(&self.inner.cancel) = Some(cancel.clone());
+        let compacting = Compacting::start(&self.inner.compacting);
+        self.inner.manual_compaction.store(true, Ordering::SeqCst);
         self.emit(&AgentEvent::CompactionStart {
             reason: CompactionReason::Manual,
         });
@@ -1488,6 +1680,8 @@ impl AgentSession {
         }
         .await;
         *lock(&self.inner.cancel) = None;
+        self.inner.manual_compaction.store(false, Ordering::SeqCst);
+        drop(compacting);
         if cancel.is_cancelled() {
             self.emit(&AgentEvent::CompactionEnd {
                 reason: CompactionReason::Manual,
@@ -1563,6 +1757,7 @@ impl AgentSession {
         {
             let cancel = CancellationToken::new();
             *lock(&self.inner.cancel) = Some(cancel.clone());
+            let compacting = Compacting::start(&self.inner.compacting);
             let auth = self.registry().auth(model).await;
             let reserve = lock(&self.inner.settings)
                 .settings()
@@ -1588,6 +1783,7 @@ impl AgentSession {
                 )
                 .await;
             *lock(&self.inner.cancel) = None;
+            drop(compacting);
             match result? {
                 BranchSummary::Aborted => {
                     return Ok(TreeOutcome {
@@ -1760,6 +1956,9 @@ fn drain(queue: &Mutex<VecDeque<Message>>, mode: Option<QueueMode>) -> Vec<Messa
 impl AgentHooks for Hooks {
     fn on_event<'a>(&'a self, event: &'a AgentEvent) -> BoxFuture<'a, ()> {
         let session = &self.session;
+        if let AgentEvent::MessageStart { message } = event {
+            session.dequeue_started(message);
+        }
         match event {
             AgentEvent::AgentEnd { messages, .. } => {
                 session.emit(&AgentEvent::AgentEnd {
@@ -1841,17 +2040,11 @@ impl AgentHooks for Hooks {
 
     fn steering_messages(&self) -> BoxFuture<'_, Vec<Message>> {
         let messages = drain(&self.session.inner.steering, self.steering_mode);
-        if !messages.is_empty() {
-            self.session.emit_queue_update();
-        }
         Box::pin(async move { messages })
     }
 
     fn follow_up_messages(&self) -> BoxFuture<'_, Vec<Message>> {
         let messages = drain(&self.session.inner.follow_up, self.follow_up_mode);
-        if !messages.is_empty() {
-            self.session.emit_queue_update();
-        }
         Box::pin(async move { messages })
     }
 }

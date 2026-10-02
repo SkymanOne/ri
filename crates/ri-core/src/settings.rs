@@ -228,6 +228,27 @@ impl SettingsManager {
         self.remerge();
         Ok(())
     }
+
+    /// Sets `key` inside the object setting `field` of `scope`, keeping its
+    /// other keys, and writes that scope's file.
+    pub fn set_nested(
+        &mut self,
+        scope: Scope,
+        field: &str,
+        key: &str,
+        value: Value,
+    ) -> Result<(), SettingsError> {
+        let document = match scope {
+            Scope::Global => &self.global,
+            Scope::Project => &self.project,
+        };
+        let mut object = match document.get(field) {
+            Some(Value::Object(object)) => object.clone(),
+            _ => Map::new(),
+        };
+        object.insert(key.to_owned(), value);
+        self.set(scope, field, Some(Value::Object(object)))
+    }
 }
 
 /// Fields of `over` that are set replace those of `base`.

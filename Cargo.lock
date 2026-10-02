@@ -1238,6 +1238,7 @@ dependencies = [
  "ri-mock",
  "ri-tui",
  "ri-types",
+ "serde",
  "serde_json",
  "similar",
  "tokio",

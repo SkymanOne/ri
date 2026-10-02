@@ -362,5 +362,134 @@
     "args": ["--model", "anthropic/claude-sonnet-4-5", "--tui-mode", "regular"],
     "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
     "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r"]}
+  },
+  {
+    "name": "rpc-prompt",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n"},
+    "agentFiles": {"prompts/review.md": "---\ndescription: Review the change\n---\nReview $1\n", "skills/lint/SKILL.md": "---\nname: lint\ndescription: Run the linter\n---\nRun it.\n"},
+    "rpc": [
+      {"send": {"id": "state", "type": "get_state"}},
+      {"send": {"id": "p", "type": "prompt", "message": "Say hello"}, "until": "agent_settled"},
+      {"send": {"id": "text", "type": "get_last_assistant_text"}},
+      {"send": {"id": "stats", "type": "get_session_stats"}},
+      {"send": {"id": "messages", "type": "get_messages"}},
+      {"send": {"id": "levels", "type": "get_available_thinking_levels"}},
+      {"send": {"id": "unknown", "type": "dance"}},
+      {"send": "not json"},
+      {"send": {"id": "blank", "type": "set_session_name", "name": "  "}},
+      {"send": {"id": "compact", "type": "compact"}}
+    ]
+  },
+  {
+    "name": "rpc-steer",
+    "cassette": "anthropic-messages/queued.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "p", "type": "prompt", "message": "Start working"}, "until": "message_update"},
+      {"send": {"id": "busy", "type": "prompt", "message": "No behavior"}},
+      {"send": {"id": "steer", "type": "steer", "message": "Change course"}},
+      {"send": {"id": "state", "type": "get_state"}},
+      {"send": null, "until": "agent_settled"},
+      {"send": {"id": "text", "type": "get_last_assistant_text"}}
+    ]
+  },
+  {
+    "name": "rpc-follow-up",
+    "cassette": "anthropic-messages/queued.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "p", "type": "prompt", "message": "Start working"}, "until": "message_update"},
+      {"send": {"id": "later", "type": "prompt", "message": "Then this", "streamingBehavior": "followUp"}},
+      {"send": null, "until": "agent_settled"},
+      {"send": {"id": "messages", "type": "get_messages"}}
+    ]
+  },
+  {
+    "name": "rpc-clear-queue",
+    "cassette": "anthropic-messages/queued.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "p", "type": "prompt", "message": "Start working"}, "until": "message_update"},
+      {"send": {"id": "steer", "type": "steer", "message": "Steer one"}},
+      {"send": {"id": "follow", "type": "follow_up", "message": "Follow one"}},
+      {"send": {"id": "clear", "type": "clear_queue"}},
+      {"send": null, "until": "agent_settled"}
+    ]
+  },
+  {
+    "name": "rpc-abort",
+    "cassette": "anthropic-messages/abort.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "p", "type": "prompt", "message": "Start working"}, "until": "message_update"},
+      {"send": {"id": "abort", "type": "abort"}},
+      {"send": {"id": "state", "type": "get_state"}},
+      {"send": {"id": "text", "type": "get_last_assistant_text"}}
+    ]
+  },
+  {
+    "name": "rpc-sessions",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "rpc", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "p", "type": "prompt", "message": "Say hello"}, "until": "agent_settled"},
+      {"send": {"id": "name", "type": "set_session_name", "name": " First "}},
+      {"send": {"id": "entries", "type": "get_entries"}},
+      {"send": {"id": "since", "type": "get_entries", "since": "{{entries:/data/entries/1/id}}"}},
+      {"send": {"id": "missing", "type": "get_entries", "since": "nope"}},
+      {"send": {"id": "tree", "type": "get_tree"}},
+      {"send": {"id": "forks", "type": "get_fork_messages"}},
+      {"send": {"id": "first", "type": "get_state"}},
+      {"send": {"id": "fork", "type": "fork", "entryId": "{{forks:/data/messages/0/entryId}}"}},
+      {"send": {"id": "forked", "type": "get_state"}},
+      {"send": {"id": "switch", "type": "switch_session", "sessionPath": "{{first:/data/sessionFile}}"}},
+      {"send": {"id": "switched", "type": "get_state"}},
+      {"send": {"id": "clone", "type": "clone"}},
+      {"send": {"id": "cloned", "type": "get_entries"}},
+      {"send": {"id": "new", "type": "new_session"}},
+      {"send": {"id": "fresh", "type": "get_state"}},
+      {"send": {"id": "badfork", "type": "fork", "entryId": "nope"}},
+      {"send": {"id": "noclone", "type": "clone"}}
+    ]
+  },
+  {
+    "name": "rpc-bash",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "rpc": [
+      {"send": {"id": "b", "type": "bash", "command": "echo hi; echo err >&2"}},
+      {"send": {"id": "quiet", "type": "bash", "command": "printf x; exit 3", "excludeFromContext": true}},
+      {"send": {"id": "stop", "type": "abort_bash"}},
+      {"send": {"id": "messages", "type": "get_messages"}}
+    ]
+  },
+  {
+    "name": "rpc-settings",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "agentFiles": {"settings.json": "{\n  \"theme\": \"dark\"\n}\n"},
+    "rpc": [
+      {"send": {"id": "steering", "type": "set_steering_mode", "mode": "all"}},
+      {"send": {"id": "follow", "type": "set_follow_up_mode", "mode": "all"}},
+      {"send": {"id": "compaction", "type": "set_auto_compaction", "enabled": false}},
+      {"send": {"id": "retry", "type": "set_auto_retry", "enabled": false}},
+      {"send": {"id": "abortRetry", "type": "abort_retry"}},
+      {"send": {"id": "thinking", "type": "set_thinking_level", "level": "high"}},
+      {"send": {"id": "cycle", "type": "cycle_thinking_level"}},
+      {"send": {"id": "state", "type": "get_state"}},
+      {"send": {"id": "model", "type": "set_model", "provider": "anthropic", "modelId": "claude-haiku-4-5"}},
+      {"send": {"id": "nomodel", "type": "set_model", "provider": "anthropic", "modelId": "nope"}},
+      {"send": {"id": "next", "type": "cycle_model"}},
+      {"send": {"id": "after", "type": "get_state"}}
+    ]
+  },
+  {
+    "name": "rpc-client-example",
+    "cassette": "anthropic-messages/tool-call.json",
+    "client": "rpc-client.mjs",
+    "args": ["Read", "hello.txt"],
+    "files": {"hello.txt": "hi\n"}
   }
 ]

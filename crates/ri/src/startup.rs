@@ -285,6 +285,10 @@ pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, 
 }
 
 /// Builds the session for a run. Errors are user-facing messages.
+/// pi's message when no model can be chosen outside interactive mode.
+pub const NO_MODELS_MESSAGE: &str =
+    "No models available. Use /login to log into a provider via OAuth or API key.";
+
 pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     let agent_dir = agent_dir();

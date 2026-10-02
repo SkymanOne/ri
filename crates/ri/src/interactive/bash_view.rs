@@ -73,10 +73,7 @@ impl BashView {
             exit_code: message.exit_code.map(|code| code as i32),
             cancelled: message.cancelled,
             truncated: message.truncated,
-            full_output_path: message
-                .full_output_path
-                .as_ref()
-                .map(std::path::PathBuf::from),
+            full_output_path: message.full_output_path.clone(),
         });
         view
     }
@@ -187,7 +184,7 @@ impl BashView {
                     && let Some(path) = &result.full_output_path
                 {
                     parts.push(styled(
-                        format!("Output truncated. Full output: {}", path.display()),
+                        format!("Output truncated. Full output: {path}"),
                         theme.fg("warning"),
                     ));
                 }
