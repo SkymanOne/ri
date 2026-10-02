@@ -240,10 +240,14 @@ impl SessionManager {
     }
 
     /// A new session stored in `dir`, created on disk once it has a conversation.
-    pub fn create(cwd: &Path, dir: &Path) -> Result<SessionManager> {
+    /// `id` must be a valid session id.
+    pub fn create(cwd: &Path, dir: &Path, id: Option<String>) -> Result<SessionManager> {
+        if let Some(id) = &id {
+            validate_session_id(id)?;
+        }
         fs::create_dir_all(dir).map_err(io(dir))?;
         let mut manager = SessionManager::blank(cwd, dir, true);
-        manager.new_session(None, None);
+        manager.new_session(id, None);
         Ok(manager)
     }
 
@@ -255,8 +259,9 @@ impl SessionManager {
     }
 
     /// Opens a session file; a missing file starts a new session at that path. The
-    /// working directory comes from the header unless given.
-    pub fn open(path: &Path, cwd: Option<&Path>) -> Result<SessionManager> {
+    /// working directory comes from the header unless given; new sessions go to
+    /// `dir`, else the file's directory.
+    pub fn open(path: &Path, dir: Option<&Path>, cwd: Option<&Path>) -> Result<SessionManager> {
         let docs = load_docs(path)?;
         let header_cwd = docs
             .first()
@@ -267,18 +272,21 @@ impl SessionManager {
             .map(Path::to_path_buf)
             .or(header_cwd)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+        let dir = dir
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.parent().unwrap_or(Path::new("")).to_path_buf());
         let mut manager = SessionManager::blank(&cwd, &dir, true);
         manager.set_file(path, docs)?;
         Ok(manager)
     }
 
-    /// The most recently modified session in `dir`, or a new one.
-    pub fn continue_recent(cwd: &Path, dir: &Path) -> Result<SessionManager> {
+    /// The most recently modified session file in `dir` (one from `cwd` when
+    /// filtering), or a new session.
+    pub fn continue_recent(cwd: &Path, dir: &Path, filter_cwd: bool) -> Result<SessionManager> {
         fs::create_dir_all(dir).map_err(io(dir))?;
-        match list(dir)?.into_iter().next() {
-            Some(recent) => SessionManager::open(&recent.path, Some(cwd)),
-            None => SessionManager::create(cwd, dir),
+        match find_most_recent(dir, filter_cwd.then_some(cwd)) {
+            Some(recent) => SessionManager::open(&recent, Some(dir), Some(cwd)),
+            None => SessionManager::create(cwd, dir, None),
         }
     }
 
@@ -852,15 +860,26 @@ impl SessionManager {
 
     /// Copies every entry of `source` into a new session file for `cwd` in `dir`,
     /// with `parentSession` pointing at the source.
-    pub fn fork_from(source: &Path, cwd: &Path, dir: &Path) -> Result<SessionManager> {
+    pub fn fork_from(
+        source: &Path,
+        cwd: &Path,
+        dir: &Path,
+        id: Option<String>,
+    ) -> Result<SessionManager> {
         let docs = load_docs(source)?;
         if docs.is_empty() {
-            return Err(SessionError::Invalid(source.to_path_buf()));
+            return Err(SessionError::Rejected(format!(
+                "Cannot fork: source session file is empty or invalid: {}",
+                source.display()
+            )));
+        }
+        if let Some(id) = &id {
+            validate_session_id(id)?;
         }
         fs::create_dir_all(dir).map_err(io(dir))?;
         let mut manager = SessionManager::blank(cwd, dir, true);
         let file = manager
-            .new_session(None, Some(source.to_string_lossy().into_owned()))
+            .new_session(id, Some(source.to_string_lossy().into_owned()))
             .unwrap_or_default();
         let mut text = line(&manager.entries[0].doc);
         for doc in docs.iter().filter(|doc| doc["type"] != "session") {
@@ -872,7 +891,7 @@ impl SessionManager {
             .open(&file)
             .and_then(|mut handle| handle.write_all(text.as_bytes()))
             .map_err(io(&file))?;
-        SessionManager::open(&file, Some(cwd))
+        SessionManager::open(&file, Some(dir), Some(cwd))
     }
 }
 
@@ -1069,76 +1088,180 @@ pub fn build_context(path: &[&FileEntry]) -> SessionContext {
     }
 }
 
-/// Sessions in `dir`, most recently modified first.
-pub fn list(dir: &Path) -> Result<Vec<SessionSummary>> {
-    let Ok(read) = fs::read_dir(dir) else {
-        return Ok(Vec::new());
-    };
-    let mut sessions = Vec::new();
-    for item in read.flatten() {
-        let path = item.path();
-        if path.extension().is_none_or(|ext| ext != "jsonl") {
-            continue;
-        }
-        let modified_ms = item
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |elapsed| elapsed.as_millis() as u64);
-        let docs = load_docs(&path)?;
-        let Some(header) = docs.first() else { continue };
-        let mut summary = SessionSummary {
-            path: path.clone(),
-            id: header["id"].as_str().unwrap_or_default().to_owned(),
-            cwd: header["cwd"].as_str().unwrap_or_default().to_owned(),
-            name: None,
-            first_message: String::new(),
-            message_count: 0,
-            modified_ms,
-        };
-        for doc in &docs[1..] {
-            match doc["type"].as_str() {
-                Some("message") => {
-                    summary.message_count += 1;
-                    if summary.first_message.is_empty() && doc["message"]["role"] == "user" {
-                        summary.first_message = match &doc["message"]["content"] {
-                            Value::String(text) => text.clone(),
-                            Value::Array(blocks) => blocks
-                                .iter()
-                                .filter_map(|block| block["text"].as_str())
-                                .collect::<Vec<_>>()
-                                .join(" "),
-                            _ => String::new(),
-                        };
-                    }
-                }
-                Some("session_info") => {
-                    summary.name = doc["name"]
-                        .as_str()
-                        .map(str::trim)
-                        .filter(|name| !name.is_empty())
-                        .map(str::to_owned);
-                }
-                _ => {}
-            }
-        }
-        sessions.push(summary);
+/// Whether a session id is valid: alphanumeric at both ends, with `.`, `_` and
+/// `-` inside.
+pub fn validate_session_id(id: &str) -> Result<()> {
+    let inner = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
+    let valid = id.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && id.ends_with(|c: char| c.is_ascii_alphanumeric())
+        && id.chars().all(inner);
+    if valid {
+        Ok(())
+    } else {
+        Err(SessionError::Rejected(
+            "Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character".into(),
+        ))
     }
-    sessions.sort_by_key(|summary| std::cmp::Reverse(summary.modified_ms));
-    Ok(sessions)
 }
 
-/// Finds a session in `dir` by full id or unique id prefix.
-pub fn find_by_id(dir: &Path, id: &str) -> Result<Option<PathBuf>> {
-    let matches: Vec<PathBuf> = list(dir)?
+fn header(path: &Path) -> Option<Value> {
+    let file = fs::File::open(path).ok()?;
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut line).ok()?;
+    let header: Value = serde_json::from_str(line.trim_start_matches('\u{feff}')).ok()?;
+    (header["type"] == "session").then_some(header)
+}
+
+fn cwd_matches(header: &Value, cwd: &Path) -> bool {
+    header["cwd"]
+        .as_str()
+        .filter(|recorded| !recorded.is_empty())
+        .is_some_and(|recorded| {
+            crate::tools::path::resolve_lexically(cwd, Path::new(recorded)) == cwd
+        })
+}
+
+fn session_paths(dir: &Path) -> Vec<PathBuf> {
+    let Ok(read) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    read.flatten()
+        .map(|item| item.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+        .collect()
+}
+
+fn modified_ms(path: &Path) -> u64 {
+    fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |elapsed| elapsed.as_millis() as u64)
+}
+
+/// The most recently modified session file in `dir`, from `cwd` when given.
+pub fn find_most_recent(dir: &Path, cwd: Option<&Path>) -> Option<PathBuf> {
+    let mut files: Vec<(u64, PathBuf)> = session_paths(dir)
         .into_iter()
-        .filter(|summary| summary.id == id || summary.id.starts_with(id))
-        .map(|summary| summary.path)
+        .map(|path| (modified_ms(&path), path))
         .collect();
-    Ok(if matches.len() == 1 {
-        matches.into_iter().next()
-    } else {
-        None
+    files.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    files.into_iter().map(|(_, path)| path).find(|path| {
+        header(path).is_some_and(|header| cwd.is_none_or(|cwd| cwd_matches(&header, cwd)))
     })
+}
+
+/// The session file in `dir` with exactly this id, from `cwd` when given.
+pub fn find_by_id(dir: &Path, id: &str, cwd: Option<&Path>) -> Option<PathBuf> {
+    session_paths(dir).into_iter().find(|path| {
+        header(path).is_some_and(|header| {
+            header["id"] == id && cwd.is_none_or(|cwd| cwd_matches(&header, cwd))
+        })
+    })
+}
+
+fn summary(path: &Path) -> Option<SessionSummary> {
+    let docs = load_docs(path).ok()?;
+    let header = docs.first().filter(|header| header["type"] == "session")?;
+    let mut summary = SessionSummary {
+        path: path.to_path_buf(),
+        id: header["id"].as_str().unwrap_or_default().to_owned(),
+        cwd: header["cwd"].as_str().unwrap_or_default().to_owned(),
+        name: None,
+        first_message: String::new(),
+        message_count: 0,
+        modified_ms: 0,
+    };
+    let mut last_activity: Option<u64> = None;
+    for doc in &docs[1..] {
+        match doc["type"].as_str() {
+            Some("session_info") => {
+                summary.name = doc["name"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned);
+            }
+            Some("message") => {
+                summary.message_count += 1;
+                let message = &doc["message"];
+                if !matches!(message["role"].as_str(), Some("user" | "assistant"))
+                    || message.get("content").is_none()
+                {
+                    continue;
+                }
+                let activity = message["timestamp"]
+                    .as_f64()
+                    .map(|ms| ms as u64)
+                    .or_else(|| doc["timestamp"].as_str().and_then(parse_iso));
+                if let Some(activity) = activity {
+                    last_activity = Some(last_activity.unwrap_or(0).max(activity));
+                }
+                let text = match &message["content"] {
+                    Value::String(text) => text.clone(),
+                    Value::Array(blocks) => blocks
+                        .iter()
+                        .filter(|block| block["type"] == "text")
+                        .filter_map(|block| block["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    _ => String::new(),
+                };
+                if !text.is_empty() && summary.first_message.is_empty() && message["role"] == "user"
+                {
+                    summary.first_message = text;
+                }
+            }
+            _ => {}
+        }
+    }
+    if summary.first_message.is_empty() {
+        summary.first_message = "(no messages)".into();
+    }
+    summary.modified_ms = match last_activity.filter(|time| *time > 0) {
+        Some(time) => time,
+        None => header["timestamp"]
+            .as_str()
+            .and_then(parse_iso)
+            .unwrap_or_else(|| modified_ms(path)),
+    };
+    Some(summary)
+}
+
+fn sorted(mut sessions: Vec<SessionSummary>) -> Vec<SessionSummary> {
+    sessions.sort_by_key(|summary| std::cmp::Reverse(summary.modified_ms));
+    sessions
+}
+
+/// Sessions in `dir`, latest activity first; only those from `cwd` when given.
+pub fn list(dir: &Path, cwd: Option<&Path>) -> Vec<SessionSummary> {
+    sorted(
+        session_paths(dir)
+            .iter()
+            .filter_map(|path| summary(path))
+            .filter(|summary| {
+                cwd.is_none_or(|cwd| {
+                    !summary.cwd.is_empty()
+                        && crate::tools::path::resolve_lexically(cwd, Path::new(&summary.cwd))
+                            == cwd
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Sessions of every project: the session files in each directory under `root`,
+/// latest activity first.
+pub fn list_all(root: &Path) -> Vec<SessionSummary> {
+    let Ok(read) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    sorted(
+        read.flatten()
+            .map(|item| item.path())
+            .filter(|path| path.is_dir())
+            .flat_map(|dir| session_paths(&dir))
+            .filter_map(|path| summary(&path))
+            .collect(),
+    )
 }

@@ -45,7 +45,7 @@ fn contexts_match_pi() {
         // Opening may append a final newline; work on a copy.
         let copy = scratch.0.join(source.file_name().unwrap());
         std::fs::copy(&source, &copy).unwrap();
-        let session = SessionManager::open(&copy, Some(Path::new("/tmp"))).unwrap();
+        let session = SessionManager::open(&copy, None, Some(Path::new("/tmp"))).unwrap();
         let context = session.build_context();
         let expected: Value = serde_json::from_str(
             &std::fs::read_to_string(fixtures().join("contexts").join(format!("{name}.json")))
@@ -72,7 +72,7 @@ fn migrates_v1_files_like_pi() {
     let scratch = Scratch::new("migrate");
     let copy = scratch.0.join("old.jsonl");
     std::fs::copy(fixtures().join("legacy/large-session.v1.jsonl"), &copy).unwrap();
-    let session = SessionManager::open(&copy, None).unwrap();
+    let session = SessionManager::open(&copy, None, None).unwrap();
     let text = std::fs::read_to_string(&copy).unwrap();
     let header: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_eq!(header["version"], 3);
@@ -105,7 +105,7 @@ fn user(text: &str) -> Message {
 #[test]
 fn creates_files_lazily_and_branches() {
     let scratch = Scratch::new("lazy");
-    let mut session = SessionManager::create(Path::new("/work"), &scratch.0).unwrap();
+    let mut session = SessionManager::create(Path::new("/work"), &scratch.0, None).unwrap();
     session.append_model_change("anthropic", "m").unwrap();
     let file = session.file().unwrap().to_path_buf();
     assert!(!file.exists(), "no file before a conversation");
@@ -128,10 +128,10 @@ fn creates_files_lazily_and_branches() {
     assert_eq!(texts, ["one", "three"]);
 
     // A file written by ri reopens with the same tree.
-    let reopened = SessionManager::open(&file, None).unwrap();
+    let reopened = SessionManager::open(&file, None, None).unwrap();
     assert_eq!(reopened.build_context(), session.build_context());
     assert_eq!(reopened.id(), session.id());
-    assert_eq!(list(&scratch.0).unwrap()[0].first_message, "one");
+    assert_eq!(list(&scratch.0, None)[0].first_message, "one");
 
     // Branching off into a new file keeps only the path.
     let branched = session.create_branched_session(&first).unwrap().unwrap();
