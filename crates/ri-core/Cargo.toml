@@ -1,0 +1,15 @@
+[package]
+name = "ri-core"
+description = "Coding agent core: sessions, compaction, settings, resources, built-in tools, system prompt, packages, extension runner and MCP."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ri-agent.workspace = true
+
+[lints]
+workspace = true

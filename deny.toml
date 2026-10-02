@@ -1,0 +1,21 @@
+# cargo-deny policy. See "Dependencies" in AGENTS.md.
+
+[advisories]
+ignore = []
+
+[licenses]
+# Add a license together with the dependency that needs it. It must be
+# compatible with MIT OR Apache-2.0.
+allow = ["Apache-2.0", "MIT"]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Internal path dependencies carry no version; the crates are not published.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,0 +1,15 @@
+[package]
+name = "ri-ai"
+description = "LLM wire APIs, model catalog and registry, cost tracking, credentials and OAuth."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ri-types.workspace = true
+
+[lints]
+workspace = true

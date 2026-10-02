@@ -1,0 +1,16 @@
+[package]
+name = "ri"
+description = "Coding agent CLI compatible with pi packages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ri-ext.workspace = true
+ri-tui.workspace = true
+
+[lints]
+workspace = true

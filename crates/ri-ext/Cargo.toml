@@ -1,0 +1,15 @@
+[package]
+name = "ri-ext"
+description = "WebAssembly extension host: WIT bindings, capability grants, JS module loader and codemode."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ri-core.workspace = true
+
+[lints]
+workspace = true

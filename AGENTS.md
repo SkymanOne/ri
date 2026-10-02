@@ -201,6 +201,7 @@ These are initial targets, calibrated against pi in M0–M1.
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
   - `cargo deny check`
+- CI runs the same checks on Linux and macOS for pull requests and pushes to `main`.
 - After changing a guest, rebuild with `cargo xtask js-runtime` and commit the artifact with its inputs hash.
 - Regenerate the model catalog with `cargo xtask models`. Never edit generated files.
 
@@ -219,6 +220,7 @@ These are initial targets, calibrated against pi in M0–M1.
   - no blocking calls on async threads;
   - no synchronous call into a guest from a host import.
 - Doc comments on public items state contracts, not implementation.
+- Workspace lints in the root `Cargo.toml` enforce the docs, error and logging rules. Every crate sets `[lints] workspace = true`.
 
 ### Dependencies
 

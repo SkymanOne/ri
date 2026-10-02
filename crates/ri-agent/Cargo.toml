@@ -1,0 +1,15 @@
+[package]
+name = "ri-agent"
+description = "Agent loop with tool execution, steering and follow-up queues, and events."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ri-ai.workspace = true
+
+[lints]
+workspace = true
