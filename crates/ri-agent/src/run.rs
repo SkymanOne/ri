@@ -319,20 +319,19 @@ async fn stream_response(
     let messages = hooks.transform_context(context.messages.clone()).await;
     let messages = hooks.convert_to_llm(messages);
     let auth = hooks.auth(&config.model).await;
-    let mut headers = config.options.headers.clone();
-    headers.extend(auth.headers);
     let reasoning = (config.thinking_level != ThinkingLevel::Off).then_some(config.thinking_level);
-    let request = Request {
+    let mut request = Request {
         model: config.model.clone(),
         messages,
         options: StreamOptions {
-            api_key: auth.api_key.or_else(|| config.options.api_key.clone()),
-            headers,
             reasoning,
             ..config.options.clone()
         },
     };
-    let mut stream = (config.stream)(request);
+    let mut stream = match auth.apply(&mut request) {
+        Ok(()) => (config.stream)(request),
+        Err(message) => ri_ai::api::failed_stream(&request.model, &request.options.cancel, message),
+    };
     let mut started = false;
     let finish = |mut message: AssistantMessage| {
         message.thinking_level = Some(config.thinking_level);

@@ -8,7 +8,6 @@ use ri_ai::registry::ModelRegistry;
 use ri_core::config::agent_dir;
 use ri_tui::fuzzy::fuzzy_filter;
 use ri_types::collate::locale_compare;
-use ri_types::model::Model;
 
 /// `x.toFixed(1)`: rounds half up on the exact value, as JavaScript does.
 fn to_fixed_1(value: f64) -> String {
@@ -68,11 +67,7 @@ pub fn run(pattern: Option<&str>) -> u8 {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
     let mut out = std::io::stdout().lock();
-    let available: Vec<&Model> = registry
-        .models()
-        .iter()
-        .filter(|model| registry.has_auth(&model.provider))
-        .collect();
+    let available = registry.available();
     if available.is_empty() {
         let _ = writeln!(out, "{}", crate::startup::NO_MODELS_MESSAGE);
         return 0;

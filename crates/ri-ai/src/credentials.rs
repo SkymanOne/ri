@@ -167,49 +167,9 @@ async fn run_command(command: &str, cache: bool) -> Option<String> {
 /// Anthropic's `ANTHROPIC_AUTH_TOKEN` is a bearer token, not a key; see
 /// [`BEARER_TOKEN_ENV`].
 pub fn api_key_env_vars(provider: &str) -> &'static [&'static str] {
-    match provider {
-        "github-copilot" => &["COPILOT_GITHUB_TOKEN"],
-        "anthropic" => &[
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_OAUTH_TOKEN",
-            "ANTHROPIC_API_KEY",
-        ],
-        "ant-ling" => &["ANT_LING_API_KEY"],
-        "qwen-token-plan" | "qwen-token-plan-individual" => &["QWEN_TOKEN_PLAN_API_KEY"],
-        "qwen-token-plan-cn" => &["QWEN_TOKEN_PLAN_CN_API_KEY"],
-        "openai" => &["OPENAI_API_KEY"],
-        "azure-openai-responses" => &["AZURE_OPENAI_API_KEY"],
-        "nvidia" => &["NVIDIA_API_KEY"],
-        "deepseek" => &["DEEPSEEK_API_KEY"],
-        "google" => &["GEMINI_API_KEY"],
-        "google-vertex" => &["GOOGLE_CLOUD_API_KEY"],
-        "groq" => &["GROQ_API_KEY"],
-        "cerebras" => &["CEREBRAS_API_KEY"],
-        "xai" => &["XAI_API_KEY"],
-        "typesafe" => &["TYPESAFE_API_KEY"],
-        "radius" => &["RADIUS_API_KEY"],
-        "openrouter" => &["OPENROUTER_API_KEY"],
-        "vercel-ai-gateway" => &["AI_GATEWAY_API_KEY"],
-        "zai" => &["ZAI_API_KEY"],
-        "zai-coding-cn" => &["ZAI_CODING_CN_API_KEY"],
-        "mistral" => &["MISTRAL_API_KEY"],
-        "minimax" => &["MINIMAX_API_KEY"],
-        "minimax-cn" => &["MINIMAX_CN_API_KEY"],
-        "moonshotai" | "moonshotai-cn" => &["MOONSHOT_API_KEY"],
-        "huggingface" => &["HF_TOKEN"],
-        "fireworks" => &["FIREWORKS_API_KEY"],
-        "together" => &["TOGETHER_API_KEY"],
-        "baseten" => &["BASETEN_API_KEY"],
-        "opencode" | "opencode-go" => &["OPENCODE_API_KEY"],
-        "kimi-coding" => &["KIMI_API_KEY"],
-        "meta" => &["META_API_KEY"],
-        "cloudflare-workers-ai" | "cloudflare-ai-gateway" => &["CLOUDFLARE_API_KEY"],
-        "xiaomi" => &["XIAOMI_API_KEY"],
-        "xiaomi-token-plan-cn" => &["XIAOMI_TOKEN_PLAN_CN_API_KEY"],
-        "xiaomi-token-plan-ams" => &["XIAOMI_TOKEN_PLAN_AMS_API_KEY"],
-        "xiaomi-token-plan-sgp" => &["XIAOMI_TOKEN_PLAN_SGP_API_KEY"],
-        _ => &[],
-    }
+    crate::providers::info(provider)
+        .and_then(|info| info.api_key)
+        .map_or(&[], |method| method.env)
 }
 
 /// The variable Anthropic reads as a bearer token rather than an API key.

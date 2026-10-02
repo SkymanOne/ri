@@ -5,16 +5,29 @@
 //! then extension providers. Credentials resolve in pi's order: a runtime key
 //! (`--api-key`), `auth.json`, `models.json` `apiKey`, then environment variables.
 
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 use indexmap::IndexMap;
-use ri_types::auth::{AuthFile, Credential};
+use ri_types::auth::{ApiKeyCredential, Credential, OAuthCredential};
 use ri_types::model::{Model, Pricing};
 use ri_types::models::{ModelDefinition, ModelOverride, ModelsConfig, ProviderConfig};
 use serde_json::{Map, Value};
+use tokio_util::sync::CancellationToken;
 
+use crate::auth::{
+    AuthError, AuthPrompt, CredentialKind, CredentialStore, Interaction, LoginOptions, OAuthAuth,
+    OAuthProvider, builtin_oauth, copilot,
+};
 use crate::catalog;
 use crate::credentials::{self, BEARER_TOKEN_ENV, ProviderEnv};
+use crate::providers;
+
+/// Tokens with less validity left than this are refreshed before use.
+const OAUTH_MINIMUM_VALIDITY_MS: u64 = 5 * 60 * 1000;
+const OAUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Credentials for one request.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -25,17 +38,60 @@ pub struct Auth {
     pub headers: IndexMap<String, Option<String>>,
     /// Where the credential came from, for messages.
     pub source: Option<String>,
+    /// Replaces the model's base URL, for accounts with their own endpoint.
+    pub base_url: Option<String>,
+    /// Why credentials could not be resolved; a request with it fails.
+    pub error: Option<String>,
+}
+
+impl Auth {
+    /// Applies the credentials to a request: the key when there is one,
+    /// headers over the request's, and the account's base URL. Fails
+    /// with [`Auth::error`] when credentials could not be resolved.
+    pub fn apply(self, request: &mut crate::stream::Request) -> Result<(), String> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        if self.api_key.is_some() {
+            request.options.api_key = self.api_key;
+        }
+        request.options.headers.extend(self.headers);
+        if let Some(base_url) = self.base_url {
+            request.model.base_url = base_url;
+        }
+        Ok(())
+    }
+}
+
+/// How `/login` authenticates a provider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoginKind {
+    /// An account sign-in.
+    OAuth,
+    /// A stored API key.
+    ApiKey,
 }
 
 /// All known models with their configuration.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ModelRegistry {
     models: Vec<Model>,
     config: ModelsConfig,
-    auth: AuthFile,
-    auth_path: Option<PathBuf>,
+    store: Arc<CredentialStore>,
+    oauth: IndexMap<String, Arc<dyn OAuthProvider>>,
     runtime_keys: IndexMap<String, String>,
     error: Option<String>,
+}
+
+impl std::fmt::Debug for ModelRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelRegistry")
+            .field("models", &self.models.len())
+            .field("store", &self.store)
+            .field("oauth", &self.oauth.keys().collect::<Vec<_>>())
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Removes `//` comments and trailing commas outside strings, as pi does for
@@ -269,15 +325,9 @@ impl ModelRegistry {
     /// broken `models.json` is reported by [`ModelRegistry::error`] and ignored.
     pub fn load(agent_dir: &Path) -> ModelRegistry {
         let mut registry = ModelRegistry {
-            auth_path: Some(agent_dir.join("auth.json")),
+            store: Arc::new(CredentialStore::open(agent_dir.join("auth.json"))),
             ..ModelRegistry::default()
         };
-        registry.auth = std::fs::read_to_string(agent_dir.join("auth.json"))
-            .ok()
-            .and_then(|text| {
-                serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).ok()
-            })
-            .unwrap_or_default();
         let models_path = agent_dir.join("models.json");
         if let Ok(text) = std::fs::read_to_string(&models_path) {
             let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
@@ -383,20 +433,45 @@ impl ModelRegistry {
         self.models.extend(models);
     }
 
+    /// Uses `flow` for `provider`'s sign-in and refresh, replacing the built-in.
+    pub fn register_oauth(&mut self, provider: &str, flow: Arc<dyn OAuthProvider>) {
+        self.oauth.insert(provider.to_owned(), flow);
+    }
+
+    /// The sign-in for `provider`: a registered one, else ri's built-in.
+    pub fn oauth_flow(&self, provider: &str) -> Option<Arc<dyn OAuthProvider>> {
+        self.oauth
+            .get(provider)
+            .cloned()
+            .or_else(|| builtin_oauth(provider))
+    }
+
     /// Uses `key` for `provider` for this process, ahead of every stored credential.
     pub fn set_runtime_key(&mut self, provider: &str, key: String) {
         self.runtime_keys.insert(provider.to_owned(), key);
     }
 
-    fn credential(&self, provider: &str) -> Option<&Credential> {
-        self.auth.get(provider)
+    fn credential(&self, provider: &str) -> Option<Credential> {
+        self.store.get(provider)
+    }
+
+    /// The credential store behind this registry.
+    pub fn store(&self) -> &Arc<CredentialStore> {
+        &self.store
     }
 
     /// Whether some credential is configured for `provider`, without running
     /// commands.
     pub fn has_auth(&self, provider: &str) -> bool {
+        self.auth_source(provider).is_some()
+    }
+
+    /// Where `provider`'s credential comes from, as pi labels it in `/login`:
+    /// `stored credential`, `OAuth`, `configured API key` or an environment
+    /// variable. `None` when it has none. Commands are not run.
+    pub fn auth_source(&self, provider: &str) -> Option<String> {
         if self.runtime_keys.contains_key(provider) {
-            return true;
+            return Some("--api-key".into());
         }
         match self.credential(provider) {
             Some(Credential::ApiKey(credential)) => {
@@ -404,10 +479,10 @@ impl ModelRegistry {
                     && (credentials::is_command(key)
                         || credentials::is_configured(key, credential.env.as_ref()))
                 {
-                    return true;
+                    return Some("stored credential".into());
                 }
             }
-            Some(Credential::OAuth(_)) => return true,
+            Some(Credential::OAuth(_)) => return Some("OAuth".into()),
             None => {}
         }
         if let Some(key) = self
@@ -417,12 +492,47 @@ impl ModelRegistry {
             .and_then(|c| c.api_key.as_ref())
             && (credentials::is_command(key) || credentials::is_configured(key, None))
         {
-            return true;
+            return Some("configured API key".into());
         }
-        credentials::env_api_key(provider, None).is_some()
+        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
     }
 
-    /// Credentials for a request to `model`, with its configured headers.
+    /// Whether `provider` authenticates with a stored OAuth credential.
+    pub fn is_using_oauth(&self, provider: &str) -> bool {
+        matches!(self.credential(provider), Some(Credential::OAuth(_)))
+    }
+
+    /// Stored credentials by provider, in file order.
+    pub fn stored_credentials(&self) -> Vec<(String, CredentialKind)> {
+        self.store.list()
+    }
+
+    /// Models with credentials. A GitHub Copilot sign-in limits its models to
+    /// those the account enables.
+    pub fn available(&self) -> Vec<&Model> {
+        let mut configured: HashMap<&str, bool> = HashMap::new();
+        let copilot_ids = match self.credential("github-copilot") {
+            Some(Credential::OAuth(credential)) => copilot::available_model_ids(&credential),
+            _ => None,
+        };
+        self.models
+            .iter()
+            .filter(|model| {
+                *configured
+                    .entry(model.provider.as_str())
+                    .or_insert_with(|| self.has_auth(&model.provider))
+            })
+            .filter(|model| {
+                model.provider != "github-copilot"
+                    || copilot_ids
+                        .as_ref()
+                        .is_none_or(|ids| ids.contains(&model.id))
+            })
+            .collect()
+    }
+
+    /// Credentials for a request to `model`, with its configured headers. A
+    /// stored OAuth token about to expire is refreshed first.
     pub async fn auth(&self, model: &Model) -> Auth {
         let provider = model.provider.as_str();
         let mut auth = Auth {
@@ -435,20 +545,30 @@ impl ModelRegistry {
             return auth;
         }
         let mut env: Option<ProviderEnv> = None;
-        if let Some(Credential::ApiKey(credential)) = self.credential(provider) {
-            env = credential.env.clone();
-            if let Some(key) = &credential.key
-                && let Some(value) = credentials::resolve(key, env.as_ref(), true).await
-            {
-                auth.api_key = Some(value);
-                auth.source = Some("stored credential".into());
+        match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) => {
+                env = credential.env.clone();
+                if let Some(key) = &credential.key
+                    && let Some(value) = credentials::resolve(key, env.as_ref(), true).await
+                {
+                    auth.api_key = Some(value);
+                    auth.source = Some("stored credential".into());
+                    return auth;
+                }
+            }
+            Some(Credential::OAuth(credential)) => {
+                match self.oauth_auth(provider, credential).await {
+                    Ok(Some(oauth)) => {
+                        auth.api_key = Some(oauth.api_key);
+                        auth.base_url = oauth.base_url;
+                        auth.source = Some("OAuth".into());
+                    }
+                    Ok(None) => {}
+                    Err(message) => auth.error = Some(message),
+                }
                 return auth;
             }
-        }
-        if let Some(Credential::OAuth(credential)) = self.credential(provider) {
-            auth.api_key = Some(credential.access.clone());
-            auth.source = Some("oauth".into());
-            return auth;
+            None => {}
         }
         if let Some(key) = self
             .config
@@ -471,6 +591,125 @@ impl ModelRegistry {
             auth.source = Some(name.to_owned());
         }
         auth
+    }
+
+    /// Request credentials from a stored OAuth token. A token that expires
+    /// within five minutes is refreshed under the `auth.json` lock, after
+    /// checking again that no other process refreshed it. `Ok(None)` means the
+    /// provider was logged out meanwhile.
+    async fn oauth_auth(
+        &self,
+        provider: &str,
+        stored: OAuthCredential,
+    ) -> Result<Option<OAuthAuth>, String> {
+        let Some(flow) = self.oauth_flow(provider) else {
+            // ri has no sign-in for this provider: use the token as stored.
+            return Ok(Some(OAuthAuth {
+                api_key: stored.access,
+                base_url: None,
+            }));
+        };
+        let expires_soon = |credential: &OAuthCredential| {
+            crate::auth::now_ms() + OAUTH_MINIMUM_VALIDITY_MS >= credential.expires
+        };
+        let mut credential = stored;
+        if expires_soon(&credential) {
+            let cancel = CancellationToken::new();
+            let (flow_ref, cancel_ref) = (&flow, &cancel);
+            let refreshed = self
+                .store
+                .modify(
+                    provider,
+                    |current| async move {
+                        let Some(Credential::OAuth(current)) = current else {
+                            return Ok(None);
+                        };
+                        if !expires_soon(&current) {
+                            return Ok(None);
+                        }
+                        let refresh = flow_ref.refresh(&current, cancel_ref);
+                        match tokio::time::timeout(OAUTH_REFRESH_TIMEOUT, refresh).await {
+                            Ok(result) => result.map(|next| Some(Credential::OAuth(next))),
+                            Err(_) => Err(AuthError::failed(
+                                "The operation was aborted due to timeout",
+                            )),
+                        }
+                    },
+                    &cancel,
+                )
+                .await
+                .map_err(|err| format!("OAuth refresh failed for {provider}: {err}"))?;
+            match refreshed {
+                Some(Credential::OAuth(next)) => credential = next,
+                _ => return Ok(None),
+            }
+        }
+        Ok(Some(flow.to_auth(&credential)))
+    }
+
+    /// The display name of a provider: the built-in name, else its id.
+    pub fn provider_name(&self, provider: &str) -> String {
+        providers::info(provider).map_or_else(|| provider.to_owned(), |info| info.name.to_owned())
+    }
+
+    /// Runs a sign-in and stores the credential. An API key login asks for the
+    /// key; an OAuth login runs the provider's flow.
+    pub async fn login(
+        &self,
+        provider: &str,
+        kind: LoginKind,
+        interaction: &Interaction,
+        options: &LoginOptions,
+    ) -> Result<Credential, AuthError> {
+        interaction.check()?;
+        let credential = match kind {
+            LoginKind::OAuth => {
+                let flow = self.oauth_flow(provider).ok_or_else(|| {
+                    AuthError::Failed(format!(
+                        "{} does not support oauth login",
+                        self.provider_name(provider)
+                    ))
+                })?;
+                Credential::OAuth(flow.login(interaction, options).await?)
+            }
+            LoginKind::ApiKey => {
+                let name = providers::info(provider)
+                    .and_then(|info| info.api_key)
+                    .map_or("API key", |method| method.name);
+                let key = interaction
+                    .prompt(AuthPrompt::Secret {
+                        message: format!("Enter {name}"),
+                    })
+                    .await?;
+                interaction.check()?;
+                Credential::ApiKey(ApiKeyCredential {
+                    key: Some(key),
+                    env: None,
+                })
+            }
+        };
+        self.store
+            .set(provider, credential.clone(), interaction.cancel())
+            .await
+            .map_err(|err| match err {
+                AuthError::Cancelled => AuthError::Cancelled,
+                AuthError::Failed(message) => AuthError::Failed(format!(
+                    "Credential store modify failed for {provider}: {message}"
+                )),
+            })?;
+        Ok(credential)
+    }
+
+    /// Removes `provider`'s stored credential.
+    pub async fn logout(&self, provider: &str) -> Result<(), AuthError> {
+        self.store
+            .delete(provider, &CancellationToken::new())
+            .await
+            .map_err(|err| {
+                AuthError::Failed(format!(
+                    "Credential store delete failed for {provider}: {err}"
+                ))
+            })
     }
 
     /// `models.json` headers for a model: provider headers, then the model's
@@ -508,7 +747,7 @@ impl ModelRegistry {
 
     /// Where `auth.json` lives.
     pub fn auth_path(&self) -> Option<&Path> {
-        self.auth_path.as_deref()
+        self.store.path()
     }
 }
 

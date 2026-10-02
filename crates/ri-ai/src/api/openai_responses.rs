@@ -588,6 +588,11 @@ async fn run(request: Request, sender: EventSender) {
     for (key, value) in model.headers.iter().flatten() {
         set(key, Some(value.clone()));
     }
+    if model.provider == "github-copilot" {
+        for (key, value) in super::copilot_headers(&messages) {
+            set(key, Some(value));
+        }
+    }
     if options.resolved_cache_retention() != CacheRetention::None
         && let Some(session) = &options.session_id
     {

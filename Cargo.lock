@@ -1274,6 +1274,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures-util",
+ "getrandom 0.4.3",
  "indexmap",
  "ratatui-core",
  "regex-lite",
@@ -1307,6 +1308,8 @@ dependencies = [
 name = "ri-ai"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "getrandom 0.4.3",
  "indexmap",
  "regex-lite",
  "reqwest",
@@ -1314,9 +1317,11 @@ dependencies = [
  "ri-types",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "url",
 ]
 
 [[package]]

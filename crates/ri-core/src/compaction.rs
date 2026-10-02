@@ -775,8 +775,6 @@ impl Summarizer<'_> {
         let reasoning = (self.model.reasoning && self.thinking_level != ThinkingLevel::Off)
             .then_some(self.thinking_level);
         let options = StreamOptions {
-            api_key: self.auth.api_key.clone(),
-            headers: self.auth.headers.clone(),
             reasoning,
             max_tokens: Some(max_tokens),
             session_id: Some(session_id.to_owned()),
@@ -784,11 +782,17 @@ impl Summarizer<'_> {
             cancel: self.cancel.clone(),
             ..StreamOptions::default()
         };
-        let stream = self.apis.stream(Request {
+        let mut request = Request {
             model: self.model.clone(),
             messages,
             options,
-        });
+        };
+        let stream = match self.auth.clone().apply(&mut request) {
+            Ok(()) => self.apis.stream(request),
+            Err(message) => {
+                ri_ai::api::failed_stream(&request.model, &request.options.cancel, message)
+            }
+        };
         match stream.result().await {
             Some(message) => message,
             None => {

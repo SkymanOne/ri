@@ -414,11 +414,7 @@ pub fn initial_model(
     {
         return Some(model.clone());
     }
-    let available: Vec<&Model> = registry
-        .models()
-        .iter()
-        .filter(|model| registry.has_auth(&model.provider))
-        .collect();
+    let available = registry.available();
     for (provider, id) in DEFAULT_MODEL_PER_PROVIDER {
         if let Some(model) = available
             .iter()

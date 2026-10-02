@@ -239,6 +239,11 @@ async fn run(request: Request, sender: EventSender) {
         .flatten()
         .map(|(key, value)| (key.clone(), Some(value.clone())))
         .collect();
+    if model.provider == "github-copilot" {
+        for (key, value) in super::copilot_headers(&messages) {
+            model_headers.insert(key.to_owned(), Some(value));
+        }
+    }
     if api_key.is_none()
         && !options.has_header("authorization")
         && !options.has_header("x-api-key")

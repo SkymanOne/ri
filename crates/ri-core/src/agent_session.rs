@@ -775,12 +775,7 @@ impl AgentSession {
             .registry
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        registry
-            .models()
-            .iter()
-            .filter(|model| registry.has_auth(&model.provider))
-            .cloned()
-            .collect()
+        registry.available().into_iter().cloned().collect()
     }
 
     /// Runs a user `!` command in the session's directory, streaming output to
@@ -1907,7 +1902,8 @@ impl AgentSession {
         self.inner.tools.with(|registry| registry.restore(names));
     }
 
-    fn registry(&self) -> Arc<ModelRegistry> {
+    /// The model registry; credentials it reads stay current with `auth.json`.
+    pub fn registry(&self) -> Arc<ModelRegistry> {
         self.inner
             .registry
             .read()
