@@ -215,11 +215,62 @@ pub fn api_key_env_vars(provider: &str) -> &'static [&'static str] {
 /// The variable Anthropic reads as a bearer token rather than an API key.
 pub const BEARER_TOKEN_ENV: &str = "ANTHROPIC_AUTH_TOKEN";
 
-/// The first set environment variable for a provider's key, with its name.
+/// The key pi reports for providers authenticated by ambient credentials.
+pub const AMBIENT_CREDENTIALS: &str = "<authenticated>";
+
+/// Whether Google Application Default Credentials exist: the file named by
+/// `GOOGLE_APPLICATION_CREDENTIALS`, or gcloud's default file.
+fn has_vertex_adc_credentials(env: Option<&ProviderEnv>) -> bool {
+    match env_value("GOOGLE_APPLICATION_CREDENTIALS", env) {
+        Some(path) => std::path::Path::new(&path).exists(),
+        None => std::env::var_os("HOME").is_some_and(|home| {
+            std::path::Path::new(&home)
+                .join(".config/gcloud/application_default_credentials.json")
+                .exists()
+        }),
+    }
+}
+
+/// Ambient credentials that authenticate a provider without an API key: AWS
+/// profiles, keys, tokens and roles for Bedrock; ADC with a project and location
+/// for Vertex. Returns the variable that makes it so.
+fn ambient_credentials(provider: &str, env: Option<&ProviderEnv>) -> Option<&'static str> {
+    let set = |name: &str| env_value(name, env).is_some();
+    match provider {
+        "google-vertex" => (has_vertex_adc_credentials(env)
+            && (set("GOOGLE_CLOUD_PROJECT") || set("GCLOUD_PROJECT"))
+            && set("GOOGLE_CLOUD_LOCATION"))
+        .then_some("GOOGLE_CLOUD_LOCATION"),
+        "amazon-bedrock" => {
+            if set("AWS_PROFILE") {
+                Some("AWS_PROFILE")
+            } else if set("AWS_ACCESS_KEY_ID") && set("AWS_SECRET_ACCESS_KEY") {
+                Some("AWS_ACCESS_KEY_ID")
+            } else {
+                [
+                    "AWS_BEARER_TOKEN_BEDROCK",
+                    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                    "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                    "AWS_WEB_IDENTITY_TOKEN_FILE",
+                ]
+                .into_iter()
+                .find(|name| set(name))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The first set environment variable for a provider's key, with its name. For
+/// providers with ambient credentials (Bedrock, Vertex) the key is
+/// [`AMBIENT_CREDENTIALS`].
 pub fn env_api_key(provider: &str, env: Option<&ProviderEnv>) -> Option<(&'static str, String)> {
     api_key_env_vars(provider)
         .iter()
         .find_map(|name| env_value(name, env).map(|value| (*name, value)))
+        .or_else(|| {
+            ambient_credentials(provider, env).map(|name| (name, AMBIENT_CREDENTIALS.to_owned()))
+        })
 }
 
 #[cfg(test)]
@@ -248,5 +299,12 @@ mod tests {
         assert_eq!(resolve("!exit 1", None, false).await, None);
         assert_eq!(env_var_names("$A and ${B} $A"), ["A", "B"]);
         assert!(!is_configured("$RI_TEST_UNSET_VALUE", None));
+        let mut aws = ProviderEnv::new();
+        aws.insert("AWS_ACCESS_KEY_ID".into(), "id".into());
+        aws.insert("AWS_SECRET_ACCESS_KEY".into(), "secret".into());
+        assert_eq!(
+            env_api_key("amazon-bedrock", Some(&aws)).map(|(_, key)| key),
+            Some(AMBIENT_CREDENTIALS.to_owned())
+        );
     }
 }
