@@ -238,6 +238,9 @@ These are initial targets, calibrated against pi in M0–M1.
 
 - No network access and no real providers in tests. Use the faux provider, or `ri-mock` with cassettes from `tests/fixtures/cassettes`.
 - pi-produced golden fixtures live in `tests/fixtures/pi`; its README explains how to regenerate them. Formats must round-trip byte-identical.
+- End-to-end scenarios in `tests/fixtures/scenarios` run a program against a cassette in a fresh directory and a cleared environment:
+  - `cargo test` compares ri's normalized output and requests with goldens recorded from pi;
+  - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs.
 - Use `insta` snapshots. Test the built-in UI with ratatui `TestBackend`.
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;
@@ -260,7 +263,7 @@ These are initial targets, calibrated against pi in M0–M1.
 
 ## Milestones
 
-v0.1 is the completion of M7.
+v0.1 is the completion of M7. Progress, deferred work and pending live checks are tracked in [docs/status.md](docs/status.md).
 
 | Milestone | Scope | Exit criteria |
 |---|---|---|
