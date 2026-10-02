@@ -6,6 +6,7 @@
 )]
 
 mod args;
+mod list_models;
 mod modes;
 mod startup;
 
@@ -48,6 +49,9 @@ fn main() -> ExitCode {
 
 async fn run(parsed: &mut args::Args) -> u8 {
     use std::io::IsTerminal;
+    if let Some(pattern) = &parsed.list_models {
+        return list_models::run(pattern.as_deref());
+    }
     let interactive = parsed.mode.is_none()
         && !parsed.print
         && std::io::stdin().is_terminal()
