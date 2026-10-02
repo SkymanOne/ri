@@ -10,6 +10,7 @@
 
 mod cassette;
 mod record;
+pub mod scenario;
 
 use std::collections::VecDeque;
 use std::convert::Infallible;

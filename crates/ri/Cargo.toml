@@ -21,6 +21,7 @@ tokio = { workspace = true, features = ["rt", "macros", "signal"] }
 
 [dev-dependencies]
 ri-mock.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

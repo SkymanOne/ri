@@ -1,0 +1,39 @@
+[
+  {
+    "name": "anthropic-text-json",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Say hello"]
+  },
+  {
+    "name": "anthropic-text-print",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["-p", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Say hello"]
+  },
+  {
+    "name": "openai-completions-text-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "groq/openai/gpt-oss-120b", "Say hello"]
+  },
+  {
+    "name": "openai-completions-tool-call-json",
+    "cassette": "openai-completions/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "groq/openai/gpt-oss-120b", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"}
+  },
+  {
+    "name": "openai-completions-error-json",
+    "cassette": "openai-completions/error.json",
+    "args": ["--mode", "json", "--no-session", "--model", "groq/openai/gpt-oss-120b", "hi"]
+  },
+  {
+    "name": "openai-completions-error-print",
+    "cassette": "openai-completions/error.json",
+    "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b", "hi"]
+  },
+  {
+    "name": "stdin-and-thinking-print",
+    "cassette": "openai-completions/text.json",
+    "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b:high", "and the question"],
+    "stdin": "Context from a pipe.\n"
+  }
+]
