@@ -275,6 +275,24 @@ fn truncate_chars(text: &str, max: usize) -> String {
     )
 }
 
+/// The next chunk of a response body; `None` at the end. Fails with pi's
+/// message when `cancel` fires or the connection drops.
+pub async fn read_chunk(
+    response: &mut reqwest::Response,
+    cancel: &CancellationToken,
+) -> Result<Option<Vec<u8>>, String> {
+    if cancel.is_cancelled() {
+        return Err(ABORTED_DURING_STREAM.to_owned());
+    }
+    let chunk = tokio::select! {
+        () = cancel.cancelled() => return Err(ABORTED_DURING_STREAM.to_owned()),
+        chunk = response.chunk() => chunk,
+    };
+    chunk
+        .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
+        .map_err(|_| "terminated".to_owned())
+}
+
 /// Reads server-sent events from a response until it ends or `cancel` fires.
 pub struct SseReader {
     response: reqwest::Response,
@@ -303,20 +321,12 @@ impl SseReader {
             if self.done {
                 return Ok(None);
             }
-            if cancel.is_cancelled() {
-                return Err(ABORTED_DURING_STREAM.to_owned());
-            }
-            let chunk = tokio::select! {
-                () = cancel.cancelled() => return Err(ABORTED_DURING_STREAM.to_owned()),
-                chunk = self.response.chunk() => chunk,
-            };
-            match chunk {
-                Ok(Some(bytes)) => self.queue.extend(self.decoder.push(&bytes)),
-                Ok(None) => {
+            match read_chunk(&mut self.response, cancel).await? {
+                Some(bytes) => self.queue.extend(self.decoder.push(&bytes)),
+                None => {
                     self.done = true;
                     self.queue.extend(self.decoder.finish());
                 }
-                Err(_) => return Err("terminated".to_owned()),
             }
         }
     }

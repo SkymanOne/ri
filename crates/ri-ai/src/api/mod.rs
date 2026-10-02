@@ -1,6 +1,7 @@
 //! Wire API implementations, one per API id, and dispatch by model.
 
 pub mod anthropic;
+pub mod google;
 pub mod openai_completions;
 pub mod openai_responses;
 
@@ -16,6 +17,7 @@ pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
         "anthropic-messages" => Some(Arc::new(anthropic::AnthropicMessages)),
         "openai-completions" => Some(Arc::new(openai_completions::OpenAiCompletions)),
         "openai-responses" => Some(Arc::new(openai_responses::OpenAiResponses)),
+        "google-generative-ai" => Some(Arc::new(google::GoogleGenerativeAi)),
         _ => None,
     }
 }
