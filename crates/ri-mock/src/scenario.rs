@@ -406,7 +406,13 @@ pub fn normalize(run: &Run) -> Value {
         })
         .collect();
     sessions.sort_by(|a, b| a["file"].to_string().cmp(&b["file"].to_string()));
-    let mut out = json!({"exitCode": run.exit_code, "stdout": stdout, "requests": requests});
+    let stderr = normalizer.text(&run.stderr);
+    let mut out = json!({
+        "exitCode": run.exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "requests": requests,
+    });
     if !sessions.is_empty() {
         out["sessions"] = Value::Array(sessions);
     }

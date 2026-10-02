@@ -1,6 +1,7 @@
 {
   "exitCode": 0,
   "stdout": "Hello from the mock.\n",
+  "stderr": "",
   "requests": [
     {
       "method": "POST",

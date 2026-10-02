@@ -637,6 +637,7 @@
       "type": "agent_settled"
     }
   ],
+  "stderr": "",
   "requests": [
     {
       "method": "POST",

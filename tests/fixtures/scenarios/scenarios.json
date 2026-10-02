@@ -190,5 +190,16 @@
     "cassette": "openai-completions/text.json",
     "args": ["-p", "--session-dir", "sessions", "--session", "nope", "hi"],
     "files": {"sessions/2026-10-01T10-00-00-000Z_019a0000-0000-7000-8000-00000000abcd.jsonl": "{\"type\":\"session\",\"version\":3,\"id\":\"019a0000-0000-7000-8000-00000000abcd\",\"timestamp\":\"2026-10-01T10:00:00.000Z\",\"cwd\":\"{{cwd}}\"}\n{\"type\":\"model_change\",\"id\":\"a1000001\",\"parentId\":null,\"timestamp\":\"2026-10-01T10:00:00.001Z\",\"provider\":\"groq\",\"modelId\":\"openai/gpt-oss-120b\"}\n{\"type\":\"thinking_level_change\",\"id\":\"a1000002\",\"parentId\":\"a1000001\",\"timestamp\":\"2026-10-01T10:00:00.002Z\",\"thinkingLevel\":\"medium\"}\n{\"type\":\"message\",\"id\":\"a1000003\",\"parentId\":\"a1000002\",\"timestamp\":\"2026-10-01T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Remember the word pineapple.\"}],\"timestamp\":1790000001000}}\n{\"type\":\"message\",\"id\":\"a1000004\",\"parentId\":\"a1000003\",\"timestamp\":\"2026-10-01T10:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Noted: pineapple.\"}],\"api\":\"openai-completions\",\"provider\":\"groq\",\"model\":\"openai/gpt-oss-120b\",\"usage\":{\"input\":120,\"output\":8,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":128,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\",\"timestamp\":1790000002000}}\n"}
+  },
+  {
+    "name": "file-arguments-json",
+    "cassette": "openai-completions/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "groq/openai/gpt-oss-120b", "@notes.md", "@src/lib.rs", "Summarize these"],
+    "files": {"notes.md": "# Notes\n\nShip on Friday.\n", "src/lib.rs": "pub fn add(a: i32, b: i32) -> i32 { a + b }\n"}
+  },
+  {
+    "name": "file-argument-missing-print",
+    "cassette": "none.json",
+    "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b", "@missing.md", "hi"]
   }
 ]

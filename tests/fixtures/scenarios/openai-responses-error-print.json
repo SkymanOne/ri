@@ -1,6 +1,7 @@
 {
   "exitCode": 1,
   "stdout": "",
+  "stderr": "OpenAI API error (400): {\"message\":\"The requested model 'gpt-nope' does not exist.\",\"type\":\"invalid_request_error\",\"param\":\"model\",\"code\":\"model_not_found\"}\n",
   "requests": [
     {
       "method": "POST",

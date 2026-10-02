@@ -1,6 +1,7 @@
 {
   "exitCode": 1,
   "stdout": "",
+  "stderr": "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\"}}\n",
   "requests": [
     {
       "method": "POST",
