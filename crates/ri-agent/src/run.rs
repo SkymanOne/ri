@@ -315,16 +315,16 @@ async fn stream_response(
 ) -> AssistantMessage {
     let messages = hooks.transform_context(context.messages.clone()).await;
     let messages = hooks.convert_to_llm(messages);
-    let api_key = hooks
-        .api_key(&config.model.provider)
-        .await
-        .or_else(|| config.options.api_key.clone());
+    let auth = hooks.auth(&config.model).await;
+    let mut headers = config.options.headers.clone();
+    headers.extend(auth.headers);
     let reasoning = (config.thinking_level != ThinkingLevel::Off).then_some(config.thinking_level);
     let request = Request {
         model: config.model.clone(),
         messages,
         options: StreamOptions {
-            api_key,
+            api_key: auth.api_key.or_else(|| config.options.api_key.clone()),
+            headers,
             reasoning,
             ..config.options.clone()
         },

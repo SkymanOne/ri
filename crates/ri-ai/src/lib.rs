@@ -4,9 +4,11 @@
 pub mod api;
 pub mod catalog;
 pub mod cost;
+pub mod credentials;
 pub mod faux;
 pub mod http;
 pub mod json_parse;
+pub mod registry;
 pub mod schema;
 pub mod sse;
 pub mod stream;

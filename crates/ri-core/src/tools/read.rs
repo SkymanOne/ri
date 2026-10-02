@@ -183,7 +183,7 @@ fn js_number(value: f64) -> String {
 }
 
 /// The MIME type of a supported image, from its leading bytes.
-fn image_mime_type(bytes: &[u8]) -> Option<&'static str> {
+pub fn image_mime_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
         return (bytes.get(3) != Some(&0xf7)).then_some("image/jpeg");
     }
@@ -228,7 +228,7 @@ fn is_animated_png(bytes: &[u8]) -> bool {
 }
 
 /// Standard base64 with padding.
-pub(crate) fn base64(bytes: &[u8]) -> String {
+pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {

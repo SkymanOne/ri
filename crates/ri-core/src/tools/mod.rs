@@ -25,7 +25,7 @@ use serde_json::Value;
 
 pub use bash::Bash;
 pub use edit::Edit;
-pub use read::Read;
+pub use read::{Read, base64, image_mime_type};
 pub use write::Write;
 
 /// Names of the tools active by default.

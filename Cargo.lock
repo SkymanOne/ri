@@ -955,8 +955,16 @@ dependencies = [
 name = "ri"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "indexmap",
+ "ri-ai",
+ "ri-core",
  "ri-ext",
+ "ri-mock",
  "ri-tui",
+ "ri-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

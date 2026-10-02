@@ -1,6 +1,7 @@
 //! Points where the session steers the loop.
 
 use futures_util::future::BoxFuture;
+use ri_ai::registry::Auth;
 use ri_types::event::{AgentEvent, ToolResult};
 use ri_types::message::{AssistantMessage, Message, ThinkingLevel, ToolCall, ToolResultMessage};
 use ri_types::model::Model;
@@ -110,9 +111,9 @@ pub trait AgentHooks: Send + Sync {
         messages
     }
 
-    /// The API key for a provider, resolved fresh for each request.
-    fn api_key<'a>(&'a self, _provider: &'a str) -> BoxFuture<'a, Option<String>> {
-        Box::pin(async { None })
+    /// Credentials for a request to `model`, resolved fresh for each request.
+    fn auth<'a>(&'a self, _model: &'a Model) -> BoxFuture<'a, Auth> {
+        Box::pin(async { Auth::default() })
     }
 
     /// May block a validated call.
