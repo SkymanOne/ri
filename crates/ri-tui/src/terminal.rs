@@ -308,13 +308,18 @@ impl RawMode {
     /// Puts stdin into raw mode as libuv does: no echo, no line editing, no
     /// signal keys, output processing kept.
     pub fn enable() -> std::io::Result<RawMode> {
+        let original = rustix::termios::tcgetattr(rustix::stdio::stdin())?;
+        let mode = RawMode { original };
+        mode.reenable()?;
+        Ok(mode)
+    }
+
+    /// Puts stdin back into raw mode after [`RawMode::restore`].
+    pub fn reenable(&self) -> std::io::Result<()> {
         use rustix::termios::{
-            ControlModes, InputModes, LocalModes, OptionalActions, SpecialCodeIndex, tcgetattr,
-            tcsetattr,
+            ControlModes, InputModes, LocalModes, OptionalActions, SpecialCodeIndex, tcsetattr,
         };
-        let stdin = rustix::stdio::stdin();
-        let original = tcgetattr(stdin)?;
-        let mut raw = original.clone();
+        let mut raw = self.original.clone();
         raw.input_modes -= InputModes::BRKINT
             | InputModes::ICRNL
             | InputModes::INPCK
@@ -325,8 +330,8 @@ impl RawMode {
             LocalModes::ECHO | LocalModes::ICANON | LocalModes::IEXTEN | LocalModes::ISIG;
         raw.special_codes[SpecialCodeIndex::VMIN] = 1;
         raw.special_codes[SpecialCodeIndex::VTIME] = 0;
-        tcsetattr(stdin, OptionalActions::Now, &raw)?;
-        Ok(RawMode { original })
+        tcsetattr(rustix::stdio::stdin(), OptionalActions::Now, &raw)?;
+        Ok(())
     }
 
     /// Restores the original mode.
@@ -344,6 +349,26 @@ impl Drop for RawMode {
     fn drop(&mut self) {
         self.restore();
     }
+}
+
+/// Stops the process group, as the terminal's suspend key would; returns once
+/// the group is continued.
+#[cfg(unix)]
+pub fn suspend() {
+    let _ = rustix::process::kill_current_process_group(rustix::process::Signal::TSTP);
+}
+
+/// Whether stdin has input within `timeout`.
+#[cfg(unix)]
+pub fn stdin_ready(timeout: std::time::Duration) -> bool {
+    use rustix::event::{PollFd, PollFlags, Timespec, poll};
+    let stdin = rustix::stdio::stdin();
+    let mut fds = [PollFd::new(&stdin, PollFlags::IN)];
+    let timeout = Timespec {
+        tv_sec: timeout.as_secs() as _,
+        tv_nsec: timeout.subsec_nanos() as _,
+    };
+    poll(&mut fds, Some(&timeout)).is_ok_and(|ready| ready > 0)
 }
 
 /// The terminal size as (columns, rows): the window size of stdout, else
