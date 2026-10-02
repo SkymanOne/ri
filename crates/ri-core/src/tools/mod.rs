@@ -1,0 +1,168 @@
+//! Built-in tools: `read`, `bash`, `edit`, `write`, and the optional `grep`,
+//! `find` and `ls`.
+//!
+//! Ports of `packages/coding-agent/src/core/tools` in pi `v1.0.0`. Declarations
+//! (names, descriptions, schemas) match pi byte for byte, because they are part of
+//! every request.
+
+mod bash;
+mod edit;
+mod edit_diff;
+mod mutation;
+pub mod path;
+mod read;
+pub mod truncate;
+mod write;
+
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+
+use ri_agent::Tool;
+use ri_types::event::ToolResult;
+use ri_types::message::{ContentBlock, TextContent, ThinkingLevel, ToolDeclaration};
+use ri_types::model::Model;
+use serde_json::Value;
+
+pub use bash::Bash;
+pub use edit::Edit;
+pub use read::Read;
+pub use write::Write;
+
+/// Names of the tools active by default.
+pub const DEFAULT_TOOLS: [&str; 4] = ["read", "bash", "edit", "write"];
+
+/// Session state tools read while running.
+#[derive(Clone, Debug, Default)]
+pub struct Runtime {
+    /// The current model.
+    pub model: Option<Model>,
+    /// The current thinking level.
+    pub thinking_level: Option<ThinkingLevel>,
+    /// The session id.
+    pub session_id: Option<String>,
+    /// The session file, when persisted.
+    pub session_file: Option<PathBuf>,
+}
+
+/// What built-in tools share: the working directory and the session state.
+#[derive(Clone, Debug)]
+pub struct ToolEnv {
+    /// Working directory for relative paths and commands.
+    pub cwd: PathBuf,
+    /// Session state, updated by the session.
+    pub runtime: Arc<RwLock<Runtime>>,
+}
+
+impl ToolEnv {
+    /// A snapshot of the session state.
+    pub fn runtime(&self) -> Runtime {
+        self.runtime.read().map(|r| r.clone()).unwrap_or_default()
+    }
+}
+
+/// A tool with the text it contributes to the system prompt.
+#[derive(Clone)]
+pub struct PromptTool {
+    /// The tool.
+    pub tool: Arc<dyn Tool>,
+    /// One-line summary for the prompt's tool list; absent tools are not listed.
+    pub snippet: Option<String>,
+    /// Bullets added to the prompt's rules.
+    pub guidelines: Vec<String>,
+}
+
+/// Creates the named built-in tool.
+pub fn builtin(name: &str, env: &ToolEnv) -> Option<PromptTool> {
+    let (tool, snippet, guidelines): (Arc<dyn Tool>, &str, &[&str]) = match name {
+        "read" => (
+            Arc::new(Read::new(env.clone())),
+            "Read file contents",
+            &["Use read to examine files instead of cat or sed."],
+        ),
+        "bash" => (
+            Arc::new(Bash::new(env.clone())),
+            "Execute bash commands (ls, grep, find, etc.)",
+            &["You can inspect PI_* environment variables for current model and session details."],
+        ),
+        "edit" => (
+            Arc::new(Edit::new(env.clone())),
+            "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+            &[
+                "Use edit for precise changes (edits[].oldText must match exactly)",
+                "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
+                "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
+                "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+            ],
+        ),
+        "write" => (
+            Arc::new(Write::new(env.clone())),
+            "Create or overwrite files",
+            &["Use write only for new files or complete rewrites."],
+        ),
+        _ => return None,
+    };
+    Some(PromptTool {
+        tool,
+        snippet: Some(snippet.to_owned()),
+        guidelines: guidelines.iter().map(|g| (*g).to_owned()).collect(),
+    })
+}
+
+/// A declaration with pi's `constrainedSampling: {type: json_schema, strict: prefer}`.
+fn declaration(name: &str, description: String, parameters: Value) -> ToolDeclaration {
+    ToolDeclaration {
+        name: name.to_owned(),
+        description,
+        parameters,
+        constrained_sampling: Some(serde_json::json!({"type": "json_schema", "strict": "prefer"})),
+    }
+}
+
+fn text(text: impl Into<String>) -> ContentBlock {
+    ContentBlock::Text(TextContent {
+        text: text.into(),
+        text_signature: None,
+    })
+}
+
+fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult {
+    ToolResult {
+        content: vec![text(content)],
+        details,
+        ..ToolResult::default()
+    }
+}
+
+/// `Error code: ENOENT` style text for an I/O error, as Node reports it.
+fn error_code(err: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    let code = match err.kind() {
+        ErrorKind::NotFound => "ENOENT",
+        ErrorKind::PermissionDenied => "EACCES",
+        ErrorKind::AlreadyExists => "EEXIST",
+        ErrorKind::IsADirectory => "EISDIR",
+        ErrorKind::NotADirectory => "ENOTDIR",
+        _ => return err.to_string(),
+    };
+    format!("Error code: {code}")
+}
+
+/// The message Node gives a failed file system call, such as
+/// `ENOENT: no such file or directory, access '/a/b'`.
+fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
+    use std::io::ErrorKind;
+    let path = path.display();
+    match err.kind() {
+        ErrorKind::NotFound => format!("ENOENT: no such file or directory, {syscall} '{path}'"),
+        ErrorKind::PermissionDenied => format!("EACCES: permission denied, {syscall} '{path}'"),
+        ErrorKind::IsADirectory => "EISDIR: illegal operation on a directory, read".to_owned(),
+        ErrorKind::NotADirectory => format!("ENOTDIR: not a directory, {syscall} '{path}'"),
+        _ => format!("{err}, {syscall} '{path}'"),
+    }
+}
+
+fn random_hex(bytes: usize) -> String {
+    let mut buffer = vec![0u8; bytes];
+    let _ = getrandom::fill(&mut buffer);
+    buffer.iter().map(|byte| format!("{byte:02x}")).collect()
+}
