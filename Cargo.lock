@@ -964,7 +964,15 @@ dependencies = [
 name = "ri-ai"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
+ "reqwest",
+ "ri-mock",
  "ri-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1797,6 +1805,7 @@ dependencies = [
  "ri-mock",
  "ri-types",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

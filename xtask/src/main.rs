@@ -7,6 +7,7 @@
 )]
 
 mod mock_sse;
+mod models;
 
 use std::process::ExitCode;
 
@@ -22,10 +23,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     MockSse(mock_sse::Args),
+    Models(models::Args),
 }
 
 fn main() -> anyhow::Result<ExitCode> {
     match Cli::parse().command {
         Command::MockSse(args) => mock_sse::run(args),
+        Command::Models(args) => models::run(args).map(|()| ExitCode::SUCCESS),
     }
 }
