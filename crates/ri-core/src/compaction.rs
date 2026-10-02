@@ -982,6 +982,197 @@ impl Summarizer<'_> {
     }
 }
 
+const BRANCH_SUMMARY_PREAMBLE: &str = "The user explored a different conversation branch before returning here.\nSummary of that exploration:\n\n";
+
+const BRANCH_SUMMARY_PROMPT: &str = "Create a structured summary of this conversation branch for context when returning later.\n\nUse this EXACT format:\n\n## Goal\n[What was the user trying to accomplish in this branch?]\n\n## Constraints & Preferences\n- [Any constraints, preferences, or requirements mentioned]\n- [Or \"(none)\" if none were mentioned]\n\n## Progress\n### Done\n- [x] [Completed tasks/changes]\n\n### In Progress\n- [ ] [Work that was started but not finished]\n\n### Blocked\n- [Issues preventing progress, if any]\n\n## Key Decisions\n- **[Decision]**: [Brief rationale]\n\n## Next Steps\n1. [What should happen next to continue this work]\n\nKeep each section concise. Preserve exact file paths, function names, and error messages.";
+
+/// The message an entry contributes to a branch summary; tool results are
+/// skipped because the calls carry their context.
+fn branch_entry_message(entry: &FileEntry) -> Option<Message> {
+    match entry {
+        FileEntry::Message(entry) if matches!(entry.message, Message::ToolResult(_)) => None,
+        FileEntry::Message(_) | FileEntry::CustomMessage(_) | FileEntry::BranchSummary(_) => {
+            entry_context_messages(entry).into_iter().next()
+        }
+        FileEntry::Compaction(compaction) => Some(Message::CompactionSummary(
+            ri_types::message::CompactionSummaryMessage {
+                summary: compaction.summary.clone(),
+                tokens_before: compaction.tokens_before,
+                timestamp: crate::time::parse_iso(&compaction.meta.timestamp).unwrap_or_default(),
+            },
+        )),
+        _ => None,
+    }
+}
+
+/// Messages of the abandoned branch, newest first until `token_budget` (0 for
+/// none), and the files touched across all of it.
+pub fn prepare_branch_entries(
+    entries: &[FileEntry],
+    token_budget: u64,
+) -> (Vec<Message>, FileOperations) {
+    let mut file_ops = FileOperations::default();
+    for entry in entries {
+        if let FileEntry::BranchSummary(summary) = entry
+            && summary.from_hook != Some(true)
+            && let Some(details) = &summary.details
+        {
+            for path in details["readFiles"].as_array().into_iter().flatten() {
+                if let Some(path) = path.as_str() {
+                    file_ops.read.insert(path.to_owned());
+                }
+            }
+            for path in details["modifiedFiles"].as_array().into_iter().flatten() {
+                if let Some(path) = path.as_str() {
+                    file_ops.edited.insert(path.to_owned());
+                }
+            }
+        }
+    }
+    let mut messages: Vec<Message> = Vec::new();
+    let mut total = 0;
+    for entry in entries.iter().rev() {
+        let Some(message) = branch_entry_message(entry) else {
+            continue;
+        };
+        file_ops.extract(&message);
+        let tokens = estimate_tokens(&message);
+        if token_budget > 0 && total + tokens > token_budget {
+            // Summaries are worth keeping when there is still some room.
+            if matches!(
+                entry,
+                FileEntry::Compaction(_) | FileEntry::BranchSummary(_)
+            ) && (total as f64) < token_budget as f64 * 0.9
+            {
+                messages.insert(0, message);
+            }
+            break;
+        }
+        messages.insert(0, message);
+        total += tokens;
+    }
+    (messages, file_ops)
+}
+
+/// What summarizing a branch produced.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BranchSummary {
+    /// A summary to record, with its usage and file lists.
+    Done {
+        /// The text.
+        summary: String,
+        /// Usage of the request, if one was made.
+        usage: Option<Usage>,
+        /// Files only read.
+        read_files: Vec<String>,
+        /// Files changed.
+        modified_files: Vec<String>,
+    },
+    /// The request was cancelled.
+    Aborted,
+}
+
+impl Summarizer<'_> {
+    /// Summarizes abandoned branch entries (chronological). `replace` makes
+    /// `custom_instructions` the whole instruction instead of an addition.
+    pub async fn branch_summary(
+        &self,
+        entries: &[FileEntry],
+        custom_instructions: Option<&str>,
+        replace: bool,
+        reserve_tokens: u64,
+    ) -> Result<BranchSummary, String> {
+        let window = if self.model.context_window > 0 {
+            self.model.context_window
+        } else {
+            128_000
+        };
+        let (messages, file_ops) =
+            prepare_branch_entries(entries, window.saturating_sub(reserve_tokens));
+        if messages.is_empty() {
+            return Ok(BranchSummary::Done {
+                summary: "No content to summarize".into(),
+                usage: None,
+                read_files: Vec::new(),
+                modified_files: Vec::new(),
+            });
+        }
+        let conversation = serialize_conversation(&convert_to_llm(messages));
+        let instructions = match custom_instructions.filter(|text| !text.is_empty()) {
+            Some(custom) if replace => custom.to_owned(),
+            Some(custom) => format!("{BRANCH_SUMMARY_PROMPT}\n\nAdditional focus: {custom}"),
+            None => BRANCH_SUMMARY_PROMPT.to_owned(),
+        };
+        let prompt = format!("<conversation>\n{conversation}\n</conversation>\n\n{instructions}");
+        let max_tokens = if self.model.max_tokens > 0 {
+            self.model.max_tokens.min(4096)
+        } else {
+            4096
+        };
+        let response = self.complete(&prompt, max_tokens).await;
+        if response.stop_reason == StopReason::Aborted {
+            return Ok(BranchSummary::Aborted);
+        }
+        if let Some(failure) = summarization_failure(&response, "Branch summarization") {
+            return Err(failure);
+        }
+        if response
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolCall(_)))
+        {
+            return Err("Branch summarization attempted to call a tool".into());
+        }
+        let (read_files, modified_files) = file_ops.lists();
+        let summary = format!(
+            "{BRANCH_SUMMARY_PREAMBLE}{}{}",
+            ri_types::message::blocks_text(&response.content, "\n"),
+            format_file_operations(&read_files, &modified_files)
+        );
+        Ok(BranchSummary::Done {
+            summary,
+            usage: Some(response.usage),
+            read_files,
+            modified_files,
+        })
+    }
+}
+
+/// Entries from `old_leaf` back to the deepest common ancestor with `target`,
+/// oldest first, and that ancestor.
+pub fn collect_branch_entries(
+    session: &crate::session::SessionManager,
+    old_leaf: Option<&str>,
+    target: &str,
+) -> (Vec<FileEntry>, Option<String>) {
+    let Some(old_leaf) = old_leaf else {
+        return (Vec::new(), None);
+    };
+    let ids = |path: Vec<&FileEntry>| -> Vec<String> {
+        path.iter()
+            .filter_map(|entry| entry.meta().map(|meta| meta.id.clone()))
+            .collect()
+    };
+    let old_path = ids(session.branch_path(Some(old_leaf)));
+    let target_path = ids(session.branch_path(Some(target)));
+    let common = target_path
+        .iter()
+        .rev()
+        .find(|id| old_path.contains(id))
+        .cloned();
+    let mut entries = Vec::new();
+    let mut current = Some(old_leaf.to_owned());
+    while let Some(id) = current.filter(|id| Some(id) != common.as_ref()) {
+        let Some(entry) = session.entry(&id) else {
+            break;
+        };
+        current = entry.meta().and_then(|meta| meta.parent_id.clone());
+        entries.push(entry.clone());
+    }
+    entries.reverse();
+    (entries, common)
+}
+
 /// Sum of two usages, as pi's `combineUsage`.
 pub fn combine_usage(first: &Usage, second: &Usage) -> Usage {
     let optional = |a: Option<u64>, b: Option<u64>| {

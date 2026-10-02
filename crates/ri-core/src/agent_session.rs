@@ -28,9 +28,9 @@ use ri_types::settings::QueueMode;
 use tokio_util::sync::CancellationToken;
 
 use crate::compaction::{
-    CompactionSettings, Preparation, RetryPolicy, Summarizer, calculate_context_tokens,
-    estimate_context_tokens, estimate_projected_context_tokens, estimate_tokens,
-    prepare_compaction, should_compact,
+    BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer,
+    calculate_context_tokens, estimate_context_tokens, estimate_projected_context_tokens,
+    estimate_tokens, prepare_compaction, should_compact,
 };
 use crate::messages::convert_to_llm;
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
@@ -117,6 +117,32 @@ struct Recovery {
     turn_tool_results: Vec<String>,
     /// Entry ids of the last completed turn's tool results.
     last_tool_results: Vec<String>,
+}
+
+/// Options for [`AgentSession::navigate_tree`].
+#[derive(Clone, Debug, Default)]
+pub struct TreeNavigation {
+    /// Summarize the branch being left.
+    pub summarize: bool,
+    /// Extra or replacement summary instructions.
+    pub custom_instructions: Option<String>,
+    /// Use `custom_instructions` as the whole instruction.
+    pub replace_instructions: bool,
+    /// Label for the summary, or the target without one.
+    pub label: Option<String>,
+}
+
+/// What [`AgentSession::navigate_tree`] did.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TreeOutcome {
+    /// Text of a user or custom message target, for the editor.
+    pub editor_text: Option<String>,
+    /// Nothing changed.
+    pub cancelled: bool,
+    /// The summary request was cancelled.
+    pub aborted: bool,
+    /// The branch summary entry, when one was made.
+    pub summary_entry: Option<FileEntry>,
 }
 
 /// What the compaction check decided.
@@ -1044,6 +1070,178 @@ impl AgentSession {
                 Err(message)
             }
         }
+    }
+
+    /// Moves to another point of the session tree, as `/tree` does. A user or
+    /// custom message target puts the leaf on its parent and returns its text for
+    /// the editor. With `summarize`, the abandoned branch is summarized at the new
+    /// position. `label` labels the summary, or the target without one.
+    pub async fn navigate_tree(
+        &self,
+        target_id: &str,
+        options: TreeNavigation,
+    ) -> Result<TreeOutcome, String> {
+        if self.is_streaming() {
+            return Err(
+                "Wait for the current response to finish before navigating the session tree."
+                    .into(),
+            );
+        }
+        let (old_leaf, target) = self.with_session(|session| {
+            (
+                session.leaf_id().map(str::to_owned),
+                session.entry(target_id).cloned(),
+            )
+        });
+        if old_leaf.as_deref() == Some(target_id) {
+            return Ok(TreeOutcome::default());
+        }
+        let model = self.model();
+        if options.summarize && model.is_none() {
+            return Err("No model available for summarization".into());
+        }
+        let Some(target) = target else {
+            return Err(format!("Entry {target_id} not found"));
+        };
+        let (entries, _common) = self.with_session(|session| {
+            crate::compaction::collect_branch_entries(session, old_leaf.as_deref(), target_id)
+        });
+        let mut summary = None;
+        if options.summarize
+            && !entries.is_empty()
+            && let Some(model) = &model
+        {
+            let cancel = CancellationToken::new();
+            *lock(&self.inner.cancel) = Some(cancel.clone());
+            let auth = self.registry().auth(model).await;
+            let reserve = lock(&self.inner.settings)
+                .settings()
+                .branch_summary
+                .as_ref()
+                .and_then(|settings| settings.reserve_tokens)
+                .unwrap_or(16384);
+            let summarizer = Summarizer {
+                model,
+                apis: &self.inner.apis,
+                auth: &auth,
+                thinking_level: ThinkingLevel::Off,
+                session_id: None,
+                retry: self.retry_policy(),
+                cancel,
+            };
+            let result = summarizer
+                .branch_summary(
+                    &entries,
+                    options.custom_instructions.as_deref(),
+                    options.replace_instructions,
+                    reserve,
+                )
+                .await;
+            *lock(&self.inner.cancel) = None;
+            match result? {
+                BranchSummary::Aborted => {
+                    return Ok(TreeOutcome {
+                        cancelled: true,
+                        aborted: true,
+                        ..TreeOutcome::default()
+                    });
+                }
+                BranchSummary::Done {
+                    summary: text,
+                    usage,
+                    read_files,
+                    modified_files,
+                } => {
+                    summary = Some((
+                        text,
+                        serde_json::json!({"readFiles": read_files, "modifiedFiles": modified_files}),
+                        usage,
+                    ));
+                }
+            }
+        }
+        let (new_leaf, editor_text) = match &target {
+            FileEntry::Message(entry) if matches!(entry.message, Message::User(_)) => {
+                let text = match &entry.message {
+                    Message::User(user) => match &user.content {
+                        Content::Text(text) => text.clone(),
+                        Content::Blocks(blocks) => ri_types::message::blocks_text(blocks, ""),
+                    },
+                    _ => String::new(),
+                };
+                (entry.meta.parent_id.clone(), Some(text))
+            }
+            FileEntry::CustomMessage(entry) => {
+                let text = match &entry.content {
+                    Content::Text(text) => text.clone(),
+                    Content::Blocks(blocks) => ri_types::message::blocks_text(blocks, ""),
+                };
+                (entry.meta.parent_id.clone(), Some(text))
+            }
+            _ => (Some(target_id.to_owned()), None),
+        };
+        let summary_entry = self.with_session(|session| -> Result<Option<FileEntry>, String> {
+            let mut summary_entry = None;
+            match summary {
+                Some((text, details, usage)) => {
+                    let id = session
+                        .branch_with_summary(
+                            new_leaf.as_deref(),
+                            text,
+                            Some(details),
+                            Some(false),
+                            usage,
+                        )
+                        .map_err(|err| err.to_string())?;
+                    summary_entry = session.entry(&id).cloned();
+                    if let Some(label) = &options.label {
+                        session
+                            .append_label(&id, Some(label.clone()))
+                            .map_err(|err| err.to_string())?;
+                    }
+                }
+                None => {
+                    match &new_leaf {
+                        None => session.reset_leaf(),
+                        Some(id) => session.branch(id).map_err(|err| err.to_string())?,
+                    }
+                    if let Some(label) = &options.label {
+                        session
+                            .append_label(target_id, Some(label.clone()))
+                            .map_err(|err| err.to_string())?;
+                    }
+                }
+            }
+            Ok(summary_entry)
+        })?;
+        self.restore_tools_from_transcript();
+        Ok(TreeOutcome {
+            editor_text,
+            cancelled: false,
+            aborted: false,
+            summary_entry,
+        })
+    }
+
+    /// Activates the tools the current branch's transcript declares, if any.
+    fn restore_tools_from_transcript(&self) {
+        let messages = self.messages();
+        let Some(system) = ri_ai::transcript::current_system_message(&messages) else {
+            return;
+        };
+        let names: Vec<String> = system
+            .tools_added
+            .iter()
+            .flatten()
+            .map(|tool| tool.name.clone())
+            .filter(|name| {
+                self.inner
+                    .tools
+                    .iter()
+                    .any(|tool| tool.tool.declaration().name == *name)
+            })
+            .collect();
+        lock(&self.inner.state).active_tools = names;
     }
 
     fn registry(&self) -> Arc<ModelRegistry> {
