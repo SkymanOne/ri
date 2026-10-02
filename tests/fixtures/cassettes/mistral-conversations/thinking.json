@@ -1,0 +1,24 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"cmpl_think\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"magistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"The user \"}]}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_think\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"magistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"wants a greeting.\"}]}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_think\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"magistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_think\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"magistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"Hi there!\"}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_think\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"magistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"length\"}],\"usage\":{\"prompt_tokens\":900,\"completion_tokens\":30,\"total_tokens\":930}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

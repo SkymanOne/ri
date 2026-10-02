@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod google;
+pub mod mistral;
 pub mod openai_completions;
 pub mod openai_responses;
 
@@ -18,7 +19,10 @@ pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
         "anthropic-messages" => Some(Arc::new(anthropic::AnthropicMessages)),
         "openai-completions" => Some(Arc::new(openai_completions::OpenAiCompletions)),
         "openai-responses" => Some(Arc::new(openai_responses::OpenAiResponses)),
+        "azure-openai-responses" => Some(Arc::new(openai_responses::AzureOpenAiResponses)),
+        "openai-codex-responses" => Some(Arc::new(openai_responses::OpenAiCodexResponses)),
         "google-generative-ai" => Some(Arc::new(google::GoogleGenerativeAi)),
+        "mistral-conversations" => Some(Arc::new(mistral::MistralConversations)),
         _ => None,
     }
 }

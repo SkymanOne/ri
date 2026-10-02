@@ -10,7 +10,7 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | Unsupported packages | Any Node code runs | Packages with native addons, `net`/`tls` servers or `worker_threads` are rejected | Not available inside the wasm runtime. |
 | Unpaired UTF-16 surrogates in JSON strings | Read and written as `\udXXX` escapes | A line containing one fails to parse | A Rust `String` cannot hold them. Only malformed text, such as truncated model output, produces them. |
 | Extension component output | Uses the terminal's hyperlink (OSC 8) and image support | pi-tui inside ri reports neither, so links print their URL as text and images use pi-tui's text fallback. Escapes emitted directly by extensions are stripped. | ratatui cells cannot carry OSC 8 or image escapes. |
-| System prompt | Preamble says "operating inside pi"; a `docs` section points to pi's installed documentation | Preamble says "operating inside ri"; no `docs` section | ri installs no documentation. |
+| System prompt | Preamble says "operating inside pi"; a `docs` section points to pi's installed documentation | Preamble says "operating inside ri"; no `docs` section, so where a model's output limit is capped by its context window, ri's `max_tokens` is about 350 tokens higher | ri installs no documentation. |
 | `--help`, no-models message | Mention `PI_PACKAGE_DIR` and pi's installed docs | Omit both | ri has no package or docs directory. |
 | JSON mode `message_update.usage`, assistant `message_start` | Serialized from the live message, so they show state from later in the stream | State at the moment of the event | pi's values depend on stream timing. |
 | Terminal input outside the Basic Multilingual Plane | Delivered as two lone UTF-16 surrogates, one per input event | Delivered as one character | Rust strings hold whole characters; the inserted text is the same. |
@@ -27,3 +27,4 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` temp files | `ri` and ri's version; `ri-mcp-*` temp files | Product name. |
 | Sign in with ChatGPT | `agent_name_hint` `Pi` | `ri` | Product name shown on OpenAI's consent page. |
 | `/login` providers | pi's built-in `llama.cpp` extension adds a provider; Radius offers a sign-in | Neither | Not yet ported; the Radius gateway also needs pi's `pi-messages` wire API. |
+| Codex transport | WebSocket first (`transport` setting), then SSE with a zstd-compressed body | SSE with an uncompressed body | Same requests and events as pi's fallback, without a WebSocket client or zstd encoder in the binary. |

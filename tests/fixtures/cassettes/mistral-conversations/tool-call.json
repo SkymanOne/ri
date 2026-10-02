@@ -1,0 +1,40 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"cmpl_tool\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Reading it.\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_tool\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"Rd8x3Kq2Z\",\"function\":{\"name\":\"read\",\"arguments\":\"{\\\"path\\\": \"},\"index\":0}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_tool\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"null\",\"function\":{\"name\":\"read\",\"arguments\":\"\\\"hello.txt\\\"}\"},\"index\":0}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_tool\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":1500,\"completion_tokens\":20,\"total_tokens\":1520}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"cmpl_tool2\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"The file says hi.\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_tool2\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"devstral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1600,\"completion_tokens\":5,\"total_tokens\":1605}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

@@ -215,6 +215,9 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         "groq": {"baseUrl": url},
         "openai": {"baseUrl": format!("{url}/v1")},
         "google": {"baseUrl": format!("{url}/v1beta")},
+        "openai-codex": {"baseUrl": url},
+        "azure-openai-responses": {"baseUrl": format!("{url}/openai/v1")},
+        "mistral": {"baseUrl": url},
     }});
     let models_path = agent_dir.join("models.json");
     std::fs::write(&models_path, models.to_string()).map_err(io(&models_path))?;

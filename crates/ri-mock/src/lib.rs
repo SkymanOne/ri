@@ -290,13 +290,31 @@ fn recorded_request(parts: &hyper::http::request::Parts, body: &Bytes) -> Record
             })
             .or_insert_with(|| value.into_owned());
     }
+    let zstd = headers
+        .get("content-encoding")
+        .is_some_and(|encoding| encoding.eq_ignore_ascii_case("zstd"));
+    let body = if zstd {
+        decode_zstd(body).unwrap_or_else(|| body.to_vec())
+    } else {
+        body.to_vec()
+    };
     RecordedRequest {
         method: parts.method.to_string(),
         path: parts.uri.path().to_owned(),
         query: parts.uri.query().map(redact_query),
         headers,
-        body: String::from_utf8_lossy(body).into_owned(),
+        body: String::from_utf8_lossy(&body).into_owned(),
     }
+}
+
+/// A zstd-compressed request body, as pi sends to the Codex backend.
+fn decode_zstd(body: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+    let mut source = body;
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(&mut source).ok()?;
+    let mut out = Vec::new();
+    decoder.read_to_end(&mut out).ok()?;
+    Some(out)
 }
 
 fn redact_query(query: &str) -> String {

@@ -36,6 +36,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 ratatui-core = { version = "0.1", features = ["std"] }
 rustix = { version = "1", features = ["process"] }
 ryu-js = "1"
+ruzstd = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 sha2 = "0.11"

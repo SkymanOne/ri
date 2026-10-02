@@ -546,5 +546,68 @@
     "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
     "agentFiles": {"auth.json": "{\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"sk-old\"\n  }\n}"},
     "tty": {"cols": 100, "rows": 40, "keys": ["/logout\r", "\r"]}
+  },
+  {
+    "name": "codex-text-json",
+    "cassette": "openai-codex-responses/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai-codex/gpt-5.5", "Say hello"],
+    "agentFiles": {"auth.json": "{\"openai-codex\": {\"type\": \"oauth\", \"refresh\": \"r\", \"access\": \"eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9tb2NrIn19.sig\", \"expires\": 4102444800000, \"accountId\": \"acct_mock\"}}", "settings.json": "{\"transport\": \"sse\", \"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "codex-tool-call-json",
+    "cassette": "openai-codex-responses/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai-codex/gpt-5.5", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"},
+    "agentFiles": {"auth.json": "{\"openai-codex\": {\"type\": \"oauth\", \"refresh\": \"r\", \"access\": \"eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9tb2NrIn19.sig\", \"expires\": 4102444800000, \"accountId\": \"acct_mock\"}}", "settings.json": "{\"transport\": \"sse\", \"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "codex-usage-limit-json",
+    "cassette": "openai-codex-responses/usage-limit.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai-codex/gpt-5.5", "hi"],
+    "agentFiles": {"auth.json": "{\"openai-codex\": {\"type\": \"oauth\", \"refresh\": \"r\", \"access\": \"eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9tb2NrIn19.sig\", \"expires\": 4102444800000, \"accountId\": \"acct_mock\"}}", "settings.json": "{\"transport\": \"sse\", \"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "codex-failed-json",
+    "cassette": "openai-codex-responses/failed.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai-codex/gpt-5.5", "hi"],
+    "agentFiles": {"auth.json": "{\"openai-codex\": {\"type\": \"oauth\", \"refresh\": \"r\", \"access\": \"eyJhbGciOiJub25lIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9tb2NrIn19.sig\", \"expires\": 4102444800000, \"accountId\": \"acct_mock\"}}", "settings.json": "{\"transport\": \"sse\", \"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "azure-text-json",
+    "cassette": "azure-openai-responses/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "azure-openai-responses/gpt-5", "Say hello"],
+    "agentFiles": {"auth.json": "{\"azure-openai-responses\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
+  },
+  {
+    "name": "azure-tool-call-json",
+    "cassette": "azure-openai-responses/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "azure-openai-responses/gpt-4.1", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"},
+    "agentFiles": {"auth.json": "{\"azure-openai-responses\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
+  },
+  {
+    "name": "mistral-text-json",
+    "cassette": "mistral-conversations/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "mistral/zai-glm-5-2", "Say hello"],
+    "agentFiles": {"auth.json": "{\"mistral\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
+  },
+  {
+    "name": "mistral-thinking-json",
+    "cassette": "mistral-conversations/thinking.json",
+    "args": ["--mode", "json", "--no-session", "--model", "mistral/magistral-medium-latest", "Say hi"],
+    "agentFiles": {"auth.json": "{\"mistral\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
+  },
+  {
+    "name": "mistral-tool-call-json",
+    "cassette": "mistral-conversations/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "mistral/mistral-large-2411", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"},
+    "agentFiles": {"auth.json": "{\"mistral\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
+  },
+  {
+    "name": "mistral-error-print",
+    "cassette": "mistral-conversations/error.json",
+    "args": ["-p", "--no-session", "--model", "mistral/mistral-large-2411", "hi"],
+    "agentFiles": {"auth.json": "{\"mistral\": {\"type\": \"api_key\", \"key\": \"mock\"}}"}
   }
 ]

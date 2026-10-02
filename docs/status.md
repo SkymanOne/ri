@@ -86,7 +86,7 @@ Not yet done:
 
 ## M4: RPC, MCP, OAuth, remaining wire APIs
 
-In progress.
+Done for the slices below. The live OAuth check is pending.
 
 RPC mode is done for the slice below.
 
@@ -133,7 +133,19 @@ Not yet done:
 - Sign-in for Kimi, Meta, xAI, OpenRouter and Radius. Their stored tokens are used as they are, without refresh, so a token copied from pi works until it expires.
 - API key login for Bedrock, Vertex and Cloudflare, whose pi logins ask for more than a key; ri shows pi's "configured outside" notice.
 - RPC mode has no login commands, as in pi.
-- The openai-codex-responses, azure-openai-responses and mistral wire APIs.
+
+The remaining wire APIs are done for the slice below.
+
+- `openai-codex-responses`: ChatGPT's Codex backend with the account header, the instructions field, Codex's fixed request fields, its event mapping and usage-limit messages, over pi's SSE transport.
+- `azure-openai-responses`: Responses on an Azure resource, with the base URL, API version and deployment map from pi's environment variables.
+- `mistral-conversations`: Mistral's native chat endpoint, with pi's tool-call ids, reasoning effort or prompt mode, prompt caching and stream parser.
+
+Exit criterion. Scenarios recorded from pi match for each: Codex text, tool calls, a usage limit and a failed response; Azure text and tool calls; Mistral text with reasoning effort, thinking in prompt mode, tool calls and an HTTP error.
+
+Not yet done:
+
+- Codex's WebSocket transport and zstd request compression. pi falls back to the same SSE requests when WebSockets fail.
+- Amazon Bedrock, Google Vertex, Cloudflare and pi's `pi-messages` (Radius) wire APIs.
 
 ## M5 to M7
 

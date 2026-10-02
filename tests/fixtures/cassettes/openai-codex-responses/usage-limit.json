@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/codex/responses"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\": {\"type\": \"usage_limit_reached\", \"message\": \"The usage limit has been reached\", \"plan_type\": \"PLUS\", \"resets_at\": 1}}"
+        ]
+      }
+    }
+  ]
+}

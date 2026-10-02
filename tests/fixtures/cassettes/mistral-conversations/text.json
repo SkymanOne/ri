@@ -1,0 +1,23 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"cmpl_text\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"mistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_text\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"mistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_text\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"mistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" from Mistral.\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"cmpl_text\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"mistral-medium-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1200,\"completion_tokens\":6,\"total_tokens\":1206,\"prompt_tokens_details\":{\"cached_tokens\":1024}}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}
