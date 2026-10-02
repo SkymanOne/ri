@@ -111,7 +111,10 @@ impl Loader {
         };
         match resolved {
             Ok(resolution) => Ok(resolution.full_path().to_string_lossy().into_owned()),
-            Err(_) => Err(format!("Cannot find module '{specifier}'")),
+            // jiti's message, as pi reports it.
+            Err(_) => Err(format!(
+                "Cannot find module '{specifier}'\nRequire stack:\n- {referrer}"
+            )),
         }
     }
 

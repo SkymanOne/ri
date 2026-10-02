@@ -64,6 +64,23 @@ print_stderr = "warn"
 print_stdout = "warn"
 unwrap_used = "warn"
 
+# Compiling the extension runtime with an unoptimized Cranelift takes ~15 s
+# per fresh agent directory in debug builds; optimized, it takes ~1 s.
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-bforest]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 3
+[profile.dev.package.wasmtime-environ]
+opt-level = 3
+[profile.dev.package.wasmparser]
+opt-level = 3
+
 # Binary size budget: see AGENTS.md.
 [profile.release]
 codegen-units = 1

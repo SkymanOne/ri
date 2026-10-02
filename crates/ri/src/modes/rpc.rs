@@ -170,6 +170,13 @@ impl ExtensionUi for RpcUi {
         true
     }
 
+    fn extension_error(&self, path: &str, event: &str, error: &str) {
+        let line = json!({"type": "extension_error", "extensionPath": path, "event": event, "error": error});
+        if let Ok(text) = ri_types::json::to_string(&line) {
+            self.out.line(text);
+        }
+    }
+
     fn notify(&self, message: &str, kind: NotifyKind) {
         let line = json!({
             "type": "extension_ui_request",

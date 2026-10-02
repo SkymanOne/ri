@@ -80,7 +80,7 @@ Traits exist only where implementations vary across a crate or plugin boundary. 
 | `Tool` | `ri-agent` | Declare a schema; execute with progress updates and cancellation. | Built-in, MCP and extension tools |
 | `AgentHooks` | `ri-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `ri-core` session, which dispatches to extensions |
 | `Extension` | `ri-core` | Register capabilities; handle events, tool calls and commands. | Built-ins (MCP); wasm instances in `ri-ext` |
-| `Bridge` | `ri-ext` | Answer an instance's requests and operations that need the session. | `ri-core` session adapter; `NoBridge` for headless loading |
+| `Bridge` | `ri-ext` | Answer an instance's requests and operations that need the session. | The session bridge of loaded extensions; `NoBridge` for headless loading |
 | `ExtensionUi` | `ri-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
 | `Component` | `ri-tui` | Render styled lines for a width; handle input. | Built-in widgets; `RemoteComponent` for JS components |
 

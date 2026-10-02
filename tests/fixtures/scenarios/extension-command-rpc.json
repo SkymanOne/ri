@@ -1,0 +1,53 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "message_start",
+      "message": {
+        "role": "custom",
+        "customType": "note",
+        "content": "note: buy milk",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "custom",
+        "customType": "note",
+        "content": "note: buy milk",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "get_messages",
+      "success": true,
+      "data": {
+        "messages": [
+          {
+            "role": "custom",
+            "customType": "note",
+            "content": "note: buy milk",
+            "display": true,
+            "timestamp": "<timestamp>"
+          }
+        ]
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

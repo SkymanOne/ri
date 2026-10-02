@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use futures_util::future::BoxFuture;
 use serde_json::Value;
 use tokio::sync::oneshot;
-use wasmtime::component::ResourceTable;
+use wasmtime::component::{Component, ResourceTable};
 use wasmtime::{Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline};
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxView, WasiView};
 
@@ -186,10 +186,21 @@ impl std::fmt::Debug for Instance {
 }
 
 impl Instance {
-    /// Starts an instance on its own thread. Operations run on the current
-    /// tokio runtime.
+    /// Starts an instance of the JS runtime on its own thread. Operations run
+    /// on the current tokio runtime.
     pub async fn start(
         engine: &Engine,
+        options: Options,
+        bridge: Arc<dyn Bridge>,
+    ) -> Result<Instance, Error> {
+        Instance::start_component(engine, engine.component.clone(), options, bridge).await
+    }
+
+    /// Starts an instance of a native extension `component`, compiled by
+    /// [`Engine::native`].
+    pub(crate) async fn start_component(
+        engine: &Engine,
+        component: Component,
         options: Options,
         bridge: Arc<dyn Bridge>,
     ) -> Result<Instance, Error> {
@@ -208,7 +219,7 @@ impl Instance {
         std::thread::Builder::new()
             .name("ri-ext-instance".into())
             .spawn(
-                move || match Actor::new(engine, options, host, runtime, sender) {
+                move || match Actor::new(engine, component, options, host, runtime, sender) {
                     Ok(actor) => {
                         let _ = ready.send(Ok(()));
                         actor.run(&receiver);
@@ -247,6 +258,7 @@ impl Drop for Instance {
 
 struct Actor {
     engine: Engine,
+    component: Component,
     options: Options,
     host: Arc<Host>,
     runtime: tokio::runtime::Handle,
@@ -263,14 +275,16 @@ struct Actor {
 impl Actor {
     fn new(
         engine: Engine,
+        component: Component,
         options: Options,
         host: Arc<Host>,
         runtime: tokio::runtime::Handle,
         commands: mpsc::Sender<Command>,
     ) -> Result<Actor, Error> {
-        let (store, bindings) = instantiate(&engine, &options, &host)?;
+        let (store, bindings) = instantiate(&engine, &component, &options, &host)?;
         Ok(Actor {
             engine,
+            component,
             options,
             host,
             runtime,
@@ -397,7 +411,7 @@ impl Actor {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }
         self.generation += 1;
-        match instantiate(&self.engine, &self.options, &self.host) {
+        match instantiate(&self.engine, &self.component, &self.options, &self.host) {
             Ok((store, bindings)) => {
                 self.store = store;
                 self.bindings = bindings;
@@ -423,6 +437,7 @@ impl Actor {
 
 fn instantiate(
     engine: &Engine,
+    component: &Component,
     options: &Options,
     host: &Arc<Host>,
 ) -> Result<(Store<State>, Extension), Error> {
@@ -456,7 +471,7 @@ fn instantiate(
             Ok(UpdateDeadline::Continue(1))
         }
     });
-    let bindings = Extension::instantiate(&mut store, &engine.component, &engine.linker)
+    let bindings = Extension::instantiate(&mut store, component, &engine.linker)
         .map_err(|err| Error::Instantiate(format!("{err:#}")))?;
     Ok((store, bindings))
 }

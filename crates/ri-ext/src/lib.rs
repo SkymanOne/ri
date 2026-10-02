@@ -7,12 +7,14 @@
 //! modules, and answers the guest's requests within its [`Grants`].
 
 mod engine;
+mod extensions;
 mod instance;
 mod loader;
 mod ops;
 mod requests;
 
 pub use engine::Engine;
+pub use extensions::{ExtensionHost, Flag, LoadError};
 pub use instance::{Bridge, Grants, Instance, NoBridge, Options};
 
 /// Why the extension runtime failed.

@@ -28,6 +28,7 @@ use ri_types::model::Model;
 use ri_types::rpc::{PromptDisposition, StreamingBehavior};
 use ri_types::session::FileEntry;
 use ri_types::settings::QueueMode;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::compaction::{
@@ -85,6 +86,9 @@ pub struct SessionConfig {
     pub tools: Vec<String>,
     /// The session's extensions, which load before the active tools are set.
     pub extensions: Vec<Arc<dyn Extension>>,
+    /// Activate the tools extensions register as they load, unless they opt
+    /// out; pi does unless `--tools` names the tools.
+    pub include_extension_tools: bool,
     /// Prompt resources.
     pub resources: Resources,
 }
@@ -108,6 +112,12 @@ struct Inner {
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
     /// Extension sections of the current run's system prompt.
     run_sections: Mutex<IndexMap<String, String>>,
+    /// The system prompt a `before_agent_start` handler forced for the run.
+    forced_prompt: Mutex<Option<String>>,
+    /// Extension messages sent with the next prompt.
+    next_turn: Mutex<Vec<Message>>,
+    /// Extension messages sent during a turn, appended when it ends.
+    pending_custom: Mutex<Vec<Message>>,
     resources: Resources,
     runtime: Arc<RwLock<Runtime>>,
     listeners: Mutex<Vec<Listener>>,
@@ -252,6 +262,17 @@ pub struct AgentSession {
     inner: Arc<Inner>,
 }
 
+/// A handle to a session that does not keep it alive.
+#[derive(Clone, Default)]
+pub struct WeakSession(std::sync::Weak<Inner>);
+
+impl WeakSession {
+    /// The session, while it exists.
+    pub fn upgrade(&self) -> Option<AgentSession> {
+        self.0.upgrade().map(|inner| AgentSession { inner })
+    }
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
@@ -282,6 +303,7 @@ impl AgentSession {
             thinking_level,
             tools,
             extensions,
+            include_extension_tools,
             resources,
         } = config;
         let runtime = Arc::new(RwLock::new(Runtime::default()));
@@ -297,6 +319,18 @@ impl AgentSession {
         let tool_registry = Tools::new(ToolRegistry::new(available, Vec::new()));
         for extension in &extensions {
             extension.load(&tool_registry);
+        }
+        let mut tools = tools;
+        if include_extension_tools {
+            tool_registry.with(|registry| {
+                for tool in registry.all() {
+                    let name = tool.name().to_owned();
+                    let builtin = BUILTIN_TOOLS.contains(&name.as_str());
+                    if !builtin && tool.exposure.declarable() && tool.default_active {
+                        tools.push(name);
+                    }
+                }
+            });
         }
         tool_registry.set_active(tools);
 
@@ -331,6 +365,9 @@ impl AgentSession {
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
                 run_sections: Mutex::new(IndexMap::new()),
+                forced_prompt: Mutex::new(None),
+                next_turn: Mutex::new(Vec::new()),
+                pending_custom: Mutex::new(Vec::new()),
                 resources,
                 runtime,
                 listeners: Mutex::new(Vec::new()),
@@ -924,6 +961,65 @@ impl AgentSession {
         })
     }
 
+    /// pi's `sendCustomMessage`: `deliver_as` `nextTurn` holds the message
+    /// for the next prompt; while a run streams it steers (or follows up)
+    /// unless `trigger_turn` is false, in which case it is appended when the
+    /// turn ends; otherwise `trigger_turn` starts a run with it, and without
+    /// one it is appended at once.
+    pub async fn send_custom_message(
+        &self,
+        message: ri_types::message::CustomMessage,
+        trigger_turn: Option<bool>,
+        deliver_as: Option<&str>,
+    ) {
+        let message = Message::Custom(message);
+        if deliver_as == Some("nextTurn") {
+            lock(&self.inner.next_turn).push(message);
+        } else if self.is_streaming() && trigger_turn != Some(false) {
+            let queue = if deliver_as == Some("followUp") {
+                &self.inner.follow_up
+            } else {
+                &self.inner.steering
+            };
+            lock(queue).push_back(message);
+        } else if trigger_turn == Some(true) {
+            self.run(vec![message]).await;
+        } else if self.is_streaming() {
+            lock(&self.inner.pending_custom).push(message);
+        } else {
+            self.append_custom_message(&message);
+        }
+    }
+
+    /// Records an extension message and reports it as pi's `_appendCustomMessage` does.
+    fn append_custom_message(&self, message: &Message) {
+        let Message::Custom(custom) = message else {
+            return;
+        };
+        self.with_session(|file| {
+            let _ = file.append_custom_message(
+                &custom.custom_type,
+                custom.content.clone(),
+                custom.display,
+                custom.details.clone(),
+            );
+        });
+        self.emit(&AgentEvent::MessageStart {
+            message: message.clone(),
+        });
+        self.emit(&AgentEvent::MessageEnd {
+            message: message.clone(),
+        });
+    }
+
+    /// Appends extension messages held while a turn ran.
+    fn flush_pending_custom(&self) {
+        let pending = std::mem::take(&mut *lock(&self.inner.pending_custom));
+        for message in &pending {
+            self.append_custom_message(message);
+        }
+    }
+
     fn emit_queue_update(&self) {
         let (steering, follow_up) = lock(&self.inner.queued).clone();
         self.emit(&AgentEvent::QueueUpdate {
@@ -1079,6 +1175,24 @@ impl AgentSession {
         }))
     }
 
+    /// The system prompt for `active` tools as the model reads it.
+    fn system_prompt_text(&self, active: &[String]) -> Result<String, String> {
+        let sections = build_sections(&self.prompt_options(active))?;
+        Ok(SystemMessage {
+            content: Content::Text(String::new()),
+            sections: Some(
+                sections
+                    .into_iter()
+                    .map(|(name, text)| (name, Some(text)))
+                    .collect(),
+            ),
+            timestamp: 0,
+            tools_added: None,
+            tools_removed: None,
+        }
+        .text())
+    }
+
     /// Sends a user prompt and runs until the agent settles. Templates and
     /// `/skill:` commands expand first.
     pub async fn prompt(&self, text: &str, images: Vec<ImageContent>) -> Result<(), String> {
@@ -1103,7 +1217,11 @@ impl AgentSession {
         if self.inner.manual_compaction.load(Ordering::SeqCst) {
             return Err("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.".into());
         }
-        let expanded = self.expand(text);
+        let Some((text, images)) = self.input_handlers(text, images).await else {
+            preflight(PromptDisposition::Handled);
+            return Ok(());
+        };
+        let expanded = self.expand(&text);
         if self.is_streaming() {
             let behavior = behavior.ok_or("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")?;
             self.queue(behavior, expanded, images);
@@ -1131,12 +1249,22 @@ impl AgentSession {
         }
         *lock(&self.inner.run_sections) = sections;
         let active = self.inner.tools.active();
+        let (custom, forced) = if self.has_handlers("before_agent_start") {
+            let prompt = self.system_prompt_text(&active)?;
+            self.before_agent_start_handlers(&expanded, &images, &prompt)
+                .await
+        } else {
+            (Vec::new(), None)
+        };
+        *lock(&self.inner.forced_prompt) = forced;
         let messages = self.messages();
         let mut prompts = Vec::new();
         if let Some(update) = self.system_update(&messages, &active)? {
             prompts.push(update);
         }
         prompts.push(Self::user_message(expanded, images));
+        prompts.append(&mut lock(&self.inner.next_turn));
+        prompts.extend(custom);
         preflight(PromptDisposition::Started);
         self.run(prompts).await;
         Ok(())
@@ -1248,6 +1376,7 @@ impl AgentSession {
             steering_mode: settings.steering_mode,
             follow_up_mode: settings.follow_up_mode,
             cancel: cancel_token,
+            turn_index: std::sync::atomic::AtomicU64::new(0),
         };
         let prompts = match prompts {
             Some(prompts) => Some(prompts),
@@ -1952,7 +2081,136 @@ impl AgentSession {
             ui,
             tools: self.inner.tools.clone(),
             cancel,
+            session: self.downgrade(),
         }
+    }
+
+    /// A handle that does not keep the session alive.
+    pub fn downgrade(&self) -> WeakSession {
+        WeakSession(Arc::downgrade(&self.inner))
+    }
+
+    /// The UI and mode extensions are bound to.
+    pub fn extension_binding(&self) -> (Arc<dyn ExtensionUi>, Mode) {
+        lock(&self.inner.binding).clone()
+    }
+
+    /// The extensions with handlers for pi events of type `kind`.
+    fn handlers_of(&self, kind: &str) -> Vec<&Arc<dyn Extension>> {
+        self.inner
+            .extensions
+            .iter()
+            .filter(|extension| extension.handles(kind))
+            .collect()
+    }
+
+    /// Whether any extension handles pi events of type `kind`.
+    pub fn has_handlers(&self, kind: &str) -> bool {
+        self.inner
+            .extensions
+            .iter()
+            .any(|extension| extension.handles(kind))
+    }
+
+    /// Delivers pi event `event` to every extension that handles it, in
+    /// order, for events whose results pi ignores.
+    pub async fn emit_extension_event(&self, event: &Value, cancel: CancellationToken) {
+        let kind = event["type"].as_str().unwrap_or_default();
+        let handlers = self.handlers_of(kind);
+        if handlers.is_empty() {
+            return;
+        }
+        let ctx = self.extension_context(cancel);
+        for extension in handlers {
+            extension.handle(&ctx, event).await;
+        }
+    }
+
+    /// pi's `input` event: `None` when a handler handled the input,
+    /// otherwise the possibly transformed text and images.
+    async fn input_handlers(
+        &self,
+        text: &str,
+        images: Vec<ImageContent>,
+    ) -> Option<(String, Vec<ImageContent>)> {
+        let handlers = self.handlers_of("input");
+        if handlers.is_empty() {
+            return Some((text.to_owned(), images));
+        }
+        let ctx = self.extension_context(CancellationToken::new());
+        let mut text = text.to_owned();
+        let mut images = images;
+        for extension in handlers {
+            let event = serde_json::json!({
+                "type": "input", "text": text, "images": images, "source": "interactive",
+            });
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            match result["action"].as_str() {
+                Some("handled") => return None,
+                Some("transform") => {
+                    if let Some(next) = result["text"].as_str() {
+                        next.clone_into(&mut text);
+                    }
+                    if let Ok(next) = serde_json::from_value(result["images"].clone()) {
+                        images = next;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Some((text, images))
+    }
+
+    /// pi's `before_agent_start` event for extensions handling it: the
+    /// custom messages to send with the prompt, and the system prompt a
+    /// handler forced, if any.
+    async fn before_agent_start_handlers(
+        &self,
+        prompt: &str,
+        images: &[ImageContent],
+        system_prompt: &str,
+    ) -> (Vec<Message>, Option<String>) {
+        let handlers = self.handlers_of("before_agent_start");
+        let mut messages = Vec::new();
+        let mut forced: Option<String> = None;
+        if handlers.is_empty() {
+            return (messages, forced);
+        }
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in handlers {
+            let event = serde_json::json!({
+                "type": "before_agent_start",
+                "prompt": prompt,
+                "images": images,
+                "systemPrompt": forced.as_deref().unwrap_or(system_prompt),
+                "systemPromptOptions": {},
+            });
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            for message in result["messages"].as_array().into_iter().flatten() {
+                let content = match &message["content"] {
+                    Value::Null => Value::Array(Vec::new()),
+                    other => other.clone(),
+                };
+                messages.push(Message::Custom(ri_types::message::CustomMessage {
+                    custom_type: message["customType"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    content: serde_json::from_value(content).unwrap_or(Content::Blocks(Vec::new())),
+                    display: message["display"].as_bool().unwrap_or(false),
+                    details: (!message["details"].is_null()).then(|| message["details"].clone()),
+                    timestamp: now_ms(),
+                }));
+            }
+            if let Some(prompt) = result["systemPrompt"].as_str() {
+                forced = Some(prompt.to_owned());
+            }
+        }
+        (messages, forced)
     }
 
     /// Gives extensions their UI and mode and starts them: pi's
@@ -1963,10 +2221,16 @@ impl AgentSession {
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;
         }
+        let event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        self.emit_extension_event(&event, CancellationToken::new())
+            .await;
     }
 
     /// Stops extensions before the session ends or is replaced.
     pub async fn shutdown(&self) {
+        let event = serde_json::json!({"type": "session_shutdown"});
+        self.emit_extension_event(&event, CancellationToken::new())
+            .await;
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.session_shutdown(&ctx).await;
@@ -2033,6 +2297,55 @@ struct Hooks {
     steering_mode: Option<QueueMode>,
     follow_up_mode: Option<QueueMode>,
     cancel: CancellationToken,
+    /// pi's turn index for extension events: turns since `agent_start`.
+    turn_index: std::sync::atomic::AtomicU64,
+}
+
+/// The pi extension event type a loop event is delivered as, if any.
+fn extension_event_kind(event: &AgentEvent) -> Option<&'static str> {
+    Some(match event {
+        AgentEvent::AgentStart => "agent_start",
+        AgentEvent::AgentEnd { .. } => "agent_end",
+        AgentEvent::TurnStart => "turn_start",
+        AgentEvent::TurnEnd { .. } => "turn_end",
+        AgentEvent::MessageStart { .. } => "message_start",
+        AgentEvent::MessageUpdate { .. } => "message_update",
+        AgentEvent::MessageEnd { .. } => "message_end",
+        AgentEvent::ToolExecutionStart { .. } => "tool_execution_start",
+        AgentEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
+        AgentEvent::ToolExecutionEnd { .. } => "tool_execution_end",
+        _ => return None,
+    })
+}
+
+/// A loop event as pi's extension event of type `kind`
+/// (`_emitExtensionEvent` in pi's agent session).
+fn extension_event(event: &AgentEvent, kind: &str, turn_index: u64) -> Option<Value> {
+    let value = serde_json::to_value(event).ok()?;
+    let keys: &[&str] = match kind {
+        "agent_end" => &["messages"],
+        "turn_end" => &["message", "toolResults"],
+        "message_start" | "message_end" => &["message"],
+        "message_update" => &["message", "assistantMessageEvent"],
+        "tool_execution_start" => &["toolCallId", "toolName", "args"],
+        "tool_execution_update" => &["toolCallId", "toolName", "args", "partialResult"],
+        "tool_execution_end" => &["toolCallId", "toolName", "result", "isError"],
+        _ => &[],
+    };
+    let mut out = serde_json::Map::new();
+    out.insert("type".into(), Value::String(kind.to_owned()));
+    if matches!(kind, "turn_start" | "turn_end") {
+        out.insert("turnIndex".into(), Value::from(turn_index));
+    }
+    if kind == "turn_start" {
+        out.insert("timestamp".into(), Value::from(now_ms()));
+    }
+    for key in keys {
+        if let Some(field) = value.get(*key) {
+            out.insert((*key).to_owned(), field.clone());
+        }
+    }
+    Some(Value::Object(out))
 }
 
 fn drain(queue: &Mutex<VecDeque<Message>>, mode: Option<QueueMode>) -> Vec<Message> {
@@ -2110,12 +2423,68 @@ impl AgentHooks for Hooks {
                 }
             }
             AgentEvent::TurnEnd { .. } => {
-                let mut recovery = lock(&session.inner.recovery);
-                recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
+                {
+                    let mut recovery = lock(&session.inner.recovery);
+                    recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
+                }
+                session.flush_pending_custom();
             }
             _ => {}
         }
-        Box::pin(async {})
+        let kind = extension_event_kind(event).filter(|kind| session.has_handlers(kind));
+        if matches!(event, AgentEvent::AgentStart) {
+            self.turn_index.store(0, Ordering::SeqCst);
+        }
+        let turn_index = self.turn_index.load(Ordering::SeqCst);
+        if matches!(event, AgentEvent::TurnEnd { .. }) {
+            self.turn_index.fetch_add(1, Ordering::SeqCst);
+        }
+        let Some(extension_event) = kind.and_then(|kind| extension_event(event, kind, turn_index))
+        else {
+            return Box::pin(async {});
+        };
+        Box::pin(async move {
+            session
+                .emit_extension_event(&extension_event, self.cancel.clone())
+                .await;
+        })
+    }
+
+    fn transform_context(&self, messages: Vec<Message>) -> BoxFuture<'_, Vec<Message>> {
+        Box::pin(async move {
+            let mut messages = messages;
+            let session = &self.session;
+            let handlers = session.handlers_of("context");
+            if !handlers.is_empty() {
+                let ctx = session.extension_context(self.cancel.clone());
+                for extension in handlers {
+                    let event = serde_json::json!({"type": "context", "messages": messages});
+                    if let Some(result) = extension.handle(&ctx, &event).await
+                        && let Ok(next) = serde_json::from_value(result["messages"].clone())
+                    {
+                        messages = next;
+                    }
+                }
+            }
+            let forced = lock(&session.inner.forced_prompt).clone();
+            if let Some(forced) = forced {
+                // pi's forced prompt projection: one system message with the
+                // forced text replaces the transcript's system messages.
+                let current = ri_ai::transcript::current_system_message(&messages);
+                let head = Message::System(SystemMessage {
+                    content: Content::Text(forced),
+                    sections: None,
+                    timestamp: current
+                        .as_ref()
+                        .map_or_else(now_ms, |system| system.timestamp),
+                    tools_added: current.and_then(|system| system.tools_added),
+                    tools_removed: None,
+                });
+                messages.retain(|message| !matches!(message, Message::System(_)));
+                messages.insert(0, head);
+            }
+            messages
+        })
     }
 
     fn convert_to_llm(&self, messages: Vec<Message>) -> Vec<Message> {
@@ -2157,7 +2526,63 @@ impl AgentHooks for Hooks {
                     });
                 }
             }
+            let event = serde_json::json!({
+                "type": "tool_call",
+                "toolName": call.tool_call.name,
+                "toolCallId": call.tool_call.id,
+                "input": call.args,
+            });
+            for extension in self.session.handlers_of("tool_call") {
+                if let Some(result) = extension.handle(&ctx, &event).await
+                    && result["block"] == true
+                {
+                    return Some(ri_agent::hooks::Block {
+                        reason: result["reason"].as_str().map(str::to_owned),
+                        terminate: false,
+                    });
+                }
+            }
             None
+        })
+    }
+
+    fn after_tool_call<'a>(
+        &'a self,
+        call: ri_agent::hooks::AfterToolCall<'a>,
+    ) -> BoxFuture<'a, Option<ri_agent::hooks::ResultPatch>> {
+        Box::pin(async move {
+            let handlers = self.session.handlers_of("tool_result");
+            if handlers.is_empty() {
+                return None;
+            }
+            let ctx = self.session.extension_context(self.cancel.clone());
+            let mut event = serde_json::json!({
+                "type": "tool_result",
+                "toolName": call.tool_call.name,
+                "toolCallId": call.tool_call.id,
+                "input": call.args,
+                "content": call.result.content,
+                "details": call.result.details,
+                "isError": call.is_error,
+            });
+            let mut modified = false;
+            for extension in handlers {
+                let Some(result) = extension.handle(&ctx, &event).await else {
+                    continue;
+                };
+                for key in ["content", "details", "isError"] {
+                    if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
+                        event[key] = value.clone();
+                        modified = true;
+                    }
+                }
+            }
+            modified.then(|| ri_agent::hooks::ResultPatch {
+                content: serde_json::from_value(event["content"].clone()).ok(),
+                details: Some(event["details"].clone()).filter(|details| !details.is_null()),
+                is_error: event["isError"].as_bool(),
+                terminate: None,
+            })
         })
     }
 

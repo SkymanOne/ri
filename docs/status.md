@@ -149,19 +149,26 @@ Not yet done:
 
 ## M5: extension host, headless
 
-In progress. The runtime and the registration harness are done.
+In progress. The runtime, the registration harness and session integration are done.
 
 - `ri-js`, a WebAssembly component with QuickJS-NG, Node shims (`fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `Intl`), pi's extension API with pi's loading errors and per-extension event semantics, and the vendored `pi-tui` and `typebox`. `cargo xtask js-runtime` builds it; CI checks the committed artifact against its inputs.
 - `ri-ext`: one actor thread per instance, a compiled-component cache, epoch-based compute limits, a memory limit, restart and replay after a trap, and grants for files, processes, network and environment.
 - The host-side module loader: Node resolution with oxc, TypeScript stripping, ES module and CommonJS interop, jiti's `require`, `__dirname` and `__filename` in ES modules, and a transpile cache.
-- Extension discovery from `.ri/extensions`, the agent directory and configured paths, with `package.json` manifests.
+- Extension discovery from `-e`, a trusted project's `.ri/extensions` and the agent directory's `extensions`, with `package.json` manifests; pi's load errors, hint and exit code; extension flags on the command line, validated as pi does.
+- Sessions: extension tools (with prompt snippets, guidelines, updates and activation rules), commands, and the events `session_start`, `session_shutdown`, `input`, `before_agent_start` (messages and a forced system prompt), `context`, `tool_call` (blocking), `tool_result` (changes), and the agent, turn, message and tool execution events. Actions: `sendMessage` with every delivery mode, `sendUserMessage`, `appendEntry`, session names and labels, the session manager's reads, active tools, thinking level, model selection, models and credentials, `exec`, notifications and the select, confirm and input dialogs. Each new session runs the factories again, as pi does.
+- Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, error lines in the TUI.
+- Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with an example (`guest/examples/hello`). A `.wasm` file loads wherever a pi extension file does, in its own instance.
 
-Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
+Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%. Four scenarios recorded from pi match: an extension tool called by the model with a result handler, a prompt message and a flag (JSON mode); a command that sends a message (RPC mode); load failures; and an unknown flag.
 
 Not yet done:
 
-- Sessions and the CLI: running extension handlers, tools, commands and shortcuts in ri's sessions, `-e` and extension flags.
-- Packages: npm, git and local sources; the Rust SDK and native extensions; `cargo xtask vendor-pi`.
+- `message_end` replacements, `tool_call` handlers that change the call's input, and the `before_provider_request`, `user_bash`, `model_select`, `resources_discover` and `session_before_*` events.
+- Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), `ctx.executeTool`, and completions through pi-ai from extensions.
+- `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
+- Status lines, widgets, custom components and renderers, which are extension UI (M6).
+- Packages: npm, git and local sources, `extensions` in settings; `cargo xtask vendor-pi`.
+- Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
 - The top 50 npm pi packages.
 
 ## M6 and M7

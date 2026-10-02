@@ -231,8 +231,11 @@
 	}
 
 	async function execCommand(command, args, cwd, options = {}) {
-		const result = await ri.op("exec", { command, args: args ?? [], cwd, timeout: options.timeout, env: options.env, input: options.input });
-		return { stdout: result.stdout, stderr: result.stderr, code: result.code, killed: !!result.killed };
+		// As pi's execCommand: a process that cannot start reports code 1.
+		const result = await ri
+			.op("exec", { command, args: args ?? [], cwd, timeout: options.timeout, env: options.env, input: options.input })
+			.catch(() => ({ stdout: "", stderr: "", code: 1, killed: false }));
+		return { stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0, killed: !!result.killed };
 	}
 
 	// ----- descriptions sent to the host -----------------------------------------------
@@ -301,7 +304,13 @@
 		}
 		const factory = module?.default;
 		if (typeof factory !== "function") return { id, path, error: `Extension does not export a valid factory function: ${path}` };
+		return instantiate(id, path, factory);
+	}
+
+	/** Runs `factory` with a fresh API: pi does this for every session. */
+	async function instantiate(id, path, factory) {
 		const extension = {
+			factory,
 			id,
 			path,
 			handlers: new Map(),
@@ -616,6 +625,15 @@
 		bind() {
 			bound = true;
 			return null;
+		},
+		async reload() {
+			bound = false;
+			const results = [];
+			for (const [id, extension] of [...extensions]) {
+				extensions.delete(id);
+				results.push(await instantiate(id, extension.path, extension.factory));
+			}
+			return { extensions: results };
 		},
 		flags(payload) {
 			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);

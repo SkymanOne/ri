@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Failed to load extension \"<cwd>/broken.ts\": Failed to load extension: Cannot find module 'not-installed'\nRequire stack:\n- <cwd>/broken.ts\nError: Failed to load extension \"<cwd>/missing.ts\": Extension path does not exist: <cwd>/missing.ts\nHint: Start without extensions using \"pi -ne\".\n",
+  "requests": []
+}

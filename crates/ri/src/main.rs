@@ -59,6 +59,18 @@ async fn run(parsed: &mut args::Args) -> u8 {
     if let Some(pattern) = &parsed.list_models {
         return list_models::run(pattern.as_deref());
     }
+    let hosts = match startup::load_extensions(parsed).await {
+        Ok(hosts) => hosts,
+        Err(errors) => {
+            for message in &errors.messages {
+                eprintln!("Error: {message}");
+            }
+            if errors.load_failed {
+                eprintln!("{}", startup::EXTENSION_LOAD_FAILURE_HINT);
+            }
+            return 1;
+        }
+    };
     let interactive = parsed.mode.is_none()
         && !parsed.print
         && std::io::stdin().is_terminal()
@@ -86,7 +98,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 }
             }
         }
-        let startup = match startup::start(parsed, None) {
+        let startup = match startup::start(parsed, None, &hosts) {
             Ok(startup) => startup,
             Err(err) => {
                 eprintln!("{err}");
@@ -103,7 +115,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 tui_mode,
                 verbose: parsed.verbose,
                 initial,
-                factory: Box::new(move |session| startup::create(&args, session, false)),
+                factory: Box::new(move |session| startup::create(&args, session, false, &hosts)),
             },
         )
         .await;
@@ -113,7 +125,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
             eprintln!("Error: @file arguments are not supported in RPC mode");
             return 1;
         }
-        let startup = match startup::start(parsed, None) {
+        let startup = match startup::start(parsed, None, &hosts) {
             Ok(startup) => startup,
             Err(err) => {
                 eprintln!("{err}");
@@ -127,12 +139,12 @@ async fn run(parsed: &mut args::Args) -> u8 {
         let args = parsed.clone();
         return modes::rpc::run(
             startup.session,
-            Box::new(move |session| startup::create(&args, session, false)),
+            Box::new(move |session| startup::create(&args, session, false, &hosts)),
         )
         .await;
     }
     let stdin = startup::read_piped_stdin();
-    let startup = match startup::start(parsed, stdin) {
+    let startup = match startup::start(parsed, stdin, &hosts) {
         Ok(startup) => startup,
         Err(err) => {
             eprintln!("{err}");

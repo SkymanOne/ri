@@ -106,6 +106,13 @@ impl ExtensionUi for InteractiveUi {
             .tx
             .send(Event::Notify(self.epoch, message.to_owned(), kind));
     }
+
+    fn extension_error(&self, path: &str, _event: &str, error: &str) {
+        let message = format!("Extension \"{path}\" error: {error}");
+        let _ = self
+            .tx
+            .send(Event::Notify(self.epoch, message, NotifyKind::Error));
+    }
 }
 
 /// A running status shown in the editor's top border.

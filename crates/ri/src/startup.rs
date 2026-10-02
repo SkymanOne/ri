@@ -3,6 +3,7 @@
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use ri_ai::api::Apis;
@@ -15,9 +16,11 @@ use ri_core::session::{self, SessionManager};
 use ri_core::settings::SettingsManager;
 use ri_core::tools::path::{expand, resolve_to_cwd};
 use ri_core::trust::{TrustStore, resolve_trusted};
+use ri_ext::ExtensionHost;
 use ri_types::message::{ImageContent, ThinkingLevel};
+use ri_types::rpc::SourceInfo;
 
-use crate::args::Args;
+use crate::args::{Args, FlagValue};
 
 /// A ready session and what to send to it.
 pub struct Startup {
@@ -289,13 +292,17 @@ pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, 
 pub const NO_MODELS_MESSAGE: &str =
     "No models available. Use /login to log into a provider via OAuth or API key.";
 
-pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> {
+pub fn start(
+    args: &mut Args,
+    stdin: Option<String>,
+    hosts: &[Arc<ExtensionHost>],
+) -> anyhow::Result<Startup> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     let agent_dir = agent_dir();
     let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
     let session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
-    let session = create(args, session, true)?;
+    let session = create(args, session, true, hosts)?;
 
     let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
     let mut parts = Vec::new();
@@ -331,7 +338,12 @@ pub fn start(args: &mut Args, stdin: Option<String>) -> anyhow::Result<Startup> 
 /// settings, model, thinking level, tools and prompt resources follow the
 /// arguments. `warn` reports model problems on stderr, which only the first
 /// session may do.
-pub fn create(args: &Args, session: SessionManager, warn: bool) -> anyhow::Result<AgentSession> {
+pub fn create(
+    args: &Args,
+    session: SessionManager,
+    warn: bool,
+    hosts: &[Arc<ExtensionHost>],
+) -> anyhow::Result<AgentSession> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
     let (settings, trusted) = load_settings(args, &cwd, &agent_dir)?;
@@ -462,7 +474,158 @@ pub fn create(args: &Args, session: SessionManager, warn: bool) -> anyhow::Resul
         model,
         thinking_level,
         tools,
-        extensions: ri_core::extensions::builtins(),
+        // pi runs its built-in extensions after the loaded ones.
+        extensions: hosts
+            .iter()
+            .flat_map(ExtensionHost::for_session)
+            .chain(ri_core::extensions::builtins())
+            .collect(),
+        include_extension_tools: args.tools.is_none() && !args.no_tools,
         resources,
     }))
+}
+
+/// pi's hint after an extension fails to load.
+pub const EXTENSION_LOAD_FAILURE_HINT: &str = "Hint: Start without extensions using \"ri -ne\".";
+
+/// Why the run's extensions cannot start: pi's startup diagnostics.
+pub struct ExtensionErrors {
+    /// Error messages, without the `Error: ` prefix.
+    pub messages: Vec<String>,
+    /// Whether an extension failed to load, which earns pi's hint.
+    pub load_failed: bool,
+}
+
+/// Loads the run's pi extensions: `-e` paths, then, unless `--no-extensions`,
+/// those installed in a trusted project and in the agent directory. Applies
+/// extension flags from the command line, which must name registered flags.
+pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, ExtensionErrors> {
+    use ri_core::extensions::discovery;
+    let fail = |message: String| ExtensionErrors {
+        messages: vec![message],
+        load_failed: false,
+    };
+    let cwd = std::env::current_dir()
+        .map_err(|err| fail(format!("reading the working directory: {err}")))?;
+    let agent_dir = agent_dir();
+    let (_, trusted) =
+        load_settings(args, &cwd, &agent_dir).map_err(|err| fail(err.to_string()))?;
+    let mut messages = Vec::new();
+    let mut missing = Vec::new();
+    let mut requested = Vec::new();
+    for path in &args.extensions {
+        let resolved = resolve_to_cwd(path, &cwd);
+        if resolved.exists() {
+            requested.push(path.clone());
+        } else {
+            missing.push(format!(
+                "Failed to load extension \"{0}\": Extension path does not exist: {0}",
+                resolved.display()
+            ));
+        }
+    }
+    // pi's source info: `cli` for `-e`, `auto` for installed ones.
+    let source = |path: PathBuf, source: &str, scope: &str| SourceInfo {
+        path: path.to_string_lossy().into_owned(),
+        source: source.into(),
+        scope: scope.into(),
+        origin: "top-level".into(),
+        base_dir: None,
+    };
+    let mut sources: Vec<SourceInfo> = discovery::configured(&requested, &cwd)
+        .into_iter()
+        .map(|path| source(path, "cli", "temporary"))
+        .collect();
+    if !args.no_extensions {
+        let project = cwd.join(ri_core::config::PROJECT_DIR);
+        for path in discovery::installed(&cwd, &agent_dir, trusted) {
+            let scope = if path.starts_with(&project) {
+                "project"
+            } else {
+                "user"
+            };
+            sources.push(source(path, "auto", scope));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    sources.retain(|source| seen.insert(source.path.clone()));
+    // pi extensions share one JS runtime; each native extension has its own.
+    let mut hosts = Vec::new();
+    if !sources.is_empty() {
+        let cache = agent_dir.join("cache");
+        let engine =
+            ri_ext::Engine::new(Some(&cache.join("wasm"))).map_err(|err| fail(err.to_string()))?;
+        let mut options = ri_ext::Options::new(cwd.clone());
+        options.agent_dir = agent_dir.clone();
+        options.cache_dir = Some(cache.join("js"));
+        let (native, js): (Vec<SourceInfo>, Vec<SourceInfo>) = sources
+            .into_iter()
+            .partition(|source| source.path.ends_with(".wasm"));
+        if !js.is_empty() {
+            let host = ExtensionHost::load(&engine, options.clone(), &js)
+                .await
+                .map_err(|err| fail(err.to_string()))?;
+            hosts.push(host);
+        }
+        for source in &native {
+            match ExtensionHost::load_native(&engine, options.clone(), source).await {
+                Ok(host) => hosts.push(host),
+                Err(err) => messages.push(format!(
+                    "Failed to load extension \"{}\": {err}",
+                    source.path
+                )),
+            }
+        }
+        for host in &hosts {
+            for error in host.errors() {
+                messages.push(format!(
+                    "Failed to load extension \"{}\": {}",
+                    error.path.display(),
+                    error.error
+                ));
+            }
+        }
+    }
+    messages.append(&mut missing);
+    let load_failed = !messages.is_empty();
+
+    // pi's applyExtensionFlagValues.
+    let flags: Vec<ri_ext::Flag> = hosts.iter().flat_map(|host| host.flags()).collect();
+    let mut values = serde_json::Map::new();
+    let mut unknown = Vec::new();
+    for (name, value) in &args.unknown_flags {
+        let Some(flag) = flags.iter().find(|flag| flag.name == *name) else {
+            unknown.push(format!("--{name}"));
+            continue;
+        };
+        match (flag.takes_value, value) {
+            (false, _) => {
+                values.insert(name.clone(), serde_json::Value::Bool(true));
+            }
+            (true, FlagValue::Value(text)) => {
+                values.insert(name.clone(), serde_json::Value::String(text.clone()));
+            }
+            (true, FlagValue::Present) => {
+                messages.push(format!("Extension flag \"--{name}\" requires a value"));
+            }
+        }
+    }
+    if !unknown.is_empty() {
+        let plural = if unknown.len() == 1 { "" } else { "s" };
+        messages.push(format!("Unknown option{plural}: {}", unknown.join(", ")));
+    }
+    if !messages.is_empty() {
+        return Err(ExtensionErrors {
+            messages,
+            load_failed,
+        });
+    }
+    if !values.is_empty() {
+        for host in &hosts {
+            host.set_flags(values.clone())
+                .await
+                .map_err(|err| fail(err.to_string()))?;
+        }
+    }
+    Ok(hosts)
 }

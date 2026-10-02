@@ -19,6 +19,7 @@ use ri_types::rpc::SourceInfo;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent_session::WeakSession;
 use crate::tools::RegisteredTool;
 use crate::tools::registry::ToolRegistry;
 
@@ -86,6 +87,13 @@ pub trait ExtensionUi: Send + Sync {
     /// Asks a yes or no question; `false` when cancelled.
     fn confirm(&self, _title: &str, _message: &str) -> BoxFuture<'static, bool> {
         Box::pin(async { false })
+    }
+
+    /// A handler of extension `path` failed on `event`; print mode's report
+    /// by default.
+    fn extension_error(&self, path: &str, _event: &str, error: &str) {
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), "Extension error ({path}): {error}");
     }
 }
 
@@ -187,6 +195,8 @@ pub struct Context {
     pub tools: Tools,
     /// Cancelled when the current run is aborted.
     pub cancel: CancellationToken,
+    /// The session, for extensions that act on it later.
+    pub session: WeakSession,
 }
 
 /// A slash command an extension registered.
@@ -256,6 +266,18 @@ pub trait Extension: Send + Sync {
         _sections: &'a mut IndexMap<String, String>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async {})
+    }
+
+    /// Whether it handles pi events of type `kind` through [`Extension::handle`].
+    fn handles(&self, _kind: &str) -> bool {
+        false
+    }
+
+    /// Runs its handlers for pi event `event`, a JSON object with a `type`,
+    /// and returns their combined result as pi's runner combines one
+    /// extension's handlers. The session combines results across extensions.
+    fn handle<'a>(&'a self, _ctx: &'a Context, _event: &'a Value) -> BoxFuture<'a, Option<Value>> {
+        Box::pin(async { None })
     }
 
     /// A tool is about to run; `Some(reason)` blocks it.

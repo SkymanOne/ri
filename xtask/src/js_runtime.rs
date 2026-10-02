@@ -9,9 +9,19 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, bail};
 use sha2::{Digest as _, Sha256};
 
-/// Files and directories the component is built from.
-const INPUTS: [&str; 4] = ["guest/Cargo.toml", "guest/Cargo.lock", "guest/ri-js", "wit"];
+/// Files and directories the components are built from.
+const INPUTS: [&str; 6] = [
+    "guest/Cargo.toml",
+    "guest/Cargo.lock",
+    "guest/ri-js",
+    "guest/ri-extension-api",
+    "guest/examples",
+    "wit",
+];
+/// The JS runtime ri embeds.
 const ARTIFACT: &str = "crates/ri-ext/ri-js.wasm";
+/// The Rust SDK's example extension, a test fixture.
+const EXAMPLE: &str = "crates/ri-ext/tests/fixtures/hello.wasm";
 const RECORD: &str = "crates/ri-ext/ri-js.wasm.inputs";
 const TARGET: &str = "wasm32-wasip2";
 
@@ -35,14 +45,14 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let inputs = inputs_hash()?;
     if args.check {
         let record = fs::read_to_string(RECORD).with_context(|| format!("reading {RECORD}"))?;
-        let artifact = file_hash(Path::new(ARTIFACT))?;
-        if record != format_record(&inputs, &artifact) {
+        let artifacts = artifacts_hash()?;
+        if record != format_record(&inputs, &artifacts) {
             eprintln!(
-                "{ARTIFACT} is stale or was changed by hand: run `cargo xtask js-runtime` and commit the result"
+                "{ARTIFACT} or {EXAMPLE} is stale or was changed by hand: run `cargo xtask js-runtime` and commit the result"
             );
             return Ok(ExitCode::FAILURE);
         }
-        eprintln!("{ARTIFACT} matches its inputs");
+        eprintln!("{ARTIFACT} and {EXAMPLE} match their inputs");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -56,7 +66,17 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         Path::new("target/guest").canonicalize()
     })?;
     let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .args(["build", "--release", "--locked", "--target", TARGET])
+        .args([
+            "build",
+            "--release",
+            "--locked",
+            "--target",
+            TARGET,
+            "-p",
+            "ri-js",
+            "-p",
+            "hello",
+        ])
         .current_dir("guest")
         .env("CARGO_TARGET_DIR", &target_dir)
         .env("WASI_SDK_PATH", &sdk)
@@ -72,17 +92,30 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         bail!("building the guest failed");
     }
     fs::copy(target_dir.join(TARGET).join("release/ri_js.wasm"), ARTIFACT)?;
-    let artifact = file_hash(Path::new(ARTIFACT))?;
-    fs::write(RECORD, format_record(&inputs, &artifact))?;
+    if let Some(dir) = Path::new(EXAMPLE).parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::copy(target_dir.join(TARGET).join("release/hello.wasm"), EXAMPLE)?;
+    fs::write(RECORD, format_record(&inputs, &artifacts_hash()?))?;
     eprintln!(
-        "wrote {ARTIFACT} ({} bytes) and {RECORD}",
-        fs::metadata(ARTIFACT)?.len()
+        "wrote {ARTIFACT} ({} bytes), {EXAMPLE} ({} bytes) and {RECORD}",
+        fs::metadata(ARTIFACT)?.len(),
+        fs::metadata(EXAMPLE)?.len()
     );
     Ok(ExitCode::SUCCESS)
 }
 
-fn format_record(inputs: &str, artifact: &str) -> String {
-    format!("inputs {inputs}\nartifact {artifact}\n")
+fn format_record(inputs: &str, artifacts: &str) -> String {
+    format!("inputs {inputs}\nartifacts {artifacts}\n")
+}
+
+/// Both built components, hashed in order.
+fn artifacts_hash() -> anyhow::Result<String> {
+    Ok(format!(
+        "{} {}",
+        file_hash(Path::new(ARTIFACT))?,
+        file_hash(Path::new(EXAMPLE))?
+    ))
 }
 
 fn hex(digest: &[u8]) -> String {

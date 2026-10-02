@@ -517,7 +517,8 @@ impl Normalizer<'_> {
             .replace(&self.run.cwd.to_string_lossy().into_owned(), "<cwd>")
             .replace(&self.run.url, "<mock>")
             .replace(&encoded_dir(&self.run.cwd), "<cwd-dir>")
-            .replace("operating inside ri,", "operating inside pi,");
+            .replace("operating inside ri,", "operating inside pi,")
+            .replace("extensions using \"ri -ne\"", "extensions using \"pi -ne\"");
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }
