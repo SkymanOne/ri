@@ -30,6 +30,9 @@ pub struct Scenario {
     /// Text on stdin; stdin is empty otherwise.
     #[serde(default)]
     pub stdin: Option<String>,
+    /// Files to create in the agent directory, such as `settings.json`.
+    #[serde(default, rename = "agentFiles")]
+    pub agent_files: IndexMap<String, String>,
 }
 
 /// Which program runs a scenario.
@@ -97,8 +100,17 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     };
     std::fs::create_dir_all(&cwd).map_err(io(&cwd))?;
     std::fs::create_dir_all(&agent_dir).map_err(io(&agent_dir))?;
-    for (relative, content) in &scenario.files {
-        let path = cwd.join(relative);
+    let files = scenario
+        .files
+        .iter()
+        .map(|(relative, content)| (cwd.join(relative), content))
+        .chain(
+            scenario
+                .agent_files
+                .iter()
+                .map(|(relative, content)| (agent_dir.join(relative), content)),
+        );
+    for (path, content) in files {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io(parent))?;
         }
@@ -182,7 +194,15 @@ fn normalize_value(value: &Value, run: &Run) -> Value {
             for (key, item) in object {
                 let normalized = match (key.as_str(), item) {
                     (
-                        "timestamp" | "id" | "responseId" | "toolCallId",
+                        "timestamp"
+                        | "id"
+                        | "parentId"
+                        | "targetId"
+                        | "firstKeptEntryId"
+                        | "responseId"
+                        | "toolCallId"
+                        | "prompt_cache_key"
+                        | "estimatedTokensAfter",
                         Value::String(_) | Value::Number(_),
                     ) => Value::from(format!("<{key}>")),
                     ("sections", Value::Object(sections)) => {
@@ -216,6 +236,8 @@ fn normalize_value(value: &Value, run: &Run) -> Value {
 ///
 /// pi serializes live objects, so `message_update.usage` and the partial in an
 /// assistant `message_start` depend on network timing; both are dropped.
+/// `estimatedTokensAfter` estimates the whole prompt, which includes pi's
+/// `docs` section, so it is masked too.
 pub fn normalize(run: &Run) -> Value {
     let lines: Vec<Value> = run
         .stdout

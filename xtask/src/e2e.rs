@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Context;
+use std::path::Path;
+
 use ri_mock::scenario::{Program, first_difference, fixtures_dir, load_scenarios, normalize, run};
 
 /// Run `tests/fixtures/scenarios` against ri, pi, or both.
@@ -78,7 +80,16 @@ async fn e2e(args: Args) -> anyhow::Result<ExitCode> {
             None => eprintln!("ok      {}", scenario.name),
             Some(diff) => {
                 failures += 1;
-                eprintln!("DIFFER  {}: {diff}", scenario.name);
+                let dir = Path::new("target/e2e");
+                std::fs::create_dir_all(dir)?;
+                let actual_path = dir.join(format!("{}.actual.json", scenario.name));
+                let text = ri_types::json::to_string_pretty(&actual, "  ")? + "\n";
+                std::fs::write(&actual_path, text)?;
+                eprintln!(
+                    "DIFFER  {}: {diff} (ri output in {})",
+                    scenario.name,
+                    actual_path.display()
+                );
             }
         }
     }

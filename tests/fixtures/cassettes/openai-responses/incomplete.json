@@ -1,0 +1,27 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_incomplete\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":0}\n\n",
+          "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_mock_incomplete\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":1}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"msg_mock_3\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"},\"sequence_number\":2}\n\n",
+          "event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"item_id\":\"msg_mock_3\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":3}\n\n",
+          "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_mock_3\",\"output_index\":0,\"content_index\":0,\"delta\":\"Once upon a\",\"logprobs\":[],\"sequence_number\":4}\n\n",
+          "event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"item_id\":\"msg_mock_3\",\"output_index\":0,\"content_index\":0,\"text\":\"Once upon a\",\"logprobs\":[],\"sequence_number\":5}\n\n",
+          "event: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"item_id\":\"msg_mock_3\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Once upon a\"},\"sequence_number\":6}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"msg_mock_3\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Once upon a\"}],\"role\":\"assistant\"},\"sequence_number\":7}\n\n",
+          "event: response.incomplete\ndata: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_mock_incomplete\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"incomplete\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[{\"id\":\"msg_mock_3\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Once upon a\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":1200,\"input_tokens_details\":{\"cached_tokens\":1024},\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":16},\"total_tokens\":1240},\"service_tier\":\"default\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}},\"sequence_number\":8}\n\n"
+        ]
+      }
+    }
+  ]
+}

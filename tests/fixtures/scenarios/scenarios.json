@@ -35,5 +35,38 @@
     "cassette": "openai-completions/text.json",
     "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b:high", "and the question"],
     "stdin": "Context from a pipe.\n"
+  },
+  {
+    "name": "openai-responses-text-json",
+    "cassette": "openai-responses/text.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai/gpt-5.1", "Say hello"]
+  },
+  {
+    "name": "openai-responses-tool-call-json",
+    "cassette": "openai-responses/tool-call.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai/gpt-5.1", "Read hello.txt"],
+    "files": {"hello.txt": "hi\n"}
+  },
+  {
+    "name": "openai-responses-incomplete-json",
+    "cassette": "openai-responses/incomplete.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai/gpt-5.1:off", "Tell a story"]
+  },
+  {
+    "name": "openai-responses-failed-json",
+    "cassette": "openai-responses/failed.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai/gpt-5.1", "hi"],
+    "agentFiles": {"settings.json": "{\"retry\": {\"baseDelayMs\": 5}}"}
+  },
+  {
+    "name": "openai-responses-error-print",
+    "cassette": "openai-responses/error.json",
+    "args": ["-p", "--no-session", "--model", "openai/gpt-5.1", "hi"]
+  },
+  {
+    "name": "openai-responses-compaction-json",
+    "cassette": "openai-responses/compaction.json",
+    "args": ["--mode", "json", "--no-session", "--model", "openai/gpt-5.1:off", "Say hello"],
+    "agentFiles": {"settings.json": "{\"compaction\": {\"reserveTokens\": 399990, \"keepRecentTokens\": 1}}"}
   }
 ]
