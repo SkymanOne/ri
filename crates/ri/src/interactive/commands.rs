@@ -511,8 +511,6 @@ const UNAVAILABLE: &[&str] = &[
     "/share",
     "/bug",
     "/trust",
-    "/login",
-    "/logout",
     "/arminsayshi",
     "/dementedelves",
 ];
@@ -524,7 +522,7 @@ impl super::App {
         let with_args = |name: &str| text == name || text.starts_with(&format!("{name} "));
         let argument = |name: &str| text.get(name.len()..).unwrap_or_default().trim().to_owned();
         if let Some(name) = UNAVAILABLE.iter().find(|name| {
-            if matches!(**name, "/bug" | "/login") {
+            if matches!(**name, "/bug") {
                 with_args(name)
             } else {
                 text == **name
@@ -532,6 +530,16 @@ impl super::App {
         }) {
             self.editor.set_text("");
             self.error(format!("{name} is not available in ri yet"));
+            return true;
+        }
+        if with_args("/login") {
+            self.editor.set_text("");
+            self.login_command(&argument("/login"));
+            return true;
+        }
+        if text == "/logout" {
+            self.editor.set_text("");
+            self.logout_command();
             return true;
         }
         if with_args("/model") {
@@ -678,7 +686,10 @@ impl super::App {
                 let model = (*model).clone();
                 let id = model.id.clone();
                 match self.session.set_model(model) {
-                    Ok(()) => self.status(format!("Model: {id}")),
+                    Ok(()) => {
+                        self.status(format!("Model: {id}"));
+                        self.warn_anthropic_subscription(None);
+                    }
                     Err(error) => self.error(error),
                 }
             }

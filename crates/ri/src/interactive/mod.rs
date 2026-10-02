@@ -11,6 +11,7 @@ mod commands;
 mod footer;
 mod header;
 pub mod keybindings;
+mod login;
 pub mod picker;
 mod selectors;
 mod session_selector;
@@ -78,6 +79,14 @@ enum Event {
     TreeDone(u64, String, Box<Result<TreeOutcome, String>>),
     Fd(Option<PathBuf>),
     Notify(u64, String, NotifyKind),
+    /// A request from the sign-in with this id.
+    Auth(u64, ri_ai::auth::AuthRequest),
+    /// The sign-in with this id finished.
+    LoginDone(u64, Result<(), ri_ai::auth::AuthError>),
+    LogoutDone(
+        Box<login::ProviderOption>,
+        Result<(), ri_ai::auth::AuthError>,
+    ),
 }
 
 /// Extension notifications as status, warning and error lines. Dialogs
@@ -122,6 +131,17 @@ enum Dialog {
     ResumeMissingCwd(PathBuf),
     /// Import a session file.
     Import(String),
+    /// The `/login` method menu, for all providers or these, offering these kinds.
+    LoginMenu(
+        Option<Vec<login::ProviderOption>>,
+        Vec<ri_ai::registry::LoginKind>,
+    ),
+    /// The `/login` provider selector, of one kind or all, with its search.
+    LoginProviders(Option<ri_ai::registry::LoginKind>, String),
+    /// The `/logout` provider selector.
+    Logout,
+    /// A select prompt of the running sign-in.
+    LoginSelect,
 }
 
 use crate::runtime::{SessionFactory, user_text};
@@ -239,6 +259,9 @@ struct App {
     color_mode: ColorMode,
     kitty: bool,
     tx: UnboundedSender<Event>,
+    login: Option<login::LoginRun>,
+    next_login: u64,
+    anthropic_warning_shown: bool,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -1516,6 +1539,7 @@ impl App {
         } else {
             self.status(format!("Switched to {name}"));
         }
+        self.warn_anthropic_subscription(Some(&model));
     }
 
     /// Fullscreen scrolling; returns whether the key was consumed.
@@ -1576,6 +1600,9 @@ impl App {
             Some(Dialog::TreeInstructions(id)) => self.ask_tree_summary(id),
             Some(Dialog::ResumeMissingCwd(_)) => self.status("Resume cancelled"),
             Some(Dialog::Import(_)) => self.status("Import cancelled"),
+            Some(Dialog::LoginMenu(..) | Dialog::Logout) => {}
+            Some(Dialog::LoginProviders(kind, _)) => self.providers_cancelled(kind),
+            Some(Dialog::LoginSelect) => self.login_select_done(None),
             None => {}
         }
     }
@@ -1601,6 +1628,7 @@ impl App {
                 } else {
                     self.status(format!("Model: {id}"));
                 }
+                self.warn_anthropic_subscription(None);
             }
             Action::Thinking { level, default } => {
                 self.session.set_thinking_level(level);
@@ -1630,6 +1658,8 @@ impl App {
                 },
             },
             Action::ToggleTools => self.toggle_tools(),
+            Action::Provider(option) => self.provider_chosen(*option),
+            Action::LoginCancelled => self.login_cancelled(),
             Action::Choice(index) => self.on_choice(index),
             Action::Text(text) => self.on_text(text),
         }
@@ -1655,6 +1685,12 @@ impl App {
                     self.status("Import cancelled");
                 }
             }
+            Some(Dialog::LoginMenu(options, kinds)) => {
+                if let Some(kind) = kinds.get(index) {
+                    self.login_menu_chosen(options, *kind);
+                }
+            }
+            Some(Dialog::LoginSelect) => self.login_select_done(Some(index)),
             Some(Dialog::ResumeMissingCwd(path)) => {
                 if index == 0 {
                     let cwd = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
@@ -2312,6 +2348,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         factory: options.factory,
         agent_dir: agent_dir.clone(),
         epoch: 0,
+        login: None,
+        next_login: 0,
+        anthropic_warning_shown: false,
     };
     app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -2336,6 +2375,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     for key in early {
         app.handle_key(&key, &mut terminal);
     }
+    app.warn_anthropic_subscription(None);
     let mut initial = options.initial.into_iter();
     if let Some(first) = initial.next() {
         app.start_prompt(first);
@@ -2546,6 +2586,9 @@ impl App {
                 self.fd = path;
                 self.install_autocomplete();
             }
+            Event::Auth(id, request) => self.on_auth_request(id, request),
+            Event::LoginDone(id, result) => self.on_login_done(id, result),
+            Event::LogoutDone(option, result) => self.on_logout_done(&option, result),
             Event::Notify(epoch, message, kind) if epoch == self.epoch => match kind {
                 NotifyKind::Error => self.error(message),
                 NotifyKind::Warning => self.warning(message),

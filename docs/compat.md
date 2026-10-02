@@ -25,3 +25,5 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | Debug log, external editor | `pi-debug.log`; "Pi will resume when the editor exits." | `ri-debug.log`; "ri will resume when the editor exits." | Product name. |
 | RPC parse errors | `Failed to parse command:` followed by V8's `JSON.parse` message | The same prefix followed by serde_json's message | Parser messages are implementation details. |
 | MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` temp files | `ri` and ri's version; `ri-mcp-*` temp files | Product name. |
+| Sign in with ChatGPT | `agent_name_hint` `Pi` | `ri` | Product name shown on OpenAI's consent page. |
+| `/login` providers | pi's built-in `llama.cpp` extension adds a provider; Radius offers a sign-in | Neither | Not yet ported; the Radius gateway also needs pi's `pi-messages` wire API. |

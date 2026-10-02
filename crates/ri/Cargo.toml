@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 futures-util.workspace = true
+getrandom.workspace = true
 indexmap.workspace = true
 regex-lite.workspace = true
 ratatui-core.workspace = true

@@ -48,6 +48,10 @@ pub enum Action {
     Copy(Option<String>),
     /// Toggle tool output expansion.
     ToggleTools,
+    /// A provider chosen for `/login` or `/logout`.
+    Provider(Box<super::login::ProviderOption>),
+    /// The login dialog was closed with escape.
+    LoginCancelled,
 }
 
 /// The result of a key.
@@ -125,6 +129,10 @@ pub enum Selector {
     Session(Box<SessionSelector>),
     /// `/tree`.
     Tree(Box<TreeSelector>),
+    /// `/login` and `/logout` providers.
+    Providers(Box<super::login::ProviderSelector>),
+    /// A sign-in in progress.
+    Login(Box<super::login::LoginDialog>),
 }
 
 impl Selector {
@@ -142,6 +150,8 @@ impl Selector {
             Selector::Text(dialog) => dialog.render(width, ui),
             Selector::Session(selector) => selector.render(width, ui),
             Selector::Tree(selector) => selector.render(width, ui),
+            Selector::Providers(selector) => selector.render(width, ui),
+            Selector::Login(dialog) => dialog.render(width, ui),
         }
     }
 
@@ -155,6 +165,8 @@ impl Selector {
             Selector::Text(dialog) => dialog.handle_input(data, ui),
             Selector::Session(selector) => selector.handle_input(data, ui),
             Selector::Tree(selector) => selector.handle_input(data, ui),
+            Selector::Providers(selector) => selector.handle_input(data, ui),
+            Selector::Login(dialog) => dialog.handle_input(data, ui),
         }
     }
 

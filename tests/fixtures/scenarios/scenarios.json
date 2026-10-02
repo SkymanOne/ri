@@ -517,5 +517,34 @@
       {"send": {"id": "missing", "type": "prompt", "message": "/mcp reconnect nope"}},
       {"send": {"id": "login", "type": "prompt", "message": "/mcp login"}}
     ]
+  },
+  {
+    "name": "tui-login-menu",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/login anthropic\r"]}
+  },
+  {
+    "name": "tui-login-api-key-providers",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/login\r", "\u001b[B", "\r", "open"]}
+  },
+  {
+    "name": "tui-login-api-key",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/login openai\r", "\u001b[B", "\r", "sk-test-key", "\r"]}
+  },
+  {
+    "name": "tui-logout",
+    "cassette": "anthropic-messages/tool-call.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
+    "agentFiles": {"auth.json": "{\n  \"openai\": {\n    \"type\": \"api_key\",\n    \"key\": \"sk-old\"\n  }\n}"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["/logout\r", "\r"]}
   }
 ]

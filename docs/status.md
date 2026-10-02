@@ -79,7 +79,7 @@ Budgets, from `cargo xtask bench` on this machine (release build, 100×40 termin
 
 Not yet done:
 
-- `/settings`, `/scoped-models`, `/trust`; `/login` and `/logout` arrive with OAuth (M4).
+- `/settings`, `/scoped-models`, `/trust`.
 - HTML export; changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.
@@ -114,11 +114,26 @@ Exit criterion. MCP scenarios recorded from pi match: direct tools with text, st
 Not yet done:
 
 - `codemode` exposure, pi's default, needs the codemode tool (M7). Until then such servers warn that their tools are unreachable unless `tool_search` is active.
-- OAuth sign-in for HTTP servers and `auth.provider` tokens (with OAuth, below).
+- OAuth sign-in for HTTP servers and `auth.provider` tokens.
 - The `/mcp` manager in the TUI, which needs extension UI (M6); `/mcp` shows the status instead.
 - Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
 - pi's built-in `llama` extension.
-- OAuth subscriptions, and the openai-codex-responses, azure-openai-responses and mistral wire APIs.
+
+OAuth is done for the slice below.
+
+- Sign-in flows ported from pi-ai: Anthropic (Claude Pro/Max; browser callback or copied code), OpenAI Codex (browser callback or device code), Sign in with ChatGPT for `openai` (per-sign-in client registration, the installation's `deviceId`), and GitHub Copilot (device flow, enterprise domains, the account's endpoint from `proxy-ep`, model policies and the account's model list).
+- `auth.json` as pi's credential store: reads follow the file's revision, changes take a `proper-lockfile`-compatible lock and rewrite the document as pi does. Tokens expiring within five minutes refresh under the lock after a second check, so concurrent ri and pi processes refresh once.
+- `/login` and `/logout` in the TUI: pi's method menu, provider selector with configuration status, login dialog, API key login, default model selection after a first login, and the Anthropic subscription notice.
+- GitHub Copilot's per-request headers on all three of its wire APIs.
+
+Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Four `/login` and `/logout` screens recorded from pi match.
+
+Not yet done:
+
+- Sign-in for Kimi, Meta, xAI, OpenRouter and Radius. Their stored tokens are used as they are, without refresh, so a token copied from pi works until it expires.
+- API key login for Bedrock, Vertex and Cloudflare, whose pi logins ask for more than a key; ri shows pi's "configured outside" notice.
+- RPC mode has no login commands, as in pi.
+- The openai-codex-responses, azure-openai-responses and mistral wire APIs.
 
 ## M5 to M7
 
@@ -129,4 +144,4 @@ Not started.
 These need the user's credentials and run outside CI:
 
 - OpenCode Go recording (Anthropic, Completions and Responses routes), once `opencode.ai` is reachable.
-- OAuth sign-in with real subscription accounts (M4).
+- OAuth sign-in with real subscription accounts: Anthropic, ChatGPT (Codex and `openai`), GitHub Copilot.
