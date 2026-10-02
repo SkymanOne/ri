@@ -61,8 +61,55 @@ pub enum AssistantMessageEvent {
     },
     ToolcallEnd {
         content_index: usize,
+        /// The finished call, as its content block (with `type: "toolCall"`).
+        #[serde(with = "tool_call_block")]
         tool_call: ToolCall,
     },
+}
+
+/// Serializes tool results as tagged messages.
+mod tool_result_messages {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::message::{Message, ToolResultMessage};
+
+    pub fn serialize<S: Serializer>(
+        results: &[ToolResultMessage],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let messages: Vec<Message> = results.iter().cloned().map(Message::ToolResult).collect();
+        messages.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<ToolResultMessage>, D::Error> {
+        Vec::<Message>::deserialize(deserializer)?
+            .into_iter()
+            .map(|message| match message {
+                Message::ToolResult(result) => Ok(result),
+                _ => Err(serde::de::Error::custom("expected a toolResult message")),
+            })
+            .collect()
+    }
+}
+
+/// Serializes a tool call as its tagged content block.
+mod tool_call_block {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use crate::message::{ContentBlock, ToolCall};
+
+    pub fn serialize<S: Serializer>(call: &ToolCall, serializer: S) -> Result<S::Ok, S::Error> {
+        ContentBlock::ToolCall(call.clone()).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<ToolCall, D::Error> {
+        match ContentBlock::deserialize(deserializer)? {
+            ContentBlock::ToolCall(call) => Ok(call),
+            _ => Err(serde::de::Error::custom("expected a toolCall block")),
+        }
+    }
 }
 
 /// What a tool returns: content for the model, details for the UI and session.
@@ -131,6 +178,8 @@ pub enum AgentEvent {
     TurnStart,
     TurnEnd {
         message: Message,
+        /// Tool results, as messages (with `role: "toolResult"`).
+        #[serde(with = "tool_result_messages")]
         tool_results: Vec<ToolResultMessage>,
     },
     MessageStart {

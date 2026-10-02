@@ -1,6 +1,7 @@
 //! Wire API implementations, one per API id, and dispatch by model.
 
 pub mod anthropic;
+pub mod openai_completions;
 
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use crate::stream::{EventStream, Provider, Request, new_output, now_ms, send_err
 pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
     match api {
         "anthropic-messages" => Some(Arc::new(anthropic::AnthropicMessages)),
+        "openai-completions" => Some(Arc::new(openai_completions::OpenAiCompletions)),
         _ => None,
     }
 }
