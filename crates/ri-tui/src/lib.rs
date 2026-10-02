@@ -1,6 +1,7 @@
 #![doc = env!("CARGO_PKG_DESCRIPTION")]
 #![forbid(unsafe_code)]
 
+pub mod ansi;
 pub mod autocomplete;
 pub mod color;
 pub mod editor;
@@ -8,6 +9,8 @@ pub mod fuzzy;
 pub mod input;
 pub mod keybindings;
 pub mod keys;
+pub mod lines;
+pub mod markdown;
 pub mod segment;
 pub mod select_list;
 pub mod text;

@@ -1,0 +1,2157 @@
+{
+	"wrap": [
+		{
+			"text": "hello world foo bar",
+			"width": 7,
+			"lines": [
+				"hello",
+				"world",
+				"foo bar"
+			]
+		},
+		{
+			"text": "hello world",
+			"width": 11,
+			"lines": [
+				"hello world"
+			]
+		},
+		{
+			"text": "abcdefghijklmnop",
+			"width": 5,
+			"lines": [
+				"abcde",
+				"fghij",
+				"klmno",
+				"p"
+			]
+		},
+		{
+			"text": "a  b   c",
+			"width": 3,
+			"lines": [
+				"a",
+				"b",
+				"c"
+			]
+		},
+		{
+			"text": "  leading spaces here",
+			"width": 8,
+			"lines": [
+				"",
+				"leading",
+				"spaces",
+				"here"
+			]
+		},
+		{
+			"text": "trailing spaces    ",
+			"width": 9,
+			"lines": [
+				"trailing",
+				"spaces"
+			]
+		},
+		{
+			"text": "日本語のテキストです",
+			"width": 7,
+			"lines": [
+				"日本語",
+				"のテキ",
+				"ストで",
+				"す"
+			]
+		},
+		{
+			"text": "mixed 日本語 text",
+			"width": 6,
+			"lines": [
+				"mixed",
+				"日本語",
+				"text"
+			]
+		},
+		{
+			"text": "one\ntwo three\n\nfour",
+			"width": 5,
+			"lines": [
+				"one",
+				"two",
+				"three",
+				"",
+				"four"
+			]
+		},
+		{
+			"text": "",
+			"width": 5,
+			"lines": [
+				""
+			]
+		},
+		{
+			"text": "x",
+			"width": 1,
+			"lines": [
+				"x"
+			]
+		},
+		{
+			"text": "word-with-hyphens and/slashes",
+			"width": 10,
+			"lines": [
+				"word-with-",
+				"hyphens",
+				"and/slashe",
+				"s"
+			]
+		},
+		{
+			"text": "tab\there",
+			"width": 6,
+			"lines": [
+				"tab",
+				"here"
+			]
+		},
+		{
+			"text": "a b",
+			"width": 1,
+			"lines": [
+				"a",
+				"b"
+			]
+		},
+		{
+			"text": "emoji 😀 test",
+			"width": 7,
+			"lines": [
+				"emoji",
+				"😀 test"
+			]
+		}
+	],
+	"truncate": [
+		{
+			"text": "hello world",
+			"width": 8,
+			"ellipsis": "...",
+			"line": "hello\u001b[0m...\u001b[0m"
+		},
+		{
+			"text": "hello",
+			"width": 8,
+			"ellipsis": "...",
+			"line": "hello"
+		},
+		{
+			"text": "hello",
+			"width": 2,
+			"ellipsis": "...",
+			"line": "\u001b[0m..\u001b[0m"
+		},
+		{
+			"text": "日本語テキスト",
+			"width": 7,
+			"ellipsis": "...",
+			"line": "日本\u001b[0m...\u001b[0m"
+		},
+		{
+			"text": "abcdef",
+			"width": 4,
+			"ellipsis": "",
+			"line": "abcd\u001b[0m"
+		},
+		{
+			"text": "abc",
+			"width": 0,
+			"ellipsis": "...",
+			"line": ""
+		},
+		{
+			"text": "hello world",
+			"width": 8,
+			"ellipsis": "…",
+			"line": "hello w\u001b[0m…\u001b[0m"
+		}
+	],
+	"markdown": [
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"First paragraph with bold, italic and   ",
+				"code.                                   ",
+				"                                        ",
+				"Second paragraph                        ",
+				"with a soft break.                      "
+			]
+		},
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"First paragraph with bold, italic and   ",
+				"code.                                   ",
+				"                                        ",
+				"Second paragraph                        ",
+				"with a soft break.                      "
+			]
+		},
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" First paragraph with   ",
+				" bold, italic and code. ",
+				"                        ",
+				" Second paragraph       ",
+				" with a soft break.     "
+			]
+		},
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" First paragraph with   ",
+				" bold, italic and code. ",
+				"                        ",
+				" Second paragraph       ",
+				" with a soft break.     "
+			]
+		},
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" First paragraph with bold, italic and code.                                    ",
+				"                                                                                ",
+				" Second paragraph                                                               ",
+				" with a soft break.                                                             ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "paragraphs",
+			"text": "First paragraph with **bold**, *italic* and `code`.\n\nSecond paragraph\nwith a soft break.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" First paragraph with bold, italic and code.                                    ",
+				"                                                                                ",
+				" Second paragraph                                                               ",
+				" with a soft break.                                                             ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"Title                                   ",
+				"                                        ",
+				"Intro text.                             ",
+				"                                        ",
+				"Section                                 ",
+				"                                        ",
+				"### Sub section                         ",
+				"                                        ",
+				"#### Deep                               ",
+				"                                        ",
+				"text                                    "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"Title                                   ",
+				"                                        ",
+				"Intro text.                             ",
+				"                                        ",
+				"Section                                 ",
+				"                                        ",
+				"### Sub section                         ",
+				"                                        ",
+				"#### Deep                               ",
+				"                                        ",
+				"text                                    "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" Title                  ",
+				"                        ",
+				" Intro text.            ",
+				"                        ",
+				" Section                ",
+				"                        ",
+				" ### Sub section        ",
+				"                        ",
+				" #### Deep              ",
+				"                        ",
+				" text                   "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" Title                  ",
+				"                        ",
+				" Intro text.            ",
+				"                        ",
+				" Section                ",
+				"                        ",
+				" ### Sub section        ",
+				"                        ",
+				" #### Deep              ",
+				"                        ",
+				" text                   "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" Title                                                                          ",
+				"                                                                                ",
+				" Intro text.                                                                    ",
+				"                                                                                ",
+				" Section                                                                        ",
+				"                                                                                ",
+				" ### Sub section                                                                ",
+				"                                                                                ",
+				" #### Deep                                                                      ",
+				"                                                                                ",
+				" text                                                                           ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "headings",
+			"text": "# Title\nIntro text.\n\n## Section\n\n### Sub section\n#### Deep\ntext",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" Title                                                                          ",
+				"                                                                                ",
+				" Intro text.                                                                    ",
+				"                                                                                ",
+				" Section                                                                        ",
+				"                                                                                ",
+				" ### Sub section                                                                ",
+				"                                                                                ",
+				" #### Deep                                                                      ",
+				"                                                                                ",
+				" text                                                                           ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"- one                                   ",
+				"- two                                   ",
+				"    - nested a                          ",
+				"    - nested b                          ",
+				"- three                                 ",
+				"                                        ",
+				"1. first                                ",
+				"                                        ",
+				"2. second                               ",
+				"                                        ",
+				"3. five                                 ",
+				"                                        ",
+				"4. six                                  "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"- one                                   ",
+				"- two                                   ",
+				"    - nested a                          ",
+				"    - nested b                          ",
+				"- three                                 ",
+				"                                        ",
+				"1. first                                ",
+				"                                        ",
+				"2. second                               ",
+				"                                        ",
+				"5. five                                 ",
+				"                                        ",
+				"6. six                                  "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" - one                  ",
+				" - two                  ",
+				"     - nested a         ",
+				"     - nested b         ",
+				" - three                ",
+				"                        ",
+				" 1. first               ",
+				"                        ",
+				" 2. second              ",
+				"                        ",
+				" 3. five                ",
+				"                        ",
+				" 4. six                 "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" - one                  ",
+				" - two                  ",
+				"     - nested a         ",
+				"     - nested b         ",
+				" - three                ",
+				"                        ",
+				" 1. first               ",
+				"                        ",
+				" 2. second              ",
+				"                        ",
+				" 5. five                ",
+				"                        ",
+				" 6. six                 "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" - one                                                                          ",
+				" - two                                                                          ",
+				"     - nested a                                                                 ",
+				"     - nested b                                                                 ",
+				" - three                                                                        ",
+				"                                                                                ",
+				" 1. first                                                                       ",
+				"                                                                                ",
+				" 2. second                                                                      ",
+				"                                                                                ",
+				" 3. five                                                                        ",
+				"                                                                                ",
+				" 4. six                                                                         ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "lists",
+			"text": "- one\n- two\n  - nested a\n  - nested b\n- three\n\n1. first\n2. second\n\n5. five\n6. six",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" - one                                                                          ",
+				" - two                                                                          ",
+				"     - nested a                                                                 ",
+				"     - nested b                                                                 ",
+				" - three                                                                        ",
+				"                                                                                ",
+				" 1. first                                                                       ",
+				"                                                                                ",
+				" 2. second                                                                      ",
+				"                                                                                ",
+				" 5. five                                                                        ",
+				"                                                                                ",
+				" 6. six                                                                         ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"- a                                     ",
+				"                                        ",
+				"- b                                     ",
+				"                                        ",
+				"- c                                     ",
+				"                                        ",
+				"after                                   "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"- a                                     ",
+				"                                        ",
+				"- b                                     ",
+				"                                        ",
+				"- c                                     ",
+				"                                        ",
+				"after                                   "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" - a                    ",
+				"                        ",
+				" - b                    ",
+				"                        ",
+				" - c                    ",
+				"                        ",
+				" after                  "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" - a                    ",
+				"                        ",
+				" - b                    ",
+				"                        ",
+				" - c                    ",
+				"                        ",
+				" after                  "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" - a                                                                            ",
+				"                                                                                ",
+				" - b                                                                            ",
+				"                                                                                ",
+				" - c                                                                            ",
+				"                                                                                ",
+				" after                                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "loose",
+			"text": "- a\n\n- b\n\n- c\n\nafter",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" - a                                                                            ",
+				"                                                                                ",
+				" - b                                                                            ",
+				"                                                                                ",
+				" - c                                                                            ",
+				"                                                                                ",
+				" after                                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"- [x] done                              ",
+				"- [ ] todo                              "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"- [x] done                              ",
+				"- [ ] todo                              "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" - [x] done             ",
+				" - [ ] todo             "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" - [x] done             ",
+				" - [ ] todo             "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" - [x] done                                                                     ",
+				" - [ ] todo                                                                     ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "tasks",
+			"text": "- [x] done\n- [ ] todo",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" - [x] done                                                                     ",
+				" - [ ] todo                                                                     ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"Run this:                               ",
+				"                                        ",
+				"```bash                                 ",
+				"  echo hi                               ",
+				"  ls -la                                ",
+				"```                                     ",
+				"                                        ",
+				"And indented:                           ",
+				"                                        ",
+				"```                                     ",
+				"  plain code                            ",
+				"  more                                  ",
+				"```                                     "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"Run this:                               ",
+				"                                        ",
+				"```bash                                 ",
+				"  echo hi                               ",
+				"  ls -la                                ",
+				"```                                     ",
+				"                                        ",
+				"And indented:                           ",
+				"                                        ",
+				"```                                     ",
+				"  plain code                            ",
+				"  more                                  ",
+				"```                                     "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" Run this:              ",
+				"                        ",
+				" ```bash                ",
+				"   echo hi              ",
+				"   ls -la               ",
+				" ```                    ",
+				"                        ",
+				" And indented:          ",
+				"                        ",
+				" ```                    ",
+				"   plain code           ",
+				"   more                 ",
+				" ```                    "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" Run this:              ",
+				"                        ",
+				" ```bash                ",
+				"   echo hi              ",
+				"   ls -la               ",
+				" ```                    ",
+				"                        ",
+				" And indented:          ",
+				"                        ",
+				" ```                    ",
+				"   plain code           ",
+				"   more                 ",
+				" ```                    "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" Run this:                                                                      ",
+				"                                                                                ",
+				" ```bash                                                                        ",
+				"   echo hi                                                                      ",
+				"   ls -la                                                                       ",
+				" ```                                                                            ",
+				"                                                                                ",
+				" And indented:                                                                  ",
+				"                                                                                ",
+				" ```                                                                            ",
+				"   plain code                                                                   ",
+				"   more                                                                         ",
+				" ```                                                                            ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "code",
+			"text": "Run this:\n\n```bash\necho hi\nls -la\n```\n\nAnd indented:\n\n    plain code\n    more",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" Run this:                                                                      ",
+				"                                                                                ",
+				" ```bash                                                                        ",
+				"   echo hi                                                                      ",
+				"   ls -la                                                                       ",
+				" ```                                                                            ",
+				"                                                                                ",
+				" And indented:                                                                  ",
+				"                                                                                ",
+				" ```                                                                            ",
+				"   plain code                                                                   ",
+				"   more                                                                         ",
+				" ```                                                                            ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"│ Quoted line one                       ",
+				"│ line two                              ",
+				"│                                       ",
+				"│ - list in quote                       ",
+				"                                        ",
+				"after quote                             "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"│ Quoted line one                       ",
+				"│ line two                              ",
+				"│                                       ",
+				"│ - list in quote                       ",
+				"                                        ",
+				"after quote                             "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" │ Quoted line one      ",
+				" │ line two             ",
+				" │                      ",
+				" │ - list in quote      ",
+				"                        ",
+				" after quote            "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" │ Quoted line one      ",
+				" │ line two             ",
+				" │                      ",
+				" │ - list in quote      ",
+				"                        ",
+				" after quote            "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" │ Quoted line one                                                              ",
+				" │ line two                                                                     ",
+				" │                                                                              ",
+				" │ - list in quote                                                              ",
+				"                                                                                ",
+				" after quote                                                                    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "quote",
+			"text": "> Quoted line one\n> line two\n>\n> - list in quote\n\nafter quote",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" │ Quoted line one                                                              ",
+				" │ line two                                                                     ",
+				" │                                                                              ",
+				" │ - list in quote                                                              ",
+				"                                                                                ",
+				" after quote                                                                    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"above                                   ",
+				"                                        ",
+				"────────────────────────────────────────",
+				"                                        ",
+				"below                                   "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"above                                   ",
+				"                                        ",
+				"────────────────────────────────────────",
+				"                                        ",
+				"below                                   "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" above                  ",
+				"                        ",
+				" ────────────────────── ",
+				"                        ",
+				" below                  "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" above                  ",
+				"                        ",
+				" ────────────────────── ",
+				"                        ",
+				" below                  "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" above                                                                          ",
+				"                                                                                ",
+				" ────────────────────────────────────────────────────────────────────────────── ",
+				"                                                                                ",
+				" below                                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "rule",
+			"text": "above\n\n---\n\nbelow",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" above                                                                          ",
+				"                                                                                ",
+				" ────────────────────────────────────────────────────────────────────────────── ",
+				"                                                                                ",
+				" below                                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"See the docs (https://example.com/docs) ",
+				"and https://example.com or mail         ",
+				"me@example.com.                         "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"See the docs (https://example.com/docs) ",
+				"and https://example.com or mail         ",
+				"me@example.com.                         "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" See the docs           ",
+				" (https://example.com/d ",
+				" ocs) and               ",
+				" https://example.com or ",
+				" mail me@example.com.   "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" See the docs           ",
+				" (https://example.com/d ",
+				" ocs) and               ",
+				" https://example.com or ",
+				" mail me@example.com.   "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" See the docs (https://example.com/docs) and https://example.com or mail        ",
+				" me@example.com.                                                                ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "links",
+			"text": "See [the docs](https://example.com/docs) and <https://example.com> or mail <me@example.com>.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" See the docs (https://example.com/docs) and https://example.com or mail        ",
+				" me@example.com.                                                                ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"┌───────┬───────────┐                   ",
+				"│ Name  │ Value     │                   ",
+				"├───────┼───────────┤                   ",
+				"│ alpha │ 1         │                   ",
+				"├───────┼───────────┤                   ",
+				"│ beta  │ two words │                   ",
+				"└───────┴───────────┘                   "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"┌───────┬───────────┐                   ",
+				"│ Name  │ Value     │                   ",
+				"├───────┼───────────┤                   ",
+				"│ alpha │ 1         │                   ",
+				"├───────┼───────────┤                   ",
+				"│ beta  │ two words │                   ",
+				"└───────┴───────────┘                   "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" ┌───────┬───────────┐  ",
+				" │ Name  │ Value     │  ",
+				" ├───────┼───────────┤  ",
+				" │ alpha │ 1         │  ",
+				" ├───────┼───────────┤  ",
+				" │ beta  │ two words │  ",
+				" └───────┴───────────┘  "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" ┌───────┬───────────┐  ",
+				" │ Name  │ Value     │  ",
+				" ├───────┼───────────┤  ",
+				" │ alpha │ 1         │  ",
+				" ├───────┼───────────┤  ",
+				" │ beta  │ two words │  ",
+				" └───────┴───────────┘  "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" ┌───────┬───────────┐                                                          ",
+				" │ Name  │ Value     │                                                          ",
+				" ├───────┼───────────┤                                                          ",
+				" │ alpha │ 1         │                                                          ",
+				" ├───────┼───────────┤                                                          ",
+				" │ beta  │ two words │                                                          ",
+				" └───────┴───────────┘                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "table",
+			"text": "| Name | Value |\n|------|-------|\n| alpha | 1 |\n| beta | two words |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" ┌───────┬───────────┐                                                          ",
+				" │ Name  │ Value     │                                                          ",
+				" ├───────┼───────────┤                                                          ",
+				" │ alpha │ 1         │                                                          ",
+				" ├───────┼───────────┤                                                          ",
+				" │ beta  │ two words │                                                          ",
+				" └───────┴───────────┘                                                          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"┌─────────┬────────────────────┬───────┐",
+				"│ Column\u001b[22;23;24;25;27;28;29;39m  │ Column two with a\u001b[22;23;24;25;27;28;29;39m  │ Three │",
+				"│ one     │ much longer header │       │",
+				"├─────────┼────────────────────┼───────┤",
+				"│ short   │ a cell with\u001b[22;23;24;25;27;28;29;39m        │ x     │",
+				"│         │ several words that\u001b[22;23;24;25;27;28;29;39m │       │",
+				"│         │ must wrap\u001b[22;23;24;25;27;28;29;39m          │       │",
+				"│         │ somewhere          │       │",
+				"└─────────┴────────────────────┴───────┘"
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"┌─────────┬────────────────────┬───────┐",
+				"│ Column\u001b[22;23;24;25;27;28;29;39m  │ Column two with a\u001b[22;23;24;25;27;28;29;39m  │ Three │",
+				"│ one     │ much longer header │       │",
+				"├─────────┼────────────────────┼───────┤",
+				"│ short   │ a cell with\u001b[22;23;24;25;27;28;29;39m        │ x     │",
+				"│         │ several words that\u001b[22;23;24;25;27;28;29;39m │       │",
+				"│         │ must wrap\u001b[22;23;24;25;27;28;29;39m          │       │",
+				"│         │ somewhere          │       │",
+				"└─────────┴────────────────────┴───────┘"
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" ┌──────┬───────┬─────┐ ",
+				" │ Colu\u001b[22;23;24;25;27;28;29;39m │ Colum\u001b[22;23;24;25;27;28;29;39m │ Thr\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ mn\u001b[22;23;24;25;27;28;29;39m   │ n two\u001b[22;23;24;25;27;28;29;39m │ ee  │ ",
+				" │ one  │ with\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ a\u001b[22;23;24;25;27;28;29;39m     │     │ ",
+				" │      │ much\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ longe\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ r\u001b[22;23;24;25;27;28;29;39m     │     │ ",
+				" │      │ heade\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ r     │     │ ",
+				" ├──────┼───────┼─────┤ ",
+				" │ shor\u001b[22;23;24;25;27;28;29;39m │ a\u001b[22;23;24;25;27;28;29;39m     │ x   │ ",
+				" │ t    │ cell\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ with\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ sever\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ al\u001b[22;23;24;25;27;28;29;39m    │     │ ",
+				" │      │ words\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ that\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ must\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ wrap\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ somew\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ here  │     │ ",
+				" └──────┴───────┴─────┘ "
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" ┌──────┬───────┬─────┐ ",
+				" │ Colu\u001b[22;23;24;25;27;28;29;39m │ Colum\u001b[22;23;24;25;27;28;29;39m │ Thr\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ mn\u001b[22;23;24;25;27;28;29;39m   │ n two\u001b[22;23;24;25;27;28;29;39m │ ee  │ ",
+				" │ one  │ with\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ a\u001b[22;23;24;25;27;28;29;39m     │     │ ",
+				" │      │ much\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ longe\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ r\u001b[22;23;24;25;27;28;29;39m     │     │ ",
+				" │      │ heade\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ r     │     │ ",
+				" ├──────┼───────┼─────┤ ",
+				" │ shor\u001b[22;23;24;25;27;28;29;39m │ a\u001b[22;23;24;25;27;28;29;39m     │ x   │ ",
+				" │ t    │ cell\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ with\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ sever\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ al\u001b[22;23;24;25;27;28;29;39m    │     │ ",
+				" │      │ words\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ that\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ must\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ wrap\u001b[22;23;24;25;27;28;29;39m  │     │ ",
+				" │      │ somew\u001b[22;23;24;25;27;28;29;39m │     │ ",
+				" │      │ here  │     │ ",
+				" └──────┴───────┴─────┘ "
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" ┌────────────┬────────────────────────────────────────────────────┬───────┐    ",
+				" │ Column one │ Column two with a much longer header               │ Three │    ",
+				" ├────────────┼────────────────────────────────────────────────────┼───────┤    ",
+				" │ short      │ a cell with several words that must wrap somewhere │ x     │    ",
+				" └────────────┴────────────────────────────────────────────────────┴───────┘    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "wideTable",
+			"text": "| Column one | Column two with a much longer header | Three |\n|---|---|---|\n| short | a cell with several words that must wrap somewhere | x |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" ┌────────────┬────────────────────────────────────────────────────┬───────┐    ",
+				" │ Column one │ Column two with a much longer header               │ Three │    ",
+				" ├────────────┼────────────────────────────────────────────────────┼───────┤    ",
+				" │ short      │ a cell with several words that must wrap somewhere │ x     │    ",
+				" └────────────┴────────────────────────────────────────────────────┴───────┘    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"Use *literal* asterisks and a _         ",
+				"underscore.                             "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"Use \\*literal\\* asterisks and a \\_      ",
+				"underscore.                             "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" Use *literal*          ",
+				" asterisks and a _      ",
+				" underscore.            "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" Use \\*literal\\*        ",
+				" asterisks and a \\_     ",
+				" underscore.            "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" Use *literal* asterisks and a _ underscore.                                    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "escapes",
+			"text": "Use \\*literal\\* asterisks and a \\_ underscore.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" Use \\*literal\\* asterisks and a \\_ underscore.                                 ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"gone and ~single~ tilde                 "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"gone and ~single~ tilde                 "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" gone and ~single~      ",
+				" tilde                  "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" gone and ~single~      ",
+				" tilde                  "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" gone and ~single~ tilde                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "strike",
+			"text": "~~gone~~ and ~single~ tilde",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" gone and ~single~ tilde                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"<div>block html</div>                   ",
+				"                                        ",
+				"Inline <b>tag</b> text.                 "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"<div>block html</div>                   ",
+				"                                        ",
+				"Inline <b>tag</b> text.                 "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" <div>block html</div>  ",
+				"                        ",
+				" Inline <b>tag</b>      ",
+				" text.                  "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" <div>block html</div>  ",
+				"                        ",
+				" Inline <b>tag</b>      ",
+				" text.                  "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" <div>block html</div>                                                          ",
+				"                                                                                ",
+				" Inline <b>tag</b> text.                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "html",
+			"text": "<div>block html</div>\n\nInline <b>tag</b> text.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" <div>block html</div>                                                          ",
+				"                                                                                ",
+				" Inline <b>tag</b> text.                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"日本語の文章です。長い文章を折り返します",
+				"。これはテストです。                    "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"日本語の文章です。長い文章を折り返します",
+				"。これはテストです。                    "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" 日本語の文章です。長い ",
+				" 文章を折り返します。こ ",
+				" れはテストです。       "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" 日本語の文章です。長い ",
+				" 文章を折り返します。こ ",
+				" れはテストです。       "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" 日本語の文章です。長い文章を折り返します。これはテストです。                   ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "cjk",
+			"text": "日本語の文章です。長い文章を折り返します。これはテストです。",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" 日本語の文章です。長い文章を折り返します。これはテストです。                   ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"averyveryveryverylongwordthatcannotfit  ",
+				"in a narrow column                      "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"averyveryveryverylongwordthatcannotfit  ",
+				"in a narrow column                      "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" averyveryveryverylongw ",
+				" ordthatcannotfit in a  ",
+				" narrow column          "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" averyveryveryverylongw ",
+				" ordthatcannotfit in a  ",
+				" narrow column          "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" averyveryveryverylongwordthatcannotfit in a narrow column                      ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "longWord",
+			"text": "averyveryveryverylongwordthatcannotfit in a narrow column",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" averyveryveryverylongwordthatcannotfit in a narrow column                      ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"Text before list:                       ",
+				"- item one                              ",
+				"- item two                              ",
+				"  Text after?                           "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"Text before list:                       ",
+				"- item one                              ",
+				"- item two                              ",
+				"  Text after?                           "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" Text before list:      ",
+				" - item one             ",
+				" - item two             ",
+				"   Text after?          "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" Text before list:      ",
+				" - item one             ",
+				" - item two             ",
+				"   Text after?          "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" Text before list:                                                              ",
+				" - item one                                                                     ",
+				" - item two                                                                     ",
+				"   Text after?                                                                  ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "mixed",
+			"text": "Text before list:\n- item one\n- item two\nText after?",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" Text before list:                                                              ",
+				" - item one                                                                     ",
+				" - item two                                                                     ",
+				"   Text after?                                                                  ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"Using cargo here                        "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"Using cargo here                        "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" Using cargo here       "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" Using cargo here       "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" Using cargo here                                                               ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "headingCode",
+			"text": "## Using `cargo` here",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" Using cargo here                                                               ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"both and bold inner italic end          "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"both and bold inner italic end          "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" both and bold inner    ",
+				" italic end             "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" both and bold inner    ",
+				" italic end             "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" both and bold inner italic end                                                 ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "nestedEmphasis",
+			"text": "***both*** and **bold _inner italic_ end**",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" both and bold inner italic end                                                 ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"3. three                                ",
+				"4. four                                 "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"3. three                                ",
+				"4. four                                 "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" 3. three               ",
+				" 4. four                "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" 3. three               ",
+				" 4. four                "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" 3. three                                                                       ",
+				" 4. four                                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "numbers",
+			"text": "3. three\n4. four",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" 3. three                                                                       ",
+				" 4. four                                                                        ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				"ends with blank lines                   ",
+				"                                        "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				"ends with blank lines                   ",
+				"                                        "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"lines": [
+				" ends with blank lines  ",
+				"                        "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"lines": [
+				" ends with blank lines  ",
+				"                        "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"lines": [
+				"                                                                                ",
+				" ends with blank lines                                                          ",
+				"                                                                                ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "trailing",
+			"text": "ends with blank lines\n\n\n",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"lines": [
+				"                                                                                ",
+				" ends with blank lines                                                          ",
+				"                                                                                ",
+				"                                                                                "
+			]
+		}
+	]
+}
