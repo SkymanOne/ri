@@ -462,6 +462,7 @@ pub fn create(args: &Args, session: SessionManager, warn: bool) -> anyhow::Resul
         model,
         thinking_level,
         tools,
+        extensions: ri_core::extensions::builtins(),
         resources,
     }))
 }

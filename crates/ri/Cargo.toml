@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+futures-util.workspace = true
 indexmap.workspace = true
 regex-lite.workspace = true
 ratatui-core.workspace = true
@@ -21,7 +22,8 @@ ri-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 similar.workspace = true
-tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util"] }
+tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util", "sync"] }
+tokio-util.workspace = true
 unicode-segmentation.workspace = true
 
 [dev-dependencies]

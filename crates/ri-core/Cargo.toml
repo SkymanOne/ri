@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 indexmap.workspace = true
@@ -19,6 +20,7 @@ ri-ai.workspace = true
 ri-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 similar.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }

@@ -59,6 +59,54 @@ fn count_lines(content: &str) -> Vec<&str> {
     lines
 }
 
+/// What [`truncate_middle`] kept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MiddleTruncation {
+    /// The text, with the middle replaced when truncated.
+    pub content: String,
+    /// Whether the middle was cut.
+    pub truncated: bool,
+    /// Bytes of the original.
+    pub total_bytes: usize,
+    /// Lines of the original.
+    pub total_lines: usize,
+}
+
+/// pi's `truncateMiddle`: keeps the start and end of `content`, half of
+/// `max_bytes` each, with a `…N chars truncated…` marker between, cutting only
+/// at character boundaries.
+pub fn truncate_middle(content: &str, max_bytes: usize) -> MiddleTruncation {
+    let total_lines = count_lines(content).len();
+    let total_bytes = content.len();
+    if total_bytes <= max_bytes {
+        return MiddleTruncation {
+            content: content.to_owned(),
+            truncated: false,
+            total_bytes,
+            total_lines,
+        };
+    }
+    let mut head_end = max_bytes / 2;
+    while head_end > 0 && !content.is_char_boundary(head_end) {
+        head_end -= 1;
+    }
+    let mut tail_start = total_bytes - (max_bytes - max_bytes / 2);
+    while tail_start < total_bytes && !content.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+    let removed = content[head_end..tail_start].chars().count();
+    MiddleTruncation {
+        content: format!(
+            "{}…{removed} chars truncated…{}",
+            &content[..head_end],
+            &content[tail_start..]
+        ),
+        truncated: true,
+        total_bytes,
+        total_lines,
+    }
+}
+
 /// pi's size format: `512B`, `1.5KB`, `2.0MB`.
 pub fn format_size(bytes: usize) -> String {
     if bytes < 1024 {

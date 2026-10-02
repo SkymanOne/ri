@@ -125,6 +125,9 @@ async fn run_loop(
             }
             first_turn = false;
 
+            if let Some(tools) = hooks.current_tools() {
+                context.tools = tools;
+            }
             for message in declare_tool_changes(
                 &context.messages,
                 &context.tools,

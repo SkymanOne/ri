@@ -97,7 +97,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 | Wasm host | `wasmtime` with the component model |
 | Guest JS engine | `rquickjs` (QuickJS-NG) |
 | TypeScript and resolution | `oxc_transformer`, `oxc_resolver` |
-| MCP | `rmcp` if it covers stdio, streamable HTTP and OAuth; otherwise a port of `pi-mcp` |
+| MCP | A port of `pi-mcp`, so requests and errors match pi's |
 | Logging, errors | `tracing`; `thiserror`, `anyhow` |
 | Tests | pi goldens, `ri-mock` (on `hyper`), `portable-pty` and `vt100` for terminal scenarios |
 
@@ -244,7 +244,8 @@ These are initial targets, calibrated against pi in M0–M1.
   - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios;
   - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines;
   - RPC scenarios send each command once the previous one's response or awaited event has arrived;
-  - client scenarios run a Node script from the fixture generator, such as pi's `RpcClient` example, against the program; `cargo test` skips them when the generator's packages are not installed.
+  - client scenarios run a Node script from the fixture generator, such as pi's `RpcClient` example, against the program; `cargo test` skips them when the generator's packages are not installed;
+  - MCP scenarios and tests connect to the Python test server in `tests/fixtures/mcp`, so they need `python3` on `PATH`.
 - Prefer goldens recorded from pi over hand-written expectations. Components with pi counterparts are tested against pi-tui's output (`tests/fixtures/pi/generator`).
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
   - event streams;

@@ -7,20 +7,26 @@
 //! dropped.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
+
+use futures_util::future::BoxFuture;
+use ri_core::extensions::{ExtensionUi, Mode, NotifyKind};
+use ri_core::time::uuid_v4;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 use ri_core::agent_session::AgentSession;
 use ri_core::session::SessionManager;
 use ri_types::message::Message;
 use ri_types::rpc::{
-    self, CommandSource, ContextUsage, ForkMessage, RpcCommand, SessionState, SessionStats,
-    SlashCommand, TokenTotals, response_line,
+    self, CommandSource, ContextUsage, ExtensionUiResponse, ForkMessage, RpcCommand, SessionState,
+    SessionStats, SlashCommand, TokenTotals, response_line,
 };
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tokio::io::AsyncBufReadExt;
 
 use crate::runtime::{self, SessionFactory};
@@ -96,6 +102,132 @@ struct Rpc {
     epoch: Arc<AtomicU64>,
     factory: SessionFactory,
     out: Output,
+    ui: Arc<RpcUi>,
+}
+
+type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<ExtensionUiResponse>>>>;
+
+/// Extension dialogs as `extension_ui_request` lines, answered by
+/// `extension_ui_response` lines; pi's RPC `ExtensionUIContext`.
+struct RpcUi {
+    out: Output,
+    pending: Pending,
+}
+
+impl RpcUi {
+    /// Writes a request and waits for its response; `None` when the request
+    /// is cancelled or the session ends.
+    fn ask(
+        &self,
+        mut request: Map<String, Value>,
+        cancel: Option<CancellationToken>,
+    ) -> BoxFuture<'static, Option<ExtensionUiResponse>> {
+        let id = uuid_v4();
+        let (tx, rx) = oneshot::channel();
+        lock(&self.pending).insert(id.clone(), tx);
+        let mut line = Map::new();
+        line.insert("type".into(), json!("extension_ui_request"));
+        line.insert("id".into(), json!(id));
+        line.append(&mut request);
+        if let Ok(text) = ri_types::json::to_string(&line) {
+            self.out.line(text);
+        }
+        let pending = Arc::clone(&self.pending);
+        Box::pin(async move {
+            let cancel = cancel.unwrap_or_default();
+            tokio::select! {
+                response = rx => response.ok(),
+                () = cancel.cancelled() => {
+                    lock(&pending).remove(&id);
+                    None
+                }
+            }
+        })
+    }
+
+    fn resolve(&self, response: ExtensionUiResponse) {
+        if let Some(tx) = lock(&self.pending).remove(&response.id) {
+            let _ = tx.send(response);
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn object(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    }
+}
+
+impl ExtensionUi for RpcUi {
+    fn has_ui(&self) -> bool {
+        true
+    }
+
+    fn notify(&self, message: &str, kind: NotifyKind) {
+        let line = json!({
+            "type": "extension_ui_request",
+            "id": uuid_v4(),
+            "method": "notify",
+            "message": message,
+            "notifyType": kind.as_str(),
+        });
+        if let Ok(text) = ri_types::json::to_string(&line) {
+            self.out.line(text);
+        }
+    }
+
+    fn select(&self, title: &str, options: Vec<String>) -> BoxFuture<'static, Option<String>> {
+        let answer = self.ask(
+            object(json!({"method": "select", "title": title, "options": options})),
+            None,
+        );
+        Box::pin(async move {
+            answer
+                .await
+                .filter(|response| response.cancelled != Some(true))
+                .and_then(|response| response.value)
+        })
+    }
+
+    fn input(
+        &self,
+        title: &str,
+        placeholder: Option<&str>,
+        cancel: Option<CancellationToken>,
+    ) -> BoxFuture<'static, Option<String>> {
+        let mut request = object(json!({"method": "input", "title": title}));
+        if let Some(placeholder) = placeholder {
+            request.insert("placeholder".into(), json!(placeholder));
+        }
+        let answer = self.ask(request, cancel);
+        Box::pin(async move {
+            answer
+                .await
+                .filter(|response| response.cancelled != Some(true))
+                .and_then(|response| response.value)
+        })
+    }
+
+    fn confirm(&self, title: &str, message: &str) -> BoxFuture<'static, bool> {
+        let answer = self.ask(
+            object(json!({"method": "confirm", "title": title, "message": message})),
+            None,
+        );
+        Box::pin(async move {
+            answer
+                .await
+                .filter(|response| response.cancelled != Some(true))
+                .and_then(|response| response.confirmed)
+                .unwrap_or(false)
+        })
+    }
 }
 
 impl Rpc {
@@ -103,8 +235,9 @@ impl Rpc {
         self.session.borrow().clone()
     }
 
-    /// Streams `session`'s events and makes it current.
-    fn bind(&self, session: AgentSession) {
+    /// Streams `session`'s events, makes it current and starts its
+    /// extensions.
+    async fn bind(&self, session: AgentSession) {
         let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let current = Arc::clone(&self.epoch);
         let out = self.out.clone();
@@ -115,21 +248,25 @@ impl Rpc {
                 out.line(line);
             }
         }));
-        *self.session.borrow_mut() = session;
+        *self.session.borrow_mut() = session.clone();
+        session
+            .bind_extensions(Arc::clone(&self.ui) as Arc<dyn ExtensionUi>, Mode::Rpc)
+            .await;
     }
 
-    /// pi's runtime teardown: the current run settles and is persisted before
-    /// its session is replaced.
+    /// pi's runtime teardown: the current run settles and is persisted, and
+    /// extensions stop, before the session is replaced.
     async fn settle(&self) {
         let session = self.session();
         session.abort();
         session.abort_bash();
         session.wait_for_idle().await;
+        session.shutdown().await;
     }
 
-    fn replace(&self, manager: SessionManager) -> Result<(), String> {
+    async fn replace(&self, manager: SessionManager) -> Result<(), String> {
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
-        self.bind(session);
+        self.bind(session).await;
         Ok(())
     }
 
@@ -164,7 +301,9 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
         }
     };
     if parsed.get("type").and_then(Value::as_str) == Some("extension_ui_response") {
-        // No extension asks for input yet, so no request is pending.
+        if let Ok(response) = serde_json::from_value::<ExtensionUiResponse>(parsed) {
+            rpc.ui.resolve(response);
+        }
         return;
     }
     let id = parsed.get("id").cloned();
@@ -231,7 +370,7 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             rpc.settle().await;
             let manager = runtime::new_session(&session, parent_session)
                 .map_err(|error| error.to_string())?;
-            rpc.replace(manager)?;
+            rpc.replace(manager).await?;
             data(&json!({"cancelled": false}))
         }
         RpcCommand::GetState => data(&state(&session)),
@@ -314,13 +453,13 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
                 runtime::open_session(std::path::Path::new(&session_path), None, &fallback)
                     .map_err(|error| error.to_string())?;
             rpc.settle().await;
-            rpc.replace(manager)?;
+            rpc.replace(manager).await?;
             data(&json!({"cancelled": false}))
         }
         RpcCommand::Fork { entry_id } => {
             let fork = runtime::plan_fork(&session, &entry_id, false)?;
             rpc.settle().await;
-            rpc.replace(fork.build(&session)?)?;
+            rpc.replace(fork.build(&session)?).await?;
             data(&json!({"text": fork.text, "cancelled": false}))
         }
         RpcCommand::Clone => {
@@ -329,7 +468,7 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
                 .ok_or("Cannot clone session: no current entry selected")?;
             let fork = runtime::plan_fork(&session, &leaf, true)?;
             rpc.settle().await;
-            rpc.replace(fork.build(&session)?)?;
+            rpc.replace(fork.build(&session)?).await?;
             data(&json!({"cancelled": false}))
         }
         RpcCommand::GetForkMessages => {
@@ -390,16 +529,26 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
         }
         RpcCommand::GetCommands => {
             let resources = session.resources();
-            let mut commands: Vec<SlashCommand> = resources
-                .templates
-                .iter()
-                .map(|template| SlashCommand {
-                    name: template.name.clone(),
-                    description: Some(template.description.clone()),
-                    source: CommandSource::Prompt,
-                    source_info: template.source.clone(),
-                })
-                .collect();
+            let mut commands: Vec<SlashCommand> = Vec::new();
+            for extension in session.extensions() {
+                commands.extend(
+                    extension
+                        .commands()
+                        .into_iter()
+                        .map(|command| SlashCommand {
+                            name: command.name,
+                            description: Some(command.description),
+                            source: CommandSource::Extension,
+                            source_info: extension.source(),
+                        }),
+                );
+            }
+            commands.extend(resources.templates.iter().map(|template| SlashCommand {
+                name: template.name.clone(),
+                description: Some(template.description.clone()),
+                source: CommandSource::Prompt,
+                source_info: template.source.clone(),
+            }));
             commands.extend(resources.skills.iter().map(|skill| SlashCommand {
                 name: format!("skill:{}", skill.name),
                 description: Some(skill.description.clone()),
@@ -479,11 +628,15 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
         epoch: Arc::new(AtomicU64::new(0)),
         factory,
         out: out.clone(),
+        ui: Arc::new(RpcUi {
+            out: out.clone(),
+            pending: Arc::default(),
+        }),
     });
-    rpc.bind(session);
     let local = tokio::task::LocalSet::new();
     let code = local
         .run_until(async {
+            rpc.bind(session).await;
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
             let signal = termination();
@@ -515,6 +668,7 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let session = rpc.session();
     session.abort();
     session.abort_bash();
+    session.shutdown().await;
     out.flush();
     drop(writer);
     code

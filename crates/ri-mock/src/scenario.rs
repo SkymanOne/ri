@@ -205,7 +205,8 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         }
         let content = content
             .replace("{{cwd}}", &cwd.to_string_lossy())
-            .replace("{{agent}}", &agent_dir.to_string_lossy());
+            .replace("{{agent}}", &agent_dir.to_string_lossy())
+            .replace("{{fixtures}}", &fixtures_dir().to_string_lossy());
         std::fs::write(&path, content).map_err(io(&path))?;
         seeded.push(path);
     }
@@ -537,9 +538,11 @@ impl Normalizer<'_> {
         while let Some(end) = rest.find(".jsonl") {
             let start = end.saturating_sub(STAMP + UUID);
             let candidate = rest.get(start..end).unwrap_or_default();
-            let seeded = self.run.sessions.iter().any(|file| {
-                file.seeded && file.name.strip_suffix(".jsonl") == Some(candidate)
-            });
+            let seeded = self
+                .run
+                .sessions
+                .iter()
+                .any(|file| file.seeded && file.name.strip_suffix(".jsonl") == Some(candidate));
             let named = candidate.len() == STAMP + UUID
                 && !seeded
                 && candidate.as_bytes()[STAMP - 1] == b'_'

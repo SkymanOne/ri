@@ -491,5 +491,31 @@
     "client": "rpc-client.mjs",
     "args": ["Read", "hello.txt"],
     "files": {"hello.txt": "hi\n"}
+  },
+  {
+    "name": "mcp-direct-json",
+    "cassette": "mcp/direct.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Use the demo tools"],
+    "agentFiles": {"mcp.json": "{\"mcpServers\": {\"demo\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"exposure\": \"direct\", \"description\": \"Demo tools\"}}}\n"}
+  },
+  {
+    "name": "mcp-deferred-json",
+    "cassette": "mcp/deferred.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Echo found"],
+    "agentFiles": {"mcp.json": "{\"mcpServers\": {\"demo\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"exposure\": \"deferred\"}}}\n"}
+  },
+  {
+    "name": "mcp-command-rpc",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5"],
+    "agentFiles": {"mcp.json": "{\"mcpServers\": {\"demo\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"exposure\": \"direct\"}, \"off\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"enabled\": false, \"exposure\": \"direct\"}, \"bad\": {\"url\": \"ftp://example.com\"}, \"broken\": {\"command\": \"ri-no-such-command\", \"exposure\": \"direct\"}}}\n"},
+    "rpc": [
+      {"send": null, "until": "extension_ui_request"},
+      {"send": {"id": "status", "type": "prompt", "message": "/mcp"}},
+      {"send": {"id": "usage", "type": "prompt", "message": "/mcp nonsense a b"}},
+      {"send": {"id": "reconnect", "type": "prompt", "message": "/mcp reconnect demo"}},
+      {"send": {"id": "missing", "type": "prompt", "message": "/mcp reconnect nope"}},
+      {"send": {"id": "login", "type": "prompt", "message": "/mcp login"}}
+    ]
   }
 ]

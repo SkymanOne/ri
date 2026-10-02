@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use ri_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
 use ri_core::bash_executor::BashResult;
+use ri_core::extensions::{ExtensionUi, Mode, NotifyKind};
 use ri_core::session::SessionManager;
 use ri_tui::color::ColorMode;
 use ri_tui::editor::{Editor, EditorEvent, EditorTheme};
@@ -76,6 +77,26 @@ enum Event {
     BashDone(u64, u64, Box<Result<BashResult, String>>),
     TreeDone(u64, String, Box<Result<TreeOutcome, String>>),
     Fd(Option<PathBuf>),
+    Notify(u64, String, NotifyKind),
+}
+
+/// Extension notifications as status, warning and error lines. Dialogs
+/// arrive with extension UI (M6) and are cancelled until then.
+struct InteractiveUi {
+    tx: UnboundedSender<Event>,
+    epoch: u64,
+}
+
+impl ExtensionUi for InteractiveUi {
+    fn has_ui(&self) -> bool {
+        true
+    }
+
+    fn notify(&self, message: &str, kind: NotifyKind) {
+        let _ = self
+            .tx
+            .send(Event::Notify(self.epoch, message.to_owned(), kind));
+    }
 }
 
 /// A running status shown in the editor's top border.
@@ -1175,6 +1196,19 @@ impl App {
                 return;
             }
         }
+        if self.session.is_extension_command(&text) {
+            // Extension commands run at once, even while a response streams.
+            self.editor.add_to_history(&text);
+            let session = self.session.clone();
+            let tx = self.tx.clone();
+            let epoch = self.epoch;
+            tokio::spawn(async move {
+                if let Err(error) = session.prompt(&text, Vec::new()).await {
+                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                }
+            });
+            return;
+        }
         if self.manual_compaction {
             self.editor.add_to_history(&text);
             self.compaction_queue.push((text, false));
@@ -1834,8 +1868,17 @@ impl App {
         self.session.abort();
         self.session.abort_bash();
         self.epoch += 1;
-        self.session = session;
+        let old = std::mem::replace(&mut self.session, session);
         subscribe(&self.session, &self.tx, self.epoch);
+        let ui = InteractiveUi {
+            tx: self.tx.clone(),
+            epoch: self.epoch,
+        };
+        let new = self.session.clone();
+        tokio::spawn(async move {
+            old.shutdown().await;
+            new.bind_extensions(Arc::new(ui), Mode::Tui).await;
+        });
         self.cwd = self.session.cwd().to_path_buf();
         self.branch = footer::git_branch(&self.cwd);
         self.running = false;
@@ -2120,6 +2163,11 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     let stdin_paused = Arc::new(AtomicBool::new(false));
     spawn_stdin(tx.clone(), stdin_paused.clone());
     subscribe(&session, &tx, 0);
+    let ui = InteractiveUi {
+        tx: tx.clone(),
+        epoch: 0,
+    };
+    session.bind_extensions(Arc::new(ui), Mode::Tui).await;
     {
         let tx = tx.clone();
         let bin_dir = ri_core::config::bin_dir(&agent_dir);
@@ -2420,6 +2468,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     emit(&out);
     #[cfg(unix)]
     terminal.raw.restore();
+    app.session.shutdown().await;
 
     let file = app
         .session
@@ -2497,6 +2546,11 @@ impl App {
                 self.fd = path;
                 self.install_autocomplete();
             }
+            Event::Notify(epoch, message, kind) if epoch == self.epoch => match kind {
+                NotifyKind::Error => self.error(message),
+                NotifyKind::Warning => self.warning(message),
+                NotifyKind::Info => self.status(message),
+            },
             _ => {}
         }
     }

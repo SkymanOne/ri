@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use futures_util::future::BoxFuture;
+use indexmap::IndexMap;
 use ri_agent::hooks::AgentHooks;
 use ri_agent::{AgentContext, ExecutionMode, LoopConfig, Tool};
 use ri_ai::api::Apis;
@@ -34,13 +35,15 @@ use crate::compaction::{
     calculate_context_tokens, estimate_context_tokens, estimate_projected_context_tokens,
     estimate_tokens, prepare_compaction, should_compact,
 };
+use crate::extensions::{Context, Extension, ExtensionUi, Mode, NoUi, Tools};
 use crate::messages::convert_to_llm;
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::{SessionManager, build_projection};
 use crate::settings::SettingsManager;
 use crate::system_prompt::{PromptOptions, build_sections, diff_sections};
 use crate::time::{now_ms, parse_iso};
-use crate::tools::{BUILTIN_TOOLS, PromptTool, Runtime, ToolEnv, builtin};
+use crate::tools::registry::ToolRegistry;
+use crate::tools::{BUILTIN_TOOLS, RegisteredTool, Runtime, ToolEnv, builtin};
 
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
@@ -78,8 +81,10 @@ pub struct SessionConfig {
     pub model: Option<Model>,
     /// The thinking level.
     pub thinking_level: ThinkingLevel,
-    /// Active built-in tool names.
+    /// Active tool names.
     pub tools: Vec<String>,
+    /// The session's extensions, which load before the active tools are set.
+    pub extensions: Vec<Arc<dyn Extension>>,
     /// Prompt resources.
     pub resources: Resources,
 }
@@ -88,7 +93,6 @@ struct State {
     session: SessionManager,
     model: Option<Model>,
     thinking_level: ThinkingLevel,
-    active_tools: Vec<String>,
     streaming: bool,
 }
 
@@ -98,7 +102,12 @@ struct Inner {
     registry: RwLock<Arc<ModelRegistry>>,
     apis: Apis,
     state: Mutex<State>,
-    tools: Vec<PromptTool>,
+    tools: Tools,
+    extensions: Vec<Arc<dyn Extension>>,
+    /// The UI and mode extensions see.
+    binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
+    /// Extension sections of the current run's system prompt.
+    run_sections: Mutex<IndexMap<String, String>>,
     resources: Resources,
     runtime: Arc<RwLock<Runtime>>,
     listeners: Mutex<Vec<Listener>>,
@@ -272,6 +281,7 @@ impl AgentSession {
             model,
             thinking_level,
             tools,
+            extensions,
             resources,
         } = config;
         let runtime = Arc::new(RwLock::new(Runtime::default()));
@@ -280,10 +290,15 @@ impl AgentSession {
             runtime: runtime.clone(),
             bin_dir: crate::config::bin_dir(&agent_dir),
         };
-        let available: Vec<PromptTool> = BUILTIN_TOOLS
+        let available: Vec<RegisteredTool> = BUILTIN_TOOLS
             .iter()
             .filter_map(|name| builtin(name, &env))
             .collect();
+        let tool_registry = Tools::new(ToolRegistry::new(available, Vec::new()));
+        for extension in &extensions {
+            extension.load(&tool_registry);
+        }
+        tool_registry.set_active(tools);
 
         let has_entries = session.entries().next().is_some();
         if has_entries {
@@ -310,10 +325,12 @@ impl AgentSession {
                     session,
                     model,
                     thinking_level,
-                    active_tools: tools,
                     streaming: false,
                 }),
-                tools: available,
+                tools: tool_registry,
+                extensions,
+                binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
+                run_sections: Mutex::new(IndexMap::new()),
                 resources,
                 runtime,
                 listeners: Mutex::new(Vec::new()),
@@ -1020,6 +1037,7 @@ impl AgentSession {
             cwd: self.inner.cwd.clone(),
             context_files: self.inner.resources.context_files.clone(),
             skills: self.inner.resources.skills.clone(),
+            sections: lock(&self.inner.run_sections).clone(),
             ..PromptOptions::default()
         };
         for tool in self.active_tools(active) {
@@ -1036,17 +1054,13 @@ impl AgentSession {
         options
     }
 
-    fn active_tools(&self, active: &[String]) -> Vec<PromptTool> {
-        active
-            .iter()
-            .filter_map(|name| {
-                self.inner
-                    .tools
-                    .iter()
-                    .find(|tool| &tool.tool.declaration().name == name)
-                    .cloned()
-            })
-            .collect()
+    fn active_tools(&self, active: &[String]) -> Vec<RegisteredTool> {
+        self.inner.tools.with(|registry| {
+            active
+                .iter()
+                .filter_map(|name| registry.get(name).cloned())
+                .collect()
+        })
     }
 
     /// The system message patch that brings the transcript's prompt up to date.
@@ -1087,6 +1101,10 @@ impl AgentSession {
         behavior: Option<StreamingBehavior>,
         preflight: impl FnOnce(PromptDisposition),
     ) -> Result<(), String> {
+        if self.run_extension_command(text).await {
+            preflight(PromptDisposition::Handled);
+            return Ok(());
+        }
         if self.inner.manual_compaction.load(Ordering::SeqCst) {
             return Err("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.".into());
         }
@@ -1098,15 +1116,10 @@ impl AgentSession {
             return Ok(());
         }
         self.flush_pending_bash();
-        let (model, active, messages) = {
-            let state = lock(&self.inner.state);
-            let model = state.model.clone().ok_or(NO_MODEL_MESSAGE)?;
-            (
-                model,
-                state.active_tools.clone(),
-                state.session.build_context().messages,
-            )
-        };
+        let model = lock(&self.inner.state)
+            .model
+            .clone()
+            .ok_or(NO_MODEL_MESSAGE)?;
         let has_auth = self
             .inner
             .registry
@@ -1116,6 +1129,14 @@ impl AgentSession {
         if !has_auth {
             return Err(no_api_key_message(&model.provider));
         }
+        let mut sections = IndexMap::new();
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in &self.inner.extensions {
+            extension.before_agent_start(&ctx, &mut sections).await;
+        }
+        *lock(&self.inner.run_sections) = sections;
+        let active = self.inner.tools.active();
+        let messages = self.messages();
         let mut prompts = Vec::new();
         if let Some(update) = self.system_update(&messages, &active)? {
             prompts.push(update);
@@ -1187,12 +1208,12 @@ impl AgentSession {
     /// One agent run: with `prompts`, or continuing the transcript (or running
     /// queued messages when it ends with an assistant message).
     async fn run_agent(&self, prompts: Option<Vec<Message>>, cancel: &CancellationToken) {
-        let (model, thinking_level, active, messages, session_id, session_file) = {
+        let active = self.inner.tools.active();
+        let (model, thinking_level, messages, session_id, session_file) = {
             let state = lock(&self.inner.state);
             (
                 state.model.clone(),
                 state.thinking_level,
-                state.active_tools.clone(),
                 state.session.build_context().messages,
                 state.session.id().to_owned(),
                 state.session.file().map(Path::to_path_buf),
@@ -1226,10 +1247,12 @@ impl AgentSession {
                 .map(|tool| tool.tool)
                 .collect::<Vec<Arc<dyn Tool>>>(),
         };
+        let cancel_token = cancel.clone();
         let hooks = Hooks {
             session: self.clone(),
             steering_mode: settings.steering_mode,
             follow_up_mode: settings.follow_up_mode,
+            cancel: cancel_token,
         };
         let prompts = match prompts {
             Some(prompts) => Some(prompts),
@@ -1880,14 +1903,8 @@ impl AgentSession {
             .iter()
             .flatten()
             .map(|tool| tool.name.clone())
-            .filter(|name| {
-                self.inner
-                    .tools
-                    .iter()
-                    .any(|tool| tool.tool.declaration().name == *name)
-            })
             .collect();
-        lock(&self.inner.state).active_tools = names;
+        self.inner.tools.with(|registry| registry.restore(names));
     }
 
     fn registry(&self) -> Arc<ModelRegistry> {
@@ -1913,14 +1930,90 @@ impl AgentSession {
         self.inner.registry.read().ok().map(|registry| f(&registry))
     }
 
-    /// Sets the active built-in tools.
+    /// Sets the active tools; unknown and hidden names are ignored.
     pub fn set_active_tools(&self, names: Vec<String>) {
-        lock(&self.inner.state).active_tools = names;
+        self.inner.tools.set_active(names);
     }
 
     /// The active tool names.
     pub fn active_tool_names(&self) -> Vec<String> {
-        lock(&self.inner.state).active_tools.clone()
+        self.inner.tools.active()
+    }
+
+    /// The session's tools.
+    pub fn tools(&self) -> &Tools {
+        &self.inner.tools
+    }
+
+    /// The context extensions get, with `cancel` for the operation at hand.
+    fn extension_context(&self, cancel: CancellationToken) -> Context {
+        let (ui, mode) = lock(&self.inner.binding).clone();
+        Context {
+            cwd: self.inner.cwd.clone(),
+            agent_dir: self.inner.agent_dir.clone(),
+            project_trusted: lock(&self.inner.settings).project_trusted(),
+            mode,
+            ui,
+            tools: self.inner.tools.clone(),
+            cancel,
+        }
+    }
+
+    /// Gives extensions their UI and mode and starts them: pi's
+    /// `bindExtensions`, which emits `session_start`.
+    pub async fn bind_extensions(&self, ui: Arc<dyn ExtensionUi>, mode: Mode) {
+        *lock(&self.inner.binding) = (ui, mode);
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in &self.inner.extensions {
+            extension.session_start(&ctx).await;
+        }
+    }
+
+    /// Stops extensions before the session ends or is replaced.
+    pub async fn shutdown(&self) {
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in &self.inner.extensions {
+            extension.session_shutdown(&ctx).await;
+        }
+    }
+
+    /// The session's extensions.
+    pub fn extensions(&self) -> &[Arc<dyn Extension>] {
+        &self.inner.extensions
+    }
+
+    /// Whether `text` invokes an extension command.
+    pub fn is_extension_command(&self, text: &str) -> bool {
+        let Some(rest) = text.strip_prefix('/') else {
+            return false;
+        };
+        let name = rest.split(' ').next().unwrap_or_default();
+        self.inner.extensions.iter().any(|extension| {
+            extension
+                .commands()
+                .iter()
+                .any(|command| command.name == name)
+        })
+    }
+
+    /// Runs `/name args` when an extension registered `name`; whether it did.
+    /// Errors are the extension's to report.
+    async fn run_extension_command(&self, text: &str) -> bool {
+        let Some(rest) = text.strip_prefix('/') else {
+            return false;
+        };
+        let (name, args) = rest.split_once(' ').unwrap_or((rest, ""));
+        let Some(extension) = self.inner.extensions.iter().find(|extension| {
+            extension
+                .commands()
+                .iter()
+                .any(|command| command.name == name)
+        }) else {
+            return false;
+        };
+        let ctx = self.extension_context(CancellationToken::new());
+        extension.run_command(name, args, &ctx).await;
+        true
     }
 
     /// The working directory.
@@ -1943,6 +2036,7 @@ struct Hooks {
     session: AgentSession,
     steering_mode: Option<QueueMode>,
     follow_up_mode: Option<QueueMode>,
+    cancel: CancellationToken,
 }
 
 fn drain(queue: &Mutex<VecDeque<Message>>, mode: Option<QueueMode>) -> Vec<Message> {
@@ -2036,6 +2130,39 @@ impl AgentHooks for Hooks {
         // The registry is read under a short lock; credential commands run outside it.
         let registry = self.session.registry();
         Box::pin(async move { registry.auth(model).await })
+    }
+
+    fn current_tools(&self) -> Option<Vec<Arc<dyn Tool>>> {
+        Some(
+            self.session
+                .inner
+                .tools
+                .with(|registry| registry.declared())
+                .into_iter()
+                .map(|tool| tool.tool)
+                .collect(),
+        )
+    }
+
+    fn before_tool_call<'a>(
+        &'a self,
+        call: ri_agent::hooks::BeforeToolCall<'a>,
+    ) -> BoxFuture<'a, Option<ri_agent::hooks::Block>> {
+        Box::pin(async move {
+            let ctx = self.session.extension_context(self.cancel.clone());
+            for extension in &self.session.inner.extensions {
+                if let Some(reason) = extension
+                    .tool_call(&ctx, &call.tool_call.name, call.args)
+                    .await
+                {
+                    return Some(ri_agent::hooks::Block {
+                        reason: Some(reason),
+                        terminate: false,
+                    });
+                }
+            }
+            None
+        })
     }
 
     fn steering_messages(&self) -> BoxFuture<'_, Vec<Message>> {

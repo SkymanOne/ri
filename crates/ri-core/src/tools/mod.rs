@@ -15,6 +15,7 @@ mod ls;
 mod mutation;
 pub mod path;
 mod read;
+pub mod registry;
 pub mod truncate;
 mod write;
 
@@ -74,19 +75,79 @@ impl ToolEnv {
     }
 }
 
-/// A tool with the text it contributes to the system prompt.
+/// How a tool reaches the model; pi's `ToolExposure`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Exposure {
+    /// Declared to the model while active, and callable from other tools.
+    Direct,
+    /// Declared while active, but not callable from other tools.
+    ModelOnly,
+    /// Callable from codemode scripts; never declared.
+    Codemode,
+    /// Declared once `tool_search` loads it.
+    Deferred,
+    /// Registered but unreachable.
+    Hidden,
+}
+
+impl Exposure {
+    /// Whether activating the tool declares it to the model.
+    pub fn declarable(self) -> bool {
+        matches!(self, Exposure::Direct | Exposure::ModelOnly)
+    }
+}
+
+/// A group of tools, such as one MCP server's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Namespace {
+    /// Name, such as `mcp__docs`.
+    pub name: String,
+    /// What the group offers.
+    pub description: Option<String>,
+    /// How to use the group's tools.
+    pub instructions: Option<String>,
+}
+
+/// A tool as registered with a session: the tool, the text it adds to the
+/// system prompt, and how it reaches the model.
 #[derive(Clone)]
-pub struct PromptTool {
+pub struct RegisteredTool {
     /// The tool.
     pub tool: Arc<dyn Tool>,
     /// One-line summary for the prompt's tool list; absent tools are not listed.
     pub snippet: Option<String>,
     /// Bullets added to the prompt's rules.
     pub guidelines: Vec<String>,
+    /// How it reaches the model.
+    pub exposure: Exposure,
+    /// Its group.
+    pub namespace: Option<Namespace>,
+    /// Whether registering it activates it, when its exposure is declarable.
+    pub default_active: bool,
+}
+
+impl RegisteredTool {
+    /// A direct tool, active on registration.
+    pub fn direct(tool: Arc<dyn Tool>, snippet: Option<String>, guidelines: Vec<String>) -> Self {
+        RegisteredTool {
+            tool,
+            snippet,
+            guidelines,
+            exposure: Exposure::Direct,
+            namespace: None,
+            default_active: true,
+        }
+    }
+
+    /// The tool's name.
+    pub fn name(&self) -> &str {
+        &self.tool.declaration().name
+    }
 }
 
 /// Creates the named built-in tool.
-pub fn builtin(name: &str, env: &ToolEnv) -> Option<PromptTool> {
+pub fn builtin(name: &str, env: &ToolEnv) -> Option<RegisteredTool> {
     let (tool, snippet, guidelines): (Arc<dyn Tool>, &str, &[&str]) = match name {
         "read" => (
             Arc::new(Read::new(env.clone())),
@@ -130,11 +191,11 @@ pub fn builtin(name: &str, env: &ToolEnv) -> Option<PromptTool> {
         ),
         _ => return None,
     };
-    Some(PromptTool {
+    Some(RegisteredTool::direct(
         tool,
-        snippet: Some(snippet.to_owned()),
-        guidelines: guidelines.iter().map(|g| (*g).to_owned()).collect(),
-    })
+        Some(snippet.to_owned()),
+        guidelines.iter().map(|g| (*g).to_owned()).collect(),
+    ))
 }
 
 /// A declaration with pi's `constrainedSampling: {type: json_schema, strict: prefer}`,

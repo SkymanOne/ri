@@ -101,7 +101,24 @@ Not yet done:
 - `get_commands` lists prompt templates and skills; pi also lists its built-in `llama` and `mcp` extension commands.
 - `extension_ui_request` events and `extension_ui_response` handling, which need extensions (M5, M6).
 - `cycle_model` over scoped models (`--models`, `enabledModels`).
-- MCP client, OAuth subscriptions, and the openai-codex-responses, azure-openai-responses and mistral wire APIs.
+
+MCP is done for the slice below.
+
+- Client: a port of pi-mcp over stdio and streamable HTTP, with timeouts that progress restarts, cancellation, pagination, resumable event streams and pi's shutdown sequence for server processes.
+- `mcp.json` from the agent directory and trusted projects, validated with pi's messages.
+- The built-in extension: tools as `mcp__<server>__<tool>` with `direct`, `deferred` and `hidden` exposure and `toolExposure` overrides, the resource tools, the `mcp_servers` system prompt section, the startup wait for direct servers, problem reports, server logs in `mcp.log`, and `/mcp` status, `reconnect`, `login` and `logout` routing.
+- The extension runner it needs: the `Extension` trait, a tool registry with pi's activation rules, `tool_search` with pi's BM25 ranking, extension commands from prompts, and notifications in every mode.
+
+Exit criterion. MCP scenarios recorded from pi match: direct tools with text, structured, error, progress, image and resource-link results and the resource tools; deferred tools found and loaded by `tool_search`; and `/mcp` in RPC mode with configuration errors, a failed and a disabled server, reconnect and the subcommand errors. Client tests cover both transports against the test server.
+
+Not yet done:
+
+- `codemode` exposure, pi's default, needs the codemode tool (M7). Until then such servers warn that their tools are unreachable unless `tool_search` is active.
+- OAuth sign-in for HTTP servers and `auth.provider` tokens (with OAuth, below).
+- The `/mcp` manager in the TUI, which needs extension UI (M6); `/mcp` shows the status instead.
+- Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
+- pi's built-in `llama` extension.
+- OAuth subscriptions, and the openai-codex-responses, azure-openai-responses and mistral wire APIs.
 
 ## M5 to M7
 

@@ -287,6 +287,11 @@ impl McpClient {
         Ok(())
     }
 
+    /// Whether `other` is a clone of this client.
+    pub fn same(&self, other: &McpClient) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Whether the connection is open.
     pub fn is_connected(&self) -> bool {
         *lock(&self.inner.state) == State::Connected

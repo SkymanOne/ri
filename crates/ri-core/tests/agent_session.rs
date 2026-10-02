@@ -44,6 +44,7 @@ fn session(faux: &Faux) -> AgentSession {
         model: Some(model),
         thinking_level: ThinkingLevel::Off,
         tools: Vec::new(),
+        extensions: Vec::new(),
         resources: Resources::default(),
     })
 }

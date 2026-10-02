@@ -24,3 +24,4 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | `/share`, `/bug`, `/arminsayshi`, `/dementedelves` | Upload to pi's services; easter eggs | Report that the command is not available | They belong to pi's services and brand. |
 | Debug log, external editor | `pi-debug.log`; "Pi will resume when the editor exits." | `ri-debug.log`; "ri will resume when the editor exits." | Product name. |
 | RPC parse errors | `Failed to parse command:` followed by V8's `JSON.parse` message | The same prefix followed by serde_json's message | Parser messages are implementation details. |
+| MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` temp files | `ri` and ri's version; `ri-mcp-*` temp files | Product name. |

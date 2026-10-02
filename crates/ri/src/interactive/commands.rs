@@ -5,6 +5,7 @@
 //! `modes/interactive/interactive-mode.ts` in pi `v1.0.0`.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
@@ -192,6 +193,37 @@ pub fn autocomplete(
             argument_hint: template.argument_hint.clone(),
             complete: None,
         });
+    }
+    // Built-in extension commands are untagged, like built-in commands.
+    let builtin: Vec<String> = commands
+        .iter()
+        .map(|command| command.name.clone())
+        .collect();
+    for extension in session.extensions() {
+        for command in extension.commands() {
+            if builtin.contains(&command.name) {
+                continue;
+            }
+            let owner = Arc::clone(extension);
+            let name = command.name.clone();
+            commands.push(SlashCommand {
+                name: command.name,
+                description: Some(command.description),
+                argument_hint: None,
+                complete: Some(Box::new(move |prefix: &str| {
+                    owner.complete(&name, prefix).map(|items| {
+                        items
+                            .into_iter()
+                            .map(|item| SelectItem {
+                                value: item.value,
+                                label: item.label,
+                                description: item.description,
+                            })
+                            .collect()
+                    })
+                })),
+            });
+        }
     }
     if session.settings().enable_skill_commands.unwrap_or(true) {
         for skill in &session.resources().skills {

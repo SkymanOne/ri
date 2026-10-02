@@ -20,6 +20,7 @@ ri-tui = { path = "crates/ri-tui" }
 ri-types = { path = "crates/ri-types" }
 
 anyhow = "1"
+base64 = "0.23"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
@@ -37,6 +38,7 @@ rustix = { version = "1", features = ["process"] }
 ryu-js = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+sha2 = "0.11"
 similar = "2"
 thiserror = "2"
 tokio = "1"

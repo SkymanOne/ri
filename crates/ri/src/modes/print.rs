@@ -5,6 +5,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use ri_core::agent_session::failed;
+use ri_core::extensions::{Mode, NoUi};
 use ri_types::message::ContentBlock;
 
 use crate::startup::Startup;
@@ -28,6 +29,8 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
         messages,
     } = startup;
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
+    let mode = if json { Mode::Json } else { Mode::Print };
+    session.bind_extensions(Arc::new(NoUi), mode).await;
     if json {
         if let Some(header) = session.header_json() {
             write_line(&stdout, &header);
@@ -48,9 +51,11 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
     for (message, images) in prompts {
         if let Err(error) = session.prompt(&message, images).await {
             eprintln!("{error}");
+            session.shutdown().await;
             return 1;
         }
     }
+    session.shutdown().await;
 
     if !json
         && let Some(last) = session.messages().last()
