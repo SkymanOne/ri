@@ -9,38 +9,6 @@ use ri_core::config::agent_dir;
 use ri_tui::fuzzy::fuzzy_filter;
 use ri_types::collate::locale_compare;
 
-/// `x.toFixed(1)`: rounds half up on the exact value, as JavaScript does.
-fn to_fixed_1(value: f64) -> String {
-    let wide = format!("{value:.30}");
-    let Some((whole, fraction)) = wide.split_once('.') else {
-        return wide;
-    };
-    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(1)).collect();
-    if fraction
-        .as_bytes()
-        .get(1)
-        .is_some_and(|digit| *digit >= b'5')
-    {
-        let mut index = digits.len();
-        loop {
-            if index == 0 {
-                digits.insert(0, b'1');
-                break;
-            }
-            index -= 1;
-            if digits[index] == b'9' {
-                digits[index] = b'0';
-            } else {
-                digits[index] += 1;
-                break;
-            }
-        }
-    }
-    let text = String::from_utf8_lossy(&digits).into_owned();
-    let split = text.len() - 1;
-    format!("{}.{}", &text[..split], &text[split..])
-}
-
 /// `200000` as `200K`, `1000000` as `1M`, `1500000` as `1.5M`.
 fn format_token_count(count: u64) -> String {
     let scaled = |divisor: f64, suffix: &str| {
@@ -48,7 +16,7 @@ fn format_token_count(count: u64) -> String {
         if value.fract() == 0.0 {
             format!("{value}{suffix}")
         } else {
-            format!("{}{suffix}", to_fixed_1(value))
+            format!("{}{suffix}", ri_types::js::to_fixed(value, 1))
         }
     };
     if count >= 1_000_000 {

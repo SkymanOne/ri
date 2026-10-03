@@ -112,7 +112,7 @@ Exit criterion. MCP scenarios recorded from pi match: direct tools with text, st
 
 Not yet done:
 
-- `codemode` exposure, pi's default, needs the codemode tool (M7). Until then such servers warn that their tools are unreachable unless `tool_search` is active.
+- pi's wait, before a script runs, for the `codemode` servers it names that have not connected yet.
 - OAuth sign-in for HTTP servers and `auth.provider` tokens.
 - The `/mcp` manager in the TUI; `/mcp` shows the status instead.
 - Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
@@ -161,10 +161,9 @@ Done for the slice below.
 
 Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
 
-Of the 50 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top50.json`), 45 install with ri's npm client and register the same as in pi (`cargo xtask package-registrations`, which runs extensions without network, process or environment access). Two that pi itself fails to load under its harness sandbox (pi-lens, @raindrop-ai/pi-agent) are left out, which makes 45 of 48, or 94%. The other three:
+Of the 50 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top50.json`), 46 install with ri's npm client and register the same as in pi (`cargo xtask package-registrations`, which runs extensions without network, process or environment access). Two that pi itself fails to load under its harness sandbox (pi-lens, @raindrop-ai/pi-agent) are left out, which makes 46 of 48, or 96%. The other two:
 
 - context-mode loads `better-sqlite3`, a native addon, when it starts.
-- gentle-pi uses `createCodemodeExtension`, which needs the codemode tool (M7).
 - pi-fabric patches pi's internal `ExtensionRunner`.
 
 Nine scenarios recorded from pi match: an extension tool called by the model with a result handler, a prompt message and a flag (JSON mode); a command that sends a message (RPC mode); load failures; an unknown flag; a package directory whose manifest names its extension; and the package commands (local install, list, empty list, removing an unknown package). The npm client is tested against a mock registry.
@@ -172,7 +171,7 @@ Nine scenarios recorded from pi match: an extension tool called by the model wit
 Not yet done:
 
 - `message_end` replacements, `tool_call` handlers that change the call's input, and the `before_provider_request`, `user_bash`, `model_select`, `resources_discover` and `session_before_*` events.
-- Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), `ctx.executeTool`, and completions through pi-ai from extensions.
+- Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), and completions through pi-ai from extensions.
 - `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
 - Themes from packages; package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
 - Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
@@ -200,8 +199,13 @@ Not yet done:
 
 ## M7: codemode, budgets, import, release
 
-In progress.
+Done for the slice below.
 
+- Codemode: the `codemode` tool, registered inactive, runs each script in a fresh `ri-js` instance without grants or file access. The script gets a new QuickJS context holding only pi's prelude (vendored unchanged), so `tools`, `ALL_TOOLS`, `searchTools`, `describeTool`, `describeNamespace`, `text`, `image`, `console`, `exit`, `store` and `load` behave and fail as in pi. Results carry pi's header, error summaries, output budget with a temp file, and `details.calls`; `store()` writes become `codemode-store` entries. `@options` timeouts and aborts stop the instance at once.
+- Nested tool calls (`ctx.executeTool`) for codemode and JS extensions: pi's ids, `tool_execution_*` events with `parentToolCallId`, `tool_call` and `tool_result` hooks, and `nestedCalls` with summed usage on the tool result. Bash and MCP tools declare pi's output schemas, so scripts receive their structured results.
+- While codemode is active, declared tools say how scripts call them and its description lists the callable tools that are not declared, grouped by namespace within `codemode.inlineBudget`, with TypeScript declarations rendered from their schemas.
+- MCP servers with `codemode` exposure activate codemode, honoring `autoEnableCodemode`. The API facade's `createCodemodeExtension` registers the same tool for packages that decorate it, and a package's own `codemode` replaces the built-in.
+- Interactive mode draws codemode calls and results as pi does and leaves nested calls out of the transcript.
 - `ri import pi` copies pi's agent directory (settings, credentials, models, keybindings, MCP servers, trust, system prompt files, sessions, prompts, skills, themes, extensions and packages) and the current project's `.pi` into ri's, keeping files ri already has.
 - A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64, with checksums.
 
@@ -217,9 +221,13 @@ Budgets, from `cargo xtask bench --pi` on this machine (release build, 100×40 t
 | Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 112 MiB |
 | Stripped release binary | < 35 MB | 33.2 MB | |
 
+Exit criterion. Scripts cannot reach files, processes, the network, the environment, modules or host natives: the sandbox tests check every global a script sees against pi's list and that imports fail (`crates/ri-ext/tests/codemode.rs`, which also covers output, errors, the store, limits and discovery). Three scenarios recorded from pi match: a script with sequential nested calls and the store (JSON mode, with requests and the session file), a script error, and the interactive rendering.
+
 Not yet done:
 
-- Codemode.
+- `codemode.mode: "only"`, which hides direct tools from requests; ri treats it as `on`.
+- The `models` global (classifiers and image generation) and grammar-constrained sampling of scripts on the Responses wire APIs.
+- The warning pi prints when a package's `codemode` replaces the built-in.
 - The budgets measured on macOS.
 
 ## Pending live checks

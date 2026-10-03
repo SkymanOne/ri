@@ -27,6 +27,7 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 pub struct Bash {
     env: ToolEnv,
     declaration: ToolDeclaration,
+    output_schema: Value,
 }
 
 impl Bash {
@@ -44,6 +45,13 @@ impl Bash {
                     "command":{"type":"string","description":"Shell command to execute"},
                     "timeout":{"type":"number","description":"Timeout in seconds (optional, no default timeout)"}}}),
             ),
+            // pi's `bashOutputSchema`: what scripts receive, also for non-zero exits.
+            output_schema: json!({"type":"object","required":["output","truncated","exit_code","wall_time_seconds"],"properties":{
+                "output":{"type":"string","description":"Combined stdout and stderr, possibly truncated"},
+                "truncated":{"type":"boolean"},
+                "full_output_path":{"type":"string","description":"Full output, when truncated"},
+                "exit_code":{"type":"number"},
+                "wall_time_seconds":{"type":"number"}}}),
         }
     }
 }
@@ -365,6 +373,10 @@ impl Tool for Bash {
         &self.declaration
     }
 
+    fn output_schema(&self) -> Option<&Value> {
+        Some(&self.output_schema)
+    }
+
     fn execute(
         &self,
         _call_id: String,
@@ -435,7 +447,10 @@ impl Tool for Bash {
                 }
                 let grace = exited_at.map(|at| at + EXIT_STDIO_GRACE);
                 let next_update = dirty.then(|| last_update + UPDATE_THROTTLE);
+                // Biased: when both pipes have data, stdout's came first more often
+                // than not, and a random pick would reorder `echo a; echo b >&2`.
                 tokio::select! {
+                    biased;
                     read = async { stdout.as_mut().unwrap_or_else(|| unreachable!()).read(&mut out_buf).await }, if stdout.is_some() => {
                         match read {
                             Ok(0) | Err(_) => stdout = None,

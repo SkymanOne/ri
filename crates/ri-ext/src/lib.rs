@@ -6,6 +6,7 @@
 //! thread under a memory limit and a compute limit, resolves and transpiles
 //! modules, and answers the guest's requests within its [`Grants`].
 
+pub mod codemode;
 mod engine;
 mod extensions;
 mod instance;

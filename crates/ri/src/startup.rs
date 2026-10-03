@@ -468,6 +468,7 @@ pub fn create(
         append_prompt: (!appends.is_empty()).then(|| appends.join("\n\n")),
     };
 
+    let codemode_cache = agent_dir.join("cache").join("wasm");
     Ok(AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
@@ -478,11 +479,17 @@ pub fn create(
         model,
         thinking_level,
         tools,
-        // pi runs its built-in extensions after the loaded ones.
+        // pi runs its built-in extensions after the loaded ones: codemode,
+        // then tool_search and MCP.
         extensions: extensions
             .hosts
             .iter()
             .flat_map(ExtensionHost::for_session)
+            .chain(std::iter::once(
+                Arc::new(ri_ext::codemode::CodemodeExtension::new(Some(
+                    codemode_cache,
+                ))) as Arc<dyn ri_core::extensions::Extension>,
+            ))
             .chain(ri_core::extensions::builtins())
             .collect(),
         include_extension_tools: args.tools.is_none() && !args.no_tools,

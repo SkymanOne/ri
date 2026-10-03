@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -139,6 +140,9 @@ pub(crate) struct State {
     started: Vec<(u64, String, String)>,
     call_started: Instant,
     host_time: Duration,
+    /// Set when the instance is dropped: the running export traps at the next
+    /// epoch tick.
+    interrupt: Arc<AtomicBool>,
 }
 
 impl WasiView for State {
@@ -192,9 +196,11 @@ enum Command {
     Stop,
 }
 
-/// A running `ri-js` instance. Dropping it stops the instance.
+/// A running `ri-js` instance. Dropping it stops the instance, interrupting
+/// the guest if it is computing.
 pub struct Instance {
     commands: mpsc::Sender<Command>,
+    interrupt: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for Instance {
@@ -236,10 +242,14 @@ impl Instance {
         let engine = engine.clone();
         let runtime = tokio::runtime::Handle::current();
         let sender = commands.clone();
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let flag = interrupt.clone();
         std::thread::Builder::new()
             .name("ri-ext-instance".into())
-            .spawn(
-                move || match Actor::new(engine, component, options, host, runtime, sender) {
+            // Guest code runs on this thread's stack.
+            .stack_size(crate::engine::WASM_STACK + (2 << 20))
+            .spawn(move || {
+                match Actor::new(engine, component, options, host, runtime, sender, flag) {
                     Ok(actor) => {
                         let _ = ready.send(Ok(()));
                         actor.run(&receiver);
@@ -247,11 +257,14 @@ impl Instance {
                     Err(err) => {
                         let _ = ready.send(Err(err));
                     }
-                },
-            )
+                }
+            })
             .map_err(|err| Error::Instantiate(err.to_string()))?;
         started.await.map_err(|_| Error::Stopped)??;
-        Ok(Instance { commands })
+        Ok(Instance {
+            commands,
+            interrupt,
+        })
     }
 
     /// Runs dispatch `kind` with `payload` and waits for its result.
@@ -298,6 +311,7 @@ impl Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
+        self.interrupt.store(true, Ordering::Relaxed);
         let _ = self.commands.send(Command::Stop);
     }
 }
@@ -316,6 +330,7 @@ struct Actor {
     pending: HashMap<u64, oneshot::Sender<Result<Value, Error>>>,
     /// Calls that shape the instance's state, replayed after a restart.
     replay: Vec<(String, String)>,
+    interrupt: Arc<AtomicBool>,
 }
 
 impl Actor {
@@ -326,8 +341,9 @@ impl Actor {
         host: Arc<Host>,
         runtime: tokio::runtime::Handle,
         commands: mpsc::Sender<Command>,
+        interrupt: Arc<AtomicBool>,
     ) -> Result<Actor, Error> {
-        let (store, bindings) = instantiate(&engine, &component, &options, &host)?;
+        let (store, bindings) = instantiate(&engine, &component, &options, &host, &interrupt)?;
         Ok(Actor {
             engine,
             component,
@@ -341,6 +357,7 @@ impl Actor {
             next_id: 1,
             pending: HashMap::new(),
             replay: Vec::new(),
+            interrupt,
         })
     }
 
@@ -399,6 +416,9 @@ impl Actor {
                         .call_input(store, handle, &data)
                 }),
                 Command::Stop => break,
+            }
+            if self.interrupt.load(Ordering::Relaxed) {
+                break;
             }
         }
     }
@@ -482,6 +502,12 @@ impl Actor {
     /// Replaces a trapped instance with a fresh one and replays the calls that
     /// loaded and configured its extensions. Calls in flight fail.
     fn restart(&mut self, reason: &str) {
+        if self.interrupt.load(Ordering::Relaxed) {
+            for (_, reply) in self.pending.drain() {
+                let _ = reply.send(Err(Error::Stopped));
+            }
+            return;
+        }
         self.host
             .bridge
             .log("error", &format!("Extension runtime stopped: {reason}"));
@@ -489,7 +515,13 @@ impl Actor {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }
         self.generation += 1;
-        match instantiate(&self.engine, &self.component, &self.options, &self.host) {
+        match instantiate(
+            &self.engine,
+            &self.component,
+            &self.options,
+            &self.host,
+            &self.interrupt,
+        ) {
             Ok((store, bindings)) => {
                 self.store = store;
                 self.bindings = bindings;
@@ -518,6 +550,7 @@ fn instantiate(
     component: &Component,
     options: &Options,
     host: &Arc<Host>,
+    interrupt: &Arc<AtomicBool>,
 ) -> Result<(Store<State>, Extension), Error> {
     let mut wasi = WasiCtx::builder();
     if options.grants.filesystem {
@@ -536,11 +569,15 @@ fn instantiate(
         started: Vec::new(),
         call_started: Instant::now(),
         host_time: Duration::ZERO,
+        interrupt: interrupt.clone(),
     };
     let mut store = Store::new(&engine.engine, state);
     store.limiter(|state| &mut state.limits);
     store.epoch_deadline_callback(|context| {
         let state = context.data();
+        if state.interrupt.load(Ordering::Relaxed) {
+            return Err(wasmtime::Error::msg("the instance was stopped"));
+        }
         let busy = state.call_started.elapsed().saturating_sub(state.host_time);
         if busy > CALL_LIMIT {
             Err(wasmtime::Error::msg(format!(

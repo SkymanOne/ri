@@ -24,6 +24,7 @@ use super::tools::{
     LIST_MCP_RESOURCE_TEMPLATES_TOOL, LIST_MCP_RESOURCES_TOOL, McpTool, READ_MCP_RESOURCE_TOOL,
     resource_tools, tool_name,
 };
+use crate::extensions::codemode;
 use crate::extensions::tool_search::{TOOL_SEARCH_TOOL_NAME, is_tool_search};
 use crate::extensions::{
     Command, Completion, Context, DialogOptions, Extension, ExtensionUi, NotifyKind, Tools,
@@ -55,6 +56,8 @@ struct Shared {
     /// True once startup connections settled and their problems were reported.
     startup: Option<watch::Receiver<bool>>,
     warned_unreachable: bool,
+    /// `autoEnableCodemode`: activate codemode for `codemode` servers.
+    auto_enable_codemode: bool,
     waited_for_startup: bool,
     generation: u64,
     /// Tool name to the `<server>\0<tool>` it belongs to.
@@ -406,11 +409,11 @@ impl McpExtension {
         }
     }
 
-    /// Activates `tool_search` when `deferred` tools need it, and warns once
-    /// when tools are unreachable. pi activates the codemode tool for
-    /// `codemode` exposure, which ri does not have yet.
+    /// Activates the tool that reaches undeclared MCP tools: codemode for
+    /// `codemode` exposure unless `autoEnableCodemode` is false, `tool_search`
+    /// for `deferred`. Warns once when neither is active.
     fn ensure_discovery_active(&self, ctx: &Context) {
-        let (needs_codemode, needs_tool_search, warned) = {
+        let (needs_codemode, needs_tool_search, warned, auto_enable) = {
             let shared = lock(&self.shared);
             let mut exposures = HashSet::new();
             for server in &shared.servers {
@@ -429,24 +432,44 @@ impl McpExtension {
                 exposures.contains("codemode"),
                 exposures.contains("deferred"),
                 shared.warned_unreachable,
+                shared.auto_enable_codemode,
             )
         };
         if !needs_codemode && !needs_tool_search {
             return;
         }
-        let has_tool_search = ctx.tools.all().iter().any(is_tool_search);
-        let mut active = ctx.tools.active();
-        let searchable = active.iter().any(|name| name == TOOL_SEARCH_TOOL_NAME);
-        if needs_tool_search && has_tool_search && !searchable {
-            active.push(TOOL_SEARCH_TOOL_NAME.to_owned());
-            ctx.tools.set_active(active.clone());
+        // Other extensions' tools of these names cannot reach MCP tools.
+        let all = ctx.tools.all();
+        let has_codemode = all.iter().any(codemode::is_codemode_tool);
+        let has_tool_search = all.iter().any(is_tool_search);
+        let active = ctx.tools.active();
+        let is_active = |name: &str| active.iter().any(|active| active == name);
+        let mut activate = Vec::new();
+        if needs_codemode && has_codemode && auto_enable && !is_active(codemode::NAME) {
+            activate.push(codemode::NAME.to_owned());
         }
-        if (has_tool_search && active.iter().any(|name| name == TOOL_SEARCH_TOOL_NAME)) || warned {
+        if needs_tool_search && has_tool_search && !is_active(TOOL_SEARCH_TOOL_NAME) {
+            activate.push(TOOL_SEARCH_TOOL_NAME.to_owned());
+        }
+        let reachable: Vec<String> = active.iter().cloned().chain(activate.clone()).collect();
+        if !activate.is_empty() {
+            ctx.tools.set_active(reachable.clone());
+        }
+        let reaches = |name: &str| reachable.iter().any(|active| active == name);
+        if (has_codemode && reaches(codemode::NAME))
+            || (has_tool_search && reaches(TOOL_SEARCH_TOOL_NAME))
+            || warned
+        {
             return;
         }
         lock(&self.shared).warned_unreachable = true;
+        let reason = if needs_codemode && has_codemode && !auto_enable {
+            " (autoEnableCodemode is false)"
+        } else {
+            ""
+        };
         ctx.ui.notify(
-            "MCP tools are only reachable from the codemode or tool_search tool, but neither is active; they cannot be called.",
+            &format!("MCP tools are only reachable from the codemode or tool_search tool, but neither is active{reason}; they cannot be called."),
             NotifyKind::Warning,
         );
     }
@@ -878,6 +901,7 @@ impl Extension for McpExtension {
                 let mut shared = lock(&self.shared);
                 shared.config_errors = loaded.errors;
                 shared.warned_unreachable = false;
+                shared.auto_enable_codemode = loaded.auto_enable_codemode.unwrap_or(true);
                 shared.waited_for_startup = false;
                 shared.startup = None;
                 shared.generation += 1;

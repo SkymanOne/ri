@@ -18,6 +18,8 @@ pub struct BeforeToolCall<'a> {
     pub args: &'a Value,
     /// The transcript so far.
     pub messages: &'a [Message],
+    /// The tool call that made this call, for calls a tool made.
+    pub parent_tool_call_id: Option<&'a str>,
 }
 
 /// Blocks a tool call.
@@ -42,6 +44,8 @@ pub struct AfterToolCall<'a> {
     pub result: &'a ToolResult,
     /// Whether the result is an error.
     pub is_error: bool,
+    /// The tool call that made this call, for calls a tool made.
+    pub parent_tool_call_id: Option<&'a str>,
 }
 
 /// Replacement fields for a tool result; `None` keeps the original.
@@ -128,6 +132,10 @@ pub trait AgentHooks: Send + Sync {
     ) -> BoxFuture<'a, Option<ResultPatch>> {
         Box::pin(async { None })
     }
+
+    /// Completes a tool result message before it is emitted, for example
+    /// with the calls the tool made.
+    fn complete_tool_result(&self, _message: &mut ToolResultMessage) {}
 
     /// Decides what follows a turn.
     fn finish_turn<'a>(&'a self, _turn: Turn<'a>) -> BoxFuture<'a, TurnDecision> {

@@ -10,6 +10,7 @@ each package is included once.
 | `typebox` | 1.3.27 | MIT | Copyright (c) 2017-2026 Haydn Paterson |
 | `marked` (bundled by pi-tui) | 18.0.11 | MIT | Copyright (c) 2018+, MarkedJS; Copyright (c) 2011-2018, Christopher Jeffrey |
 | `get-east-asian-width` (bundled by pi-tui) | 1.6.0 | MIT | Copyright (c) Sindre Sorhus |
+| `@earendil-works/pi-codemode` (`codemode-prelude.js`, the sandbox prelude, unchanged) | 1.0.0 | MIT | Copyright (c) 2025 Mario Zechner |
 
 The facades in `../pi` port small parts of pi-ai and pi-coding-agent 1.0.0
 (MIT, Copyright (c) 2025 Mario Zechner).

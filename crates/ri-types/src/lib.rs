@@ -10,6 +10,7 @@ pub mod auth;
 pub mod collate;
 pub mod config;
 pub mod event;
+pub mod js;
 pub mod json;
 pub mod message;
 pub mod model;

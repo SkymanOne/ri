@@ -13,16 +13,18 @@ use std::sync::{Arc, Mutex, RwLock};
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use ri_agent::hooks::AgentHooks;
-use ri_agent::{AgentContext, ExecutionMode, LoopConfig, Tool};
+use ri_agent::{
+    AgentContext, ExecutionMode, LoopConfig, Tool, ToolCallOutcome, ToolCallScope, UpdateSink,
+};
 use ri_ai::api::Apis;
 use ri_ai::errors::{is_context_overflow, is_recoverable_length, is_retryable_assistant_error};
 use ri_ai::registry::{Auth, ModelRegistry};
 use ri_ai::stream::{StreamOptions, ThinkingBudgets};
-use ri_types::event::AgentEvent;
+use ri_types::event::{AgentEvent, ToolResult};
 use ri_types::event::{CompactionReason, CompactionResult};
 use ri_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
-    TextContent, ThinkingLevel, UserMessage,
+    TextContent, ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
 };
 use ri_types::model::Model;
 use ri_types::rpc::{PromptDisposition, StreamingBehavior};
@@ -33,10 +35,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::compaction::{
     BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer,
-    calculate_context_tokens, estimate_context_tokens, estimate_projected_context_tokens,
-    estimate_tokens, prepare_compaction, should_compact,
+    calculate_context_tokens, combine_usage, estimate_context_tokens,
+    estimate_projected_context_tokens, estimate_tokens, prepare_compaction, should_compact,
 };
-use crate::extensions::{Context, Extension, ExtensionUi, Mode, NoUi, ToolRenderers, Tools};
+use crate::extensions::{
+    Context, Extension, ExtensionUi, Loadout, Mode, NoUi, ToolRenderers, Tools,
+};
 use crate::messages::convert_to_llm;
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::{SessionManager, build_projection};
@@ -44,7 +48,7 @@ use crate::settings::SettingsManager;
 use crate::system_prompt::{PromptOptions, build_sections, diff_sections};
 use crate::time::{now_ms, parse_iso};
 use crate::tools::registry::ToolRegistry;
-use crate::tools::{BUILTIN_TOOLS, RegisteredTool, Runtime, ToolEnv, builtin};
+use crate::tools::{BUILTIN_TOOLS, Described, Exposure, RegisteredTool, Runtime, ToolEnv, builtin};
 
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
@@ -139,6 +143,8 @@ struct Inner {
     manual_compaction: std::sync::atomic::AtomicBool,
     /// Cancels the wait before an automatic retry.
     retry_cancel: Mutex<Option<CancellationToken>>,
+    /// Calls tools made through [`AgentSession::execute_tool`].
+    nested: crate::nested::NestedCalls,
 }
 
 /// Counts an operation in [`Inner::compacting`] while alive.
@@ -383,6 +389,7 @@ impl AgentSession {
                 compacting: AtomicUsize::new(0),
                 manual_compaction: std::sync::atomic::AtomicBool::new(false),
                 retry_cancel: Mutex::new(None),
+                nested: crate::nested::NestedCalls::default(),
             }),
         }
     }
@@ -1145,6 +1152,29 @@ impl AgentSession {
         options
     }
 
+    /// The `declared` tools as the model sees them, with the descriptions
+    /// the extensions' loadout hooks give them; pi's `_applyToolLoadout`.
+    fn loadout(&self, declared: Vec<RegisteredTool>) -> Vec<Arc<dyn Tool>> {
+        let loadout = Loadout {
+            declared,
+            callable: self.callable_tools(),
+        };
+        let mut descriptions = std::collections::HashMap::new();
+        for extension in &self.inner.extensions {
+            descriptions.extend(extension.prepare_loadout(&loadout));
+        }
+        loadout
+            .declared
+            .into_iter()
+            .map(|tool| match descriptions.remove(tool.name()) {
+                Some(description) if description != tool.tool.declaration().description => {
+                    Arc::new(Described::new(tool.tool, description)) as Arc<dyn Tool>
+                }
+                _ => tool.tool,
+            })
+            .collect()
+    }
+
     fn active_tools(&self, active: &[String]) -> Vec<RegisteredTool> {
         self.inner.tools.with(|registry| {
             active
@@ -1364,11 +1394,7 @@ impl AgentSession {
         };
         let mut context = AgentContext {
             messages,
-            tools: self
-                .active_tools(&active)
-                .into_iter()
-                .map(|tool| tool.tool)
-                .collect::<Vec<Arc<dyn Tool>>>(),
+            tools: self.loadout(self.active_tools(&active)),
         };
         let cancel_token = cancel.clone();
         let hooks = Hooks {
@@ -2070,6 +2096,178 @@ impl AgentSession {
         &self.inner.tools
     }
 
+    /// pi's `appendEntry` for extensions: appends custom entry `custom_type`
+    /// and reports it as `entry_appended`.
+    pub fn append_custom_entry(
+        &self,
+        custom_type: &str,
+        data: Option<Value>,
+    ) -> Result<(), String> {
+        let entry = self.with_session(|file| {
+            let id = file
+                .append_custom_entry(custom_type, data)
+                .map_err(|err| err.to_string())?;
+            Ok::<_, String>(file.entry(&id).cloned())
+        })?;
+        if let Some(entry) = entry {
+            self.emit(&AgentEvent::EntryAppended { entry });
+        }
+        Ok(())
+    }
+
+    /// The tools other tools may call, in registration order: every
+    /// `codemode` and `deferred` tool and the active `direct` ones; pi's
+    /// `_getCallableTools`.
+    pub fn callable_tools(&self) -> Vec<RegisteredTool> {
+        self.inner.tools.with(|registry| {
+            let active = registry.active();
+            registry
+                .all()
+                .into_iter()
+                .filter(|tool| match tool.exposure {
+                    Exposure::Codemode | Exposure::Deferred => true,
+                    Exposure::Direct => active.iter().any(|name| name == tool.name()),
+                    Exposure::ModelOnly | Exposure::Hidden => false,
+                })
+                .collect()
+        })
+    }
+
+    /// Runs tool `name` on behalf of the tool call `caller`, as pi's
+    /// `ctx.executeTool()`: the call gets the id `<caller>/<n>`, runs through
+    /// the tool pipeline and hooks against [`AgentSession::callable_tools`],
+    /// emits `tool_execution_*` events with `parentToolCallId`, and is recorded
+    /// on the caller's tool result message. Failures come back as error
+    /// results. `updates` also receives the tool's partial results.
+    pub async fn execute_tool(
+        &self,
+        caller: &str,
+        name: &str,
+        args: Value,
+        cancel: CancellationToken,
+        updates: Option<UpdateSink>,
+    ) -> ToolCallOutcome {
+        let mut call = ToolCall {
+            id: String::new(),
+            name: name.to_owned(),
+            arguments: match args {
+                Value::Object(arguments) => arguments,
+                _ => serde_json::Map::new(),
+            },
+            thought_signature: None,
+            namespace: None,
+        };
+        let nested = &self.inner.nested;
+        let started = nested.start(caller, &mut call);
+        let hooks = Hooks {
+            session: self.clone(),
+            steering_mode: None,
+            follow_up_mode: None,
+            cancel: cancel.clone(),
+            turn_index: std::sync::atomic::AtomicU64::new(0),
+        };
+        let parent = Some(caller.to_owned());
+        hooks
+            .on_event(&AgentEvent::ToolExecutionStart {
+                tool_call_id: call.id.clone(),
+                tool_name: call.name.clone(),
+                args: Value::Object(call.arguments.clone()),
+                parent_tool_call_id: parent.clone(),
+            })
+            .await;
+        let callable = self.callable_tools();
+        let exclusive = !started.holds_queue
+            && callable.iter().any(|tool| {
+                tool.name() == name && tool.tool.execution_mode() == ExecutionMode::Sequential
+            });
+        let queue = if exclusive {
+            Some(nested.queue.clone().lock_owned().await)
+        } else {
+            None
+        };
+        nested.enter(&started, started.holds_queue || exclusive);
+        let outcome = match self.last_assistant() {
+            None => ToolCallOutcome {
+                call: call.clone(),
+                result: ToolResult {
+                    content: vec![ContentBlock::Text(TextContent {
+                        text: "No assistant message issued this call".into(),
+                        text_signature: None,
+                    })],
+                    details: Some(Value::Object(serde_json::Map::new())),
+                    ..ToolResult::default()
+                },
+                is_error: true,
+            },
+            Some(assistant) => {
+                let tools: Vec<Arc<dyn Tool>> =
+                    callable.into_iter().map(|tool| tool.tool).collect();
+                let messages = self.messages();
+                let scope = ToolCallScope {
+                    tools: &tools,
+                    assistant: &assistant,
+                    messages: &messages,
+                    parent: Some(caller),
+                    cancel: &cancel,
+                };
+                let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                let sink: UpdateSink = Arc::new(move |partial: ToolResult| {
+                    if let Some(updates) = &updates {
+                        updates(partial.clone());
+                    }
+                    let _ = sender.send(partial);
+                });
+                let update = |partial_result| AgentEvent::ToolExecutionUpdate {
+                    tool_call_id: call.id.clone(),
+                    tool_name: call.name.clone(),
+                    args: Value::Object(call.arguments.clone()),
+                    partial_result,
+                    parent_tool_call_id: parent.clone(),
+                };
+                let run = ri_agent::run_tool_call(&scope, call.clone(), &hooks, sink);
+                tokio::pin!(run);
+                loop {
+                    tokio::select! {
+                        biased;
+                        Some(partial) = receiver.recv() => hooks.on_event(&update(partial)).await,
+                        outcome = &mut run => {
+                            while let Ok(partial) = receiver.try_recv() {
+                                hooks.on_event(&update(partial)).await;
+                            }
+                            break outcome;
+                        }
+                    }
+                }
+            }
+        };
+        drop(queue);
+        let text: Vec<&str> = outcome
+            .result
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        nested.finish(
+            started,
+            outcome.is_error,
+            &text.join("\n"),
+            outcome.result.usage.as_ref(),
+        );
+        hooks
+            .on_event(&AgentEvent::ToolExecutionEnd {
+                tool_call_id: call.id.clone(),
+                tool_name: call.name.clone(),
+                result: outcome.result.clone(),
+                is_error: outcome.is_error,
+                parent_tool_call_id: parent,
+            })
+            .await;
+        outcome
+    }
+
     /// The context extensions get, with `cancel` for the operation at hand.
     fn extension_context(&self, cancel: CancellationToken) -> Context {
         let (ui, mode) = lock(&self.inner.binding).clone();
@@ -2350,9 +2548,21 @@ fn extension_event(event: &AgentEvent, kind: &str, turn_index: u64) -> Option<Va
         "turn_end" => &["message", "toolResults"],
         "message_start" | "message_end" => &["message"],
         "message_update" => &["message", "assistantMessageEvent"],
-        "tool_execution_start" => &["toolCallId", "toolName", "args"],
-        "tool_execution_update" => &["toolCallId", "toolName", "args", "partialResult"],
-        "tool_execution_end" => &["toolCallId", "toolName", "result", "isError"],
+        "tool_execution_start" => &["toolCallId", "toolName", "args", "parentToolCallId"],
+        "tool_execution_update" => &[
+            "toolCallId",
+            "toolName",
+            "args",
+            "partialResult",
+            "parentToolCallId",
+        ],
+        "tool_execution_end" => &[
+            "toolCallId",
+            "toolName",
+            "result",
+            "isError",
+            "parentToolCallId",
+        ],
         _ => &[],
     };
     let mut out = serde_json::Map::new();
@@ -2387,6 +2597,7 @@ impl AgentHooks for Hooks {
         }
         match event {
             AgentEvent::AgentEnd { messages, .. } => {
+                session.inner.nested.clear();
                 session.emit(&AgentEvent::AgentEnd {
                     messages: messages.clone(),
                     will_retry: session.will_retry_after(messages),
@@ -2521,15 +2732,12 @@ impl AgentHooks for Hooks {
     }
 
     fn current_tools(&self) -> Option<Vec<Arc<dyn Tool>>> {
-        Some(
-            self.session
-                .inner
-                .tools
-                .with(|registry| registry.declared())
-                .into_iter()
-                .map(|tool| tool.tool)
-                .collect(),
-        )
+        let declared = self
+            .session
+            .inner
+            .tools
+            .with(|registry| registry.declared());
+        Some(self.session.loadout(declared))
     }
 
     fn before_tool_call<'a>(
@@ -2549,12 +2757,15 @@ impl AgentHooks for Hooks {
                     });
                 }
             }
-            let event = serde_json::json!({
+            let mut event = serde_json::json!({
                 "type": "tool_call",
                 "toolName": call.tool_call.name,
                 "toolCallId": call.tool_call.id,
-                "input": call.args,
             });
+            if let Some(parent) = call.parent_tool_call_id {
+                event["parentToolCallId"] = Value::String(parent.to_owned());
+            }
+            event["input"] = call.args.clone();
             for extension in self.session.handlers_of("tool_call") {
                 if let Some(result) = extension.handle(&ctx, &event).await
                     && result["block"] == true
@@ -2583,11 +2794,14 @@ impl AgentHooks for Hooks {
                 "type": "tool_result",
                 "toolName": call.tool_call.name,
                 "toolCallId": call.tool_call.id,
-                "input": call.args,
-                "content": call.result.content,
-                "details": call.result.details,
-                "isError": call.is_error,
             });
+            if let Some(parent) = call.parent_tool_call_id {
+                event["parentToolCallId"] = Value::String(parent.to_owned());
+            }
+            event["input"] = call.args.clone();
+            event["content"] = serde_json::json!(call.result.content);
+            event["details"] = serde_json::json!(call.result.details);
+            event["isError"] = Value::Bool(call.is_error);
             let mut modified = false;
             for extension in handlers {
                 let Some(result) = extension.handle(&ctx, &event).await else {
@@ -2607,6 +2821,21 @@ impl AgentHooks for Hooks {
                 terminate: None,
             })
         })
+    }
+
+    fn complete_tool_result(&self, message: &mut ToolResultMessage) {
+        let Some(summary) = self.session.inner.nested.take(&message.tool_call_id) else {
+            return;
+        };
+        if summary.calls.is_some() {
+            message.nested_calls = summary.calls;
+        }
+        if let Some(usage) = summary.usage {
+            message.usage = Some(match &message.usage {
+                Some(own) => combine_usage(own, &usage),
+                None => usage,
+            });
+        }
     }
 
     fn steering_messages(&self) -> BoxFuture<'_, Vec<Message>> {

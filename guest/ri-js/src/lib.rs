@@ -10,6 +10,7 @@
 wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
 
 mod builtins;
+mod codemode;
 mod fs;
 
 use std::cell::{Cell, RefCell};
@@ -129,6 +130,25 @@ fn json_string(text: &str) -> String {
     out
 }
 
+/// A new operation id.
+fn next_op() -> u64 {
+    NEXT_OP.with(|next| {
+        let op = next.get();
+        next.set(op + 1);
+        op
+    })
+}
+
+/// Reports an outcome of the current export.
+fn push_outcome(outcome: Outcome) {
+    OUTCOMES.with(|outcomes| outcomes.borrow_mut().push(outcome));
+}
+
+/// The outcomes reported since the last call.
+fn take_outcomes() -> Vec<Outcome> {
+    OUTCOMES.with(|outcomes| std::mem::take(&mut *outcomes.borrow_mut()))
+}
+
 fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let native = Object::new(ctx.clone())?;
     native.set(
@@ -144,11 +164,7 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     native.set(
         "start",
         Function::new(ctx.clone(), |kind: String, payload: String| {
-            let op = NEXT_OP.with(|next| {
-                let op = next.get();
-                next.set(op + 1);
-                op
-            });
+            let op = next_op();
             host::start(op, &kind, &payload);
             op as f64
         })?,
@@ -156,17 +172,13 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     native.set(
         "done",
         Function::new(ctx.clone(), |id: f64, json: String| {
-            OUTCOMES.with(|outcomes| outcomes.borrow_mut().push(Outcome::Done((id as u64, json))));
+            push_outcome(Outcome::Done((id as u64, json)));
         })?,
     )?;
     native.set(
         "fail",
         Function::new(ctx.clone(), |id: f64, message: String| {
-            OUTCOMES.with(|outcomes| {
-                outcomes
-                    .borrow_mut()
-                    .push(Outcome::Failed((id as u64, message)))
-            });
+            push_outcome(Outcome::Failed((id as u64, message)));
         })?,
     )?;
     native.set(
@@ -257,7 +269,7 @@ fn drain() -> Vec<Outcome> {
             Err(_) => {}
         }
     }
-    OUTCOMES.with(|outcomes| std::mem::take(&mut *outcomes.borrow_mut()))
+    take_outcomes()
 }
 
 /// Calls `globalThis.__ri.<name>(args)`, reporting a synchronous exception as a
@@ -278,8 +290,7 @@ fn call_runtime(
         if let Err(error) = result.catch(ctx) {
             let message = error.to_string();
             match id {
-                Some(id) => OUTCOMES
-                    .with(|outcomes| outcomes.borrow_mut().push(Outcome::Failed((id, message)))),
+                Some(id) => push_outcome(Outcome::Failed((id, message))),
                 None => log_error(&message),
             }
         }
@@ -291,6 +302,9 @@ struct Runtime_;
 
 impl Guest for Runtime_ {
     fn dispatch(id: u64, kind: String, payload: String) -> Vec<Outcome> {
+        if kind == "codemode" {
+            return codemode::start(id, &payload);
+        }
         call_runtime("dispatch", Some(id), |ctx| {
             let mut args = rquickjs::function::Args::new(ctx.clone(), 3);
             args.push_arg(id as f64)?;
@@ -301,6 +315,9 @@ impl Guest for Runtime_ {
     }
 
     fn resolve(op: u64, value: Result<String, String>) -> Vec<Outcome> {
+        if let Some(outcomes) = codemode::resolve(op, &value) {
+            return outcomes;
+        }
         call_runtime("resolve", None, |ctx| {
             let (ok, text) = match value {
                 Ok(json) => (true, json),

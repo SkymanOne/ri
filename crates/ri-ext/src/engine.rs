@@ -15,6 +15,11 @@ use crate::instance::State;
 /// The JS runtime component, built by `cargo xtask js-runtime`.
 const RI_JS: &[u8] = include_bytes!("../ri-js.wasm");
 
+/// The native stack guest code may use. QuickJS bounds its own stack well
+/// below this, so deep recursion throws a catchable `RangeError` in JS
+/// instead of trapping.
+pub(crate) const WASM_STACK: usize = 8 * 1024 * 1024;
+
 /// How often the epoch advances; guest time limits are checked at this rate.
 pub(crate) const TICK: Duration = Duration::from_millis(10);
 
@@ -44,6 +49,8 @@ impl Engine {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.epoch_interruption(true);
+        config.max_wasm_stack(WASM_STACK);
+        config.async_stack_size(WASM_STACK + (1 << 20));
         let engine = wasmtime::Engine::new(&config).map_err(Error::compile)?;
         let component = compile(&engine, RI_JS, cache_dir, "ri-js")?;
         let mut linker = Linker::new(&engine);

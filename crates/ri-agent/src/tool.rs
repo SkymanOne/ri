@@ -39,6 +39,12 @@ pub trait Tool: Send + Sync {
         ExecutionMode::Parallel
     }
 
+    /// JSON Schema of the value the tool returns as `structuredContent`, for
+    /// tools whose results scripts consume; pi's `outputSchema`.
+    fn output_schema(&self) -> Option<&Value> {
+        None
+    }
+
     /// Rewrites raw arguments before validation, for compatibility with older
     /// argument shapes.
     fn prepare_arguments(&self, arguments: Map<String, Value>) -> Map<String, Value> {

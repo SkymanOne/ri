@@ -1107,6 +1107,19 @@ impl App {
                     }
                 }
             }
+            // Calls a tool made, such as codemode's nested calls, get no row.
+            AgentEvent::ToolExecutionStart {
+                parent_tool_call_id: Some(_),
+                ..
+            }
+            | AgentEvent::ToolExecutionUpdate {
+                parent_tool_call_id: Some(_),
+                ..
+            }
+            | AgentEvent::ToolExecutionEnd {
+                parent_tool_call_id: Some(_),
+                ..
+            } => {}
             AgentEvent::ToolExecutionStart {
                 tool_call_id,
                 tool_name,

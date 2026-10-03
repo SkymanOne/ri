@@ -136,6 +136,31 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     runtime.block_on(compare(args))
 }
 
+/// `value` without pi's codemode `models` line, a pointer into pi's docs for
+/// classifier and image models, which ri does not have (docs/compat.md).
+fn without_models_line(value: Value) -> Value {
+    const LINE: &str = "\n- `models`: classifiers and image generation. Read ";
+    match value {
+        Value::String(mut text) => {
+            while let Some(start) = text.find(LINE) {
+                match text[start..].find(" first.") {
+                    Some(end) => text.replace_range(start..start + end + " first.".len(), ""),
+                    None => break,
+                }
+            }
+            Value::String(text)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(without_models_line).collect()),
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, item)| (key, without_models_line(item)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     let fixtures = Path::new(FIXTURES);
     let top: Vec<Value> =
@@ -165,7 +190,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         let got = load(&engine, &dir, name, version, args.verbose)
             .await
             .unwrap_or_else(|err| json!({"version": version, "crash": err.to_string()}));
-        let want = expected.get(name).cloned().unwrap_or(Value::Null);
+        let want = without_models_line(expected.get(name).cloned().unwrap_or(Value::Null));
         let same = ["extensions", "errors"]
             .iter()
             .all(|key| got.get(*key) == want.get(*key))

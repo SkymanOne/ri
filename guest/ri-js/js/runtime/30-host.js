@@ -247,6 +247,7 @@
 			promptSnippet: tool.promptSnippet,
 			promptGuidelines: tool.promptGuidelines,
 			parameters: plain(tool.parameters),
+			outputSchema: plain(tool.outputSchema),
 			constrainedSampling: tool.constrainedSampling,
 			renderShell: tool.renderShell,
 			exposure: tool.exposure,
@@ -859,8 +860,8 @@
 			const tool = extension.tools.get(payload.name);
 			if (!tool) throw new Error(`Tool ${payload.name} is not registered by ${extension.path}`);
 			const ctx = createContext(payload.ctx, {
-				tools: [],
-				executeTool: (name, args) => ri.op("tool.execute", { name, args: plain(args) }),
+				tools: payload.tools ?? [],
+				executeTool: (name, args) => ri.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
 			});
 			const onUpdate = (partial) => ri.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
 			let params = payload.params;

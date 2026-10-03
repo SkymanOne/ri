@@ -529,6 +529,33 @@ impl Normalizer<'_> {
                 None => break,
             }
         }
+        // So does codemode's `models` line; ri has no classifier or image models.
+        const MODELS: &str = "\n- `models`: classifiers and image generation. Read ";
+        while let Some(start) = text.find(MODELS) {
+            match text[start..].find(" first.") {
+                Some(end) => text.replace_range(start..start + end + " first.".len(), ""),
+                None => break,
+            }
+        }
+        // Codemode results report the script's wall time.
+        let mut rest = text.as_str();
+        let mut timed = String::new();
+        while let Some(start) = rest.find("\nWall time ") {
+            let after = &rest[start + "\nWall time ".len()..];
+            match after.find(" seconds\n") {
+                Some(end) if after[..end].chars().all(|c| c.is_ascii_digit() || c == '.') => {
+                    timed.push_str(&rest[..start]);
+                    timed.push_str("\nWall time <seconds> seconds\n");
+                    rest = &after[end + " seconds\n".len()..];
+                }
+                _ => {
+                    timed.push_str(&rest[..start + 1]);
+                    rest = &rest[start + 1..];
+                }
+            }
+        }
+        timed.push_str(rest);
+        let text = timed;
         self.unsaved_session_files(&text)
     }
 
@@ -590,7 +617,7 @@ impl Normalizer<'_> {
                             self.id(item)
                         }
                         (
-                            "timestamp" | "estimatedTokensAfter",
+                            "timestamp" | "estimatedTokensAfter" | "durationMs",
                             Value::String(_) | Value::Number(_),
                         ) => Value::from(format!("<{key}>")),
                         ("sections", Value::Object(sections)) => {
@@ -784,6 +811,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             .map(|word| if is_uuid(word) { "<uuid>" } else { word })
             .collect::<Vec<_>>()
             .join(" ");
+        let row = mask_call_duration(row);
         if row.trim().is_empty() && out.last().is_none_or(|last| last.trim().is_empty()) {
             continue;
         }
@@ -793,6 +821,33 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
         out.pop();
     }
     out
+}
+
+/// A codemode call row (`✓ read {...} 12ms`) with its duration masked.
+fn mask_call_duration(row: String) -> String {
+    let icon = row.trim_start().chars().next();
+    if !matches!(icon, Some('✓' | '✗' | '⊘' | '…')) {
+        return row;
+    }
+    let Some((head, last)) = row.rsplit_once(' ') else {
+        return row;
+    };
+    let timed = last
+        .strip_suffix("ms")
+        .is_some_and(|ms| !ms.is_empty() && ms.chars().all(|c| c.is_ascii_digit()))
+        || last.strip_suffix('s').is_some_and(|seconds| {
+            seconds.split_once('.').is_some_and(|(whole, tenths)| {
+                !whole.is_empty()
+                    && whole.chars().all(|c| c.is_ascii_digit())
+                    && tenths.len() == 1
+                    && tenths.chars().all(|c| c.is_ascii_digit())
+            })
+        });
+    if timed {
+        format!("{head} <duration>")
+    } else {
+        row
+    }
 }
 
 fn sort_tool_completions(events: &mut [Value]) {

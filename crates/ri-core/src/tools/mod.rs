@@ -22,11 +22,13 @@ mod write;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use ri_agent::Tool;
+use futures_util::future::BoxFuture;
+use ri_agent::{Tool, UpdateSink};
 use ri_types::event::ToolResult;
 use ri_types::message::{ContentBlock, TextContent, ThinkingLevel, ToolDeclaration};
 use ri_types::model::Model;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
 pub use bash::Bash;
 pub use edit::Edit;
@@ -107,6 +109,58 @@ pub struct Namespace {
     pub description: Option<String>,
     /// How to use the group's tools.
     pub instructions: Option<String>,
+}
+
+/// A tool declared with another description; everything else is the tool's.
+pub struct Described {
+    tool: Arc<dyn Tool>,
+    declaration: ToolDeclaration,
+}
+
+impl Described {
+    /// `tool`, declared with `description`.
+    pub fn new(tool: Arc<dyn Tool>, description: String) -> Described {
+        let declaration = ToolDeclaration {
+            description,
+            ..tool.declaration().clone()
+        };
+        Described { tool, declaration }
+    }
+}
+
+impl Tool for Described {
+    fn declaration(&self) -> &ToolDeclaration {
+        &self.declaration
+    }
+
+    fn label(&self) -> &str {
+        self.tool.label()
+    }
+
+    fn execution_mode(&self) -> ri_agent::ExecutionMode {
+        self.tool.execution_mode()
+    }
+
+    fn output_schema(&self) -> Option<&Value> {
+        self.tool.output_schema()
+    }
+
+    fn prepare_arguments(
+        &self,
+        arguments: serde_json::Map<String, Value>,
+    ) -> serde_json::Map<String, Value> {
+        self.tool.prepare_arguments(arguments)
+    }
+
+    fn execute(
+        &self,
+        call_id: String,
+        args: Value,
+        cancel: CancellationToken,
+        updates: UpdateSink,
+    ) -> BoxFuture<'_, Result<ToolResult, String>> {
+        self.tool.execute(call_id, args, cancel, updates)
+    }
 }
 
 /// A tool as registered with a session: the tool, the text it adds to the

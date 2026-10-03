@@ -166,7 +166,10 @@ pub async fn execute(
             break;
         }
         let grace = exited_at.map(|at| at + EXIT_STDIO_GRACE);
+        // Biased: when both pipes have data, stdout's came first more often
+        // than not, and a random pick would reorder `echo a; echo b >&2`.
         tokio::select! {
+            biased;
             read = async { stdout.as_mut().unwrap_or_else(|| unreachable!()).read(&mut out_buf).await }, if stdout.is_some() => {
                 match read {
                     Ok(0) | Err(_) => stdout = None,

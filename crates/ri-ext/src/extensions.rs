@@ -16,7 +16,7 @@ use ri_core::extensions::{
     Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
     Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
 };
-use ri_core::tools::{Exposure, RegisteredTool};
+use ri_core::tools::{Exposure, Namespace, RegisteredTool};
 use ri_types::event::ToolResult;
 use ri_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
@@ -87,7 +87,7 @@ impl ExtensionHost {
         options: Options,
         sources: &[SourceInfo],
     ) -> Result<Arc<ExtensionHost>, Error> {
-        let bridge = SessionBridge::new();
+        let bridge = SessionBridge::new(engine);
         let instance = Instance::start(engine, options.clone(), bridge.clone()).await?;
         ExtensionHost::start(instance, bridge, options, sources).await
     }
@@ -100,7 +100,7 @@ impl ExtensionHost {
         source: &SourceInfo,
     ) -> Result<Arc<ExtensionHost>, Error> {
         let component = engine.native(std::path::Path::new(&source.path))?;
-        let bridge = SessionBridge::new();
+        let bridge = SessionBridge::new(engine);
         let instance =
             Instance::start_component(engine, component, options.clone(), bridge.clone()).await?;
         ExtensionHost::start(instance, bridge, options, std::slice::from_ref(source)).await
@@ -439,12 +439,20 @@ fn js_tool(shared: &Arc<ExtensionHost>, extension: u64, tool: &Value) -> Registe
     let label = tool["label"]
         .as_str()
         .map_or_else(|| declaration.name.clone(), str::to_owned);
+    let namespace = tool["namespace"]["name"].as_str().map(|name| Namespace {
+        name: name.to_owned(),
+        description: tool["namespace"]["description"].as_str().map(str::to_owned),
+        instructions: tool["namespace"]["instructions"]
+            .as_str()
+            .map(str::to_owned),
+    });
     RegisteredTool {
         tool: Arc::new(JsTool {
             shared: Arc::downgrade(shared),
             extension,
             label,
             declaration,
+            output_schema: Some(tool["outputSchema"].clone()).filter(|schema| !schema.is_null()),
             sequential: tool["executionMode"] == "sequential",
         }),
         snippet: tool["promptSnippet"].as_str().map(str::to_owned),
@@ -453,7 +461,7 @@ fn js_tool(shared: &Arc<ExtensionHost>, extension: u64, tool: &Value) -> Registe
             .filter_map(|line| line.as_str().map(str::to_owned))
             .collect(),
         exposure,
-        namespace: None,
+        namespace,
         default_active: tool["defaultActive"] != false,
     }
 }
@@ -464,12 +472,17 @@ struct JsTool {
     extension: u64,
     label: String,
     declaration: ToolDeclaration,
+    output_schema: Option<Value>,
     sequential: bool,
 }
 
 impl Tool for JsTool {
     fn declaration(&self) -> &ToolDeclaration {
         &self.declaration
+    }
+
+    fn output_schema(&self) -> Option<&Value> {
+        self.output_schema.as_ref()
     }
 
     fn label(&self) -> &str {
@@ -497,16 +510,26 @@ impl Tool for JsTool {
                 .upgrade()
                 .ok_or("The extension runtime has stopped")?;
             let bridge = &shared.bridge;
-            lock(&bridge.updates).insert(call_id.clone(), updates);
+            lock(&bridge.updates).insert(call_id.clone(), (updates, cancel.clone()));
             let session = bridge.session();
             let (ui, mode) = session
                 .as_ref()
                 .map(AgentSession::extension_binding)
                 .unwrap_or_else(|| (Arc::new(ri_core::extensions::NoUi), Mode::Print));
             let ctx = ctx_data(session.as_ref(), ui.as_ref(), mode, false, &cancel);
+            let tools: Vec<Value> = session
+                .as_ref()
+                .map(AgentSession::callable_tools)
+                .unwrap_or_default()
+                .iter()
+                .map(|tool| {
+                    let declaration = tool.tool.declaration();
+                    json!({"name": declaration.name, "label": tool.tool.label(), "description": declaration.description, "parameters": declaration.parameters})
+                })
+                .collect();
             let payload = json!({
                 "extension": self.extension, "name": self.declaration.name,
-                "toolCallId": call_id, "params": args, "ctx": ctx,
+                "toolCallId": call_id, "params": args, "ctx": ctx, "tools": tools,
             });
             let result = shared.instance.call("tool", &payload).await;
             lock(&bridge.updates).remove(&call_id);
@@ -533,9 +556,11 @@ struct SessionBridge {
     /// Where actions that outlive a request run.
     runtime: tokio::runtime::Handle,
     session: Mutex<WeakSession>,
-    /// Update sinks of running extension tools, by call id.
-    updates: Mutex<HashMap<String, UpdateSink>>,
+    /// Update sinks and cancellation of running extension tools, by call id.
+    updates: Mutex<HashMap<String, (UpdateSink, CancellationToken)>>,
     owner: OnceLock<Weak<ExtensionHost>>,
+    /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
+    codemode: Arc<crate::codemode::Runner>,
 }
 
 fn not_bound() -> String {
@@ -544,8 +569,9 @@ fn not_bound() -> String {
 }
 
 impl SessionBridge {
-    fn new() -> Arc<SessionBridge> {
+    fn new(engine: &Engine) -> Arc<SessionBridge> {
         Arc::new(SessionBridge {
+            codemode: Arc::new(crate::codemode::Runner::with_engine(engine.clone())),
             runtime_id: RUNTIMES.fetch_add(1, Ordering::Relaxed),
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
@@ -745,7 +771,7 @@ impl Bridge for SessionBridge {
         if kind == "tool.update" {
             let sink = lock(&self.updates)
                 .get(payload["toolCallId"].as_str().unwrap_or_default())
-                .cloned();
+                .map(|(sink, _)| sink.clone());
             if let (Some(sink), Ok(partial)) = (sink, tool_result(payload["partial"].clone())) {
                 sink(partial);
             }
@@ -780,11 +806,12 @@ impl Bridge for SessionBridge {
                 });
                 Ok(Value::Null)
             }
-            "session.appendEntry" => session.with_session(|file| {
-                file.append_custom_entry(&text(&payload["customType"]), Some(payload["data"].clone()).filter(|data| !data.is_null()))
-                    .map(|_| Value::Null)
-                    .map_err(|err| err.to_string())
-            }),
+            "session.appendEntry" => session
+                .append_custom_entry(
+                    &text(&payload["customType"]),
+                    Some(payload["data"].clone()).filter(|data| !data.is_null()),
+                )
+                .map(|()| Value::Null),
             "session.setName" => {
                 session.set_name(&text(&payload["name"]));
                 Ok(Value::Null)
@@ -885,9 +912,39 @@ impl Bridge for SessionBridge {
         let Some(session) = self.session() else {
             return Box::pin(async { Err(not_bound()) });
         };
+        // Nested calls and scripts take the calling tool's cancellation.
+        let (caller_updates, caller_cancel) = lock(&self.updates)
+            .get(payload["toolCallId"].as_str().unwrap_or_default())
+            .cloned()
+            .unwrap_or_else(|| (Arc::new(|_| {}), CancellationToken::new()));
+        let codemode = self.codemode.clone();
         let kind = kind.to_owned();
         Box::pin(async move {
             match kind.as_str() {
+                "codemode.execute" => codemode
+                    .execute(
+                        Some(session),
+                        text(&payload["toolCallId"]),
+                        payload["params"].clone(),
+                        caller_cancel,
+                        caller_updates,
+                    )
+                    .await
+                    .map(to_json),
+                "tool.execute" => {
+                    let outcome = session
+                        .execute_tool(
+                            &text(&payload["toolCallId"]),
+                            &text(&payload["name"]),
+                            payload["args"].clone(),
+                            caller_cancel,
+                            None,
+                        )
+                        .await;
+                    Ok(
+                        json!({"toolCall": outcome.call, "result": outcome.result, "isError": outcome.is_error}),
+                    )
+                }
                 "model.set" => {
                     let registry = session.registry();
                     let Some(model) = registry

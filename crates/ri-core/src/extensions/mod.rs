@@ -7,6 +7,7 @@
 //! the same contract. Each session gets its own extension instances; a
 //! replaced session receives `session_shutdown` before its successor starts.
 
+pub mod codemode;
 pub mod discovery;
 pub mod tool_search;
 mod ui;
@@ -166,6 +167,15 @@ pub struct ToolRenderers {
     pub own_shell: bool,
 }
 
+/// The tools a loadout hook sees; pi's `ToolLoadout`.
+#[derive(Clone, Default)]
+pub struct Loadout {
+    /// The active tools in activation order, with their own descriptions.
+    pub declared: Vec<RegisteredTool>,
+    /// The tools other tools may call, in registration order.
+    pub callable: Vec<RegisteredTool>,
+}
+
 /// What an extension draws in the transcript.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Renderers {
@@ -234,6 +244,13 @@ pub trait Extension: Send + Sync {
     /// extension's handlers. The session combines results across extensions.
     fn handle<'a>(&'a self, _ctx: &'a Context, _event: &'a Value) -> BoxFuture<'a, Option<Value>> {
         Box::pin(async { None })
+    }
+
+    /// Descriptions for declared tools, by name, replacing their own in the
+    /// next request; pi's `prepareLoadout` hook of a tool it registered. Runs
+    /// before every request.
+    fn prepare_loadout(&self, _loadout: &Loadout) -> std::collections::HashMap<String, String> {
+        std::collections::HashMap::new()
     }
 
     /// What it draws in the transcript.

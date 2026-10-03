@@ -10,6 +10,7 @@ pub mod import;
 pub mod mcp;
 pub mod messages;
 pub mod model_resolver;
+mod nested;
 pub mod packages;
 pub mod resources;
 pub mod session;

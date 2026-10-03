@@ -523,8 +523,23 @@ export function createAgentSessionRuntime() {
 export function createAgentSessionServices() {
 	return unavailable("createAgentSessionServices");
 }
+/**
+ * pi's codemode extension, for packages that decorate the tool before
+ * registering it. ri runs the scripts; `mode`, `inlineBudget` and `models`
+ * options are ignored.
+ */
 export function createCodemodeExtension() {
-	return unavailable("createCodemodeExtension");
+	return (pi) => {
+		const info = ri.request("codemode.definition", {});
+		pi.registerTool({
+			...info,
+			exposure: "model-only",
+			defaultActive: false,
+			async execute(toolCallId, params) {
+				return ri.op("codemode.execute", { toolCallId, params });
+			},
+		});
+	};
 }
 export function createExtensionRuntime() {
 	return unavailable("createExtensionRuntime");

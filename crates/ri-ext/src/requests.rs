@@ -106,6 +106,7 @@ impl Host {
             "json.partial" => Ok(Value::Object(ri_ai::json_parse::parse_streaming_json(
                 text(payload, "text"),
             ))),
+            "codemode.definition" => Ok(crate::codemode::definition()),
             "builtin.tool" => {
                 // Declaring a tool needs no grant; running it does.
                 let tool = self.builtin_tool(payload, false)?;

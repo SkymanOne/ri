@@ -298,6 +298,7 @@ fn parameters(schema: &Map<String, Value>) -> Value {
 /// An MCP server's tool.
 pub struct McpTool {
     declaration: ToolDeclaration,
+    output_schema: Value,
     label: String,
     server: String,
     tool: String,
@@ -330,6 +331,7 @@ impl McpTool {
                 parameters: parameters(&tool.input_schema),
                 constrained_sampling: None,
             },
+            output_schema: result_schema(tool.output_schema.as_ref()),
             label: format!("{server}/{}", tool.name),
             server,
             tool: tool.name.clone(),
@@ -338,9 +340,32 @@ impl McpTool {
     }
 }
 
+/// pi's `createMcpResultSchema`: the `CallToolResult` scripts receive, with
+/// the tool's own output schema as `structuredContent`.
+fn result_schema(structured: Option<&Map<String, Value>>) -> Value {
+    let mut properties = Map::new();
+    properties.insert(
+        "content".into(),
+        json!({"type": "array", "items": {"type": "object"}}),
+    );
+    if let Some(structured) = structured {
+        properties.insert(
+            "structuredContent".into(),
+            Value::Object(structured.clone()),
+        );
+    }
+    properties.insert("isError".into(), json!({"type": "boolean"}));
+    properties.insert("_meta".into(), json!({"type": "object"}));
+    json!({"type": "object", "properties": properties, "required": ["content"]})
+}
+
 impl Tool for McpTool {
     fn declaration(&self) -> &ToolDeclaration {
         &self.declaration
+    }
+
+    fn output_schema(&self) -> Option<&Value> {
+        Some(&self.output_schema)
     }
 
     fn label(&self) -> &str {

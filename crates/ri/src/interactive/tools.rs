@@ -117,6 +117,20 @@ pub fn text_output(result: &ToolResult) -> String {
     output
 }
 
+/// pi's `SCRIPT_HEADER`: `Script completed|failed`, the wall time, `Output:`.
+fn is_script_header(text: &str) -> bool {
+    let Some(rest) = text
+        .strip_prefix("Script completed\nWall time ")
+        .or_else(|| text.strip_prefix("Script failed\nWall time "))
+    else {
+        return false;
+    };
+    rest.strip_suffix(" seconds\nOutput:\n")
+        .is_some_and(|time| {
+            !time.is_empty() && time.chars().all(|c| c.is_ascii_digit() || c == '.')
+        })
+}
+
 fn replace_tabs(text: &str) -> String {
     text.replace('\t', "   ")
 }
@@ -239,6 +253,78 @@ fn tail_preview(
     out
 }
 
+/// pi's `VisualLinePreview` keeping the start: the first `max` visual lines,
+/// then a hint for the rest.
+fn head_preview(
+    lines: &[StyledLine],
+    max: usize,
+    width: usize,
+    hint: impl Fn(usize) -> StyledLine,
+) -> Vec<StyledLine> {
+    let mut visual: Vec<StyledLine> = lines
+        .iter()
+        .flat_map(|line| lines::wrap(line, width))
+        .collect();
+    if visual.len() <= max {
+        return visual;
+    }
+    let hidden = visual.len() - max;
+    visual.truncate(max);
+    visual.push(lines::truncate(&hint(hidden), width, "..."));
+    visual
+}
+
+/// The codemode renderer's durations: whole milliseconds, then seconds.
+fn script_duration(ms: f64) -> String {
+    if ms < 1000.0 {
+        format!("{}ms", ri_types::js::round(ms))
+    } else {
+        format!("{}s", ri_types::js::to_fixed(ms / 1000.0, 1))
+    }
+}
+
+/// One nested call of a codemode script; pi's `formatCall`.
+fn script_call(call: &Value, theme: &Theme, expanded: bool) -> Vec<StyledLine> {
+    let (icon, color) = match call["status"].as_str() {
+        Some("running") => ("…", "warning"),
+        Some("ok") => ("✓", "success"),
+        Some("error") => ("✗", "error"),
+        _ => ("⊘", "muted"),
+    };
+    let args = call["args"].as_str().unwrap_or_default();
+    let args = if !expanded && ri_types::js::len(args) > 80 {
+        format!("{}...", ri_types::js::slice(args, 0, 77))
+    } else {
+        args.to_owned()
+    };
+    let mut spans = vec![
+        Span::styled(icon, theme.fg(color)),
+        Span::raw(" "),
+        Span::styled(
+            call["name"].as_str().unwrap_or_default().to_owned(),
+            theme.fg("toolTitle"),
+        ),
+    ];
+    if !args.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(args, theme.fg("muted")));
+    }
+    if let Some(ms) = call["durationMs"].as_f64() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(script_duration(ms), theme.fg("dim")));
+    }
+    let mut out = vec![Line::from(spans)];
+    if expanded && let Some(error) = call["error"].as_str().filter(|error| !error.is_empty()) {
+        out.extend(error.split('\n').map(|line| {
+            Line::from(vec![
+                Span::raw("    "),
+                Span::styled(line.to_owned(), theme.fg("error")),
+            ])
+        }));
+    }
+    out
+}
+
 impl ToolView {
     /// A call whose arguments are still streaming.
     pub fn new(name: &str, args: Value) -> ToolView {
@@ -324,7 +410,7 @@ impl ToolView {
         out
     }
 
-    fn call_lines(&self, ctx: &RenderContext<'_>, _width: usize) -> Vec<StyledLine> {
+    fn call_lines(&self, ctx: &RenderContext<'_>, width: usize) -> Vec<StyledLine> {
         let theme = ctx.theme;
         let home = ctx.home;
         let args = &self.args;
@@ -474,8 +560,112 @@ impl ToolView {
                 }
                 vec![Line::from(spans)]
             }
+            "codemode" => self.codemode_call(ctx, width),
             _ => generic_call(&self.name, args, theme, ctx.expanded),
         }
+    }
+
+    /// pi's codemode `renderCall`: the title, then the script.
+    fn codemode_call(&self, ctx: &RenderContext<'_>, width: usize) -> Vec<StyledLine> {
+        let theme = ctx.theme;
+        let code = match self.args.get("code") {
+            Some(Value::String(code)) => code.as_str(),
+            None | Some(Value::Null) => "",
+            Some(_) => {
+                return vec![Line::from(vec![
+                    title(theme, "codemode"),
+                    Span::raw(" "),
+                    Span::styled("[invalid arg]", theme.fg("error")),
+                ])];
+            }
+        };
+        let mut out = vec![Line::from(title(theme, "codemode"))];
+        if code.is_empty() {
+            return out;
+        }
+        let code: Vec<StyledLine> = replace_tabs(code.replace('\r', "").trim_end())
+            .split('\n')
+            .map(|line| Line::from(line.to_owned()))
+            .collect();
+        if ctx.expanded {
+            out.extend(code);
+        } else {
+            out.extend(head_preview(&code, 10, width, |hidden| {
+                more_lines_hint(theme, ctx, format!("... ({hidden} more lines,"))
+            }));
+        }
+        out
+    }
+
+    /// pi's codemode `renderResult`: the nested calls, then the output
+    /// without the result header.
+    fn codemode_result(
+        &self,
+        result: &ToolResult,
+        ctx: &RenderContext<'_>,
+        width: usize,
+    ) -> Vec<StyledLine> {
+        let theme = ctx.theme;
+        let mut out = Vec::new();
+        let details = result.details.as_ref();
+        let calls: &[Value] = details
+            .and_then(|details| details["calls"].as_array())
+            .map_or(&[], Vec::as_slice);
+        if !calls.is_empty() {
+            let skipped = if ctx.expanded {
+                0
+            } else {
+                calls.len().saturating_sub(8)
+            };
+            let mut rows = Vec::new();
+            if skipped > 0 {
+                rows.push(more_lines_hint(
+                    theme,
+                    ctx,
+                    format!("... ({skipped} earlier calls,"),
+                ));
+            }
+            for call in &calls[skipped..] {
+                rows.extend(script_call(call, theme, ctx.expanded));
+            }
+            out.push(Line::default());
+            out.extend(lines::wrap_all(&rows, width));
+        }
+        if self.result.is_none() {
+            return out;
+        }
+        let header = result.content.first().is_some_and(
+            |block| matches!(block, ContentBlock::Text(text) if is_script_header(&text.text)),
+        );
+        let shown = ToolResult {
+            content: result.content[usize::from(header)..].to_vec(),
+            ..ToolResult::default()
+        };
+        let output = text_output(&shown);
+        let output = output.trim();
+        if output.is_empty() {
+            return out;
+        }
+        let style = theme.fg(if self.is_error { "error" } else { "toolOutput" });
+        let styled: Vec<StyledLine> = replace_tabs(output)
+            .split('\n')
+            .map(|line| lines::styled(line.to_owned(), style))
+            .collect();
+        out.push(Line::default());
+        if ctx.expanded {
+            out.extend(lines::wrap_all(&styled, width));
+        } else {
+            out.extend(head_preview(&styled, 5, width, |hidden| {
+                more_lines_hint(theme, ctx, format!("... ({hidden} more lines,"))
+            }));
+            if let Some(path) = details.and_then(|details| details["fullOutputPath"].as_str()) {
+                out.extend(lines::wrap(
+                    &lines::styled(format!("Full output: {path}"), theme.fg("muted")),
+                    width,
+                ));
+            }
+        }
+        out
     }
 
     fn result_lines(&self, ctx: &RenderContext<'_>, width: usize) -> Vec<StyledLine> {
@@ -532,6 +722,7 @@ impl ToolView {
                 lines::wrap_all(&out, width)
             }
             "bash" => self.bash_result(result, ctx, width),
+            "codemode" => self.codemode_result(result, ctx, width),
             "write" => {
                 if !self.is_error {
                     return Vec::new();

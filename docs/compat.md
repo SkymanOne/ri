@@ -24,7 +24,7 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | `/share`, `/bug`, `/arminsayshi`, `/dementedelves` | Upload to pi's services; easter eggs | Report that the command is not available | They belong to pi's services and brand. |
 | Debug log, external editor | `pi-debug.log`; "Pi will resume when the editor exits." | `ri-debug.log`; "ri will resume when the editor exits." | Product name. |
 | RPC parse errors | `Failed to parse command:` followed by V8's `JSON.parse` message | The same prefix followed by serde_json's message | Parser messages are implementation details. |
-| MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` temp files | `ri` and ri's version; `ri-mcp-*` temp files | Product name. |
+| MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` and `pi-codemode-*` temp files | `ri` and ri's version; `ri-mcp-*` and `ri-codemode-*` temp files | Product name. |
 | Sign in with ChatGPT | `agent_name_hint` `Pi` | `ri` | Product name shown on OpenAI's consent page. |
 | `/login` providers | pi's built-in `llama.cpp` extension adds a provider; Radius offers a sign-in | Neither | Not yet ported; the Radius gateway also needs pi's `pi-messages` wire API. |
 | Node APIs in extensions | All of Node | The shims listed in [status.md](status.md); modules ri cannot provide, such as `http` and `net`, and workers in `worker_threads`, import but throw when used. `require()` of an ES module fails. | The wasm runtime has no sockets or threads; QuickJS loads ES modules asynchronously. |
@@ -37,3 +37,8 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | Codex transport | WebSocket first (`transport` setting), then SSE with a zstd-compressed body | SSE with an uncompressed body | Same requests and events as pi's fallback, without a WebSocket client or zstd encoder in the binary. |
 | Extension theme updates | Components see a theme change at once | Extensions see the new theme when their session next starts | The theme crosses into the runtime as escape sequences per token. |
 | Extension keybindings | Components match keys against the user's `keybindings.json` | Components match pi-tui's default bindings | The keybindings manager inside the runtime has no user configuration. |
+| Codemode `models` | A `models` global for classifiers and image generation, and a description line pointing to pi's docs | Neither | ri-ai has no classifier or image models, and ri installs no docs. |
+| Codemode recursion | Runaway recursion throws a catchable `RangeError` | It ends the script with `Script sandbox failed: wasm trap: …` | QuickJS-NG does not bound its stack on WASI; the wasm stack limit stops the instance instead. |
+| Codemode compute | A script without `timeout_ms` may compute without limit | A script that computes for 60 seconds without awaiting a call stops with a sandbox failure | Every extension instance has this limit. |
+| Codemode `@options` | Invalid JSON reports V8's `JSON.parse` message | The same prefix with serde_json's message | Parser messages are implementation details. |
+| Codemode call rows | Scripts are syntax-highlighted | Scripts are shown in the default color | Not yet ported, as for Markdown code blocks. |
