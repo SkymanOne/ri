@@ -36,8 +36,16 @@ jobs:
         run: npm ci
       - name: Build
         run: cargo build --release --locked -p ri
+      - name: Linked libraries
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            otool -L target/release/ri
+          else
+            ldd target/release/ri
+          fi
       - name: Measure
-        run: cargo xtask bench --pi tests/fixtures/pi/generator/node_modules/.bin/pi --runs 10 | tee bench.txt
+        run: cargo xtask bench --pi tests/fixtures/pi/generator/node_modules/.bin/pi --runs 20 | tee bench.txt
       - name: Stripped binary size
         shell: bash
         run: |

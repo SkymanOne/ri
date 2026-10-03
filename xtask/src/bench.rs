@@ -100,25 +100,46 @@ fn mib(bytes: u64) -> String {
     format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
 }
 
-/// Median wall time of `program --version`.
-fn version_time(
-    program: &Program,
+/// Median wall time of running `executable` with `args` to completion.
+fn run_time(
+    executable: &Path,
+    args: &[&str],
     env: &[(&str, OsString)],
     runs: usize,
 ) -> anyhow::Result<Duration> {
     let mut samples = Vec::new();
     for _ in 0..runs {
         let started = Instant::now();
-        let status = std::process::Command::new(&program.path)
-            .arg("--version")
+        let status = std::process::Command::new(executable)
+            .args(args)
             .env_clear()
             .envs(env.iter().map(|(key, value)| (*key, value)))
             .stdout(std::process::Stdio::null())
             .status()?;
         samples.push(started.elapsed());
-        anyhow::ensure!(status.success(), "--version failed");
+        anyhow::ensure!(status.success(), "{} failed", executable.display());
     }
     Ok(percentile(&mut samples, 50.0))
+}
+
+/// Median wall time of `program --version`.
+fn version_time(
+    program: &Program,
+    env: &[(&str, OsString)],
+    runs: usize,
+) -> anyhow::Result<Duration> {
+    run_time(&program.path, &["--version"], env, runs)
+}
+
+/// Median wall time of starting the system's `true`: the machine's floor for
+/// any process start, which the `--version` budget includes.
+fn start_floor(runs: usize) -> anyhow::Result<Duration> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let executable = std::env::split_paths(&path)
+        .map(|dir| dir.join("true"))
+        .find(|candidate| candidate.is_file())
+        .context("no `true` on PATH")?;
+    run_time(&executable, &[], &[("PATH", path)], runs)
 }
 
 /// Median time from starting print mode to the first byte of its request,
@@ -312,6 +333,10 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             dir_var: "PI_CODING_AGENT_DIR",
         });
     }
+    println!(
+        "process start floor (`true`)      {:>10}",
+        ms(start_floor(args.runs)?)
+    );
     for program in &programs {
         measure(program, &args, &root)?;
     }
