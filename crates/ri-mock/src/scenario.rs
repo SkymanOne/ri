@@ -218,6 +218,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         "openai-codex": {"baseUrl": url},
         "azure-openai-responses": {"baseUrl": format!("{url}/openai/v1")},
         "mistral": {"baseUrl": url},
+        "opencode-go": {"baseUrl": url},
     }});
     let models_path = agent_dir.join("models.json");
     std::fs::write(&models_path, models.to_string()).map_err(io(&models_path))?;
@@ -250,6 +251,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         ("GROQ_API_KEY", "mock".into()),
         ("OPENAI_API_KEY", "mock".into()),
         ("GEMINI_API_KEY", "mock".into()),
+        ("OPENCODE_API_KEY", "mock".into()),
     ];
     let (exit_code, stdout, stderr, screen) = match &scenario.tty {
         Some(tty) => {

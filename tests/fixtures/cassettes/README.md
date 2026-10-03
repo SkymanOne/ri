@@ -2,11 +2,13 @@
 
 HTTP exchanges with model providers, replayed by `ri-mock`. Each wire API has a directory and each scenario a file, for example `anthropic-messages/text.json`. The format is defined in `crates/ri-mock/src/cassette.rs`.
 
-Cassettes are hand-written or recorded. To record, run the proxy and point a client at it instead of the provider:
+Cassettes are hand-written or recorded. `opencode-go/` holds live recordings of OpenCode Go's Anthropic, Completions and Responses routes, made with pi as the client. To record, run the proxy and point a client at it instead of the provider:
 
 ```sh
 cargo xtask mock-sse --record https://opencode.ai/zen/go --out tests/fixtures/cassettes/anthropic-messages/<scenario>.json
 ```
+
+OpenCode's Completions and Responses routes record through `https://opencode.ai/zen/go/v1` instead, so one `opencode-go` base URL serves all three when replayed.
 
 The proxy forwards each request with its credentials and stores the response chunks as they arrive. Recorded requests and cassettes never contain credentials: authorization headers and `key` query parameters are redacted, and cookies are dropped.
 

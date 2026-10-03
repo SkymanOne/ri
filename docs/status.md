@@ -26,9 +26,10 @@ Done for the slice below.
 
 Differential scenarios (all match pi): text, thinking, tool calls with result turns, HTTP errors, mid-stream errors, incomplete and max-token stops, piped stdin with a thinking suffix, model listing.
 
+Live cassettes recorded through OpenCode Go with pi as the client (`tests/fixtures/cassettes/opencode-go`) cover `anthropic-messages` (MiniMax M3), `openai-completions` (DeepSeek V4 Flash) and `openai-responses` (GPT-5.6 Luna). Each has a text answer with the model's thinking and a tool call with its result turn; the Responses streams carry encrypted reasoning. Their six scenarios match pi. The other cassettes are hand-written from the providers' documented stream formats.
+
 Not yet done:
 
-- Live cassettes. The OpenCode Go key cannot reach `opencode.ai` from this environment; all cassettes are hand-written from the providers' documented stream formats.
 - OpenAI grammar-constrained custom tools; such tools are sent as function tools.
 - Image resizing and BMP conversion before upload.
 - GitHub Copilot dynamic headers, Anthropic workload identity federation.
@@ -238,7 +239,7 @@ Run on Linux x86_64 after M7, on the release candidate at the head of this branc
 
 | Check | Command | Result |
 |---|---|---|
-| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | All 122 scenarios match: 52 TUI (PTY, 80×24 to 120×40), 41 JSON mode, 17 CLI and print mode, 11 RPC, and pi's `RpcClient` example driving ri. They cover every wire API, sessions, compaction, the TUI, MCP, packages, extensions with their UI, and codemode. |
+| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | All 128 scenarios match: 52 TUI (PTY, 80×24 to 120×40), 47 JSON mode (six replaying live OpenCode Go streams), 17 CLI and print mode, 11 RPC, and pi's `RpcClient` example driving ri. They cover every wire API, sessions, compaction, the TUI, MCP, packages, extensions with their UI, and codemode. |
 | Workspace tests | `cargo test --workspace` | 240 tests pass, including the scenario suite against the recorded goldens. |
 | pi's example extensions | `crates/ri-ext/tests/examples.rs` | 79 of 79 register as in pi. |
 | Top 50 npm pi packages | `cargo xtask package-registrations` | 46 of 48 comparable packages register as in pi (96%); see M5. |
@@ -252,5 +253,4 @@ Deferred work is listed under each milestone; intentional differences are in [co
 
 These need the user's credentials and run outside CI:
 
-- OpenCode Go recording (Anthropic, Completions and Responses routes), once `opencode.ai` is reachable.
 - OAuth sign-in with real subscription accounts: Anthropic, ChatGPT (Codex and `openai`), GitHub Copilot.

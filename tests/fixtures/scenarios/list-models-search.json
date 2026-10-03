@@ -1,6 +1,6 @@
 {
   "exitCode": 0,
-  "stdout": "provider  model                                    context  max-out  thinking  images\ngoogle    gemini-2.5-computer-use-preview-10-2025  128K     64K      yes       yes   \nopenai    gpt-5-mini                               400K     128K     yes       yes   \nopenai    gpt-5.4-mini                             400K     128K     yes       yes   \n",
+  "stdout": "provider  model                                    context  max-out  thinking  images\ngoogle    gemini-2.5-computer-use-preview-10-2025  128K     64K      yes       yes   \nopenai    gpt-5-mini                               400K     128K     yes       yes   \nopenai    gpt-5.4-mini                             400K     128K     yes       yes   \nopencode  gpt-5.1-codex-mini                       400K     128K     yes       yes   \nopencode  gpt-5.4-mini                             400K     128K     yes       yes   \n",
   "stderr": "",
   "requests": []
 }
