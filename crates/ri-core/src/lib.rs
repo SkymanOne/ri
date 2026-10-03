@@ -6,6 +6,7 @@ pub mod bash_executor;
 pub mod compaction;
 pub mod config;
 pub mod extensions;
+pub mod import;
 pub mod mcp;
 pub mod messages;
 pub mod model_resolver;

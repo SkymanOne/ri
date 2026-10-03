@@ -35,6 +35,5 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | Native extensions | Extensions are TypeScript or JavaScript | Also WebAssembly components built with ri's Rust SDK, loaded from `.wasm` files; pi extensions run first, then native ones | The sandboxable extension tier in AGENTS.md. |
 | Extension console output | Written to pi's stdout and stderr | Written to stderr | Stdout belongs to print, JSON and RPC output. |
 | Codex transport | WebSocket first (`transport` setting), then SSE with a zstd-compressed body | SSE with an uncompressed body | Same requests and events as pi's fallback, without a WebSocket client or zstd encoder in the binary. |
-| Extension overlays | `ctx.ui.custom` with `overlay: true` composites the component over the screen | The component shows in the editor's place, as without `overlay` | ri's renderer has no overlay compositing yet. |
 | Extension theme updates | Components see a theme change at once | Extensions see the new theme when their session next starts | The theme crosses into the runtime as escape sequences per token. |
 | Extension keybindings | Components match keys against the user's `keybindings.json` | Components match pi-tui's default bindings | The keybindings manager inside the runtime has no user configuration. |

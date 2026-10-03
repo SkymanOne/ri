@@ -152,6 +152,11 @@ impl Pty {
         self.screen.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The program's process id.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.process_id()
+    }
+
     /// Sends input as one write.
     pub fn write(&mut self, input: &str) -> std::io::Result<()> {
         let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);

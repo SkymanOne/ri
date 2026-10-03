@@ -99,7 +99,6 @@ Not yet done:
 
 - `export_html` (as `/export` to HTML in M3).
 - `get_commands` lists prompt templates and skills; pi also lists its built-in `llama` and `mcp` extension commands.
-- `extension_ui_request` events and `extension_ui_response` handling, which need extensions (M5, M6).
 - `cycle_model` over scoped models (`--models`, `enabledModels`).
 
 MCP is done for the slice below.
@@ -115,7 +114,7 @@ Not yet done:
 
 - `codemode` exposure, pi's default, needs the codemode tool (M7). Until then such servers warn that their tools are unreachable unless `tool_search` is active.
 - OAuth sign-in for HTTP servers and `auth.provider` tokens.
-- The `/mcp` manager in the TUI, which needs extension UI (M6); `/mcp` shows the status instead.
+- The `/mcp` manager in the TUI; `/mcp` shows the status instead.
 - Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
 - pi's built-in `llama` extension.
 
@@ -184,24 +183,44 @@ Done for the slice below.
 
 - `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets above and below the editor, a replaced footer and header, the terminal title, the working message, the hidden thinking label, the editor's text, pasting, tool expansion and the theme.
 - Remote components: pi-tui components stay in the extension runtime by handle. The TUI paints the lines of their last render and asks for a new render when they are stale, so a frame never waits for JS. Keys go to the focused component; `tui.requestRender()` marks components stale.
-- `ctx.ui.custom` in the editor's place, component widgets, `setFooter` and `setHeader` factories, tool `renderCall` and `renderResult` (with `lastComponent`, shared state and `renderShell: "self"`) and message renderers. Custom messages with `display: true` show in the transcript.
+- `ctx.ui.custom` in the editor's place or as an overlay (pi-tui's layout and compositing), component widgets, `setFooter` and `setHeader` factories, tool `renderCall` and `renderResult` (with `lastComponent`, shared state and `renderShell: "self"`) and message renderers. Custom messages with `display: true` show in the transcript.
 - The theme reaches extensions as escape sequences per token, so `theme.fg`, `theme.bg` and the facade's list, editor, settings and markdown themes produce pi's output.
 - The startup listing names loaded extensions as pi does, compactly or by scope.
 - RPC mode sends `extension_ui_request` lines for statuses, widgets (lines only), the title, the editor text and the editor dialog, and passes dialog timeouts.
 
-Exit criterion. 21 TUI scenarios recorded from pi match row for row at 80×24 and 120×40: widgets and footer statuses during a turn, pi's timed confirm and select examples, select, confirm, input and editor dialogs open and answered, a custom component open and answered, custom messages with and without pi's message renderer example, the editor text, and pi's `question.ts` tool driven by the model, with its custom component and its call and result renderers. An RPC scenario matches pi's `extension_ui_request` lines, themed status text included.
+Exit criterion. 24 TUI scenarios recorded from pi match row for row at 80×24 and 120×40: widgets and footer statuses during a turn, pi's timed confirm and select examples, select, confirm, input and editor dialogs open and answered, a custom component open and answered, custom messages with and without pi's message renderer example, the editor text, pi's `question.ts` tool driven by the model, with its custom component and its call and result renderers, and pi's `overlay-test.ts` overlay with wide characters, emoji and inline input. An RPC scenario matches pi's `extension_ui_request` lines, themed status text included.
 
 Not yet done:
 
-- Overlays (`custom` with `overlay: true`) show in the editor's place.
+- Overlays: `nonCapturing` and `visible` options, and `OverlayHandle` focus and visibility changes.
 - `onTerminalInput`, `setEditorComponent`, `addAutocompleteProvider`, `setWorkingVisible`, `setWorkingIndicator` and `setTheme`; dialog `signal` options.
 - Entry renderers (`registerEntryRenderer`); extension keybindings inside components use pi-tui's defaults, not `keybindings.json`.
 - A theme change reaches extensions when their session next starts.
 - The `/mcp` manager.
 
-## M7
+## M7: codemode, budgets, import, release
 
-Not started.
+In progress.
+
+- `ri import pi` copies pi's agent directory (settings, credentials, models, keybindings, MCP servers, trust, system prompt files, sessions, prompts, skills, themes, extensions and packages) and the current project's `.pi` into ri's, keeping files ri already has.
+- A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64, with checksums.
+
+Budgets, from `cargo xtask bench --pi` on this machine (release build, 100×40 terminal; keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler):
+
+| Metric | Budget | ri | pi |
+|---|---|---|---|
+| `--version` | < 5 ms | 2.0 ms | 268 ms |
+| Print mode, start to first request byte | < 25 ms | 14.5 ms | 372 ms |
+| Interactive first paint | < 40 ms | 9.7 ms | 372 ms |
+| Keystroke to paint, p99 | < 16 ms | 2.4 ms | 8.3 ms |
+| Idle memory, no extensions | < 30 MB | 15.8 MiB | 107 MiB |
+| Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 112 MiB |
+| Stripped release binary | < 35 MB | 33.2 MB | |
+
+Not yet done:
+
+- Codemode.
+- The budgets measured on macOS.
 
 ## Pending live checks
 

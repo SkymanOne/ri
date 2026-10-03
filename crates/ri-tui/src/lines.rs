@@ -229,6 +229,61 @@ pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine
     out
 }
 
+/// pi-tui's `compositeTuiLine`: `top`, cut or padded to `width` columns,
+/// drawn over `base` from column `col`; the base shows before and after it.
+/// A wide character cut by an edge becomes spaces, and the result is no wider
+/// than `total`.
+pub fn composite(
+    base: &Line<'_>,
+    top: &Line<'_>,
+    col: usize,
+    width: usize,
+    total: usize,
+) -> StyledLine {
+    let space = || Cell {
+        text: " ".to_owned(),
+        style: Style::default(),
+    };
+    let base = cells(base);
+    let end = col + width;
+    let mut out = Vec::new();
+    let mut column = 0;
+    for cell in &base {
+        let cell_width = grapheme_width(&cell.text);
+        if column + cell_width > col {
+            break;
+        }
+        out.push(cell.clone());
+        column += cell_width;
+    }
+    out.extend(std::iter::repeat_with(space).take(col.saturating_sub(column)));
+    let mut used = 0;
+    for cell in cells(top) {
+        let cell_width = grapheme_width(&cell.text);
+        if used + cell_width > width {
+            break;
+        }
+        used += cell_width;
+        out.push(cell);
+    }
+    out.extend(std::iter::repeat_with(space).take(width - used));
+    let mut column = 0;
+    for cell in &base {
+        let cell_width = grapheme_width(&cell.text);
+        if column >= end {
+            out.push(cell.clone());
+        } else if column + cell_width > end {
+            out.extend(std::iter::repeat_with(space).take(column + cell_width - end));
+        }
+        column += cell_width;
+    }
+    let mut line = from_cells(&out);
+    if cells_width(&out) > total {
+        line = truncate(&line, total, "");
+    }
+    line
+}
+
 /// Pads a line with spaces to `width` columns.
 pub fn pad(mut line: StyledLine, width: usize) -> StyledLine {
     let used = self::width(&line);

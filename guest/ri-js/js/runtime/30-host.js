@@ -551,7 +551,16 @@
 								return;
 							}
 							handle = mount(component);
-							const overlayOptions = typeof options?.overlayOptions === "function" ? options.overlayOptions() : options?.overlayOptions;
+							// pi-tui focuses the component it shows.
+							if (component && "focused" in component) component.focused = true;
+							// Without options an overlay takes the component's `width`, as in pi.
+							const overlayOptions = options?.overlayOptions
+								? typeof options.overlayOptions === "function"
+									? options.overlayOptions()
+									: options.overlayOptions
+								: component?.width
+									? { width: component.width }
+									: undefined;
 							request("custom", { handle, overlay: !!options?.overlay, overlayOptions: plain(overlayOptions) });
 							options?.onHandle?.(overlayHandle(handle));
 						})

@@ -607,9 +607,10 @@ impl super::App {
                 self.editor
                     .handle_input(&format!("\x1b[200~{text}\x1b[201~"), &self.keys);
             }
-            Request::Custom(component, _options) => {
+            Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);
                 self.open_extension_dialog(Selector::Remote(Box::new(view)), None);
+                self.overlay = options.overlay.then_some(options.overlay_options);
             }
             Request::Close(component) => {
                 if matches!(&self.selector, Some(Selector::Remote(view)) if view.key() == component.key())
@@ -950,5 +951,122 @@ impl super::App {
                 _ => {}
             }
         }
+    }
+}
+
+/// Where an overlay goes; pi-tui's `resolveOverlayLayout`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct OverlayLayout {
+    pub width: usize,
+    pub row: usize,
+    pub col: usize,
+    pub max_height: Option<usize>,
+}
+
+/// pi-tui's `parseSizeValue`: columns or rows, or a percentage of `reference`.
+fn size_value(value: &Value, reference: usize) -> Option<i64> {
+    if let Some(number) = value.as_f64() {
+        return Some(number as i64);
+    }
+    let percent: f64 = value.as_str()?.strip_suffix('%')?.parse().ok()?;
+    Some((reference as f64 * percent / 100.0).floor() as i64)
+}
+
+/// The layout of an overlay `height` rows tall with pi's `OverlayOptions`
+/// `options` on a `width` by `height` terminal.
+pub(super) fn overlay_layout(
+    options: &Value,
+    overlay_height: usize,
+    term_width: usize,
+    term_height: usize,
+) -> OverlayLayout {
+    let (term_width, term_height) = (term_width as i64, term_height as i64);
+    let side = |name: &str| match &options["margin"] {
+        Value::Number(number) => number.as_i64().unwrap_or(0).max(0),
+        margin => margin[name].as_i64().unwrap_or(0).max(0),
+    };
+    let (top, right, bottom, left) = (side("top"), side("right"), side("bottom"), side("left"));
+    let avail_width = (term_width - left - right).max(1);
+    let avail_height = (term_height - top - bottom).max(1);
+    let mut width =
+        size_value(&options["width"], term_width as usize).unwrap_or(80.min(avail_width));
+    if let Some(min) = options["minWidth"].as_i64() {
+        width = width.max(min);
+    }
+    let width = width.clamp(1, avail_width);
+    let max_height = size_value(&options["maxHeight"], term_height as usize)
+        .map(|max| max.clamp(1, avail_height));
+    let height = max_height.map_or(overlay_height as i64, |max| {
+        (overlay_height as i64).min(max)
+    });
+    let anchor = options["anchor"].as_str().unwrap_or("center");
+    let anchored_row = || match anchor {
+        "top-left" | "top-center" | "top-right" => top,
+        "bottom-left" | "bottom-center" | "bottom-right" => top + avail_height - height,
+        _ => top + (avail_height - height).div_euclid(2),
+    };
+    let anchored_col = || match anchor {
+        "top-left" | "left-center" | "bottom-left" => left,
+        "top-right" | "right-center" | "bottom-right" => left + avail_width - width,
+        _ => left + (avail_width - width).div_euclid(2),
+    };
+    let percent = |value: &Value| {
+        value
+            .as_str()
+            .and_then(|text| text.strip_suffix('%'))
+            .and_then(|text| text.parse::<f64>().ok())
+    };
+    let mut row = match &options["row"] {
+        Value::Null => anchored_row(),
+        value => match (value.as_i64(), percent(value)) {
+            (Some(row), _) => row,
+            (None, Some(percent)) => {
+                top + ((avail_height - height).max(0) as f64 * percent / 100.0).floor() as i64
+            }
+            _ => anchored_row(),
+        },
+    };
+    let mut col = match &options["col"] {
+        Value::Null => anchored_col(),
+        value => match (value.as_i64(), percent(value)) {
+            (Some(col), _) => col,
+            (None, Some(percent)) => {
+                left + ((avail_width - width).max(0) as f64 * percent / 100.0).floor() as i64
+            }
+            _ => anchored_col(),
+        },
+    };
+    row += options["offsetY"].as_i64().unwrap_or(0);
+    col += options["offsetX"].as_i64().unwrap_or(0);
+    let row = row.min(term_height - bottom - height).max(top);
+    let col = col.min(term_width - right - width).max(left);
+    OverlayLayout {
+        width: width as usize,
+        row: row.max(0) as usize,
+        col: col.max(0) as usize,
+        max_height: max_height.map(|max| max as usize),
+    }
+}
+
+impl super::App {
+    /// The overlay of the open custom component, as pi-tui composites it.
+    pub(super) fn overlays(&self) -> Vec<ri_tui::screen::Overlay> {
+        use super::selectors::Selector;
+        let (Some(Selector::Remote(view)), Some(options)) = (&self.selector, &self.overlay) else {
+            return Vec::new();
+        };
+        let (width, height) = self.size;
+        let sized = overlay_layout(options, 0, width, height);
+        let (mut lines, _) = view.render(sized.width);
+        if let Some(max) = sized.max_height {
+            lines.truncate(max);
+        }
+        let placed = overlay_layout(options, lines.len(), width, height);
+        vec![ri_tui::screen::Overlay {
+            row: placed.row,
+            col: placed.col,
+            width: placed.width,
+            lines,
+        }]
     }
 }

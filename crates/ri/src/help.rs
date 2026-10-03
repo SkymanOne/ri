@@ -32,6 +32,7 @@ pub fn text(bold: bool) -> String {
   {app} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
   {app} auth <command>            Print credentials or check provider readiness
   {app} mcp <command>             Check MCP servers, sign in to or out of OAuth servers
+  {app} import pi                 Copy pi's settings, sessions and resources into {app}
   {app} <command> --help          Show help for install/remove/uninstall/update/list/config/auth/mcp
 
 {options}

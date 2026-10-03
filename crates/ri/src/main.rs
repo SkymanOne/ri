@@ -7,6 +7,7 @@
 
 mod args;
 mod help;
+mod import;
 mod interactive;
 mod list_models;
 mod modes;
@@ -21,6 +22,9 @@ use args::Mode;
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.first().map(String::as_str) == Some("import") {
+        return ExitCode::from(import::run(&raw[1..]));
+    }
     if matches!(
         raw.first().map(String::as_str),
         Some("install" | "remove" | "uninstall" | "update" | "list")

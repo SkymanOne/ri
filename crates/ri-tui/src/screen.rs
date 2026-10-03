@@ -12,7 +12,7 @@ use ratatui_core::style::Style;
 use ratatui_core::text::{Line, Span};
 
 use crate::ansi::line_to_ansi;
-use crate::lines::{StyledLine, pad, truncate, width as line_width};
+use crate::lines::{StyledLine, composite, pad, truncate, width as line_width};
 
 const SYNC_START: &str = "\x1b[?2026h";
 const SYNC_END: &str = "\x1b[?2026l";
@@ -28,6 +28,31 @@ fn clip(line: &StyledLine, width: usize) -> String {
 /// A frame cursor position: row in the rendered lines and column.
 pub type Cursor = Option<(usize, usize)>;
 
+/// A component drawn over the screen, as pi-tui's overlays are: its rows from
+/// screen row `row` and column `col`, `width` columns wide.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Overlay {
+    /// The first screen row.
+    pub row: usize,
+    /// The first column.
+    pub col: usize,
+    /// Its width in columns.
+    pub width: usize,
+    /// Its rows.
+    pub lines: Vec<StyledLine>,
+}
+
+/// Draws `overlays` over `rows`, whose first row is screen row 0.
+fn composite_overlays(rows: &mut [StyledLine], overlays: &[Overlay], width: usize) {
+    for overlay in overlays {
+        for (index, line) in overlay.lines.iter().enumerate() {
+            if let Some(row) = rows.get_mut(overlay.row + index) {
+                *row = composite(row, line, overlay.col, overlay.width, width);
+            }
+        }
+    }
+}
+
 /// Regular mode: the document is written into the main screen and scrollback.
 #[derive(Debug, Default)]
 pub struct MainScreen {
@@ -41,6 +66,8 @@ pub struct MainScreen {
     pub clear_on_shrink: bool,
     /// Show the terminal cursor at the frame cursor.
     pub show_hardware_cursor: bool,
+    /// Components drawn over the visible rows.
+    pub overlays: Vec<Overlay>,
 }
 
 impl MainScreen {
@@ -113,7 +140,22 @@ impl MainScreen {
         height: usize,
     ) -> String {
         let mut out = String::new();
-        let lines: Vec<String> = document.iter().map(|line| clip(line, width)).collect();
+        let lines: Vec<String> = if self.overlays.is_empty() {
+            document.iter().map(|line| clip(line, width)).collect()
+        } else {
+            // As pi-tui, the document grows to the screen's height so
+            // overlays sit at screen positions.
+            let needed = self
+                .overlays
+                .iter()
+                .map(|overlay| overlay.row + overlay.lines.len())
+                .fold(document.len().max(height), usize::max);
+            let mut rows = document.to_vec();
+            rows.resize(needed, Line::default());
+            let start = needed - height;
+            composite_overlays(&mut rows[start..], &self.overlays, width);
+            rows.iter().map(|line| clip(line, width)).collect()
+        };
         // Only a cursor within the visible viewport counts.
         let viewport_start = lines.len().saturating_sub(height);
         let cursor = cursor.filter(|(row, _)| *row >= viewport_start && *row < lines.len());
@@ -311,6 +353,8 @@ pub struct AltScreen {
     pub jump_label_style: Style,
     /// Key shown in the "jump to latest" label.
     pub bottom_key: String,
+    /// Components drawn over the screen.
+    pub overlays: Vec<Overlay>,
 }
 
 /// Bytes that enter the alternate screen with wheel reporting.
@@ -413,6 +457,7 @@ impl AltScreen {
             rows[viewport - 1] = pad(Line::from(spans), width);
         }
         rows.extend(dock.iter().skip(dock_skip).cloned());
+        composite_overlays(&mut rows, &self.overlays, width);
 
         let lines: Vec<String> = rows.iter().map(|line| clip(line, width)).collect();
         out.push_str(SYNC_START);

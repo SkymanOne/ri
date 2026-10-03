@@ -289,6 +289,10 @@ struct App {
     binding: Option<Option<AgentSession>>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
+    /// pi's `OverlayOptions` when the open custom component is an overlay.
+    overlay: Option<Value>,
+    /// The startup header shows (`quietStartup` is not `true`).
+    show_header: bool,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -622,13 +626,17 @@ impl App {
     /// Brings the flattened transcript (header, resources and chat) up to date
     /// for `width`, re-rendering only items that changed or animate.
     fn refresh_transcript(&mut self, width: usize) {
-        let mut header = header::render(
-            &self.theme,
-            &self.keys,
-            self.expanded,
-            self.show_details,
-            width,
-        );
+        let mut header = if self.show_header {
+            header::render(
+                &self.theme,
+                &self.keys,
+                self.expanded,
+                self.show_details,
+                width,
+            )
+        } else {
+            Vec::new()
+        };
         if self.show_details {
             let extensions: Vec<_> = self
                 .session
@@ -763,7 +771,9 @@ impl App {
             out.extend(widget.render(width, &self.theme));
         }
         let cursor;
-        if let Some(mut selector) = self.selector.take() {
+        // An overlay draws over the screen; the editor stays below it.
+        let overlaid = self.overlay.is_some() && matches!(self.selector, Some(Selector::Remote(_)));
+        if !overlaid && let Some(mut selector) = self.selector.take() {
             let (rows, at) = selector.render(width, &self.ui());
             self.selector = Some(selector);
             cursor = at.map(|(row, col)| (out.len() + row, col));
@@ -772,6 +782,7 @@ impl App {
             let border = self.border_style();
             self.editor.border = border;
             self.editor.set_terminal_rows(self.size.1);
+            self.editor.focused = !overlaid;
             let mut editor = self.editor.render(width);
             if let Some(spans) = self.indicator_spans(border) {
                 let status = Line::from(spans);
@@ -785,9 +796,11 @@ impl App {
                 ));
                 editor[0] = Line::from(row);
             }
+            // The focused overlay has the cursor.
             cursor = self
                 .editor
                 .cursor_position()
+                .filter(|_| !overlaid)
                 .map(|(row, col)| (out.len() + row, col));
             out.extend(editor);
         }
@@ -861,6 +874,12 @@ impl App {
 
     fn draw(&mut self) {
         self.expire_dialog();
+        if !matches!(self.selector, Some(Selector::Remote(_))) {
+            self.overlay = None;
+        }
+        let overlays = self.overlays();
+        self.alt.overlays.clone_from(&overlays);
+        self.main.overlays = overlays;
         if let Some(selector) = &mut self.selector {
             selector.tick();
         }
@@ -2384,6 +2403,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
             Some(ri_types::settings::BoolOr::Bool(true))
                 | Some(ri_types::settings::BoolOr::Other(_))
         );
+    // `quietStartup: true` hides the header too; `"header"` only the details.
+    let show_header =
+        options.verbose || !matches!(quiet, Some(ri_types::settings::BoolOr::Bool(true)));
     let mut editor = Editor::new(
         editor_theme(&theme),
         usize::from(settings.editor_padding_x.unwrap_or(0).min(3)),
@@ -2450,6 +2472,8 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         initial: options.initial,
         provider_count: 0,
         binding: None,
+        overlay: None,
+        show_header,
     };
     app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
