@@ -10,14 +10,14 @@ import {
   HasCodec,
   ParseError,
   Parser
-} from "./chunk-HWRWY7DS.mjs";
+} from "./chunk-EZWZPNHA.mjs";
 import {
   arguments_exports,
   settings_exports
-} from "./chunk-ZTJVV6OQ.mjs";
+} from "./chunk-36PQP7AB.mjs";
 import "./chunk-7P6ASYW6.mjs";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/code.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/code.mjs
 function TsIgnore() {
   return `// @ts-ignore`;
 }
@@ -63,7 +63,7 @@ function Code(...args) {
   return { External: build.External(), Code: code };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/validator.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/validator.mjs
 var Validator = class {
   /** Constructs a Validator. */
   constructor(context, type) {
@@ -149,7 +149,7 @@ var Validator = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/compile.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/compile/compile.mjs
 function Compile(...args) {
   const [context, type] = arguments_exports.Match(args, {
     2: (context2, type2) => [context2, type2],

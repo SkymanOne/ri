@@ -11,6 +11,8 @@ mod e2e;
 mod js_runtime;
 mod mock_sse;
 mod models;
+mod package_registrations;
+mod vendor_pi;
 
 use std::process::ExitCode;
 
@@ -30,6 +32,8 @@ enum Command {
     JsRuntime(js_runtime::Args),
     MockSse(mock_sse::Args),
     Models(models::Args),
+    PackageRegistrations(package_registrations::Args),
+    VendorPi(vendor_pi::Args),
 }
 
 fn main() -> anyhow::Result<ExitCode> {
@@ -39,5 +43,7 @@ fn main() -> anyhow::Result<ExitCode> {
         Command::JsRuntime(args) => js_runtime::run(args),
         Command::MockSse(args) => mock_sse::run(args),
         Command::Models(args) => models::run(args).map(|()| ExitCode::SUCCESS),
+        Command::PackageRegistrations(args) => package_registrations::run(args),
+        Command::VendorPi(args) => vendor_pi::run(args).map(|()| ExitCode::SUCCESS),
     }
 }

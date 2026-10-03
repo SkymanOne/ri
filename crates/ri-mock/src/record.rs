@@ -155,6 +155,7 @@ impl Upstream {
                     status,
                     headers,
                     chunks,
+                    body_base64: None,
                     chunk_delay_ms: 0,
                 },
             };

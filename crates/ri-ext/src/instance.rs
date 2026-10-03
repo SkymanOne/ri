@@ -99,8 +99,14 @@ pub struct Options {
     pub cwd: PathBuf,
     /// The agent directory extensions see.
     pub agent_dir: PathBuf,
+    /// The directory `os.homedir()` names.
+    pub home_dir: PathBuf,
+    /// The directory `os.tmpdir()` names.
+    pub temp_dir: PathBuf,
     /// What the instance may reach.
     pub grants: Grants,
+    /// The directories file access reaches, when granted.
+    pub filesystem_roots: Vec<PathBuf>,
     /// The most linear memory the instance may use, in bytes.
     pub memory_limit: usize,
     /// Where transpiled modules are cached; `None` disables the cache.
@@ -114,7 +120,10 @@ impl Options {
         Options {
             cwd,
             agent_dir: ri_core::config::agent_dir(),
+            home_dir: ri_core::tools::path::home_dir(),
+            temp_dir: std::env::temp_dir(),
             grants: Grants::default(),
+            filesystem_roots: vec![PathBuf::from("/")],
             memory_limit: 1 << 30,
             cache_dir: None,
         }
@@ -171,6 +180,15 @@ enum Command {
         op: u64,
         value: Result<Value, String>,
     },
+    Render {
+        handle: u32,
+        width: u32,
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    Input {
+        handle: u32,
+        data: String,
+    },
     Stop,
 }
 
@@ -210,6 +228,8 @@ impl Instance {
             grants: options.grants,
             cwd: options.cwd.clone(),
             agent_dir: options.agent_dir.clone(),
+            home_dir: options.home_dir.clone(),
+            temp_dir: options.temp_dir.clone(),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
@@ -247,6 +267,32 @@ impl Instance {
             })
             .map_err(|_| Error::Stopped)?;
         result.await.map_err(|_| Error::Stopped)?
+    }
+
+    /// The lines of component `handle` at `width` columns; empty when the
+    /// component or the instance is gone.
+    pub async fn render(&self, handle: u32, width: u32) -> Vec<String> {
+        let (reply, result) = oneshot::channel();
+        if self
+            .commands
+            .send(Command::Render {
+                handle,
+                width,
+                reply,
+            })
+            .is_err()
+        {
+            return Vec::new();
+        }
+        result.await.unwrap_or_default()
+    }
+
+    /// Delivers raw terminal input to component `handle`.
+    pub fn input(&self, handle: u32, data: &str) {
+        let _ = self.commands.send(Command::Input {
+            handle,
+            data: data.to_owned(),
+        });
     }
 }
 
@@ -340,7 +386,39 @@ impl Actor {
                         )
                     });
                 }
+                Command::Render {
+                    handle,
+                    width,
+                    reply,
+                } => {
+                    let _ = reply.send(self.render(handle, width));
+                }
+                Command::Input { handle, data } => self.guest(|bindings, store| {
+                    bindings
+                        .ri_extension_guest()
+                        .call_input(store, handle, &data)
+                }),
                 Command::Stop => break,
+            }
+        }
+    }
+
+    fn render(&mut self, handle: u32, width: u32) -> Vec<String> {
+        {
+            let state = self.store.data_mut();
+            state.call_started = Instant::now();
+            state.host_time = Duration::ZERO;
+        }
+        self.store.set_epoch_deadline(1);
+        match self
+            .bindings
+            .ri_extension_guest()
+            .call_render(&mut self.store, handle, width)
+        {
+            Ok(lines) => lines,
+            Err(trap) => {
+                self.restart(&format!("{trap:#}"));
+                Vec::new()
             }
         }
     }
@@ -443,8 +521,10 @@ fn instantiate(
 ) -> Result<(Store<State>, Extension), Error> {
     let mut wasi = WasiCtx::builder();
     if options.grants.filesystem {
-        wasi.preopened_dir("/", "/", FsPerms::ReadWrite)
-            .map_err(|err| Error::Instantiate(err.to_string()))?;
+        for root in &options.filesystem_roots {
+            wasi.preopened_dir(root, root.to_string_lossy(), FsPerms::ReadWrite)
+                .map_err(|err| Error::Instantiate(format!("{}: {err}", root.display())))?;
+        }
     }
     let state = State {
         wasi: wasi.build(),

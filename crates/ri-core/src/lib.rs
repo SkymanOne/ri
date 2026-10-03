@@ -9,6 +9,7 @@ pub mod extensions;
 pub mod mcp;
 pub mod messages;
 pub mod model_resolver;
+pub mod packages;
 pub mod resources;
 pub mod session;
 pub mod settings;

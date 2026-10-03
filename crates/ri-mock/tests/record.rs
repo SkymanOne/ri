@@ -29,6 +29,7 @@ fn provider_cassette() -> Cassette {
                     "event: a\ndata: {}\n\n".into(),
                     "event: b\ndata: 🦀\n\n".into(),
                 ],
+                body_base64: None,
                 chunk_delay_ms: 0,
             },
         }],

@@ -1,0 +1,23 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "[Extensions]",
+    "  dialogs.ts",
+    "",
+    " [note]",
+    "",
+    " Note: keep the tests green",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

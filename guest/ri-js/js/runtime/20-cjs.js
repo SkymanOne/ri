@@ -39,7 +39,8 @@
 		try {
 			if (kind === "json") module.exports = JSON.parse(source);
 			else {
-				const run = new Function("exports", "require", "module", "__filename", "__dirname", source);
+				// Node's wrapper, on the first line so positions hold.
+				const run = globalThis.__ri_native.compile(`(function (exports, require, module, __filename, __dirname) {${source}\n})`, path);
 				run.call(module.exports, module.exports, module.require, module, path, dirname(path));
 			}
 		} catch (error) {

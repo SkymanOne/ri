@@ -1,6 +1,6 @@
 import "./chunk-7P6ASYW6.mjs";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/marked/lib/marked.esm.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/marked/lib/marked.esm.js
 function A() {
   return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
 }
@@ -1278,13 +1278,13 @@ var on = f.parseInline;
 var ln = b.parse;
 var un = x.lex;
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/autocomplete.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 import { spawn } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/fuzzy.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/fuzzy.js
 function fuzzyMatch(query, text) {
   const queryLower = query.toLowerCase();
   const textLower = text.toLowerCase();
@@ -1374,7 +1374,7 @@ function fuzzyFilter(items, query, getText) {
   return results.map((r) => r.item);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/lookup-data.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/lookup-data.js
 var ambiguousMinimalCodePoint = 161;
 var ambiguousMaximumCodePoint = 1114109;
 var ambiguousRanges = [161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180, 182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225, 230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250, 252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283, 294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324, 328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462, 464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474, 476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715, 717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879, 913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103, 1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226, 8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254, 8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453, 8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491, 8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601, 8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707, 8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730, 8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759, 8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807, 8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857, 8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587, 9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655, 9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701, 9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758, 9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837, 9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953, 9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980, 9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743, 65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373, 127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109];
@@ -1385,7 +1385,7 @@ var wideMinimalCodePoint = 4352;
 var wideMaximumCodePoint = 262141;
 var wideRanges = [4352, 4447, 8986, 8987, 9001, 9002, 9193, 9196, 9200, 9200, 9203, 9203, 9725, 9726, 9748, 9749, 9776, 9783, 9800, 9811, 9855, 9855, 9866, 9871, 9875, 9875, 9889, 9889, 9898, 9899, 9917, 9918, 9924, 9925, 9934, 9934, 9940, 9940, 9962, 9962, 9970, 9971, 9973, 9973, 9978, 9978, 9981, 9981, 9989, 9989, 9994, 9995, 10024, 10024, 10060, 10060, 10062, 10062, 10067, 10069, 10071, 10071, 10133, 10135, 10160, 10160, 10175, 10175, 11035, 11036, 11088, 11088, 11093, 11093, 11904, 11929, 11931, 12019, 12032, 12245, 12272, 12287, 12289, 12350, 12353, 12438, 12441, 12543, 12549, 12591, 12593, 12686, 12688, 12773, 12783, 12830, 12832, 12871, 12880, 42124, 42128, 42182, 43360, 43388, 44032, 55203, 63744, 64255, 65040, 65049, 65072, 65106, 65108, 65126, 65128, 65131, 94176, 94180, 94192, 94198, 94208, 101589, 101631, 101662, 101760, 101874, 110576, 110579, 110581, 110587, 110589, 110590, 110592, 110882, 110898, 110898, 110928, 110930, 110933, 110933, 110948, 110951, 110960, 111355, 119552, 119638, 119648, 119670, 126980, 126980, 127183, 127183, 127374, 127374, 127377, 127386, 127488, 127490, 127504, 127547, 127552, 127560, 127568, 127569, 127584, 127589, 127744, 127776, 127789, 127797, 127799, 127868, 127870, 127891, 127904, 127946, 127951, 127955, 127968, 127984, 127988, 127988, 127992, 128062, 128064, 128064, 128066, 128252, 128255, 128317, 128331, 128334, 128336, 128359, 128378, 128378, 128405, 128406, 128420, 128420, 128507, 128591, 128640, 128709, 128716, 128716, 128720, 128722, 128725, 128728, 128732, 128735, 128747, 128748, 128756, 128764, 128992, 129003, 129008, 129008, 129292, 129338, 129340, 129349, 129351, 129535, 129648, 129660, 129664, 129674, 129678, 129734, 129736, 129736, 129741, 129756, 129759, 129770, 129775, 129784, 131072, 196605, 196608, 262141];
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/utilities.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/utilities.js
 var isInRange = (ranges, codePoint) => {
   let low = 0;
   let high = Math.floor(ranges.length / 2) - 1;
@@ -1403,7 +1403,7 @@ var isInRange = (ranges, codePoint) => {
   return false;
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/lookup.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/lookup.js
 var commonCjkCodePoint = 19968;
 var [wideFastPathStart, wideFastPathEnd] = /* @__PURE__ */ findWideFastPathRange(wideRanges);
 function findWideFastPathRange(ranges) {
@@ -1444,7 +1444,7 @@ var isWide = (codePoint) => {
   return isInRange(wideRanges, codePoint);
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/index.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/get-east-asian-width/index.js
 function validate(codePoint) {
   if (!Number.isSafeInteger(codePoint)) {
     throw new TypeError(`Expected a code point, got \`${typeof codePoint}\`.`);
@@ -1458,7 +1458,7 @@ function eastAsianWidth(codePoint, { ambiguousAsWide = false } = {}) {
   return 1;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/utils.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/utils.js
 var graphemeSegmenter = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var wordSegmenter = new Intl.Segmenter(void 0, { granularity: "word" });
 function getGraphemeSegmenter() {
@@ -2501,7 +2501,7 @@ function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = fa
   return { before, beforeWidth, after, afterWidth };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/autocomplete.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 var PATH_DELIMITERS = /* @__PURE__ */ new Set([" ", "	", '"', "'", "="]);
 var tokenStartRegex = new RegExp(`${autocompleteBoundaryRegex.source}$`, "u");
 var PATH_WRAPPERS = { "(": ")", "[": "]", "{": "}", "<": ">", "`": "`" };
@@ -3120,7 +3120,7 @@ var CombinedAutocompleteProvider = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/oklab.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/oklab.js
 var multiply = (m2, [x2, y2, z2]) => m2.map((row) => row[0] * x2 + row[1] * y2 + row[2] * z2);
 var LINEAR_SRGB_TO_LMS = [
   [0.4122214694707629, 0.5363325372617349, 0.0514459932675022],
@@ -3268,7 +3268,7 @@ function rgbToOkhsl(rgb) {
   return { h: hue, s: Math.min(1, Math.max(0, saturation)), l: lightness };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/colors.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/colors.js
 function requireFinite(value, name) {
   if (!Number.isFinite(value))
     throw new Error(`${name} must be finite`);
@@ -3524,10 +3524,10 @@ function styleTextWithAnsi(text, fgAnsi, bgAnsi, options) {
   return `${prefix}${text}${suffix}`;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui.js
 import { performance as performance2 } from "node:perf_hooks";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/keys.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/keys.js
 var _kittyProtocolActive = false;
 function setKittyProtocolActive(active) {
   _kittyProtocolActive = active;
@@ -4468,7 +4468,7 @@ function decodePrintableKey(data) {
   return decodeKittyPrintable(data) ?? decodeModifyOtherKeysPrintable(data);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal-colors.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal-colors.js
 function hexToRgb(hex) {
   const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
   const r = parseInt(normalized.slice(0, 2), 16);
@@ -4529,7 +4529,7 @@ function parseTerminalColorSchemeReport(data) {
   return match[1] === "2" ? "light" : "dark";
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal-image.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal-image.js
 import { execSync } from "node:child_process";
 import { homedir as homedir2 } from "node:os";
 import { isAbsolute } from "node:path";
@@ -5028,7 +5028,7 @@ function imageFallback(mimeType, dimensions, filename) {
   return `[Image: ${parts.join(" ")}]`;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui.js
 function dispatchMouseEvent(component, event) {
   const result = component.handleMouse?.(event);
   if (!result)
@@ -5967,7 +5967,7 @@ var TuiBase = class _TuiBase extends Container {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/box.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/box.js
 var Box = class {
   children = [];
   paddingX;
@@ -6079,7 +6079,7 @@ var Box = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/keybindings.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/keybindings.js
 var TUI_KEYBINDINGS = {
   "tui.editor.cursorUp": { defaultKeys: "up", description: "Move cursor up" },
   "tui.editor.cursorDown": { defaultKeys: "down", description: "Move cursor down" },
@@ -6312,7 +6312,7 @@ function getKeybindings() {
   return globalKeybindings;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/text.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/text.js
 var Text = class {
   text;
   paddingX;
@@ -6390,7 +6390,7 @@ var Text = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/loader.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/loader.js
 var DEFAULT_FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 var DEFAULT_INTERVAL_MS = 80;
 var Loader = class extends Text {
@@ -6463,7 +6463,7 @@ var Loader = class extends Text {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/cancellable-loader.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/cancellable-loader.js
 var CancellableLoader = class extends Loader {
   abortController = new AbortController();
   /** Called when user presses Escape */
@@ -6488,7 +6488,7 @@ var CancellableLoader = class extends Loader {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/kill-ring.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/kill-ring.js
 var KillRing = class {
   ring = [];
   /**
@@ -6525,7 +6525,7 @@ var KillRing = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/undo-stack.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/undo-stack.js
 var UndoStack = class {
   stack = [];
   /** Push a deep clone of the given state onto the stack. */
@@ -6545,7 +6545,7 @@ var UndoStack = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/word-navigation.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/word-navigation.js
 var wordSegmenter2 = getWordSegmenter();
 function findWordBackward(text, cursor, options) {
   if (cursor <= 0)
@@ -6608,7 +6608,7 @@ function findWordForward(text, cursor, options) {
   return newCursor;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/select-list.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/select-list.js
 var DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
 var PRIMARY_COLUMN_GAP = 2;
 var MIN_DESCRIPTION_WIDTH = 10;
@@ -6796,7 +6796,7 @@ var SelectList = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/editor.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/editor.js
 var graphemeSegmenter2 = getGraphemeSegmenter();
 var wordSegmenter3 = getWordSegmenter();
 var PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
@@ -8525,14 +8525,14 @@ var Editor = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/layout-node.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/layout-node.js
 var LAYOUT_NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 function getLayoutNode(component) {
   const candidate = component;
   return typeof candidate[LAYOUT_NODE] === "function" ? candidate[LAYOUT_NODE]() : void 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/stack.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/stack.js
 function isStackEntry(child) {
   return !("render" in child);
 }
@@ -8638,7 +8638,7 @@ function allocateStackSizes(entries, intrinsicSizes, availableSize, gap) {
   return sizes;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/h-stack.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/h-stack.js
 var HStack = class extends Stack {
   layoutType = "hstack";
   constructor(children = [], options = {}) {
@@ -8679,7 +8679,7 @@ var HStack = class extends Stack {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/image.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/image.js
 var Image = class {
   base64Data;
   mimeType;
@@ -8757,7 +8757,7 @@ var Image = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/input.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/input.js
 var segmenter = getGraphemeSegmenter();
 var Input = class {
   value = "";
@@ -9120,7 +9120,7 @@ var Input = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/latex.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/latex.js
 var SYMBOLS = {
   alpha: "\u03B1",
   beta: "\u03B2",
@@ -10430,7 +10430,7 @@ function renderLatex(source, options = {}) {
   return lines.map((line) => line.slice(indentation).trimEnd()).join("\n").trimEnd().replaceAll(PROTECTED_SPACE, " ");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/markdown.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/markdown.js
 var STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 var StrictStrikethroughTokenizer = class extends y {
   del(src) {
@@ -11165,7 +11165,7 @@ var Markdown = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/mouse-region.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/mouse-region.js
 var MouseRegion = class {
   child;
   onMouse;
@@ -11185,7 +11185,7 @@ var MouseRegion = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/scroll-view.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/scroll-view.js
 var ScrollView = class extends Container {
   child;
   followEnd;
@@ -11376,7 +11376,7 @@ var ScrollView = class extends Container {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/settings-list.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/settings-list.js
 var SettingsList = class {
   items;
   filteredItems;
@@ -11599,7 +11599,7 @@ var SettingsList = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/spacer.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/spacer.js
 var Spacer = class {
   lines;
   constructor(lines = 1) {
@@ -11619,7 +11619,7 @@ var Spacer = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/truncated-text.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/truncated-text.js
 var TruncatedText = class {
   text;
   paddingX;
@@ -11658,7 +11658,7 @@ var TruncatedText = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/v-stack.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/v-stack.js
 var VStack = class extends Stack {
   layoutType = "vstack";
   constructor(children = [], options = {}) {
@@ -11684,11 +11684,11 @@ var VStack = class extends Stack {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-platform.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-platform.js
 import { createRequire as createRequire2 } from "node:module";
 import * as path from "node:path";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-module-path.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-module-path.js
 import { createRequire } from "node:module";
 import { dirname as dirname2, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11706,7 +11706,7 @@ function getNativeModuleCandidates(nativePath, options = {}) {
   return Array.from(new Set(candidates));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-platform.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-platform.js
 var cjsRequire = createRequire2(import.meta.url);
 var helpers = /* @__PURE__ */ new Map();
 function loadNativePlatformHelper(platform, suffix = "") {
@@ -11742,7 +11742,7 @@ function getNativeClipboard() {
   return loadNativePlatformHelper("linux", "-x11");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js
 import { EventEmitter } from "events";
 var ESC = "\x1B";
 var DEFAULT_SEQUENCE_TIMEOUT_MS = 50;
@@ -12020,11 +12020,11 @@ var StdinBuffer = class extends EventEmitter {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal.js
 import * as fs from "node:fs";
 import * as path2 from "node:path";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-modifiers.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/native-modifiers.js
 function isNativeModifierPressed(key) {
   const helper = getNativePlatformHelper();
   if (!helper?.isModifierPressed)
@@ -12036,7 +12036,7 @@ function isNativeModifierPressed(key) {
   }
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/terminal.js
 var TERMINAL_PROGRESS_KEEPALIVE_MS = 1e3;
 var TERMINAL_PROGRESS_ACTIVE_SEQUENCE = "\x1B]9;4;3\x07";
 var TERMINAL_PROGRESS_CLEAR_SEQUENCE = "\x1B]9;4;0\x07";
@@ -12422,7 +12422,7 @@ var ProcessTerminal = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/alt-screen-search.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/alt-screen-search.js
 var segmenter2 = getGraphemeSegmenter();
 var PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 function buildSearchCorpus(lines) {
@@ -12678,7 +12678,7 @@ var AltScreenSearchComponent = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/alt-screen-flash.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/components/alt-screen-flash.js
 var DEFAULT_DURATION_MS = 1e3;
 var AltScreenFlashContainer = class {
   entries = [];
@@ -12715,7 +12715,7 @@ var AltScreenFlashContainer = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/layout.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/layout.js
 var OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 function intersect(a, b2) {
   const x2 = Math.max(a.x, b2.x);
@@ -13043,7 +13043,7 @@ function getScrollViewsAt(frame, x2, y2) {
   return result.map((entry) => entry.scrollView);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/wheel-scroll.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/wheel-scroll.js
 var BURST_GAP_MS = 5;
 var GESTURE_GAP_MS = 200;
 var REFERENCE_GAP_MS = 100;
@@ -13098,7 +13098,7 @@ var WheelScrollAccelerator = class {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js
 var ENTER_ALT_SCREEN = "\x1B[?1049h";
 var EXIT_ALT_SCREEN = "\x1B[?1049l";
 var DISABLE_AUTOWRAP = "\x1B[?7l";
@@ -14504,7 +14504,7 @@ var TuiAltScreen = class extends TuiBase {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js
 import * as fs2 from "node:fs";
 import * as os from "node:os";
 import * as path3 from "node:path";

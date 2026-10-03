@@ -12,7 +12,10 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use futures_util::future::BoxFuture;
 use ri_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use ri_core::agent_session::{AgentSession, WeakSession};
-use ri_core::extensions::{Command, Context, Extension, Mode, NotifyKind, Tools};
+use ri_core::extensions::{
+    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
+    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+};
 use ri_core::tools::{Exposure, RegisteredTool};
 use ri_types::event::ToolResult;
 use ri_types::message::{
@@ -136,6 +139,12 @@ impl ExtensionHost {
         &self.errors
     }
 
+    /// What each loaded extension registered, as the runtime describes it:
+    /// `tools`, `commands`, `flags`, `shortcuts`, `events` and more.
+    pub fn registrations(&self) -> Vec<Value> {
+        lock(&self.loaded).clone()
+    }
+
     /// The flags the loaded extensions registered.
     pub fn flags(&self) -> Vec<Flag> {
         lock(&self.loaded)
@@ -229,7 +238,7 @@ fn text(value: &Value) -> String {
 
 fn mode_name(mode: Mode) -> &'static str {
     match mode {
-        Mode::Tui => "interactive",
+        Mode::Tui => "tui",
         Mode::Rpc => "rpc",
         Mode::Print => "print",
         Mode::Json => "json",
@@ -239,13 +248,14 @@ fn mode_name(mode: Mode) -> &'static str {
 /// What the guest's `ctx` objects are built from.
 fn ctx_data(
     session: Option<&AgentSession>,
-    has_ui: bool,
+    ui: &dyn ri_core::extensions::ExtensionUi,
     mode: Mode,
     trusted: bool,
     cancel: &CancellationToken,
 ) -> Value {
     json!({
-        "hasUI": has_ui,
+        "hasUI": ui.has_ui(),
+        "components": ui.shows_components(),
         "mode": mode_name(mode),
         "cwd": session.map(|session| session.cwd().to_path_buf()),
         "model": session.and_then(AgentSession::model),
@@ -258,7 +268,7 @@ fn ctx_data(
 fn context_data(ctx: &Context) -> Value {
     ctx_data(
         ctx.session.upgrade().as_ref(),
-        ctx.ui.has_ui(),
+        ctx.ui.as_ref(),
         ctx.mode,
         ctx.project_trusted,
         &ctx.cancel,
@@ -344,6 +354,45 @@ impl Extension for JsExtension {
     fn session_start<'a>(&'a self, ctx: &'a Context) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.shared.bind(self.generation, ctx).await;
+        })
+    }
+
+    fn renderers(&self) -> Renderers {
+        Renderers {
+            tools: list(&self.description["tools"])
+                .iter()
+                .filter(|tool| tool["hasRenderCall"] == true || tool["hasRenderResult"] == true)
+                .map(|tool| {
+                    let renderers = ToolRenderers {
+                        call: tool["hasRenderCall"] == true,
+                        result: tool["hasRenderResult"] == true,
+                        own_shell: tool["renderShell"] == "self",
+                    };
+                    (text(&tool["name"]), renderers)
+                })
+                .collect(),
+            messages: list(&self.description["messageRenderers"])
+                .iter()
+                .map(text)
+                .collect(),
+        }
+    }
+
+    fn component<'a>(&'a self, request: &'a Value) -> BoxFuture<'a, Option<RemoteComponent>> {
+        Box::pin(async move {
+            // Only the bound session's extensions draw.
+            if *self.shared.bound.lock().await != self.generation + 1 {
+                return None;
+            }
+            let mut payload = request.clone();
+            payload["extension"] = json!(self.id);
+            let result = self
+                .shared
+                .instance
+                .call("component", &payload)
+                .await
+                .ok()?;
+            self.shared.bridge.component(&result["handle"])
         })
     }
 
@@ -454,7 +503,7 @@ impl Tool for JsTool {
                 .as_ref()
                 .map(AgentSession::extension_binding)
                 .unwrap_or_else(|| (Arc::new(ri_core::extensions::NoUi), Mode::Print));
-            let ctx = ctx_data(session.as_ref(), ui.has_ui(), mode, false, &cancel);
+            let ctx = ctx_data(session.as_ref(), ui.as_ref(), mode, false, &cancel);
             let payload = json!({
                 "extension": self.extension, "name": self.declaration.name,
                 "toolCallId": call_id, "params": args, "ctx": ctx,
@@ -475,7 +524,12 @@ fn tool_result(mut value: Value) -> Result<ToolResult, String> {
 }
 
 /// Answers the guest's requests from the bound session.
+/// Numbers the runtimes of a process, so their component handles stay apart.
+static RUNTIMES: AtomicU64 = AtomicU64::new(1);
+
 struct SessionBridge {
+    /// This runtime's number.
+    runtime_id: u64,
     /// Where actions that outlive a request run.
     runtime: tokio::runtime::Handle,
     session: Mutex<WeakSession>,
@@ -492,6 +546,7 @@ fn not_bound() -> String {
 impl SessionBridge {
     fn new() -> Arc<SessionBridge> {
         Arc::new(SessionBridge {
+            runtime_id: RUNTIMES.fetch_add(1, Ordering::Relaxed),
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
@@ -505,6 +560,109 @@ impl SessionBridge {
 
     fn spawn(&self, future: impl std::future::Future<Output = ()> + Send + 'static) {
         self.runtime.spawn(future);
+    }
+}
+
+/// A dialog's `timeout` (milliseconds) from its request.
+fn dialog(payload: &Value) -> DialogOptions {
+    DialogOptions {
+        timeout: payload["timeout"]
+            .as_f64()
+            .filter(|millis| *millis > 0.0)
+            .map(|millis| std::time::Duration::from_millis(millis as u64)),
+        cancel: None,
+    }
+}
+
+/// Renders the components of the instance that owns a bridge.
+struct Components(Weak<ExtensionHost>);
+
+impl ComponentHost for Components {
+    fn render(&self, handle: u32, width: u16) -> BoxFuture<'static, Vec<String>> {
+        let host = self.0.upgrade();
+        Box::pin(async move {
+            match host {
+                Some(host) => host.instance.render(handle, u32::from(width)).await,
+                None => Vec::new(),
+            }
+        })
+    }
+
+    fn input(&self, handle: u32, data: &str) {
+        if let Some(host) = self.0.upgrade() {
+            host.instance.input(handle, data);
+        }
+    }
+}
+
+impl SessionBridge {
+    fn component(&self, handle: &Value) -> Option<RemoteComponent> {
+        let handle = u32::try_from(handle.as_u64()?).ok()?;
+        let owner = self.owner.get()?.clone();
+        Some(RemoteComponent::new(
+            self.runtime_id,
+            handle,
+            Arc::new(Components(owner)),
+        ))
+    }
+
+    /// pi's `ctx.ui` methods that answer at once.
+    fn ui_request(&self, session: &AgentSession, kind: &str, payload: &Value) -> Value {
+        let (ui, _) = session.extension_binding();
+        let optional = |key: &str| payload[key].as_str();
+        match kind {
+            "ui.notify" => {
+                let kind = match payload["type"].as_str() {
+                    Some("warning") => NotifyKind::Warning,
+                    Some("error") => NotifyKind::Error,
+                    _ => NotifyKind::Info,
+                };
+                ui.notify(&text(&payload["message"]), kind);
+            }
+            "ui.setStatus" => ui.set_status(&text(&payload["key"]), optional("text")),
+            "ui.setWidget" => {
+                let widget = match &payload["lines"] {
+                    Value::Array(lines) => Some(Widget::Lines(lines.iter().map(text).collect())),
+                    _ => self.component(&payload["handle"]).map(Widget::Component),
+                };
+                let placement = match payload["options"]["placement"].as_str() {
+                    Some("belowEditor") => Some(Placement::BelowEditor),
+                    Some("aboveEditor") => Some(Placement::AboveEditor),
+                    _ => None,
+                };
+                ui.set_widget(&text(&payload["key"]), widget, placement);
+            }
+            "ui.setFooter" => ui.set_footer(self.component(&payload["handle"])),
+            "ui.setHeader" => ui.set_header(self.component(&payload["handle"])),
+            "ui.setTitle" => ui.set_title(&text(&payload["title"])),
+            "ui.setWorkingMessage" => ui.set_working_message(optional("message")),
+            "ui.setHiddenThinkingLabel" => ui.set_hidden_thinking_label(optional("label")),
+            "ui.setEditorText" => ui.set_editor_text(&text(&payload["text"])),
+            "ui.pasteToEditor" => ui.paste_to_editor(&text(&payload["text"])),
+            "ui.getEditorText" => return Value::String(ui.editor_text()),
+            "ui.custom" => {
+                if let Some(component) = self.component(&payload["handle"]) {
+                    let options = CustomOptions {
+                        overlay: payload["overlay"] == true,
+                        overlay_options: payload["overlayOptions"].clone(),
+                    };
+                    ui.custom(component, options);
+                }
+            }
+            "ui.close" => {
+                if let Some(component) = self.component(&payload["handle"]) {
+                    ui.close(component);
+                }
+            }
+            "ui.requestRender" => ui.request_render(),
+            "ui.getToolsExpanded" => return Value::Bool(ui.tools_expanded()),
+            "ui.setToolsExpanded" => ui.set_tools_expanded(payload["expanded"] == true),
+            "ui.theme" => return ui.theme(),
+            "ui.footerData" => return ui.footer_data(),
+            // The working indicator's visibility and frames are not shown.
+            _ => {}
+        }
+        Value::Null
     }
 }
 
@@ -709,18 +867,7 @@ impl Bridge for SessionBridge {
                     .unwrap_or_default(),
             )),
             "agent.shutdown" => Ok(Value::Null),
-            "ui.notify" => {
-                let kind = match payload["type"].as_str() {
-                    Some("warning") => NotifyKind::Warning,
-                    Some("error") => NotifyKind::Error,
-                    _ => NotifyKind::Info,
-                };
-                let (ui, _) = session.extension_binding();
-                ui.notify(&text(&payload["message"]), kind);
-                Ok(Value::Null)
-            }
-            // Status lines, widgets and the editor arrive with extension UI.
-            _ if kind.starts_with("ui.") => Ok(Value::Null),
+            _ if kind.starts_with("ui.") => Ok(self.ui_request(&session, kind, payload)),
             "util.convertToLlm" => {
                 let messages = serde_json::from_value(payload["messages"].clone()).map_err(|err| err.to_string())?;
                 Ok(to_json(ri_core::messages::convert_to_llm(messages)))
@@ -781,20 +928,39 @@ impl Bridge for SessionBridge {
                 "ui.select" => {
                     let (ui, _) = session.extension_binding();
                     let options = list(&payload["options"]).iter().map(text).collect();
-                    Ok(to_json(ui.select(&text(&payload["title"]), options).await))
+                    Ok(to_json(
+                        ui.select(&text(&payload["title"]), options, dialog(&payload))
+                            .await,
+                    ))
                 }
                 "ui.confirm" => {
                     let (ui, _) = session.extension_binding();
                     Ok(Value::Bool(
-                        ui.confirm(&text(&payload["title"]), &text(&payload["message"]))
-                            .await,
+                        ui.confirm(
+                            &text(&payload["title"]),
+                            &text(&payload["message"]),
+                            dialog(&payload),
+                        )
+                        .await,
                     ))
                 }
                 "ui.input" => {
                     let (ui, _) = session.extension_binding();
                     let placeholder = payload["placeholder"].as_str().map(str::to_owned);
                     Ok(to_json(
-                        ui.input(&text(&payload["title"]), placeholder.as_deref(), None)
+                        ui.input(
+                            &text(&payload["title"]),
+                            placeholder.as_deref(),
+                            dialog(&payload),
+                        )
+                        .await,
+                    ))
+                }
+                "ui.editor" => {
+                    let (ui, _) = session.extension_binding();
+                    let prefill = payload["prefill"].as_str().map(str::to_owned);
+                    Ok(to_json(
+                        ui.editor(&text(&payload["title"]), prefill.as_deref())
                             .await,
                     ))
                 }

@@ -32,6 +32,8 @@ pub struct RenderContext<'a> {
     pub cancel_key: &'a str,
     /// The home directory, shown as `~`.
     pub home: Option<&'a str>,
+    /// The label of hidden thinking blocks.
+    pub thinking_label: &'a str,
 }
 
 /// One transcript item.
@@ -61,6 +63,64 @@ pub enum Item {
     Error(String),
     /// Lines rendered elsewhere, with their own spacing.
     Lines(Vec<StyledLine>),
+    /// A custom message an extension shows.
+    Custom(Box<CustomView>),
+}
+
+/// pi's `CustomMessageComponent`: the message in a labelled box, or the
+/// component an extension's message renderer built.
+pub struct CustomView {
+    /// The message.
+    pub message: ri_types::message::CustomMessage,
+    /// What identifies it to the extension.
+    pub key: String,
+    /// The extension that draws it, when one does.
+    pub renderer: Option<std::sync::Arc<dyn ri_core::extensions::Extension>>,
+    /// The renderer's component.
+    pub view: Option<super::extension_ui::RemoteView>,
+    /// Requests sent, to drop stale answers.
+    pub requests: u64,
+}
+
+impl CustomView {
+    fn render(&self, width: usize, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
+        let theme = ctx.theme;
+        let mut out = lines::spacer(1);
+        if let Some(view) = &self.view {
+            out.extend(view.render(width).0);
+            return out;
+        }
+        let label = Line::from(Span::styled(
+            format!("[{}]", self.message.custom_type),
+            theme.fg("customMessageLabel").add_modifier(Modifier::BOLD),
+        ));
+        let inner = box_content_width(width, 1);
+        let mut body = vec![label, Line::default()];
+        let text = match &self.message.content {
+            ri_types::message::Content::Text(text) => text.clone(),
+            ri_types::message::Content::Blocks(blocks) => blocks
+                .iter()
+                .filter_map(|block| match block {
+                    ri_types::message::ContentBlock::Text(text) => Some(text.text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        body.extend(markdown::render(
+            &text,
+            inner,
+            0,
+            0,
+            ctx.markdown,
+            MarkdownOptions {
+                text: Some(theme.fg("customMessageText")),
+                ..MarkdownOptions::default()
+            },
+        ));
+        out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
+        out
+    }
 }
 
 /// `12345` as `12,345`.
@@ -104,6 +164,7 @@ impl Item {
             }
             Item::Assistant(message) => render_assistant(message, width, ctx),
             Item::Tool(tool) => tool.render(width, ctx),
+            Item::Custom(custom) => custom.render(width, ctx),
             Item::Bash(bash) => bash.render(width, ctx),
             Item::Compaction {
                 tokens_before,
@@ -264,7 +325,7 @@ fn render_assistant(
                 if ctx.hide_thinking {
                     out.extend(padded_text(
                         styled(
-                            "Thinking...",
+                            ctx.thinking_label.to_owned(),
                             theme.fg("thinkingText").add_modifier(Modifier::ITALIC),
                         ),
                         width,

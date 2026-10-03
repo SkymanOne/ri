@@ -12,6 +12,8 @@ pub const RUNTIME: &str = concat!(
     "\n",
     include_str!("../js/runtime/10-node.js"),
     "\n",
+    include_str!("../js/runtime/15-node-exports.js"),
+    "\n",
     include_str!("../js/runtime/20-cjs.js"),
     "\n",
     include_str!("../js/runtime/30-host.js"),

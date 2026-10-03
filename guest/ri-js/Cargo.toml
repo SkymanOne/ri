@@ -10,7 +10,7 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-rquickjs = { version = "=0.14.0", default-features = false, features = ["futures", "loader", "macro"] }
+rquickjs = { version = "=0.14.0", default-features = false, features = ["futures", "loader", "macro", "std"] }
 wit-bindgen = "0.62"
 base64 = "0.22"
 serde_json = "1"

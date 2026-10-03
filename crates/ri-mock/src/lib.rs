@@ -350,6 +350,13 @@ fn stream(response: Response) -> Result<hyper::Response<Channel<Bytes>>, hyper::
                 return;
             }
         }
+        if let Some(body) = response.body_base64 {
+            use base64::Engine as _;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap_or_default();
+            let _ = sender.send_data(Bytes::from(bytes)).await;
+        }
     });
     Ok(built)
 }

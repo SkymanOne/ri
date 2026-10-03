@@ -24,6 +24,7 @@ base64 = "0.23"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+flate2 = "1"
 getrandom = "0.4"
 http-body-util = { version = "0.1", features = ["channel"] }
 hyper = { version = "1", features = ["http1", "server"] }
@@ -39,10 +40,14 @@ ratatui-core = { version = "0.1", features = ["std"] }
 rustix = { version = "1", features = ["process"] }
 ryu-js = "1"
 ruzstd = "0.9"
+md-5 = "0.11"
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+sha1 = "0.11"
 sha2 = "0.11"
 similar = "2"
+tar = { version = "0.4", default-features = false }
 thiserror = "2"
 tokio = "1"
 tokio-util = "0.7"

@@ -25,6 +25,8 @@ pub(crate) struct Host {
     pub(crate) grants: Grants,
     pub(crate) cwd: PathBuf,
     pub(crate) agent_dir: PathBuf,
+    pub(crate) home_dir: PathBuf,
+    pub(crate) temp_dir: PathBuf,
 }
 
 fn denied(what: &str) -> String {
@@ -55,12 +57,28 @@ impl Host {
                 Ok(Value::Null)
             }
             "cwd" => Ok(Value::String(self.cwd.to_string_lossy().into_owned())),
-            "home" => Ok(Value::String(
-                ri_core::tools::path::home_dir()
-                    .to_string_lossy()
-                    .into_owned(),
-            )),
+            "home" => Ok(Value::String(self.home_dir.to_string_lossy().into_owned())),
             "agentDir" => Ok(Value::String(self.agent_dir.to_string_lossy().into_owned())),
+            "tmpdir" => Ok(Value::String(self.temp_dir.to_string_lossy().into_owned())),
+            // pi-ai's built-in catalog, which needs no session.
+            "models.providers" => Ok(json!(
+                ri_ai::catalog::builtin_providers().collect::<Vec<_>>()
+            )),
+            "models.list" => Ok(serde_json::to_value(ri_ai::catalog::builtin_models(text(
+                payload, "provider",
+            )))
+            .unwrap_or_default()),
+            "models.builtin" => Ok(ri_ai::catalog::builtin_models(text(payload, "provider"))
+                .into_iter()
+                .find(|model| model.id == text(payload, "id"))
+                .and_then(|model| serde_json::to_value(model).ok())
+                .unwrap_or_default()),
+            "models.envApiKey" if self.grants.environment => Ok(ri_ai::credentials::env_api_key(
+                text(payload, "provider"),
+                None,
+            )
+            .map_or(Value::Null, |(_, key)| Value::String(key))),
+            "models.envApiKey" => Ok(Value::Null),
             "platform" => Ok(Value::String(platform().into())),
             "env" => Ok(Value::Object(if self.grants.environment {
                 std::env::vars()
@@ -89,7 +107,8 @@ impl Host {
                 text(payload, "text"),
             ))),
             "builtin.tool" => {
-                let tool = self.builtin_tool(payload)?;
+                // Declaring a tool needs no grant; running it does.
+                let tool = self.builtin_tool(payload, false)?;
                 Ok(json!({
                     "name": tool.name(),
                     "label": tool.tool.label(),
@@ -133,7 +152,7 @@ impl Host {
             "fetch" if self.grants.network => Box::pin(ops::fetch(payload)),
             "fetch" => Box::pin(async { Err(denied("Network access")) }),
             "builtin.execute" => {
-                let tool = match self.builtin_tool(&payload) {
+                let tool = match self.builtin_tool(&payload, true) {
                     Ok(tool) => tool.tool,
                     Err(message) => return Box::pin(async move { Err(message) }),
                 };
@@ -153,14 +172,15 @@ impl Host {
 
 impl Host {
     /// Built-in tool `{name}` for `{cwd}`, if the grants cover what it does.
-    fn builtin_tool(&self, payload: &Value) -> Result<RegisteredTool, String> {
+    /// Built-in tool `name`; with `run`, only when the grants allow running it.
+    fn builtin_tool(&self, payload: &Value, run: bool) -> Result<RegisteredTool, String> {
         let name = text(payload, "name");
-        let needs = if name == "bash" {
+        let granted = if name == "bash" {
             self.grants.process
         } else {
             self.grants.filesystem
         };
-        if !needs {
+        if run && !granted {
             return Err(denied(&format!("The {name} tool")));
         }
         let cwd = payload["cwd"]
@@ -190,6 +210,8 @@ fn hash(algorithm: &str, data: &str) -> Result<Value, String> {
         "sha512" => sha2::Sha512::digest(&data).to_vec(),
         "sha384" => sha2::Sha384::digest(&data).to_vec(),
         "sha224" => sha2::Sha224::digest(&data).to_vec(),
+        "sha1" => sha1::Sha1::digest(&data).to_vec(),
+        "md5" => md5::Md5::digest(&data).to_vec(),
         other => return Err(format!("Digest method not supported: {other}")),
     };
     Ok(Value::String(STANDARD.encode(digest)))

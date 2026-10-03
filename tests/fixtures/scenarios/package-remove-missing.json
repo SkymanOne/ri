@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "Removing npm:nothing...\n",
+  "stderr": "No matching package found for npm:nothing\n",
+  "requests": []
+}

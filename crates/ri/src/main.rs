@@ -10,6 +10,7 @@ mod help;
 mod interactive;
 mod list_models;
 mod modes;
+mod packages;
 mod runtime;
 mod startup;
 
@@ -20,6 +21,21 @@ use args::Mode;
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
+    if matches!(
+        raw.first().map(String::as_str),
+        Some("install" | "remove" | "uninstall" | "update" | "list")
+    ) {
+        return match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => ExitCode::from(runtime.block_on(packages::run(&raw)).unwrap_or(0)),
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let mut parsed = args::parse(&raw);
     if parsed.version {
         let _ = writeln!(std::io::stdout(), "{}", env!("CARGO_PKG_VERSION"));
@@ -59,8 +75,8 @@ async fn run(parsed: &mut args::Args) -> u8 {
     if let Some(pattern) = &parsed.list_models {
         return list_models::run(pattern.as_deref());
     }
-    let hosts = match startup::load_extensions(parsed).await {
-        Ok(hosts) => hosts,
+    let extensions = match startup::load_extensions(parsed).await {
+        Ok(extensions) => extensions,
         Err(errors) => {
             for message in &errors.messages {
                 eprintln!("Error: {message}");
@@ -98,7 +114,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 }
             }
         }
-        let startup = match startup::start(parsed, None, &hosts) {
+        let startup = match startup::start(parsed, None, &extensions) {
             Ok(startup) => startup,
             Err(err) => {
                 eprintln!("{err}");
@@ -115,7 +131,9 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 tui_mode,
                 verbose: parsed.verbose,
                 initial,
-                factory: Box::new(move |session| startup::create(&args, session, false, &hosts)),
+                factory: Box::new(move |session| {
+                    startup::create(&args, session, false, &extensions)
+                }),
             },
         )
         .await;
@@ -125,7 +143,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
             eprintln!("Error: @file arguments are not supported in RPC mode");
             return 1;
         }
-        let startup = match startup::start(parsed, None, &hosts) {
+        let startup = match startup::start(parsed, None, &extensions) {
             Ok(startup) => startup,
             Err(err) => {
                 eprintln!("{err}");
@@ -139,12 +157,12 @@ async fn run(parsed: &mut args::Args) -> u8 {
         let args = parsed.clone();
         return modes::rpc::run(
             startup.session,
-            Box::new(move |session| startup::create(&args, session, false, &hosts)),
+            Box::new(move |session| startup::create(&args, session, false, &extensions)),
         )
         .await;
     }
     let stdin = startup::read_piped_stdin();
-    let startup = match startup::start(parsed, stdin, &hosts) {
+    let startup = match startup::start(parsed, stdin, &extensions) {
         Ok(startup) => startup,
         Err(err) => {
             eprintln!("{err}");

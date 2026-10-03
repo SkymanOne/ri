@@ -32,6 +32,7 @@ fn exchange(method: &str, path: &str, status: u16, body: &Value) -> Exchange {
                 .into_iter()
                 .collect(),
             chunks: vec![body.to_string()],
+            body_base64: None,
             chunk_delay_ms: 0,
         },
     }

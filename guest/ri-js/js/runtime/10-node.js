@@ -376,10 +376,11 @@
 
 	// ----- os ---------------------------------------------------------------------------------
 	const home = ri.request("home") ?? "/";
+	const tmp = ri.request("tmpdir") ?? "/tmp";
 	const os = {
 		EOL: "\n",
 		homedir: () => home,
-		tmpdir: () => process.env.TMPDIR || "/tmp",
+		tmpdir: () => tmp,
 		platform: () => process.platform,
 		type: () => (process.platform === "darwin" ? "Darwin" : "Linux"),
 		arch: () => "x64",
@@ -719,7 +720,29 @@
 			};
 			return hash;
 		},
-		createHmac: notSupported("crypto.createHmac"),
+		createHmac(algorithm, key) {
+			// RFC 2104 over createHash.
+			const blockSize = /^sha(384|512)$/i.test(algorithm) ? 128 : 64;
+			let secret = typeof key === "string" ? Buffer.from(key) : Buffer.from(key?.export?.() ?? key);
+			if (secret.length > blockSize) secret = crypto.createHash(algorithm).update(secret).digest();
+			const padded = Buffer.alloc(blockSize);
+			secret.copy(padded);
+			const pad = (byte) => Buffer.from(padded.map((value) => value ^ byte));
+			const inner = crypto.createHash(algorithm).update(pad(0x36));
+			const hmac = {
+				update(data, encoding) {
+					inner.update(data, encoding);
+					return hmac;
+				},
+				digest(encoding) {
+					return crypto.createHash(algorithm).update(pad(0x5c)).update(inner.digest()).digest(encoding);
+				},
+			};
+			return hmac;
+		},
+		getHashes: () => ["md5", "sha1", "sha224", "sha256", "sha384", "sha512"],
+		getCiphers: () => [],
+		getCurves: () => [],
 		timingSafeEqual: (a, b) => a.length === b.length && Buffer.from(a).equals(Buffer.from(b)),
 		webcrypto: globalThis.crypto,
 	};
@@ -727,7 +750,7 @@
 	builtins.crypto = crypto;
 
 	// ----- small modules ------------------------------------------------------------------------------
-	builtins.buffer = { Buffer, default: { Buffer }, constants: { MAX_LENGTH: 2 ** 31 - 1 } };
+	builtins.buffer = { Buffer, Blob, File, atob, btoa, default: { Buffer }, constants: { MAX_LENGTH: 2 ** 31 - 1 } };
 	builtins.process = process;
 	builtins.timers = { setTimeout, setInterval, setImmediate, clearTimeout, clearInterval, clearImmediate };
 	builtins["timers/promises"] = {
@@ -860,35 +883,186 @@
 	};
 	builtins["readline/promises"] = { createInterface: () => ({ question: async () => "", close() {} }) };
 	builtins.zlib = { gzipSync: notSupported("zlib.gzipSync"), gunzipSync: notSupported("zlib.gunzipSync"), inflateSync: notSupported("zlib.inflateSync"), deflateSync: notSupported("zlib.deflateSync"), createGzip: notSupported("zlib.createGzip"), createGunzip: notSupported("zlib.createGunzip"), constants: {} };
-	// Modules ri cannot provide. Their usual exports exist so imports link;
-	// using one throws.
-	const unsupported = {
-		net: ["createServer", "createConnection", "connect", "Socket", "Server", "isIP", "isIPv4", "isIPv6"],
-		tls: ["connect", "createServer", "createSecureContext", "TLSSocket"],
-		http: ["createServer", "request", "get", "Agent", "Server", "IncomingMessage", "ServerResponse", "STATUS_CODES", "METHODS", "globalAgent"],
-		https: ["createServer", "request", "get", "Agent", "Server", "globalAgent"],
-		http2: ["connect", "createServer", "createSecureServer", "constants"],
-		dgram: ["createSocket"],
-		cluster: ["fork", "isPrimary", "isMaster", "isWorker", "workers"],
-		worker_threads: ["Worker", "isMainThread", "parentPort", "workerData", "threadId", "MessageChannel", "MessagePort"],
-		inspector: ["open", "close", "url", "Session"],
-		vm: ["runInNewContext", "runInThisContext", "runInContext", "createContext", "Script", "isContext"],
-		v8: ["serialize", "deserialize", "getHeapStatistics"],
-		dns: ["lookup", "resolve", "resolve4", "resolve6", "promises"],
-		repl: ["start"],
-		diagnostics_channel: ["channel", "subscribe", "unsubscribe", "hasSubscribers", "tracingChannel"],
-		sea: ["isSea", "getAsset"],
-		sqlite: ["DatabaseSync"],
-		test: ["test", "describe", "it", "before", "after", "mock"],
-		wasi: ["WASI"],
+	builtins["stream/web"] = { ...ri.webStreams };
+	builtins["stream/consumers"] = {
+		async buffer(stream) {
+			const chunks = [];
+			for await (const chunk of stream) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+			return Buffer.concat(chunks);
+		},
+		async text(stream) {
+			return (await builtins["stream/consumers"].buffer(stream)).toString("utf8");
+		},
+		async json(stream) {
+			return JSON.parse(await builtins["stream/consumers"].text(stream));
+		},
+		async arrayBuffer(stream) {
+			const buffer = await builtins["stream/consumers"].buffer(stream);
+			return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+		},
 	};
-	for (const [name, exports] of Object.entries(unsupported)) {
-		builtins[name] = new Proxy(Object.fromEntries(exports.map((key) => [key, notSupported(`node:${name}`)])), {
-			get(_target, key) {
-				if (key === "__esModule" || typeof key === "symbol" || key === "then") return undefined;
-				return notSupported(`node:${name}`);
+	builtins["util/types"] = builtins.util.types;
+	builtins["path/win32"] = builtins.path;
+
+	// ----- querystring ------------------------------------------------------------------------
+	const qsEscape = (text) => encodeURIComponent(text);
+	const qsUnescape = (text) => {
+		try {
+			return decodeURIComponent(text);
+		} catch {
+			return unescape(text);
+		}
+	};
+	const qsValue = (value) => (typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : typeof value === "bigint" || typeof value === "boolean" ? String(value) : "");
+	const querystring = {
+		escape: qsEscape,
+		unescape: qsUnescape,
+		stringify(object, sep = "&", eq = "=", options) {
+			const encode = options?.encodeURIComponent ?? qsEscape;
+			if (object === null || typeof object !== "object") return "";
+			return Object.keys(object)
+				.map((key) => {
+					const value = object[key];
+					const name = encode(qsValue(key)) + eq;
+					return Array.isArray(value) ? value.map((item) => name + encode(qsValue(item))).join(sep) : name + encode(qsValue(value));
+				})
+				.filter((part) => part.length > 0)
+				.join(sep);
+		},
+		parse(text, sep = "&", eq = "=", options) {
+			const decode = options?.decodeURIComponent ?? qsUnescape;
+			const maxKeys = options?.maxKeys ?? 1000;
+			const result = Object.create(null);
+			if (typeof text !== "string" || text.length === 0) return result;
+			let parts = text.split(sep);
+			if (maxKeys > 0) parts = parts.slice(0, maxKeys);
+			for (const part of parts) {
+				if (part.length === 0) continue;
+				const index = part.indexOf(eq);
+				const rawKey = index >= 0 ? part.slice(0, index) : part;
+				const rawValue = index >= 0 ? part.slice(index + eq.length) : "";
+				const key = decode(rawKey.replace(/\+/g, " "));
+				const value = decode(rawValue.replace(/\+/g, " "));
+				if (!(key in result)) result[key] = value;
+				else if (Array.isArray(result[key])) result[key].push(value);
+				else result[key] = [result[key], value];
+			}
+			return result;
+		},
+	};
+	querystring.encode = querystring.stringify;
+	querystring.decode = querystring.parse;
+	querystring.default = querystring;
+	builtins.querystring = querystring;
+
+	builtins.console = globalThis.console;
+	builtins.sys = builtins.util;
+	builtins.constants = { ...(builtins.os.constants ?? {}), ...(builtins.fs.constants ?? {}) };
+
+	// ----- worker_threads: the main thread only; workers cannot start ---------------------------
+	const environmentData = new Map();
+	builtins.worker_threads = {
+		isMainThread: true,
+		isInternalThread: false,
+		threadId: 0,
+		threadName: "",
+		parentPort: null,
+		workerData: null,
+		resourceLimits: {},
+		SHARE_ENV: Symbol("nodejs.worker_threads.SHARE_ENV"),
+		MessageChannel,
+		MessagePort,
+		BroadcastChannel,
+		Worker: class Worker {
+			constructor() {
+				notSupported("worker_threads.Worker")();
+			}
+		},
+		markAsUncloneable() {},
+		markAsUntransferable() {},
+		isMarkedAsUntransferable: () => false,
+		moveMessagePortToContext: (port) => port,
+		receiveMessageOnPort: () => undefined,
+		getEnvironmentData: (key) => environmentData.get(key),
+		setEnvironmentData: (key, value) => (value === undefined ? environmentData.delete(key) : environmentData.set(key, value)),
+		postMessageToThread: notSupported("worker_threads.postMessageToThread"),
+	};
+
+	// ----- diagnostics_channel: channels without subscribers from outside ---------------------
+	const channels = new Map();
+	class Channel {
+		constructor(name) {
+			this.name = name;
+			this._subscribers = [];
+		}
+		get hasSubscribers() {
+			return this._subscribers.length > 0;
+		}
+		subscribe(handler) {
+			this._subscribers.push(handler);
+		}
+		unsubscribe(handler) {
+			const index = this._subscribers.indexOf(handler);
+			if (index === -1) return false;
+			this._subscribers.splice(index, 1);
+			return true;
+		}
+		publish(message) {
+			for (const handler of [...this._subscribers]) handler(message, this.name);
+		}
+		bindStore() {}
+		unbindStore() {
+			return false;
+		}
+		runStores(_data, fn, thisArg, ...args) {
+			return fn.apply(thisArg, args);
+		}
+	}
+	const channel = (name) => {
+		if (!channels.has(name)) channels.set(name, new Channel(name));
+		return channels.get(name);
+	};
+	const tracingChannel = (nameOrChannels) => {
+		const pick = (event) => (typeof nameOrChannels === "string" ? channel(`tracing:${nameOrChannels}:${event}`) : nameOrChannels[event]);
+		const tracing = { start: pick("start"), end: pick("end"), asyncStart: pick("asyncStart"), asyncEnd: pick("asyncEnd"), error: pick("error") };
+		return {
+			...tracing,
+			get hasSubscribers() {
+				return Object.values(tracing).some((item) => item.hasSubscribers);
 			},
-		});
+			subscribe(handlers) {
+				for (const [event, handler] of Object.entries(handlers)) tracing[event]?.subscribe(handler);
+			},
+			unsubscribe(handlers) {
+				for (const [event, handler] of Object.entries(handlers)) tracing[event]?.unsubscribe(handler);
+				return true;
+			},
+			traceSync: (fn, _context, thisArg, ...args) => fn.apply(thisArg, args),
+			tracePromise: (fn, _context, thisArg, ...args) => fn.apply(thisArg, args),
+			traceCallback: (fn, _position, _context, thisArg, ...args) => fn.apply(thisArg, args),
+		};
+	};
+	builtins.diagnostics_channel = {
+		channel,
+		hasSubscribers: (name) => channel(name).hasSubscribers,
+		subscribe: (name, handler) => channel(name).subscribe(handler),
+		unsubscribe: (name, handler) => channel(name).unsubscribe(handler),
+		tracingChannel,
+		Channel,
+	};
+
+	// Modules ri cannot provide: any use throws. 15-node-exports.js gives them
+	// Node's export names so imports link.
+	for (const name of ["net", "tls", "http", "https", "http2", "dgram", "cluster", "inspector", "vm", "v8", "dns", "dns/promises", "inspector/promises", "repl", "sea", "sqlite", "test", "wasi"]) {
+		builtins[name] = new Proxy(
+			{},
+			{
+				get(target, key) {
+					if (key === "__esModule" || typeof key === "symbol" || key === "then") return undefined;
+					return key in target ? target[key] : notSupported(`node:${name}`);
+				},
+			},
+		);
 	}
 	builtins.async_hooks = {
 		AsyncLocalStorage: class AsyncLocalStorage {

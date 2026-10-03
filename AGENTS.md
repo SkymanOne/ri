@@ -31,7 +31,7 @@ License: MIT OR Apache-2.0. Vendored pi JS keeps its MIT notices.
 ### Out of scope
 
 - pi's experimental stack (`chord`, `durable`, `protocol`, `client`, `server`) and `evals`.
-- npm packages that need native addons, `net`/`tls` servers or `worker_threads`.
+- Native addons, `net`/`tls` servers and `worker_threads` in npm packages.
 - Windows as a tier-1 platform. Linux and macOS are tier 1; Windows is best-effort.
 
 ### Compatibility contract
@@ -79,10 +79,10 @@ Traits exist only where implementations vary across a crate or plugin boundary. 
 | `OAuthProvider` | `ri-ai` | Log in, refresh, derive an API key from credentials. | Built-in subscriptions; extension-registered providers |
 | `Tool` | `ri-agent` | Declare a schema; execute with progress updates and cancellation. | Built-in, MCP and extension tools |
 | `AgentHooks` | `ri-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `ri-core` session, which dispatches to extensions |
-| `Extension` | `ri-core` | Register capabilities; handle events, tool calls and commands. | Built-ins (MCP); wasm instances in `ri-ext` |
+| `Extension` | `ri-core` | Register capabilities; handle events, tool calls and commands; build components for the transcript items it draws. | Built-ins (MCP); wasm instances in `ri-ext` |
 | `Bridge` | `ri-ext` | Answer an instance's requests and operations that need the session. | The session bridge of loaded extensions; `NoBridge` for headless loading |
 | `ExtensionUi` | `ri-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
-| `Component` | `ri-tui` | Render styled lines for a width; handle input. | Built-in widgets; `RemoteComponent` for JS components |
+| `ComponentHost` | `ri-core` | Render an extension component for a width; deliver input to it. | Extension runtimes in `ri-ext` |
 
 Add a trait only when a second implementation or a plugin boundary exists.
 
@@ -92,7 +92,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 |---|---|
 | Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` |
 | Serialization | `serde`, `serde_json` |
-| TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ansi-to-tui`, `ratatui-image` |
+| TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ratatui-image` |
 | Markdown, diffs, images | `pulldown-cmark`, `similar`, `image` |
 | Syntax highlighting | `syntect` or tree-sitter, chosen in M3 against the size budget |
 | Wasm host | `wasmtime` with the component model |
@@ -118,7 +118,7 @@ Two tiers share one host, one WIT world and one package format.
 - Entries dispatch by file type: `.ts` and `.js` go to `ri-js`, `.wasm` goes to the native host.
 - Installation uses a built-in npm registry client: semver, integrity checks, nested `node_modules`, no lifecycle scripts. pi's `npmCommand` setting overrides it.
 - Git sources use the `git` CLI.
-- Packages that contain native addons are rejected at install.
+- Native addons are installed but never built. An extension fails only when it loads one.
 
 ### Module loading
 
@@ -154,7 +154,7 @@ Module loading runs on the host, in `ri-ext`:
 ### UI bridge
 
 - JS components render ANSI lines inside the guest.
-- `RemoteComponent` paints the cached lines, parsed with `ansi-to-tui`, and maps pi's cursor marker to the frame cursor.
+- The TUI paints a remote component's cached lines, parsed from ANSI by `ri-tui`, and maps pi's cursor marker to the frame cursor.
 - The TUI requests renders for dirty handles and paints the last result, so it never waits on JS.
 - Inside the guest, pi-tui reports a terminal without hyperlink or image support, so components use pi-tui's own text fallbacks.
 - Known losses are listed in [docs/compat.md](docs/compat.md).

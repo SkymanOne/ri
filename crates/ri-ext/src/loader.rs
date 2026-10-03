@@ -65,7 +65,8 @@ fn resolver(conditions: &[&str]) -> Resolver {
             (".cjs".into(), vec![".cts".into(), ".cjs".into()]),
         ],
         condition_names: conditions.iter().map(|name| (*name).to_owned()).collect(),
-        main_fields: vec!["module".into(), "main".into()],
+        // Node reads only `main`; `module` is a bundler convention.
+        main_fields: vec!["main".into()],
         ..ResolveOptions::default()
     })
 }
@@ -96,8 +97,9 @@ impl Loader {
         require: bool,
     ) -> Result<String, String> {
         let specifier = specifier.strip_prefix("file://").unwrap_or(specifier);
-        let base = if Path::new(referrer).is_absolute() {
-            Path::new(referrer)
+        let referrer_path = referrer.strip_prefix("file://").unwrap_or(referrer);
+        let base = if Path::new(referrer_path).is_absolute() {
+            Path::new(referrer_path)
                 .parent()
                 .map_or_else(|| self.cwd.clone(), Path::to_path_buf)
         } else {
@@ -153,9 +155,20 @@ impl Loader {
         if let Some(found) = prepared.get(path) {
             return Ok(found.clone());
         }
+        if path.extension().is_some_and(|ext| ext == "node") {
+            return Err(format!(
+                "Native addon {} cannot be loaded in ri extensions",
+                path.display()
+            ));
+        }
         let text = std::fs::read_to_string(path)
             .map_err(|err| format!("Cannot read module {}: {err}", path.display()))?;
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        // Node ignores a hashbang line; keep the line so positions hold.
+        let text = match text.strip_prefix("#!") {
+            Some(rest) => &rest[rest.find('\n').unwrap_or(rest.len())..],
+            None => text,
+        };
         let found = if path.extension().is_some_and(|ext| ext == "json") {
             serde_json::from_str::<Value>(text)
                 .map_err(|err| format!("{}: {err}", path.display()))?;

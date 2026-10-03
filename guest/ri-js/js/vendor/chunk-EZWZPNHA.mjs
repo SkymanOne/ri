@@ -61,12 +61,12 @@ import {
   guard_exports,
   hash_exports,
   settings_exports
-} from "./chunk-ZTJVV6OQ.mjs";
+} from "./chunk-36PQP7AB.mjs";
 import {
   __export
 } from "./chunk-7P6ASYW6.mjs";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/pointer/pointer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/pointer/pointer.mjs
 var pointer_exports = {};
 __export(pointer_exports, {
   Delete: () => Delete,
@@ -153,12 +153,12 @@ function Delete(value, pointer) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/_refine.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/_refine.mjs
 function IsRefine2(value) {
   return guard_exports.HasPropertyKey(value, "~refine") && guard_exports.IsArray(value["~refine"]) && guard_exports.Every(value["~refine"], 0, (value2) => guard_exports.IsObject(value2) && guard_exports.HasPropertyKey(value2, "check") && guard_exports.HasPropertyKey(value2, "error") && guard_exports.IsFunction(value2.check) && guard_exports.IsFunction(value2.error));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/schema.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/schema.mjs
 function IsSchemaObject(value) {
   return guard_exports.IsObject(value) && !guard_exports.IsArray(value);
 }
@@ -169,107 +169,107 @@ function IsSchema2(value) {
   return IsSchemaObject(value) || IsSchemaBoolean(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/additionalItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/additionalItems.mjs
 function IsAdditionalItems(schema) {
   return guard_exports.HasPropertyKey(schema, "additionalItems") && IsSchema2(schema.additionalItems);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/additionalProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/additionalProperties.mjs
 function IsAdditionalProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "additionalProperties") && IsSchema2(schema.additionalProperties);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/allOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/allOf.mjs
 function IsAllOf(schema) {
   return guard_exports.HasPropertyKey(schema, "allOf") && guard_exports.IsArray(schema.allOf) && schema.allOf.every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/anchor.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/anchor.mjs
 function IsAnchor(schema) {
   return guard_exports.HasPropertyKey(schema, "$anchor") && guard_exports.IsString(schema.$anchor);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/anyOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/anyOf.mjs
 function IsAnyOf(schema) {
   return guard_exports.HasPropertyKey(schema, "anyOf") && guard_exports.IsArray(schema.anyOf) && schema.anyOf.every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/const.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/const.mjs
 function IsConst(value) {
   return guard_exports.HasPropertyKey(value, "const");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/contains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/contains.mjs
 function IsContains(schema) {
   return guard_exports.HasPropertyKey(schema, "contains") && IsSchema2(schema.contains);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/default.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/default.mjs
 function IsDefault(schema) {
   return guard_exports.HasPropertyKey(schema, "default");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependencies.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependencies.mjs
 function IsDependencies(schema) {
   return guard_exports.HasPropertyKey(schema, "dependencies") && guard_exports.IsObject(schema.dependencies) && Object.values(schema.dependencies).every((value) => IsSchema2(value) || guard_exports.IsArray(value) && value.every((value2) => guard_exports.IsString(value2)));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependentRequired.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependentRequired.mjs
 function IsDependentRequired(schema) {
   return guard_exports.HasPropertyKey(schema, "dependentRequired") && guard_exports.IsObject(schema.dependentRequired) && Object.values(schema.dependentRequired).every((value) => guard_exports.IsArray(value) && value.every((value2) => guard_exports.IsString(value2)));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependentSchemas.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dependentSchemas.mjs
 function IsDependentSchemas(schema) {
   return guard_exports.HasPropertyKey(schema, "dependentSchemas") && guard_exports.IsObject(schema.dependentSchemas) && Object.values(schema.dependentSchemas).every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dynamicAnchor.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dynamicAnchor.mjs
 function IsDynamicAnchor(schema) {
   return guard_exports.HasPropertyKey(schema, "$dynamicAnchor") && guard_exports.IsString(schema.$dynamicAnchor);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dynamicRef.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/dynamicRef.mjs
 function IsDynamicRef(schema) {
   return guard_exports.HasPropertyKey(schema, "$dynamicRef") && guard_exports.IsString(schema.$dynamicRef);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/else.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/else.mjs
 function IsElse(schema) {
   return guard_exports.HasPropertyKey(schema, "else") && IsSchema2(schema.else);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/enum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/enum.mjs
 function IsEnum2(schema) {
   return guard_exports.HasPropertyKey(schema, "enum") && guard_exports.IsArray(schema.enum);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/exclusiveMaximum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/exclusiveMaximum.mjs
 function IsExclusiveMaximum(schema) {
   return guard_exports.HasPropertyKey(schema, "exclusiveMaximum") && (guard_exports.IsNumber(schema.exclusiveMaximum) || guard_exports.IsBigInt(schema.exclusiveMaximum));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/exclusiveMinimum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/exclusiveMinimum.mjs
 function IsExclusiveMinimum(schema) {
   return guard_exports.HasPropertyKey(schema, "exclusiveMinimum") && (guard_exports.IsNumber(schema.exclusiveMinimum) || guard_exports.IsBigInt(schema.exclusiveMinimum));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/format.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/format.mjs
 function IsFormat(schema) {
   return guard_exports.HasPropertyKey(schema, "format") && guard_exports.IsString(schema.format);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/id.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/id.mjs
 function IsId(schema) {
   return guard_exports.HasPropertyKey(schema, "$id") && guard_exports.IsString(schema.$id);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/if.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/if.mjs
 function IsIf(schema) {
   return guard_exports.HasPropertyKey(schema, "if") && IsSchema2(schema.if);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/items.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/items.mjs
 function IsItems(schema) {
   return guard_exports.HasPropertyKey(schema, "items") && (IsSchema2(schema.items) || guard_exports.IsArray(schema.items) && schema.items.every((value) => {
     return IsSchema2(value);
@@ -279,97 +279,97 @@ function IsItemsSized(schema) {
   return IsItems(schema) && guard_exports.IsArray(schema.items);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maximum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maximum.mjs
 function IsMaximum(schema) {
   return guard_exports.HasPropertyKey(schema, "maximum") && (guard_exports.IsNumber(schema.maximum) || guard_exports.IsBigInt(schema.maximum));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxContains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxContains.mjs
 function IsMaxContains(schema) {
   return guard_exports.HasPropertyKey(schema, "maxContains") && guard_exports.IsNumber(schema.maxContains);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxItems.mjs
 function IsMaxItems(schema) {
   return guard_exports.HasPropertyKey(schema, "maxItems") && guard_exports.IsNumber(schema.maxItems);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxLength.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxLength.mjs
 function IsMaxLength(schema) {
   return guard_exports.HasPropertyKey(schema, "maxLength") && guard_exports.IsNumber(schema.maxLength);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/maxProperties.mjs
 function IsMaxProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "maxProperties") && guard_exports.IsNumber(schema.maxProperties);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minimum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minimum.mjs
 function IsMinimum(schema) {
   return guard_exports.HasPropertyKey(schema, "minimum") && (guard_exports.IsNumber(schema.minimum) || guard_exports.IsBigInt(schema.minimum));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minContains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minContains.mjs
 function IsMinContains(schema) {
   return guard_exports.HasPropertyKey(schema, "minContains") && guard_exports.IsNumber(schema.minContains);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minItems.mjs
 function IsMinItems(schema) {
   return guard_exports.HasPropertyKey(schema, "minItems") && guard_exports.IsNumber(schema.minItems);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minLength.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minLength.mjs
 function IsMinLength(schema) {
   return guard_exports.HasPropertyKey(schema, "minLength") && guard_exports.IsNumber(schema.minLength);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/minProperties.mjs
 function IsMinProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "minProperties") && guard_exports.IsNumber(schema.minProperties);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/multipleOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/multipleOf.mjs
 function IsMultipleOf(schema) {
   return guard_exports.HasPropertyKey(schema, "multipleOf") && (guard_exports.IsNumber(schema.multipleOf) || guard_exports.IsBigInt(schema.multipleOf));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/not.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/not.mjs
 function IsNot(schema) {
   return guard_exports.HasPropertyKey(schema, "not") && IsSchema2(schema.not);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/oneOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/oneOf.mjs
 function IsOneOf(schema) {
   return guard_exports.HasPropertyKey(schema, "oneOf") && guard_exports.IsArray(schema.oneOf) && schema.oneOf.every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/pattern.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/pattern.mjs
 function IsPattern(schema) {
   return guard_exports.HasPropertyKey(schema, "pattern") && (guard_exports.IsString(schema.pattern) || schema.pattern instanceof RegExp);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/patternProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/patternProperties.mjs
 function IsPatternProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "patternProperties") && guard_exports.IsObject(schema.patternProperties) && Object.values(schema.patternProperties).every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/prefixItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/prefixItems.mjs
 function IsPrefixItems(schema) {
   return guard_exports.HasPropertyKey(schema, "prefixItems") && guard_exports.IsArray(schema.prefixItems) && schema.prefixItems.every((schema2) => IsSchema2(schema2));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/properties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/properties.mjs
 function IsProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "properties") && guard_exports.IsObject(schema.properties) && Object.values(schema.properties).every((value) => IsSchema2(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/propertyNames.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/propertyNames.mjs
 function IsPropertyNames(schema) {
   return guard_exports.HasPropertyKey(schema, "propertyNames") && (guard_exports.IsObject(schema.propertyNames) || IsSchema2(schema.propertyNames));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/recursiveAnchor.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/recursiveAnchor.mjs
 function IsRecursiveAnchor(schema) {
   return guard_exports.HasPropertyKey(schema, "$recursiveAnchor") && guard_exports.IsBoolean(schema.$recursiveAnchor);
 }
@@ -377,47 +377,47 @@ function IsRecursiveAnchorTrue(schema) {
   return IsRecursiveAnchor(schema) && guard_exports.IsEqual(schema.$recursiveAnchor, true);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/recursiveRef.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/recursiveRef.mjs
 function IsRecursiveRef(schema) {
   return guard_exports.HasPropertyKey(schema, "$recursiveRef") && guard_exports.IsString(schema.$recursiveRef);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/ref.mjs
 function IsRef2(schema) {
   return guard_exports.HasPropertyKey(schema, "$ref") && guard_exports.IsString(schema.$ref);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/required.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/required.mjs
 function IsRequired(schema) {
   return guard_exports.HasPropertyKey(schema, "required") && guard_exports.IsArray(schema.required) && schema.required.every((value) => guard_exports.IsString(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/then.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/then.mjs
 function IsThen(schema) {
   return guard_exports.HasPropertyKey(schema, "then") && IsSchema2(schema.then);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/type.mjs
 function IsType(schema) {
   return guard_exports.HasPropertyKey(schema, "type") && (guard_exports.IsString(schema.type) || guard_exports.IsArray(schema.type) && schema.type.every((value) => guard_exports.IsString(value)));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/uniqueItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/uniqueItems.mjs
 function IsUniqueItems(schema) {
   return guard_exports.HasPropertyKey(schema, "uniqueItems") && guard_exports.IsBoolean(schema.uniqueItems);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/unevaluatedItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/unevaluatedItems.mjs
 function IsUnevaluatedItems(schema) {
   return guard_exports.HasPropertyKey(schema, "unevaluatedItems") && IsSchema2(schema.unevaluatedItems);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/unevaluatedProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/types/unevaluatedProperties.mjs
 function IsUnevaluatedProperties(schema) {
   return guard_exports.HasPropertyKey(schema, "unevaluatedProperties") && IsSchema2(schema.unevaluatedProperties);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_context.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_context.mjs
 function HasUnevaluatedFromObject(value) {
   return IsUnevaluatedItems(value) || IsUnevaluatedProperties(value) || guard_exports.Some(guard_exports.Keys(value), (key) => HasUnevaluatedFromUnknown(value[key]));
 }
@@ -523,7 +523,7 @@ var ErrorContext = class extends CheckContext {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_externals.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_externals.mjs
 var state = {
   identifier: "External",
   variables: []
@@ -540,7 +540,7 @@ function GetExternal() {
   return { ...state };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_refine.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_refine.mjs
 function BuildRefine(_stack, _context, schema, value) {
   const refinements = CreateVariable(schema["~refine"].map((refinement) => refinement));
   return emit_exports.Every(refinements, emit_exports.Constant(0), ["refinement", "_"], emit_exports.Call(emit_exports.Member("refinement", "check"), [value]));
@@ -559,13 +559,13 @@ function ErrorRefine(_stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_unique.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_unique.mjs
 var index = 0;
 function Unique() {
   return `var_${index++}`;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/additionalItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/additionalItems.mjs
 function IsValid(schema) {
   return IsItems(schema) && guard_exports.IsArray(schema.items);
 }
@@ -606,12 +606,12 @@ function ErrorAdditionalItems(stack, context, schemaPath, instancePath, schema, 
   return isAdditionalItems;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_regexp.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_regexp.mjs
 function UnicodeRegExp(pattern) {
   return new RegExp(pattern, "u");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/additionalProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/additionalProperties.mjs
 function IsAdditionalPropertiesIgnored(context, additionalProperties) {
   return !context.UseUnevaluated() && (guard_exports.IsEqual(additionalProperties, true) || guard_exports.IsObject(additionalProperties) && guard_exports.IsEqual(guard_exports.Keys(additionalProperties).length, 0));
 }
@@ -674,7 +674,7 @@ function ErrorAdditionalProperties(stack, context, schemaPath, instancePath, sch
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_reducer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_reducer.mjs
 function Reducer(stack, context, schemas, value, check) {
   const results = emit_exports.ConstDeclaration("results", "[]");
   const context_n = schemas.map((_schema, index3) => emit_exports.ConstDeclaration(`context_${index3}`, emit_exports.New("CheckContext", [])));
@@ -684,7 +684,7 @@ function Reducer(stack, context, schemas, value, check) {
   return emit_exports.Call(emit_exports.ArrowFunction([], emit_exports.Statements([results, ...context_n, ...condition_n, ...checks, returns])), []);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/allOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/allOf.mjs
 function BuildAllOfStandard(stack, context, schema, value) {
   return Reducer(stack, context, schema.allOf, value, emit_exports.IsEqual(emit_exports.Member("results", "length"), emit_exports.Constant(schema.allOf.length)));
 }
@@ -717,7 +717,7 @@ function ErrorAllOf(stack, context, schemaPath, instancePath, schema, value) {
   return isAllOf;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/anyOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/anyOf.mjs
 function BuildAnyOfStandard(stack, context, schema, value) {
   return Reducer(stack, context, schema.anyOf, value, emit_exports.IsGreaterThan(emit_exports.Member("results", "length"), emit_exports.Constant(0)));
 }
@@ -755,7 +755,7 @@ function ErrorAnyOf(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/boolean.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/boolean.mjs
 function BuildSchemaBoolean(_stack, _context, schema, _value) {
   return schema ? emit_exports.Constant(true) : emit_exports.Constant(false);
 }
@@ -771,7 +771,7 @@ function ErrorSchemaBoolean(stack, context, schemaPath, instancePath, schema, va
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/const.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/const.mjs
 function BuildConst(_stack, _context, schema, value) {
   return guard_exports.IsValueLike(schema.const) ? emit_exports.IsEqual(value, emit_exports.Constant(schema.const)) : emit_exports.IsDeepEqual(value, CreateVariable(schema.const));
 }
@@ -787,7 +787,7 @@ function ErrorConst(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/contains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/contains.mjs
 function IsValid2(schema) {
   return !(IsMinContains(schema) && guard_exports.IsEqual(schema.minContains, 0));
 }
@@ -824,7 +824,7 @@ function ErrorContains(stack, context, schemaPath, instancePath, schema, value) 
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependencies.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependencies.mjs
 function BuildDependencies(stack, context, schema, value) {
   const isLength = emit_exports.IsEqual(emit_exports.Member(emit_exports.Keys(value), "length"), emit_exports.Constant(0));
   const isEveryDependency = emit_exports.ReduceAnd(guard_exports.Entries(schema.dependencies).map(([key, schema2]) => {
@@ -856,7 +856,7 @@ function ErrorDependencies(stack, context, schemaPath, instancePath, schema, val
   return isLength || isEvery;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependentRequired.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependentRequired.mjs
 function BuildDependentRequired(_stack, _context, schema, value) {
   const isLength = emit_exports.IsEqual(emit_exports.Member(emit_exports.Keys(value), "length"), emit_exports.Constant(0));
   const isEvery = emit_exports.ReduceAnd(guard_exports.Entries(schema.dependentRequired).map(([key, keys]) => {
@@ -886,7 +886,7 @@ function ErrorDependentRequired(_stack, context, schemaPath, instancePath, schem
   return isLength || isEveryEntry;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependentSchemas.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dependentSchemas.mjs
 function BuildDependentSchemas(stack, context, schema, value) {
   const isLength = emit_exports.IsEqual(emit_exports.Member(emit_exports.Keys(value), "length"), emit_exports.Constant(0));
   const isEvery = emit_exports.ReduceAnd(guard_exports.Entries(schema.dependentSchemas).map(([key, schema2]) => {
@@ -912,7 +912,7 @@ function ErrorDependentSchemas(stack, context, schemaPath, instancePath, schema,
   return isLength || isEvery;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dynamicRef.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/dynamicRef.mjs
 function BuildDynamicRef(stack, context, schema, value) {
   const target = stack.DynamicRef(schema) ?? false;
   return CreateFunction(stack, context, target, value);
@@ -926,7 +926,7 @@ function ErrorDynamicRef(stack, context, _schemaPath, instancePath, schema, valu
   return IsSchema2(target) && ErrorSchema(stack, context, "#", instancePath, target, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/enum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/enum.mjs
 function BuildEnum(_stack, _context, schema, value) {
   return emit_exports.ReduceOr(schema.enum.map((option) => {
     if (guard_exports.IsValueLike(option))
@@ -947,7 +947,7 @@ function ErrorEnum(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/exclusiveMaximum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/exclusiveMaximum.mjs
 function BuildExclusiveMaximum(_stack, _context, schema, value) {
   return emit_exports.IsLessThan(value, emit_exports.Constant(schema.exclusiveMaximum));
 }
@@ -963,7 +963,7 @@ function ErrorExclusiveMaximum(stack, context, schemaPath, instancePath, schema,
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/exclusiveMinimum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/exclusiveMinimum.mjs
 function BuildExclusiveMinimum(_stack, _context, schema, value) {
   return emit_exports.IsGreaterThan(value, emit_exports.Constant(schema.exclusiveMinimum));
 }
@@ -979,7 +979,7 @@ function ErrorExclusiveMinimum(stack, context, schemaPath, instancePath, schema,
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/format.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/format.mjs
 var format_exports = {};
 __export(format_exports, {
   Clear: () => Clear,
@@ -1012,7 +1012,7 @@ __export(format_exports, {
   Test: () => Test
 });
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/date.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/date.mjs
 var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
 function IsLeapYear(year) {
@@ -1028,7 +1028,7 @@ function IsDate(value) {
   return month >= 1 && month <= 12 && day >= 1 && day <= (month === 2 && IsLeapYear(year) ? 29 : DAYS[month]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/time.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/time.mjs
 var TIME = /^(\d\d):(\d\d):(\d\d)(?:\.\d+)?(?:([Zz])|([+-])(\d\d):(\d\d))?$/;
 function IsTime(value, strictTimeZone = true) {
   const matches = TIME.exec(value);
@@ -1056,25 +1056,25 @@ function IsTime(value, strictTimeZone = true) {
   return (totalUtcMin % 1440 + 1440) % 1440 === 1439;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/date_time.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/date_time.mjs
 function IsDateTime(value) {
   const dateTime = value.split(/T/i);
   return dateTime.length === 2 && IsDate(dateTime[0]) && IsTime(dateTime[1]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/duration.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/duration.mjs
 var Duration = /^P((\d+Y(\d+M(\d+D)?)?|\d+M(\d+D)?|\d+D)(T(\d+H(\d+M(\d+S)?)?|\d+M(\d+S)?|\d+S))?|T(\d+H(\d+M(\d+S)?)?|\d+M(\d+S)?|\d+S)|\d+W)$/;
 function IsDuration(value) {
   return Duration.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/email.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/email.mjs
 var Email = /^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[^"\\]|\\[\x20-\x7e])*")@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\[(?:IPv6:[a-f0-9:]+|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})\])$/i;
 function IsEmail(value) {
   return Email.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/pattern/pattern.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/pattern/pattern.mjs
 var RE_RULE_HYPHEN_PLACEMENT = /^(?!-).*(?<!-)$/;
 var RE_RULE_NOT_RESERVED_ACE = /^(?!..--)/;
 var RE_ASCII_LDH = /^[a-zA-Z0-9-]*$/;
@@ -1112,12 +1112,12 @@ var RE_PERMITTED_CATEGORY = new RegExp([
   RE_PVALID_EXCEPTIONS
 ].map((regexp) => regexp.source).join("|"), "u");
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/ascii.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/ascii.mjs
 function IsAsciiLabel(value) {
   return RE_RULE_HYPHEN_PLACEMENT.test(value) && RE_RULE_NOT_RESERVED_ACE.test(value) && RE_ASCII_LDH.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/format/puny.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/format/puny.mjs
 var PUNYCODE_BASE = 36;
 var PUNYCODE_TMIN = 1;
 var PUNYCODE_TMAX = 26;
@@ -1233,7 +1233,7 @@ function Encode(input) {
   return result.join("");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/format/bidi.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/format/bidi.mjs
 var RE_RTL_ALLOWED = /^(?:R|AL|AN|EN|ES|CS|ET|ON|BN|NSM)$/;
 var RE_LTR_ALLOWED = /^(?:L|EN|ES|CS|ET|ON|BN|NSM)$/;
 var RE_RTL_CLASSES = /^(?:R|AL|AN)$/;
@@ -1288,7 +1288,7 @@ function SatisfiesBidiRule(value) {
   return true;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/unicode.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/unicode.mjs
 function ExceedsMaxALabelLength(value) {
   return RE_NON_ASCII.test(value) && Encode(value).length + 4 > 63;
 }
@@ -1354,7 +1354,7 @@ function IsUnicodeLabel(value) {
   return true;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/puny.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/label/puny.mjs
 function IsPunyLabel(value) {
   if (!IsAcePrefixed(value))
     return false;
@@ -1371,7 +1371,7 @@ function IsPunyLabel(value) {
   }
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/hostname.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/hostname.mjs
 function IsValidLabelLength(value) {
   return value.length > 0 && value.length <= 63;
 }
@@ -1386,7 +1386,7 @@ function IsHostname(value) {
   return value.split(".").every((label) => IsLabel(label));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/idn-hostname.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idna/idn-hostname.mjs
 function IsValidLabelLength2(value) {
   return value.length > 0 && value.length <= 63;
 }
@@ -1407,42 +1407,42 @@ function IsIdnHostname(value) {
   return labels.every((label) => IsLabel2(label) && (!hasBidiChars || SatisfiesBidiRule(label)));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/hostname.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/hostname.mjs
 function IsHostname2(value) {
   return IsHostname(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idn_email.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idn_email.mjs
 var IdnEmail = /^(?:[A-Za-z0-9!#$%&'*+\/=?^_`{|}~\u{0080}-\u{10FFFF}-]+(?:\.[A-Za-z0-9!#$%&'*+\/=?^_`{|}~\u{0080}-\u{10FFFF}-]+)*|"(?:[^"\\]|\\.)*")@[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,62})(?<!-)(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,62})(?<!-))*$/iu;
 function IsIdnEmail(value) {
   return IdnEmail.test(value.normalize("NFC"));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idn_hostname.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/idn_hostname.mjs
 function IsIdnHostname2(value) {
   return IsIdnHostname(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/ipv4.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/ipv4.mjs
 var IPv4 = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 function IsIPv4(value) {
   return IPv4.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/ipv6.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/ipv6.mjs
 var IPv6 = /^(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:)?[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)$/i;
 function IsIPv6(value) {
   return IPv6.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/iri_reference.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/iri_reference.mjs
 var InvalidIriChars = /[\x00-\x20\x7F\\]|%(?![0-9a-fA-F]{2})/;
 var MalformedScheme = /^[a-zA-Z][a-zA-Z0-9+\-.]*\/\//;
 function IsIriReference(value) {
   return !InvalidIriChars.test(value) && !MalformedScheme.test(value) && URL.canParse(value, "http://example.com");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/iri.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/iri.mjs
 var IpvFutureMatchMaxLength = 2048;
 var IpvFutureMatch = /\[[vV][0-9a-fA-F]+\.[^\]]+\]/;
 var InvalidIriChars2 = /[\x00-\x20<>\^`{|}\\]/;
@@ -1458,19 +1458,19 @@ function IsIri(value) {
   return URL.canParse(NarrowIpvFuture(value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/json_pointer_uri_fragment.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/json_pointer_uri_fragment.mjs
 var JsonPointerUriFragment = /^#(?:\/(?:[a-z0-9_\-.!$&'()*+,;:=@]|%[0-9a-f]{2}|~0|~1)*)*$/i;
 function IsJsonPointerUriFragment(value) {
   return JsonPointerUriFragment.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/json_pointer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/json_pointer.mjs
 var JsonPointer = /^(?:\/(?:[^~/]|~0|~1)*)*$/;
 function IsJsonPointer(value) {
   return JsonPointer.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/regex.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/regex.mjs
 function IsRegex(value) {
   try {
     new RegExp(value, "u");
@@ -1480,42 +1480,42 @@ function IsRegex(value) {
   }
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/relative_json_pointer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/relative_json_pointer.mjs
 var RelativeJsonPointer = /^(?:0|[1-9][0-9]*)(?:#|(?:\/(?:[^~/]|~0|~1)*)*)$/;
 function IsRelativeJsonPointer(value) {
   return RelativeJsonPointer.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri_reference.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri_reference.mjs
 var UriReference = /^(?:[a-z][a-z0-9+\-.]*:(?:\/\/(?:(?:[-a-z0-9._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:[\da-f]{1,4}:){6}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|::(?:[\da-f]{1,4}:){5}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:[\da-f]{1,4})?::(?:[\da-f]{1,4}:){4}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,1}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){3}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,2}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){2}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,3}[\da-f]{1,4})?::[\da-f]{1,4}:(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,4}[\da-f]{1,4})?::(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,5}[\da-f]{1,4})?::[\da-f]{1,4}|(?:(?:[\da-f]{1,4}:){0,6}[\da-f]{1,4})?::)|v[0-9a-f]+\.[-a-z0-9._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|(?:[-a-z0-9._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:\/\/(?:(?:[-a-z0-9._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:[\da-f]{1,4}:){6}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|::(?:[\da-f]{1,4}:){5}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:[\da-f]{1,4})?::(?:[\da-f]{1,4}:){4}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,1}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){3}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,2}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){2}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,3}[\da-f]{1,4})?::[\da-f]{1,4}:(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,4}[\da-f]{1,4})?::(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,5}[\da-f]{1,4})?::[\da-f]{1,4}|(?:(?:[\da-f]{1,4}:){0,6}[\da-f]{1,4})?::)|v[0-9a-f]+\.[-a-z0-9._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|(?:[-a-z0-9._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[-a-z0-9._~!$&'()*+,;=@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?)(?:\?(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
 function IsUriReference(value) {
   return UriReference.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri_template.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri_template.mjs
 var UriTemplate = /^(?:(?:[^\x00-\x20"<>%\\^`{|}\x7f]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?)*\})*$/i;
 function IsUriTemplate(value) {
   return UriTemplate.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uri.mjs
 var Uri = /^[a-z][a-z0-9+\-.]*:(?:\/\/(?:(?:[-a-z0-9._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:[\da-f]{1,4}:){6}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|::(?:[\da-f]{1,4}:){5}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:[\da-f]{1,4})?::(?:[\da-f]{1,4}:){4}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,1}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){3}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,2}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){2}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,3}[\da-f]{1,4})?::[\da-f]{1,4}:(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,4}[\da-f]{1,4})?::(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,5}[\da-f]{1,4})?::[\da-f]{1,4}|(?:(?:[\da-f]{1,4}:){0,6}[\da-f]{1,4})?::)|v[0-9a-f]+\.[-a-z0-9._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|(?:[-a-z0-9._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?(?:\?(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
 function IsUri(value) {
   return Uri.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/url.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/url.mjs
 function IsUrl(value) {
   return URL.canParse(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uuid.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/uuid.mjs
 var Uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 function IsUuid(value) {
   return Uuid.test(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/_registry.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/format/_registry.mjs
 var formats = /* @__PURE__ */ new Map();
 function Clear() {
   formats.clear();
@@ -1561,7 +1561,7 @@ function Reset() {
 }
 Reset();
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/format.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/format.mjs
 function BuildFormat(_stack, _context, schema, value) {
   return emit_exports.Call(emit_exports.Member("Format", "Test"), [emit_exports.Constant(schema.format), value]);
 }
@@ -1577,7 +1577,7 @@ function ErrorFormat(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/if.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/if.mjs
 function BuildIf(stack, context, schema, value) {
   const thenSchema = IsThen(schema) ? schema.then : true;
   const elseSchema = IsElse(schema) ? schema.else : true;
@@ -1608,7 +1608,7 @@ function ErrorIf(stack, context, schemaPath, instancePath, schema, value) {
   return isIf;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/items.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/items.mjs
 function BuildItemsSizedStandard(stack, context, schema, value) {
   return emit_exports.ReduceAnd(schema.items.map((schema2, index3) => {
     const isLength = emit_exports.IsLessEqualThan(emit_exports.Member(value, "length"), emit_exports.Constant(index3));
@@ -1677,7 +1677,7 @@ function ErrorItems(stack, context, schemaPath, instancePath, schema, value) {
   return IsItemsSized(schema) ? ErrorItemsSized(stack, context, schemaPath, instancePath, schema, value) : ErrorItemsUnsized(stack, context, schemaPath, instancePath, schema, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxContains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxContains.mjs
 function IsValid3(schema) {
   return IsContains(schema);
 }
@@ -1704,7 +1704,7 @@ function ErrorMaxContains(stack, context, schemaPath, instancePath, schema, valu
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maximum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maximum.mjs
 function BuildMaximum(_stack, _context, schema, value) {
   return emit_exports.IsLessEqualThan(value, emit_exports.Constant(schema.maximum));
 }
@@ -1720,7 +1720,7 @@ function ErrorMaximum(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxItems.mjs
 function BuildMaxItems(_stack, _context, schema, value) {
   return emit_exports.IsLessEqualThan(emit_exports.Member(value, "length"), emit_exports.Constant(schema.maxItems));
 }
@@ -1736,7 +1736,7 @@ function ErrorMaxItems(stack, context, schemaPath, instancePath, schema, value) 
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxLength.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxLength.mjs
 function BuildMaxLength(_stack, _context, schema, value) {
   return emit_exports.IsMaxLength(value, emit_exports.Constant(schema.maxLength));
 }
@@ -1752,7 +1752,7 @@ function ErrorMaxLength(stack, context, schemaPath, instancePath, schema, value)
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/maxProperties.mjs
 function BuildMaxProperties(_stack, _context, schema, value) {
   return emit_exports.IsLessEqualThan(emit_exports.Member(emit_exports.Keys(value), "length"), emit_exports.Constant(schema.maxProperties));
 }
@@ -1768,7 +1768,7 @@ function ErrorMaxProperties(stack, context, schemaPath, instancePath, schema, va
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minContains.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minContains.mjs
 function IsValid4(schema) {
   return IsContains(schema);
 }
@@ -1802,7 +1802,7 @@ function ErrorMinContains(stack, context, schemaPath, instancePath, schema, valu
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minimum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minimum.mjs
 function BuildMinimum(_stack, _context, schema, value) {
   return emit_exports.IsGreaterEqualThan(value, emit_exports.Constant(schema.minimum));
 }
@@ -1818,7 +1818,7 @@ function ErrorMinimum(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minItems.mjs
 function BuildMinItems(_stack, _context, schema, value) {
   return emit_exports.IsGreaterEqualThan(emit_exports.Member(value, "length"), emit_exports.Constant(schema.minItems));
 }
@@ -1834,7 +1834,7 @@ function ErrorMinItems(stack, context, schemaPath, instancePath, schema, value) 
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minLength.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minLength.mjs
 function BuildMinLength(_stack, _context, schema, value) {
   return emit_exports.IsMinLength(value, emit_exports.Constant(schema.minLength));
 }
@@ -1850,7 +1850,7 @@ function ErrorMinLength(stack, context, schemaPath, instancePath, schema, value)
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/minProperties.mjs
 function BuildMinProperties(_stack, _context, schema, value) {
   return emit_exports.IsGreaterEqualThan(emit_exports.Member(emit_exports.Keys(value), "length"), emit_exports.Constant(schema.minProperties));
 }
@@ -1866,7 +1866,7 @@ function ErrorMinProperties(stack, context, schemaPath, instancePath, schema, va
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/multipleOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/multipleOf.mjs
 function BuildMultipleOf(_stack, _context, schema, value) {
   return emit_exports.MultipleOf(value, emit_exports.Constant(schema.multipleOf));
 }
@@ -1882,7 +1882,7 @@ function ErrorMultipleOf(stack, context, schemaPath, instancePath, schema, value
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/not.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/not.mjs
 function BuildNotStandard(stack, context, schema, value) {
   return Reducer(stack, context, [schema.not], value, emit_exports.Not(emit_exports.IsEqual(emit_exports.Member("results", "length"), emit_exports.Constant(1))));
 }
@@ -1907,7 +1907,7 @@ function ErrorNot(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/oneOf.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/oneOf.mjs
 function BuildOneOfStandard(stack, context, schema, value) {
   return Reducer(stack, context, schema.oneOf, value, emit_exports.IsEqual(emit_exports.Member("results", "length"), emit_exports.Constant(1)));
 }
@@ -1951,7 +1951,7 @@ function ErrorOneOf(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/pattern.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/pattern.mjs
 function BuildPattern(_stack, _context, schema, value) {
   const regexp = CreateVariable(guard_exports.IsString(schema.pattern) ? UnicodeRegExp(schema.pattern) : schema.pattern);
   return emit_exports.Call(emit_exports.Member(regexp, "test"), [value]);
@@ -1969,7 +1969,7 @@ function ErrorPattern(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/patternProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/patternProperties.mjs
 function BuildPatternProperties(stack, context, schema, value) {
   return emit_exports.ReduceAnd(guard_exports.Entries(schema.patternProperties).map(([pattern, schema2]) => {
     const [key, prop] = [Unique(), Unique()];
@@ -2001,7 +2001,7 @@ function ErrorPatternProperties(stack, context, schemaPath, instancePath, schema
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/prefixItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/prefixItems.mjs
 function BuildPrefixItems(stack, context, schema, value) {
   return emit_exports.ReduceAnd(schema.prefixItems.map((schema2, index3) => {
     const isLength = emit_exports.IsLessEqualThan(emit_exports.Member(value, "length"), emit_exports.Constant(index3));
@@ -2024,7 +2024,7 @@ function ErrorPrefixItems(stack, context, schemaPath, instancePath, schema, valu
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_exact_optional.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_exact_optional.mjs
 function IsExactOptional(required, key) {
   return required.includes(key) || settings_exports.Get().exactOptionalPropertyTypes;
 }
@@ -2035,7 +2035,7 @@ function InexactOptionalCheck(value, key) {
   return guard_exports.IsUndefined(value[key]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/properties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/properties.mjs
 function BuildProperties(stack, context, schema, value) {
   const required = IsRequired(schema) ? schema.required : [];
   const everyKey = guard_exports.Entries(schema.properties).map(([key, schema2]) => {
@@ -2067,7 +2067,7 @@ function ErrorProperties(stack, context, schemaPath, instancePath, schema, value
   return isProperties;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/propertyNames.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/propertyNames.mjs
 function BuildPropertyNames(stack, context, schema, value) {
   const [key, _index] = [Unique(), Unique()];
   return emit_exports.Every(emit_exports.Keys(value), emit_exports.Constant(0), [key, _index], BuildSchema(stack, context, schema.propertyNames, key));
@@ -2093,7 +2093,7 @@ function ErrorPropertyNames(stack, context, schemaPath, instancePath, schema, va
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/recursiveRef.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/recursiveRef.mjs
 function BuildRecursiveRef(stack, context, schema, value) {
   const target = stack.RecursiveRef(schema) ?? false;
   return CreateFunction(stack, context, target, value);
@@ -2107,7 +2107,7 @@ function ErrorRecursiveRef(stack, context, _schemaPath, instancePath, schema, va
   return IsSchema2(target) && ErrorSchema(stack, context, "#", instancePath, target, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/ref.mjs
 function BuildRefStandard(stack, context, target, value) {
   const interior = emit_exports.ArrowFunction(["context", "value"], CreateFunction(stack, context, target, "value"));
   const exterior = emit_exports.ArrowFunction(["context", "value"], emit_exports.Statements([
@@ -2144,7 +2144,7 @@ function ErrorRef(stack, context, _schemaPath, instancePath, schema, value) {
   return result;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/required.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/required.mjs
 function BuildRequired(_stack, _context, schema, value) {
   return emit_exports.ReduceAnd(schema.required.map((key) => emit_exports.HasPropertyKey(value, emit_exports.Constant(key))));
 }
@@ -2167,7 +2167,7 @@ function ErrorRequired(_stack, context, schemaPath, instancePath, schema, value)
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/type.mjs
 function BuildTypeName(_stack, _context, type, value) {
   return (
     // jsonschema
@@ -2208,7 +2208,7 @@ function ErrorType(stack, context, schemaPath, instancePath, schema, value) {
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/unevaluatedItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/unevaluatedItems.mjs
 function BuildUnevaluatedItems(stack, context, schema, value) {
   const [index3, item] = [Unique(), Unique()];
   const indices = emit_exports.Call(emit_exports.Member("context", "GetIndices"), []);
@@ -2245,7 +2245,7 @@ function ErrorUnevaluatedItems(stack, context, schemaPath, instancePath, schema,
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/unevaluatedProperties.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/unevaluatedProperties.mjs
 function BuildUnevaluatedProperties(stack, context, schema, value) {
   const [key, prop] = [Unique(), Unique()];
   const keys = emit_exports.Call(emit_exports.Member("context", "GetKeys"), []);
@@ -2282,7 +2282,7 @@ function ErrorUnevaluatedProperties(stack, context, schemaPath, instancePath, sc
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/uniqueItems.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/uniqueItems.mjs
 function IsValid5(schema) {
   return !guard_exports.IsEqual(schema.uniqueItems, false);
 }
@@ -2320,7 +2320,7 @@ function ErrorUniqueItems(_stack, context, schemaPath, instancePath, schema, val
   });
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/schema.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/schema.mjs
 function HasTypeName(schema, typename) {
   return IsType(schema) && (guard_exports.IsArray(schema.type) && guard_exports.IsGreaterThan(schema.type.length, 0) && guard_exports.Every(schema.type, 0, (type) => guard_exports.IsEqual(type, typename)) || guard_exports.IsEqual(schema.type, typename));
 }
@@ -2489,7 +2489,7 @@ function ErrorSchema(stack, context, schemaPath, instancePath, schema, value) {
   return result;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_functions.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_functions.mjs
 var index2 = [0];
 var names = /* @__PURE__ */ new Map();
 var funcs = /* @__PURE__ */ new Map();
@@ -2531,7 +2531,7 @@ function CreateFunction(stack, context, schema, value) {
   return call;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/resolve/resolve.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/resolve/resolve.mjs
 var resolve_exports = {};
 __export(resolve_exports, {
   Base: () => Base,
@@ -2758,7 +2758,7 @@ function ResolveDynamicRef(stackframe, dynamicRef) {
   return DynamicRef(stackframe.context, stackframe.root, stackframe.lexicalBase, stackframe.lexicalSchema, dynamicRef, stackframe.dynamicAnchors);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_stack.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/engine/_stack.mjs
 var __classPrivateFieldGet = function(receiver, state2, kind, f) {
   if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
   if (typeof state2 === "function" ? receiver !== state2 || !f : !state2.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
@@ -2972,7 +2972,7 @@ _Stack_instances = /* @__PURE__ */ new WeakSet(), _Stack_StackFrame = function _
   this.resolvedResources.delete(target);
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/build.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/build.mjs
 function CreateCode(build) {
   const functions = build.Functions().join(";\n");
   const statements = build.UseUnevaluated() ? ["const context = new CheckContext({}, {})", `return ${build.Entry()}`] : [`return ${build.Entry()}`];
@@ -3061,7 +3061,7 @@ function Build(...args) {
   return new BuildResult(context, schema, externals, functions, call, build.UseUnevaluated());
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/errors.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/errors.mjs
 function Errors(...args) {
   const [context, schema, value] = arguments_exports.Match(args, {
     3: (context2, schema2, value2) => [context2, schema2, value2],
@@ -3076,7 +3076,7 @@ function Errors(...args) {
   return [result, localized];
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/check.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/schema/check.mjs
 function Check(...args) {
   const [context, schema, value] = arguments_exports.Match(args, {
     3: (context2, schema2, value2) => [context2, schema2, value2],
@@ -3087,7 +3087,7 @@ function Check(...args) {
   return CheckSchema(stack, checkContext, schema, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/check/check.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/check/check.mjs
 function Check2(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -3096,7 +3096,7 @@ function Check2(...args) {
   return Check(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/errors/errors.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/errors/errors.mjs
 function Errors2(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -3106,7 +3106,7 @@ function Errors2(...args) {
   return errors;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/assert/assert.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/assert/assert.mjs
 var AssertError = class extends Error {
   constructor(source, value, errors) {
     super(source);
@@ -3128,12 +3128,12 @@ function Assert(...args) {
     throw new AssertError("Assert", value, Errors2(context, type, value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clone/clone.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clone/clone.mjs
 function Clone2(value) {
   return Clone(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/union_priority_sort.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/union_priority_sort.mjs
 function Modifiers(type, next) {
   for (const key of guard_default.Keys(type)) {
     if (guard_default.HasPropertyKey(next, key))
@@ -3163,19 +3163,19 @@ function UnionPrioritySort(type) {
   return result;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_array.mjs
 function FromArray2(context, type, value) {
   if (!guard_exports.IsArray(value))
     return value;
   return value.map((value2) => FromType2(context, type.items, value2));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_cyclic.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_cyclic.mjs
 function FromCyclic(context, type, value) {
   return FromType2({ ...context, ...type.$defs }, Ref(type.$ref), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_intersect.mjs
 function EvaluateIntersection(context, type) {
   const additionalProperties = guard_exports.HasPropertyKey(type, "unevaluatedProperties") ? { additionalProperties: type.unevaluatedProperties } : {};
   const instantiated = Instantiate(context, type);
@@ -3187,13 +3187,13 @@ function FromIntersect(context, type, value) {
   return FromType2(context, evaluated, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/additional.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/additional.mjs
 function GetAdditionalProperties(type) {
   const additionalProperties = guard_exports.HasPropertyKey(type, "additionalProperties") ? type.additionalProperties : void 0;
   return additionalProperties;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_object.mjs
 function FromObject2(context, type, value) {
   if (!guard_exports.IsObject(value) || guard_exports.IsArray(value))
     return value;
@@ -3216,7 +3216,7 @@ function FromObject2(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_record.mjs
 function FromRecord(context, type, value) {
   if (!guard_exports.IsObject(value))
     return value;
@@ -3240,12 +3240,12 @@ function FromRecord(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_ref.mjs
 function FromRef(context, type, value) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType2(context, context[type.$ref], value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_tuple.mjs
 function FromTuple(context, schema, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3256,7 +3256,7 @@ function FromTuple(context, schema, value) {
   return guard_exports.IsGreaterThan(value.length, length) ? value.slice(0, length) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_union.mjs
 function FromUnion(context, type, value) {
   for (const schema of type.anyOf) {
     const clean = FromType2(context, schema, Clone2(value));
@@ -3266,12 +3266,12 @@ function FromUnion(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/from_type.mjs
 function FromType2(context, type, value) {
   return IsArray(type) ? FromArray2(context, type, value) : IsCyclic(type) ? FromCyclic(context, type, value) : IsIntersect(type) ? FromIntersect(context, type, value) : IsObject(type) ? FromObject2(context, type, value) : IsRecord(type) ? FromRecord(context, type, value) : IsRef(type) ? FromRef(context, type, value) : IsTuple(type) ? FromTuple(context, type, value) : IsUnion(type) ? FromUnion(context, type, value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/clean.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/clean/clean.mjs
 function Clean(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -3281,12 +3281,12 @@ function Clean(...args) {
   return FromType2(context, sorted, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/optional_undefined.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/optional_undefined.mjs
 function IsOptionalUndefined(property, key, value) {
   return IsOptional(property) && guard_exports.IsUndefined(value[key]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try.mjs
 var try_exports = {};
 __export(try_exports, {
   Fail: () => Fail,
@@ -3301,7 +3301,7 @@ __export(try_exports, {
   TryUndefined: () => TryUndefined
 });
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_result.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_result.mjs
 function IsOk(value) {
   return guard_exports.IsObject(value) && guard_exports.HasPropertyKey(value, "value");
 }
@@ -3312,12 +3312,12 @@ function Fail() {
   return void 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_array.mjs
 function TryArray(value) {
   return guard_exports.IsArray(value) ? Ok(value) : Ok([value]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_bigint.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_bigint.mjs
 function FromBoolean(value) {
   return guard_exports.IsEqual(value, true) ? Ok(BigInt(1)) : Ok(BigInt(0));
 }
@@ -3341,7 +3341,7 @@ function TryBigInt(value) {
   return guard_exports.IsBigInt(value) ? Ok(value) : guard_exports.IsBoolean(value) ? FromBoolean(value) : guard_exports.IsNumber(value) ? Ok(BigInt(Math.trunc(value))) : guard_exports.IsNull(value) ? Ok(BigInt(0)) : guard_exports.IsString(value) ? FromString(value) : guard_exports.IsUndefined(value) ? Ok(BigInt(0)) : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_boolean.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_boolean.mjs
 function FromBigInt(value) {
   return guard_exports.IsEqual(value, BigInt(0)) ? Ok(false) : guard_exports.IsEqual(value, BigInt(1)) ? Ok(true) : Fail();
 }
@@ -3355,7 +3355,7 @@ function TryBoolean(value) {
   return guard_exports.IsBigInt(value) ? FromBigInt(value) : guard_exports.IsBoolean(value) ? Ok(value) : guard_exports.IsNumber(value) ? FromNumber(value) : guard_exports.IsNull(value) ? Ok(false) : guard_exports.IsString(value) ? FromString2(value) : guard_exports.IsUndefined(value) ? Ok(false) : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_null.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_null.mjs
 function FromBigInt2(value) {
   return guard_exports.IsEqual(value, BigInt(0)) ? Ok(null) : Fail();
 }
@@ -3374,7 +3374,7 @@ function TryNull(value) {
   return guard_exports.IsBigInt(value) ? FromBigInt2(value) : guard_exports.IsBoolean(value) ? FromBoolean2(value) : guard_exports.IsNumber(value) ? FromNumber2(value) : guard_exports.IsNull(value) ? Ok(null) : guard_exports.IsString(value) ? FromString3(value) : guard_exports.IsUndefined(value) ? Ok(null) : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_number.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_number.mjs
 var maxBigInt = BigInt(Number.MAX_SAFE_INTEGER);
 var minBigInt = BigInt(Number.MIN_SAFE_INTEGER);
 function FromBigInt3(value) {
@@ -3401,12 +3401,12 @@ function TryNumber(value) {
   return guard_exports.IsBigInt(value) ? FromBigInt3(value) : guard_exports.IsBoolean(value) ? FromBoolean3(value) : guard_exports.IsNumber(value) ? Ok(value) : guard_exports.IsNull(value) ? Ok(0) : guard_exports.IsString(value) ? FromString4(value) : guard_exports.IsUndefined(value) ? Ok(0) : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_string.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_string.mjs
 function TryString(value) {
   return guard_exports.IsBigInt(value) ? Ok(value.toString()) : guard_exports.IsBoolean(value) ? Ok(value.toString()) : guard_exports.IsNumber(value) ? Ok(value.toString()) : guard_exports.IsNull(value) ? Ok("null") : guard_exports.IsString(value) ? Ok(value) : guard_exports.IsUndefined(value) ? Ok("") : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_undefined.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/try/try_undefined.mjs
 function FromBigInt4(value) {
   return guard_exports.IsEqual(value, BigInt(0)) ? Ok(void 0) : Fail();
 }
@@ -3425,48 +3425,48 @@ function TryUndefined(value) {
   return guard_exports.IsBigInt(value) ? FromBigInt4(value) : guard_exports.IsBoolean(value) ? FromBoolean4(value) : guard_exports.IsNumber(value) ? FromNumber3(value) : guard_exports.IsNull(value) ? Ok(void 0) : guard_exports.IsString(value) ? FromString5(value) : guard_exports.IsUndefined(value) ? Ok(value) : Fail();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_array.mjs
 function FromArray3(context, type, value) {
   const result = try_exports.TryArray(value);
   return result.value.map((value2) => FromType3(context, type.items, value2));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_bigint.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_bigint.mjs
 function FromBigInt5(_context, _type, value) {
   const result = try_exports.TryBigInt(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_boolean.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_boolean.mjs
 function FromBoolean5(_context, _type, value) {
   const result = try_exports.TryBoolean(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_cyclic.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_cyclic.mjs
 function FromCyclic2(context, type, value) {
   return FromType3({ ...context, ...type.$defs }, Ref(type.$ref), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_enum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_enum.mjs
 function FromEnum(context, type, value) {
   return FromType3(context, Evaluate(type), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_integer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_integer.mjs
 function FromInteger(_context, _type, value) {
   const result = try_exports.TryNumber(value);
   return try_exports.IsOk(result) ? Math.trunc(result.value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_intersect.mjs
 function FromIntersect2(context, type, value) {
   const instantiated = Instantiate(context, type);
   const evaluated = Evaluate(instantiated);
   return FromType3(context, evaluated, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_literal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_literal.mjs
 function FromLiteralBigInt(_context, type, value) {
   const result = try_exports.TryBigInt(value);
   return try_exports.IsOk(result) && guard_exports.IsEqual(type.const, result.value) ? result.value : value;
@@ -3489,19 +3489,19 @@ function FromLiteral(context, type, value) {
   return IsLiteralBigInt(type) ? FromLiteralBigInt(context, type, value) : IsLiteralBoolean(type) ? FromLiteralBoolean(context, type, value) : IsLiteralNumber(type) ? FromLiteralNumber(context, type, value) : IsLiteralString(type) ? FromLiteralString(context, type, value) : Unreachable();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_null.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_null.mjs
 function FromNull(_context, _type, value) {
   const result = try_exports.TryNull(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_number.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_number.mjs
 function FromNumber4(_context, _type, value) {
   const result = try_exports.TryNumber(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_additional.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_additional.mjs
 function FromAdditionalProperties(context, entries, additionalProperties, value) {
   const keys = guard_exports.Keys(value);
   for (const [regexp, _] of entries) {
@@ -3514,7 +3514,7 @@ function FromAdditionalProperties(context, entries, additionalProperties, value)
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_object.mjs
 function FromProperties2(context, type, value) {
   const entries = guard_exports.EntriesRegExp(type.properties);
   const keys = guard_exports.Keys(value);
@@ -3531,7 +3531,7 @@ function FromObject3(context, type, value) {
   return guard_exports.IsObjectNotArray(value) ? FromProperties2(context, type, value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_record.mjs
 function FromPatternProperties(context, type, value) {
   const entries = guard_exports.EntriesRegExp(type.patternProperties);
   const keys = guard_exports.Keys(value);
@@ -3548,23 +3548,23 @@ function FromRecord2(context, type, value) {
   return guard_exports.IsObjectNotArray(value) ? FromPatternProperties(context, type, value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_ref.mjs
 function FromRef2(context, type, value) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType3(context, context[type.$ref], value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_string.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_string.mjs
 function FromString6(_context, _type, value) {
   const result = try_exports.TryString(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_template_literal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_template_literal.mjs
 function FromTemplateLiteral(context, type, value) {
   return FromType3(context, Evaluate(type), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_tuple.mjs
 function FromTuple2(context, type, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3574,13 +3574,13 @@ function FromTuple2(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_undefined.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_undefined.mjs
 function FromUndefined(_context, _type, value) {
   const result = try_exports.TryUndefined(value);
   return try_exports.IsOk(result) ? result.value : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_union.mjs
 function FromUnion2(context, type, value) {
   const matched = type.anyOf.some((type2) => Check2(context, type2, value));
   if (matched)
@@ -3590,18 +3590,18 @@ function FromUnion2(context, type, value) {
   return guard_exports.IsUndefined(selected) ? value : selected;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_void.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_void.mjs
 function FromVoid(_context, _type, value) {
   const result = try_exports.TryUndefined(value);
   return try_exports.IsOk(result) ? void 0 : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/from_type.mjs
 function FromType3(context, type, value) {
   return IsArray(type) ? FromArray3(context, type, value) : IsBigInt(type) ? FromBigInt5(context, type, value) : IsBoolean(type) ? FromBoolean5(context, type, value) : IsCyclic(type) ? FromCyclic2(context, type, value) : IsEnum(type) ? FromEnum(context, type, value) : IsInteger(type) ? FromInteger(context, type, value) : IsIntersect(type) ? FromIntersect2(context, type, value) : IsLiteral(type) ? FromLiteral(context, type, value) : IsNull(type) ? FromNull(context, type, value) : IsNumber(type) ? FromNumber4(context, type, value) : IsObject(type) ? FromObject3(context, type, value) : IsRecord(type) ? FromRecord2(context, type, value) : IsRef(type) ? FromRef2(context, type, value) : IsString(type) ? FromString6(context, type, value) : IsTemplateLiteral(type) ? FromTemplateLiteral(context, type, value) : IsTuple(type) ? FromTuple2(context, type, value) : IsUndefined(type) ? FromUndefined(context, type, value) : IsUnion(type) ? FromUnion2(context, type, value) : IsVoid(type) ? FromVoid(context, type, value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/convert.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/convert/convert.mjs
 function Convert(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -3610,7 +3610,7 @@ function Convert(...args) {
   return FromType3(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_array.mjs
 function FromArray4(context, type, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3620,26 +3620,26 @@ function FromArray4(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_cyclic.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_cyclic.mjs
 function FromCyclic3(context, type, value) {
   return FromType4({ ...context, ...type.$defs }, Ref(type.$ref), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_default.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_default.mjs
 function FromDefault(type, value) {
   if (!guard_exports.IsUndefined(value))
     return value;
   return guard_exports.IsFunction(type.default) ? type.default() : Clone2(type.default);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_intersect.mjs
 function FromIntersect3(context, type, value) {
   const instantiated = Instantiate(context, type);
   const evaluated = Evaluate(instantiated);
   return FromType4(context, evaluated, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_object.mjs
 function FromObject4(context, type, value) {
   if (!guard_exports.IsObject(value))
     return value;
@@ -3661,7 +3661,7 @@ function FromObject4(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_record.mjs
 function FromRecord3(context, type, value) {
   if (!guard_exports.IsObject(value))
     return value;
@@ -3681,12 +3681,12 @@ function FromRecord3(context, type, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_ref.mjs
 function FromRef3(context, type, value) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType4(context, context[type.$ref], value) : value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_tuple.mjs
 function FromTuple3(context, schema, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3698,7 +3698,7 @@ function FromTuple3(context, schema, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_union.mjs
 function FromUnion3(context, schema, value) {
   for (const inner of schema.anyOf) {
     const result = FromType4(context, inner, Clone2(value));
@@ -3709,13 +3709,13 @@ function FromUnion3(context, schema, value) {
   return value;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/from_type.mjs
 function FromType4(context, type, value) {
   const defaulted = IsDefault(type) ? FromDefault(type, value) : value;
   return IsArray(type) ? FromArray4(context, type, defaulted) : IsCyclic(type) ? FromCyclic3(context, type, defaulted) : IsIntersect(type) ? FromIntersect3(context, type, defaulted) : IsObject(type) ? FromObject4(context, type, defaulted) : IsRecord(type) ? FromRecord3(context, type, defaulted) : IsRef(type) ? FromRef3(context, type, defaulted) : IsTuple(type) ? FromTuple3(context, type, defaulted) : IsUnion(type) ? FromUnion3(context, type, defaulted) : defaulted;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/default.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/default/default.mjs
 function Default(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -3724,7 +3724,7 @@ function Default(...args) {
   return FromType4(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/pipeline/pipeline.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/pipeline/pipeline.mjs
 function Pipeline(pipeline) {
   return (...args) => {
     const [context, type, value] = arguments_exports.Match(args, {
@@ -3735,7 +3735,7 @@ function Pipeline(pipeline) {
   };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/callback.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/callback.mjs
 function Decode2(_context, type, value) {
   return type["~codec"].decode(value);
 }
@@ -3748,7 +3748,7 @@ function Callback(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode2(context, type, value) : Encode2(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_array.mjs
 function Decode3(direction, context, type, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3770,13 +3770,13 @@ function FromArray5(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode3(direction, context, type, value) : Encode3(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_cyclic.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_cyclic.mjs
 function FromCyclic4(direction, context, type, value) {
   value = FromType5(direction, { ...context, ...type.$defs }, Ref(type.$ref), value);
   return Callback(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_intersect.mjs
 function MergeInteriors(interiors) {
   return interiors.reduce((results, interior) => ({ ...results, ...interior }), {});
 }
@@ -3808,7 +3808,7 @@ function FromIntersect4(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode4(direction, context, type, value) : Encode4(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_object.mjs
 function Decode5(direction, context, type, value) {
   if (!guard_exports.IsObjectNotArray(value))
     return value;
@@ -3834,7 +3834,7 @@ function FromObject5(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode5(direction, context, type, value) : Encode5(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_record.mjs
 function Decode6(direction, context, type, value) {
   if (!guard_exports.IsObjectNotArray(value))
     return value;
@@ -3862,7 +3862,7 @@ function FromRecord4(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode6(direction, context, type, value) : Encode6(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_ref.mjs
 function ResolveRef2(direction, context, type, value) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType5(direction, context, context[type.$ref], value) : value;
 }
@@ -3870,7 +3870,7 @@ function FromRef4(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Callback(direction, context, type, ResolveRef2(direction, context, type, value)) : ResolveRef2(direction, context, type, Callback(direction, context, type, value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_tuple.mjs
 function Decode7(direction, context, type, value) {
   if (!guard_exports.IsArray(value))
     return value;
@@ -3892,7 +3892,7 @@ function FromTuple4(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode7(direction, context, type, value) : Encode7(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_union.mjs
 function Decode8(direction, context, type, value) {
   for (const schema of type.anyOf) {
     if (!Check2(context, schema, value))
@@ -3916,12 +3916,12 @@ function FromUnion4(direction, context, type, value) {
   return guard_exports.IsEqual(direction, "Decode") ? Decode8(direction, context, type, value) : Encode8(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/from_type.mjs
 function FromType5(direction, context, type, value) {
   return IsArray(type) ? FromArray5(direction, context, type, value) : IsCyclic(type) ? FromCyclic4(direction, context, type, value) : IsIntersect(type) ? FromIntersect4(direction, context, type, value) : IsObject(type) ? FromObject5(direction, context, type, value) : IsRecord(type) ? FromRecord4(direction, context, type, value) : IsRef(type) ? FromRef4(direction, context, type, value) : IsTuple(type) ? FromTuple4(direction, context, type, value) : IsUnion(type) ? FromUnion4(direction, context, type, value) : Callback(direction, context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/decode.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/decode.mjs
 var DecodeError = class extends AssertError {
   constructor(value, errors) {
     super("Decode", value, errors);
@@ -3952,7 +3952,7 @@ function Decode9(...args) {
   return Decoder(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/encode.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/encode.mjs
 var EncodeError = class extends AssertError {
   constructor(value, errors) {
     super("Encode", value, errors);
@@ -3983,7 +3983,7 @@ function Encode9(...args) {
   return Encoder(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/has.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/codec/has.mjs
 function FromArray6(context, type) {
   return IsCodec(type) || FromType6(context, type.items);
 }
@@ -4026,7 +4026,7 @@ function HasCodec(...args) {
   return FromType6(context, type);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/error.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/error.mjs
 var CreateError = class extends Error {
   constructor(type, message) {
     super(message);
@@ -4034,12 +4034,12 @@ var CreateError = class extends Error {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_default.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_default.mjs
 function FromDefault2(_context, schema) {
   return guard_exports.IsFunction(schema.default) ? schema.default(schema) : guard_exports.IsObject(schema.default) ? Clone2(schema.default) : schema.default;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_array.mjs
 function FromArray7(context, type) {
   if (IsUniqueItems(type) && !IsDefault(type))
     throw new CreateError(type, "Arrays with uniqueItems constraints must specify a default annotation");
@@ -4047,17 +4047,17 @@ function FromArray7(context, type) {
   return Array.from({ length }, () => FromType7(context, type.items));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_bigint.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_bigint.mjs
 function FromBigInt6(_context, type) {
   return IsExclusiveMinimum(type) ? BigInt(type.exclusiveMinimum) + BigInt(1) : IsMinimum(type) ? BigInt(type.minimum) : BigInt(0);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_boolean.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_boolean.mjs
 function FromBoolean6(_context, _type) {
   return false;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_constructor.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_constructor.mjs
 function FromConstructor(context, type) {
   const instanceType = FromType7(context, type.instanceType);
   return class {
@@ -4067,55 +4067,55 @@ function FromConstructor(context, type) {
   };
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_cyclic.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_cyclic.mjs
 function FromCyclic6(context, type) {
   return FromType7({ ...context, ...type.$defs }, Ref(type.$ref));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_enum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_enum.mjs
 function FromEnum2(context, type) {
   return FromType7(context, Evaluate(type));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_function.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_function.mjs
 function FromFunction(context, type) {
   const returnType = FromType7(context, type.returnType);
   return () => returnType;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_integer.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_integer.mjs
 function FromInteger2(_context, type) {
   return IsExclusiveMinimum(type) && guard_exports.IsNumber(type.exclusiveMinimum) ? type.exclusiveMinimum + 1 : IsMinimum(type) ? type.minimum : 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_intersect.mjs
 function FromIntersect6(context, type) {
   const instantiated = Instantiate(context, type);
   const evaluated = Evaluate(instantiated);
   return FromType7(context, evaluated);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_literal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_literal.mjs
 function FromLiteral2(_context, type) {
   return type.const;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_never.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_never.mjs
 function FromNever(_context, type) {
   throw new CreateError(type, "Cannot create TNever types");
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_null.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_null.mjs
 function FromNull2(_context, _type) {
   return null;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_number.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_number.mjs
 function FromNumber5(_context, type) {
   return IsExclusiveMinimum(type) && guard_exports.IsNumber(type.exclusiveMinimum) ? type.exclusiveMinimum + 1 : IsMinimum(type) ? type.minimum : 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_object.mjs
 function FromObject7(context, type) {
   const required = guard_exports.IsUndefined(type.required) ? [] : type.required;
   return required.reduce((result, key) => {
@@ -4123,21 +4123,21 @@ function FromObject7(context, type) {
   }, {});
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_record.mjs
 function FromRecord6(_context, type) {
   if (IsMinProperties(type) && !IsDefault(type))
     throw new CreateError(type, "Record with the minProperties constraint must have a default annotation");
   return {};
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_ref.mjs
 function FromRef6(context, type) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType7(context, context[type.$ref]) : (() => {
     throw new CreateError(type, "Unable to deref Ref");
   })();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_string.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_string.mjs
 function FromString7(_context, type) {
   const needsDefault = (IsPattern(type) || IsFormat(type)) && !IsDefault(type);
   if (needsDefault)
@@ -4146,12 +4146,12 @@ function FromString7(_context, type) {
   return "".padEnd(minLength);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_symbol.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_symbol.mjs
 function FromSymbol(_context, _type) {
   return Symbol();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_template_literal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_template_literal.mjs
 function FromTemplateLiteral2(context, type) {
   const decoded = TemplateLiteralDecode(type.pattern);
   if (IsString(decoded))
@@ -4159,17 +4159,17 @@ function FromTemplateLiteral2(context, type) {
   return FromType7(context, decoded);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_tuple.mjs
 function FromTuple6(context, type) {
   return Array.from({ length: type.minItems }, (_, i) => FromType7(context, type.items[i]));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_undefined.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_undefined.mjs
 function FromUndefined2(_context, _type) {
   return void 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_union.mjs
 function FromUnion6(context, type) {
   if (guard_exports.IsEqual(type.anyOf.length, 0)) {
     throw Error("Unable to create Union with no variants");
@@ -4177,12 +4177,12 @@ function FromUnion6(context, type) {
   return FromType7(context, type.anyOf[0]);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_void.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_void.mjs
 function FromVoid2(_context, _type) {
   return void 0;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/from_type.mjs
 function FromType7(context, type) {
   return (
     // -----------------------------------------------------
@@ -4197,7 +4197,7 @@ function FromType7(context, type) {
   );
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/create.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/create/create.mjs
 function Create(...args) {
   const [context, type] = arguments_exports.Match(args, {
     2: (context2, type2) => [context2, type2],
@@ -4206,17 +4206,17 @@ function Create(...args) {
   return FromType7(context, type);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/equal/equal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/equal/equal.mjs
 function Equal(left, right) {
   return guard_exports.IsDeepEqual(left, right);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/hash/hash.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/hash/hash.mjs
 function Hash(value) {
   return hash_exports.Hash(value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/parse/parse.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/parse/parse.mjs
 var ParseError = class extends AssertError {
   constructor(value, errors) {
     super("Parse", value, errors);
@@ -4247,7 +4247,7 @@ function Parse(...args) {
   throw new ParseError(value, Errors2(context, type, value));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/diff.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/diff.mjs
 function CreateUpdate(path, value) {
   return { type: "update", path, value };
 }
@@ -4334,7 +4334,7 @@ function Diff(current, next) {
   return [...FromValue2("", current, next)];
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/edit.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/edit.mjs
 var Insert = _Object_({
   type: Literal("insert"),
   path: String2(),
@@ -4351,7 +4351,7 @@ var Delete2 = _Object_({
 });
 var Edit = Union([Insert, Update, Delete2]);
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/patch.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/delta/patch.mjs
 function IsRoot(edits) {
   return edits.length > 0 && edits[0].path === "" && edits[0].type === "update";
 }
@@ -4383,7 +4383,7 @@ function Patch(current, edits) {
   return clone;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/union_score_select.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/shared/union_score_select.mjs
 function Deref(context, type, value) {
   return IsRef(type) ? guard_exports.HasPropertyKey(context, type.$ref) ? Deref(context, context[type.$ref], value) : (() => {
     throw new Error("Unable to Deref target");
@@ -4414,7 +4414,7 @@ function UnionScoreSelect(context, type, value) {
   return select;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/error.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/error.mjs
 var RepairError = class extends Error {
   constructor(context, type, value, message) {
     super(message);
@@ -4424,7 +4424,7 @@ var RepairError = class extends Error {
   }
 };
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_array.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_array.mjs
 function MakeUnique(values) {
   const [hashes, result] = [/* @__PURE__ */ new Set(), []];
   for (const value of values) {
@@ -4451,19 +4451,19 @@ function FromArray9(context, type, value) {
   return unique;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_enum.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_enum.mjs
 function FromEnum3(context, type, value) {
   return FromType8(context, Evaluate(type), value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_intersect.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_intersect.mjs
 function FromIntersect7(context, type, value) {
   const instantiated = Instantiate(context, type);
   const evaluated = Evaluate(instantiated);
   return FromType8(context, evaluated, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_object.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_object.mjs
 function FromObject9(context, type, value) {
   if (Check2(context, type, value))
     return value;
@@ -4487,7 +4487,7 @@ function FromObject9(context, type, value) {
   return result;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_record.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_record.mjs
 function FromRecord7(context, type, value) {
   if (Check2(context, type, value))
     return value;
@@ -4513,20 +4513,20 @@ function FromRecord7(context, type, value) {
   return result;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_ref.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_ref.mjs
 function FromRef7(context, type, value) {
   return guard_exports.HasPropertyKey(context, type.$ref) ? FromType8(context, context[type.$ref], value) : (() => {
     throw new RepairError(context, type, value, "Unable to de-reference target type");
   })();
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_template_literal.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_template_literal.mjs
 function FromTemplateLiteral3(context, type, value) {
   const decoded = TemplateLiteralDecode(type.pattern);
   return FromType8(context, decoded, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_tuple.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_tuple.mjs
 function FromTuple7(context, schema, value) {
   if (Check2(context, schema, value))
     return value;
@@ -4535,7 +4535,7 @@ function FromTuple7(context, schema, value) {
   return schema.items.map((schema2, index3) => FromType8(context, schema2, value[index3]));
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_union.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_union.mjs
 function RepairUnion(context, type, value) {
   const union = Union(Flatten(type.anyOf));
   const schema = UnionScoreSelect(context, union, value);
@@ -4549,7 +4549,7 @@ function FromUnion7(context, type, value) {
   return RepairUnion(context, type, value);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_unknown.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_unknown.mjs
 function FromUnknown2(context, type, value) {
   if (Check2(context, type, value))
     return value;
@@ -4559,7 +4559,7 @@ function FromUnknown2(context, type, value) {
   return Create(context, type);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_type.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/from_type.mjs
 function AssertRepairableValue(context, type, value) {
   const unsupported = globals_exports.IsDate(value) || globals_exports.IsMap(value) || globals_exports.IsSet(value) || globals_exports.IsTypeArray(value) || guard_exports.IsConstructor(value) || guard_exports.IsFunction(value);
   if (unsupported) {
@@ -4586,7 +4586,7 @@ function FromType8(context, type, value) {
   return FinalizeRepair(context, type, repaired);
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/repair.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/repair/repair.mjs
 function Repair(...args) {
   const [context, type, value] = arguments_exports.Match(args, {
     3: (context2, type2, value2) => [context2, type2, value2],
@@ -4597,7 +4597,7 @@ function Repair(...args) {
   return repaired;
 }
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/value.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/value/value.mjs
 var value_exports = {};
 __export(value_exports, {
   Assert: () => Assert,

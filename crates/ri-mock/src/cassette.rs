@@ -61,6 +61,9 @@ pub struct Response {
     /// Body chunks; for SSE, events may span chunk boundaries.
     #[serde(default)]
     pub chunks: Vec<String>,
+    /// A binary body, base64-encoded, sent after the chunks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_base64: Option<String>,
     /// Pause before each chunk in milliseconds, for streaming and abort tests.
     #[serde(default)]
     pub chunk_delay_ms: u64,

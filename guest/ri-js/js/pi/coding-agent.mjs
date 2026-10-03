@@ -224,46 +224,50 @@ export function copyToClipboard(text) {
 
 // ----- theme and key hints --------------------------------------------------------------------
 const identity = (text) => text;
-export class Theme {
-	fg(_token, text) {
-		return text;
-	}
-	bg(_token, text) {
-		return text;
-	}
-	bold(text) {
-		return text;
-	}
-	italic(text) {
-		return text;
-	}
-	underline(text) {
-		return text;
-	}
-	strikethrough(text) {
-		return text;
-	}
-	inverse(text) {
-		return text;
-	}
-	getFgAnsi() {
-		return "";
-	}
-	getBgAnsi() {
-		return "";
-	}
-}
-const plainTheme = new Theme();
-globalThis.__ri_theme = plainTheme;
+export const Theme = ri.Theme;
+const theme = globalThis.__ri_theme;
 export function initTheme() {}
 export function getMarkdownTheme() {
-	return { heading: identity, link: identity, linkUrl: identity, code: identity, codeBlock: identity, codeBlockBorder: identity, quote: identity, quoteBorder: identity, hr: identity, listBullet: identity, bold: identity, italic: identity, strikethrough: identity, underline: identity, highlightCode: (code) => String(code).split("\n") };
+	return {
+		heading: (text) => theme.fg("mdHeading", text),
+		link: (text) => theme.fg("mdLink", text),
+		linkUrl: (text) => theme.fg("mdLinkUrl", text),
+		code: (text) => theme.fg("mdCode", text),
+		codeBlock: (text) => theme.fg("mdCodeBlock", text),
+		codeBlockBorder: (text) => theme.fg("mdCodeBlockBorder", text),
+		quote: (text) => theme.fg("mdQuote", text),
+		quoteBorder: (text) => theme.fg("mdQuoteBorder", text),
+		hr: (text) => theme.fg("mdHr", text),
+		listBullet: (text) => theme.fg("mdListBullet", text),
+		bold: (text) => theme.bold(text),
+		italic: (text) => theme.italic(text),
+		underline: (text) => theme.underline(text),
+		strikethrough: (text) => theme.strikethrough(text),
+		highlightCode: (code) => String(code).split("\n").map((line) => theme.fg("mdCodeBlock", line)),
+	};
 }
 export function getSelectListTheme() {
-	return { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity };
+	return {
+		selectedPrefix: (text) => theme.fg("accent", text),
+		selectedText: (text) => theme.fg("accent", text),
+		description: (text) => theme.fg("muted", text),
+		scrollInfo: (text) => theme.fg("muted", text),
+		noMatch: (text) => theme.fg("muted", text),
+	};
+}
+export function getEditorTheme() {
+	return { borderColor: (text) => theme.fg("borderMuted", text), selectList: getSelectListTheme() };
 }
 export function getSettingsListTheme() {
-	return { label: identity, value: identity, description: identity, cursor: "→ ", hint: identity };
+	return {
+		label: (text, selected) => (selected ? theme.fg("accent", text) : text),
+		value: (text, selected) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		description: (text) => theme.fg("dim", text),
+		get cursor() {
+			return theme.fg("accent", "→ ");
+		},
+		hint: (text) => theme.fg("dim", text),
+	};
 }
 export function keyText(keybinding) {
 	return ri.request("keys.text", { keybinding }) ?? keybinding;
@@ -277,7 +281,7 @@ export function rawKeyHint(key, description) {
 
 // ----- components ---------------------------------------------------------------------------------
 export class DynamicBorder {
-	constructor(color = identity) {
+	constructor(color = (text) => theme.fg("border", text)) {
 		this.color = color;
 	}
 	invalidate() {}

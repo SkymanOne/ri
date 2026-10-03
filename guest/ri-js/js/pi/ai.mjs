@@ -133,6 +133,8 @@ export function streamSimple(model, context, options) {
 	return stream;
 }
 export const stream = streamSimple;
+/** Every wire API runs on ri's provider for the model's `api`. */
+const hostApi = { stream: streamSimple, streamSimple };
 export const complete = (model, context, options) => streamSimple(model, context, options).result();
 export const completeSimple = complete;
 
@@ -181,13 +183,13 @@ export function clampThinkingLevel(model, level) {
 	return available[0] ?? "off";
 }
 
-export const getModelType = (model) => model.type ?? "llm";
+export const getModelType = (model) => model.type ?? "chat";
 export const isModelType = (model, type) => getModelType(model) === type;
 export function modelsAreEqual(a, b) {
 	if (!a || !b) return false;
 	return getModelType(a) === getModelType(b) && a.id === b.id && a.provider === b.provider;
 }
-export const getModel = (provider, id) => ri.request("models.find", { provider, id }) ?? undefined;
+export const getModel = (provider, id) => ri.request("models.builtin", { provider, id }) ?? undefined;
 export const getModels = (provider) => ri.request("models.list", { provider });
 export const getProviders = () => ri.request("models.providers");
 export const getEnvApiKey = (provider) => ri.request("models.envApiKey", { provider }) ?? undefined;
@@ -255,22 +257,24 @@ export class InMemoryModelsStore {
 		unavailable("InMemoryModelsStore");
 	}
 }
-export class ModelsError {
-	constructor() {
-		unavailable("ModelsError");
+export class ModelsError extends Error {
+	constructor(kind, message, options) {
+		super(message, options);
+		this.name = "ModelsError";
+		this.kind = kind;
 	}
 }
 export function anthropicMessagesApi() {
-	return unavailable("anthropicMessagesApi");
+	return hostApi;
 }
 export function appendAssistantMessageDiagnostic() {
 	return unavailable("appendAssistantMessageDiagnostic");
 }
 export function azureOpenAIResponsesApi() {
-	return unavailable("azureOpenAIResponsesApi");
+	return hostApi;
 }
 export function bedrockConverseStreamApi() {
-	return unavailable("bedrockConverseStreamApi");
+	return hostApi;
 }
 export function cleanupSessionResources() {
 	return unavailable("cleanupSessionResources");
@@ -290,8 +294,96 @@ export function createInitialSystemMessage() {
 export function createModels() {
 	return unavailable("createModels");
 }
-export function createProvider() {
-	return unavailable("createProvider");
+const KNOWN_MODEL_TYPES = ["chat", "image", "classifier"];
+export function createProvider(input) {
+	const single = input.api && typeof input.api.stream === "function" ? input.api : undefined;
+	const byApi = single || !input.api ? undefined : input.api;
+	const images = input.images;
+	const classifiers = input.classifiers;
+	const streams = single ? [single] : Object.values(byApi ?? {}).filter((entry) => entry !== undefined);
+	const imageImplementations = Object.values(images ?? {}).filter((entry) => entry !== undefined);
+	const classifierImplementations = Object.values(classifiers ?? {}).filter((entry) => entry !== undefined);
+	if (streams.length === 0 && imageImplementations.length === 0 && classifierImplementations.length === 0) {
+		throw new Error(`Provider ${input.id}: at least one of "api", "images", or "classifiers" is required.`);
+	}
+	const baselineModels = input.models;
+	let dynamicModels = [];
+	const fetchModels = input.fetchModels;
+	const currentModels = () => {
+		const merged = [...baselineModels];
+		for (const model of dynamicModels) {
+			const index = merged.findIndex((entry) => getModelType(entry) === getModelType(model) && entry.id === model.id);
+			if (index >= 0) merged[index] = model;
+			else merged.push(model);
+		}
+		return merged;
+	};
+	const apiFor = (model) => single ?? byApi?.[model.api];
+	const dispatch = (model, run) => {
+		const implementation = apiFor(model);
+		if (!implementation) {
+			return lazyStream(model, async () => {
+				throw new ModelsError("stream", `Provider ${input.id} has no API implementation for "${model.api}"`);
+			});
+		}
+		return run(implementation);
+	};
+	const provider = {
+		id: input.id,
+		name: input.name ?? input.id,
+		baseUrl: input.baseUrl,
+		headers: input.headers,
+		auth: input.auth,
+		getModels: () => currentModels().filter((model) => isModelType(model, "chat")),
+		getAllModels: currentModels,
+		refreshModels: fetchModels
+			? async (context) => {
+					if (context.stored) {
+						const restored = context.stored.models.filter((model) => model.provider === input.id);
+						if (!(await context.publish({ update: () => void (dynamicModels = restored) }))) return;
+					}
+					if (!context.allowNetwork || context.signal.aborted) return;
+					const fetched = await fetchModels(context);
+					if (context.signal.aborted) return;
+					const refreshed = fetched.filter((model) => KNOWN_MODEL_TYPES.includes(getModelType(model)));
+					await context.publish({ persist: { models: refreshed, checkedAt: Date.now() }, update: () => void (dynamicModels = refreshed) });
+				}
+			: undefined,
+		filterModels: input.filterModels,
+		filterAllModels: input.filterAllModels,
+		stream: (model, context, options) => dispatch(model, (implementation) => implementation.stream(model, context, options)),
+		streamSimple: (model, context, options) => dispatch(model, (implementation) => implementation.streamSimple(model, context, options)),
+	};
+	if (streams.some((entry) => entry.fetchDeferred !== undefined)) {
+		provider.fetchDeferred = (model, handle, options) =>
+			lazyStream(model, async () => {
+				const implementation = apiFor(model);
+				if (!implementation?.fetchDeferred) throw new ModelsError("provider", `Provider ${input.id} does not support deferred responses for "${model.api}"`);
+				return implementation.fetchDeferred(model, handle, options);
+			});
+	}
+	if (streams.some((entry) => entry.cancelDeferred !== undefined)) {
+		provider.cancelDeferred = async (model, handle, options) => {
+			const implementation = apiFor(model);
+			if (!implementation?.cancelDeferred) throw new ModelsError("provider", `Provider ${input.id} cannot cancel deferred responses for "${model.api}"`);
+			await implementation.cancelDeferred(model, handle, options);
+		};
+	}
+	if (images && imageImplementations.length > 0) {
+		provider.generateImages = async (model, context, options) => {
+			const implementation = images[model.api];
+			if (!implementation) throw new ModelsError("provider", `Provider ${input.id} has no image generation implementation for "${model.api}"`);
+			return implementation.generateImages(model, context, options);
+		};
+	}
+	if (classifiers && classifierImplementations.length > 0) {
+		provider.classify = async (model, context, options) => {
+			const implementation = classifiers[model.api];
+			if (!implementation) throw new ModelsError("provider", `Provider ${input.id} has no classifier implementation for "${model.api}"`);
+			return implementation.classify(model, context, options);
+		};
+	}
+	return provider;
 }
 export function declarationsEqual() {
 	return unavailable("declarationsEqual");
@@ -299,8 +391,26 @@ export function declarationsEqual() {
 export function defaultProviderAuthContext() {
 	return unavailable("defaultProviderAuthContext");
 }
-export function envApiKeyAuth() {
-	return unavailable("envApiKeyAuth");
+export function envApiKeyAuth(name, envVars) {
+	return {
+		name,
+		login: async (interaction) => {
+			interaction.signal.throwIfAborted();
+			const key = await interaction.prompt({ type: "secret", message: `Enter ${name}` });
+			interaction.signal.throwIfAborted();
+			return { type: "api_key", key };
+		},
+		resolve: async ({ ctx, credential, signal }) => {
+			signal.throwIfAborted();
+			if (credential?.key) return { auth: { apiKey: credential.key }, env: credential.env, source: "stored credential" };
+			for (const envVar of envVars) {
+				const value = await ctx.env(envVar);
+				signal.throwIfAborted();
+				if (value) return { auth: { apiKey: value }, source: envVar };
+			}
+			return undefined;
+		},
+	};
 }
 export function extractDiagnosticError() {
 	return unavailable("extractDiagnosticError");
@@ -372,13 +482,14 @@ export function getToolStateChanges() {
 	return unavailable("getToolStateChanges");
 }
 export function googleGenerativeAIApi() {
-	return unavailable("googleGenerativeAIApi");
+	return hostApi;
 }
 export function googleVertexApi() {
-	return unavailable("googleVertexApi");
+	return hostApi;
 }
-export function hasApi() {
-	return unavailable("hasApi");
+const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses", "azure-openai-responses", "openai-codex-responses", "google-generative-ai", "mistral-conversations"];
+export function hasApi(api) {
+	return HOST_APIS.includes(api);
 }
 export function hasNonAdditiveToolChanges() {
 	return unavailable("hasNonAdditiveToolChanges");
@@ -395,32 +506,84 @@ export function isRecoverableLength() {
 export function isRetryableAssistantError() {
 	return unavailable("isRetryableAssistantError");
 }
-export function lazyApi() {
-	return unavailable("lazyApi");
+function setupErrorMessage(model, error) {
+	return {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "error",
+		errorMessage: error instanceof Error ? error.message : String(error),
+		timestamp: Date.now(),
+	};
 }
-export function lazyOAuth() {
-	return unavailable("lazyOAuth");
+export function lazyStream(model, setup) {
+	const outer = new AssistantMessageEventStream();
+	setup()
+		.then(async (inner) => {
+			for await (const event of inner) outer.push(event);
+			outer.end(typeof inner.result === "function" ? await inner.result() : undefined);
+		})
+		.catch((error) => {
+			const message = setupErrorMessage(model, error);
+			outer.push({ type: "error", reason: "error", error: message });
+			outer.end(message);
+		});
+	return outer;
 }
-export function lazyStream() {
-	return unavailable("lazyStream");
+export function lazyApi(load, capabilities) {
+	const api = {
+		stream: (model, context, options) => lazyStream(model, async () => (await load()).stream(model, context, options)),
+		streamSimple: (model, context, options) => lazyStream(model, async () => (await load()).streamSimple(model, context, options)),
+	};
+	if (capabilities?.fetchDeferred) {
+		api.fetchDeferred = (model, handle, options) =>
+			lazyStream(model, async () => {
+				const implementation = await load();
+				if (!implementation.fetchDeferred) throw new Error("API does not support deferred responses");
+				return implementation.fetchDeferred(model, handle, options);
+			});
+	}
+	if (capabilities?.cancelDeferred) {
+		api.cancelDeferred = async (model, handle, options) => {
+			const implementation = await load();
+			if (!implementation.cancelDeferred) throw new Error("API cannot cancel deferred responses");
+			await implementation.cancelDeferred(model, handle, options);
+		};
+	}
+	return api;
+}
+export function lazyOAuth(input) {
+	let promise;
+	const loaded = () => (promise ??= input.load());
+	return {
+		name: input.name,
+		isSubscription: input.isSubscription,
+		loginLabel: input.loginLabel,
+		login: async (interaction, options) => (await loaded()).login(interaction, options),
+		refresh: async (credential, signal) => (await loaded()).refresh(credential, signal),
+		toAuth: async (credential) => (await loaded()).toAuth(credential),
+	};
 }
 export function mistralConversationsApi() {
-	return unavailable("mistralConversationsApi");
+	return hostApi;
 }
 export function normalizeContext() {
 	return unavailable("normalizeContext");
 }
 export function openAICodexResponsesApi() {
-	return unavailable("openAICodexResponsesApi");
+	return hostApi;
 }
 export function openAICompletionsApi() {
-	return unavailable("openAICompletionsApi");
+	return hostApi;
 }
 export function openAIResponsesApi() {
-	return unavailable("openAIResponsesApi");
+	return hostApi;
 }
 export function piMessagesApi() {
-	return unavailable("piMessagesApi");
+	return hostApi;
 }
 export function reduceAssistantMessageFrames() {
 	return unavailable("reduceAssistantMessageFrames");
@@ -464,54 +627,22 @@ export function retryDelayMs() {
 export function setBedrockProviderModule() {
 	return unavailable("setBedrockProviderModule");
 }
-export function streamAnthropic() {
-	return unavailable("streamAnthropic");
-}
-export function streamAzureOpenAIResponses() {
-	return unavailable("streamAzureOpenAIResponses");
-}
-export function streamGoogle() {
-	return unavailable("streamGoogle");
-}
-export function streamGoogleVertex() {
-	return unavailable("streamGoogleVertex");
-}
-export function streamMistral() {
-	return unavailable("streamMistral");
-}
-export function streamOpenAICodexResponses() {
-	return unavailable("streamOpenAICodexResponses");
-}
-export function streamOpenAICompletions() {
-	return unavailable("streamOpenAICompletions");
-}
-export function streamOpenAIResponses() {
-	return unavailable("streamOpenAIResponses");
-}
-export function streamSimpleAnthropic() {
-	return unavailable("streamSimpleAnthropic");
-}
-export function streamSimpleAzureOpenAIResponses() {
-	return unavailable("streamSimpleAzureOpenAIResponses");
-}
-export function streamSimpleGoogle() {
-	return unavailable("streamSimpleGoogle");
-}
-export function streamSimpleGoogleVertex() {
-	return unavailable("streamSimpleGoogleVertex");
-}
-export function streamSimpleMistral() {
-	return unavailable("streamSimpleMistral");
-}
-export function streamSimpleOpenAICodexResponses() {
-	return unavailable("streamSimpleOpenAICodexResponses");
-}
-export function streamSimpleOpenAICompletions() {
-	return unavailable("streamSimpleOpenAICompletions");
-}
-export function streamSimpleOpenAIResponses() {
-	return unavailable("streamSimpleOpenAIResponses");
-}
+export const streamAnthropic = streamSimple;
+export const streamAzureOpenAIResponses = streamSimple;
+export const streamGoogle = streamSimple;
+export const streamGoogleVertex = streamSimple;
+export const streamMistral = streamSimple;
+export const streamOpenAICodexResponses = streamSimple;
+export const streamOpenAICompletions = streamSimple;
+export const streamOpenAIResponses = streamSimple;
+export const streamSimpleAnthropic = streamSimple;
+export const streamSimpleAzureOpenAIResponses = streamSimple;
+export const streamSimpleGoogle = streamSimple;
+export const streamSimpleGoogleVertex = streamSimple;
+export const streamSimpleMistral = streamSimple;
+export const streamSimpleOpenAICodexResponses = streamSimple;
+export const streamSimpleOpenAICompletions = streamSimple;
+export const streamSimpleOpenAIResponses = streamSimple;
 export function toToolDeclaration() {
 	return unavailable("toToolDeclaration");
 }

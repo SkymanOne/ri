@@ -187,8 +187,19 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
             },
         )?,
     )?;
+    native.set("compile", Function::new(ctx.clone(), compile)?)?;
     ctx.globals().set("__ri_native", native)?;
     Ok(())
+}
+
+/// Evaluates script `source` as file `filename`, so stack traces name the
+/// file.
+fn compile<'js>(ctx: Ctx<'js>, source: String, filename: String) -> rquickjs::Result<Value<'js>> {
+    let mut options = rquickjs::context::EvalOptions::default();
+    options.global = true;
+    options.strict = false;
+    options.filename = Some(filename);
+    ctx.eval_with_options(source, options)
 }
 
 /// The runtime and its context, created on first use.

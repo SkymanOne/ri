@@ -11,8 +11,10 @@ use ri_ai::registry::ModelRegistry;
 use ri_core::agent_session::{AgentSession, Resources, SessionConfig};
 use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
 use ri_core::model_resolver::{DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model};
+use ri_core::packages::PackageResources;
 use ri_core::resources::{context_files, prompt_templates, skills, system_prompt_file};
 use ri_core::session::{self, SessionManager};
+use ri_core::settings::Scope;
 use ri_core::settings::SettingsManager;
 use ri_core::tools::path::{expand, resolve_to_cwd};
 use ri_core::trust::{TrustStore, resolve_trusted};
@@ -295,14 +297,14 @@ pub const NO_MODELS_MESSAGE: &str =
 pub fn start(
     args: &mut Args,
     stdin: Option<String>,
-    hosts: &[Arc<ExtensionHost>],
+    extensions: &Extensions,
 ) -> anyhow::Result<Startup> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     let agent_dir = agent_dir();
     let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
     let session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
-    let session = create(args, session, true, hosts)?;
+    let session = create(args, session, true, extensions)?;
 
     let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
     let mut parts = Vec::new();
@@ -342,7 +344,7 @@ pub fn create(
     args: &Args,
     session: SessionManager,
     warn: bool,
-    hosts: &[Arc<ExtensionHost>],
+    extensions: &Extensions,
 ) -> anyhow::Result<AgentSession> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
@@ -423,6 +425,7 @@ pub fn create(
         .flatten()
         .chain(&args.skills)
         .map(|path| PathBuf::from(expand(path)))
+        .chain(extensions.resources.skills.iter().cloned())
         .collect();
     let extra_templates: Vec<PathBuf> = settings_view
         .prompts
@@ -430,6 +433,7 @@ pub fn create(
         .flatten()
         .chain(&args.prompt_templates)
         .map(|path| PathBuf::from(expand(path)))
+        .chain(extensions.resources.prompts.iter().cloned())
         .collect();
     let mut appends: Vec<String> =
         system_prompt_file(&cwd, &agent_dir, trusted, "APPEND_SYSTEM.md")
@@ -475,7 +479,8 @@ pub fn create(
         thinking_level,
         tools,
         // pi runs its built-in extensions after the loaded ones.
-        extensions: hosts
+        extensions: extensions
+            .hosts
             .iter()
             .flat_map(ExtensionHost::for_session)
             .chain(ri_core::extensions::builtins())
@@ -499,7 +504,7 @@ pub struct ExtensionErrors {
 /// Loads the run's pi extensions: `-e` paths, then, unless `--no-extensions`,
 /// those installed in a trusted project and in the agent directory. Applies
 /// extension flags from the command line, which must name registered flags.
-pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, ExtensionErrors> {
+pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors> {
     use ri_core::extensions::discovery;
     let fail = |message: String| ExtensionErrors {
         messages: vec![message],
@@ -508,7 +513,7 @@ pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, Ext
     let cwd = std::env::current_dir()
         .map_err(|err| fail(format!("reading the working directory: {err}")))?;
     let agent_dir = agent_dir();
-    let (_, trusted) =
+    let (settings, trusted) =
         load_settings(args, &cwd, &agent_dir).map_err(|err| fail(err.to_string()))?;
     let mut messages = Vec::new();
     let mut missing = Vec::new();
@@ -524,7 +529,8 @@ pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, Ext
             ));
         }
     }
-    // pi's source info: `cli` for `-e`, `auto` for installed ones.
+    // pi's source info: `cli` for `-e`, `local` for settings entries, `auto`
+    // for installed ones, and the package's source for package resources.
     let source = |path: PathBuf, source: &str, scope: &str| SourceInfo {
         path: path.to_string_lossy().into_owned(),
         source: source.into(),
@@ -532,19 +538,54 @@ pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, Ext
         origin: "top-level".into(),
         base_dir: None,
     };
+    let scope_name = |scope: Scope| match scope {
+        Scope::Global => "user",
+        Scope::Project => "project",
+    };
     let mut sources: Vec<SourceInfo> = discovery::configured(&requested, &cwd)
         .into_iter()
         .map(|path| source(path, "cli", "temporary"))
         .collect();
+    let mut resources = PackageResources::default();
     if !args.no_extensions {
+        let mut packages = ri_core::packages::PackageManager::new(
+            cwd.clone(),
+            agent_dir.clone(),
+            settings,
+            ri_core::packages::npm::default_registry(),
+        );
+        let offline = args.offline || ri_core::tools::external::offline();
+        let resolved = packages
+            .resolve(!offline, |message| eprintln!("Warning: {message}"))
+            .await;
+        // pi's precedence: project settings and installed extensions, then
+        // the user's, then packages.
+        let settings_entries = packages.settings_extensions();
+        let installed = discovery::installed(&cwd, &agent_dir, trusted);
         let project = cwd.join(ri_core::config::PROJECT_DIR);
-        for path in discovery::installed(&cwd, &agent_dir, trusted) {
-            let scope = if path.starts_with(&project) {
-                "project"
-            } else {
-                "user"
-            };
-            sources.push(source(path, "auto", scope));
+        for scope in [Scope::Project, Scope::Global] {
+            for (path, _) in settings_entries.iter().filter(|(_, entry)| *entry == scope) {
+                sources.push(source(path.clone(), "local", scope_name(scope)));
+            }
+            for path in &installed {
+                if path.starts_with(&project) == (scope == Scope::Project) {
+                    sources.push(source(path.clone(), "auto", scope_name(scope)));
+                }
+            }
+        }
+        for package in resolved {
+            for path in &package.resources.extensions {
+                sources.push(SourceInfo {
+                    path: path.to_string_lossy().into_owned(),
+                    source: package.source.clone(),
+                    scope: scope_name(package.scope).into(),
+                    origin: "package".into(),
+                    base_dir: Some(package.root.to_string_lossy().into_owned()),
+                });
+            }
+            resources.skills.extend(package.resources.skills);
+            resources.prompts.extend(package.resources.prompts);
+            resources.themes.extend(package.resources.themes);
         }
     }
     let mut seen = std::collections::HashSet::new();
@@ -627,5 +668,15 @@ pub async fn load_extensions(args: &Args) -> Result<Vec<Arc<ExtensionHost>>, Ext
                 .map_err(|err| fail(err.to_string()))?;
         }
     }
-    Ok(hosts)
+    Ok(Extensions { hosts, resources })
+}
+
+/// The run's loaded extensions, and the skills, prompt templates and themes
+/// its packages provide.
+#[derive(Default)]
+pub struct Extensions {
+    /// Instances with loaded extensions.
+    pub hosts: Vec<Arc<ExtensionHost>>,
+    /// Package resources besides extensions.
+    pub resources: PackageResources,
 }

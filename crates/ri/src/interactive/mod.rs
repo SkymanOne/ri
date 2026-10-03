@@ -8,6 +8,7 @@ mod bash_view;
 mod chat;
 mod clipboard;
 mod commands;
+mod extension_ui;
 mod footer;
 mod header;
 pub mod keybindings;
@@ -28,7 +29,7 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use ri_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
 use ri_core::bash_executor::BashResult;
-use ri_core::extensions::{ExtensionUi, Mode, NotifyKind};
+use ri_core::extensions::{Mode, NotifyKind};
 use ri_core::session::SessionManager;
 use ri_tui::color::ColorMode;
 use ri_tui::editor::{Editor, EditorEvent, EditorTheme};
@@ -87,32 +88,20 @@ enum Event {
         Box<login::ProviderOption>,
         Result<(), ri_ai::auth::AuthError>,
     ),
-}
-
-/// Extension notifications as status, warning and error lines. Dialogs
-/// arrive with extension UI (M6) and are cancelled until then.
-struct InteractiveUi {
-    tx: UnboundedSender<Event>,
-    epoch: u64,
-}
-
-impl ExtensionUi for InteractiveUi {
-    fn has_ui(&self) -> bool {
-        true
-    }
-
-    fn notify(&self, message: &str, kind: NotifyKind) {
-        let _ = self
-            .tx
-            .send(Event::Notify(self.epoch, message.to_owned(), kind));
-    }
-
-    fn extension_error(&self, path: &str, _event: &str, error: &str) {
-        let message = format!("Extension \"{path}\" error: {error}");
-        let _ = self
-            .tx
-            .send(Event::Notify(self.epoch, message, NotifyKind::Error));
-    }
+    /// A request from an extension of the session with this epoch.
+    Ui(u64, Box<extension_ui::Request>),
+    /// Lines of the extension component with this key, rendered at a width.
+    Rendered(u64, (u64, u32), usize, Vec<String>),
+    /// The first session's extensions started.
+    Bound,
+    /// A component an extension built for a transcript item, answering the
+    /// request with this sequence number.
+    Component(
+        u64,
+        Box<extension_ui::Slot>,
+        u64,
+        Option<ri_core::extensions::RemoteComponent>,
+    ),
 }
 
 /// A running status shown in the editor's top border.
@@ -128,7 +117,7 @@ enum Indicator {
 }
 
 /// What an open dialog's answer is for.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum Dialog {
     /// "Summarize branch?" for navigating to the entry.
     TreeSummary(String),
@@ -149,6 +138,29 @@ enum Dialog {
     Logout,
     /// A select prompt of the running sign-in.
     LoginSelect,
+    /// An extension's dialog.
+    Extension(ExtensionReply),
+}
+
+/// Where an extension dialog's answer goes.
+#[derive(Debug)]
+enum ExtensionReply {
+    Select(Vec<String>, tokio::sync::oneshot::Sender<Option<String>>),
+    Confirm(tokio::sync::oneshot::Sender<bool>),
+    Text(tokio::sync::oneshot::Sender<Option<String>>),
+}
+
+impl ExtensionReply {
+    fn cancel(self) {
+        match self {
+            ExtensionReply::Select(_, reply) | ExtensionReply::Text(reply) => {
+                let _ = reply.send(None);
+            }
+            ExtensionReply::Confirm(reply) => {
+                let _ = reply.send(false);
+            }
+        }
+    }
 }
 
 use crate::runtime::{SessionFactory, user_text};
@@ -269,6 +281,14 @@ struct App {
     login: Option<login::LoginRun>,
     next_login: u64,
     anthropic_warning_shown: bool,
+    ext: extension_ui::ExtensionState,
+    /// Providers with models available, as the footer last counted them.
+    provider_count: usize,
+    /// The current session's extensions wait to start, after the session
+    /// they replace (if any) shuts down.
+    binding: Option<Option<AgentSession>>,
+    /// Messages to send once extensions have started.
+    initial: Vec<String>,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -304,6 +324,23 @@ fn editor_theme(theme: &Theme) -> EditorTheme {
             no_match: theme.fg("muted"),
         },
     }
+}
+
+/// The configured theme as extensions see it outside the terminal UI, where
+/// no terminal colors are known.
+pub(crate) fn extension_theme(setting: Option<&str>, agent_dir: &Path) -> Value {
+    let mode = if true_color() {
+        ColorMode::TrueColor
+    } else {
+        ColorMode::Ansi256
+    };
+    let (theme, _) = load_theme(
+        setting,
+        agent_dir,
+        &ri_tui::terminal::TerminalColors::default(),
+        mode,
+    );
+    extension_ui::theme_json(&theme)
 }
 
 /// Picks the configured theme for the terminal's colors.
@@ -379,6 +416,7 @@ impl App {
             expand_key: &self.expand_key,
             cancel_key: &self.cancel_key,
             home: self.home.as_deref().and_then(Path::to_str),
+            thinking_label: self.ext.thinking_label.as_deref().unwrap_or("Thinking..."),
         }
     }
 
@@ -482,6 +520,7 @@ impl App {
                             }
                             let index = self.push(Item::Tool(Box::new(view)));
                             self.tool_items.insert(call.id.clone(), index);
+                            self.draw_tool(index);
                         }
                     }
                 }
@@ -491,11 +530,13 @@ impl App {
                     {
                         view.result = Some(tool_result_of(result));
                         view.is_error = result.is_error;
+                        self.draw_tool(index);
                     }
                 }
                 Message::BashExecution(bash) => {
                     self.push(Item::Bash(Box::new(BashView::from_message(bash))));
                 }
+                Message::Custom(custom) => self.push_custom(custom.clone()),
                 Message::CompactionSummary(summary) => {
                     self.push(Item::Compaction {
                         tokens_before: summary.tokens_before,
@@ -542,7 +583,14 @@ impl App {
             as usize
             % SPINNER.len()];
         let (spinner, text, message) = match indicator {
-            Indicator::Working => (border, border, "Working".to_owned()),
+            Indicator::Working => (
+                border,
+                border,
+                self.ext
+                    .working_message
+                    .clone()
+                    .unwrap_or_else(|| "Working".to_owned()),
+            ),
             Indicator::Retry {
                 attempt,
                 max,
@@ -582,9 +630,17 @@ impl App {
             width,
         );
         if self.show_details {
+            let extensions: Vec<_> = self
+                .session
+                .extensions()
+                .iter()
+                .map(|extension| extension.source())
+                .filter(|source| source.source != "builtin")
+                .collect();
             header.extend(header::listing(
                 &self.theme,
                 self.session.resources(),
+                &extensions,
                 &self.cwd,
                 self.home.as_deref(),
                 self.expanded,
@@ -701,7 +757,11 @@ impl App {
                 1,
             ));
         }
+        // pi's widget container above the editor: a spacer, then the widgets.
         out.extend(lines::spacer(1));
+        for (_, widget) in &mut self.ext.above {
+            out.extend(widget.render(width, &self.theme));
+        }
         let cursor;
         if let Some(mut selector) = self.selector.take() {
             let (rows, at) = selector.render(width, &self.ui());
@@ -731,19 +791,37 @@ impl App {
                 .map(|(row, col)| (out.len() + row, col));
             out.extend(editor);
         }
-        let footer = match &self.footer_cache {
-            Some((cached, lines)) if *cached == width => lines.clone(),
-            _ => {
-                let lines = self.footer(width);
-                self.footer_cache = Some((width, lines.clone()));
-                lines
-            }
-        };
-        out.extend(footer);
+        for (_, widget) in &mut self.ext.below {
+            out.extend(widget.render(width, &self.theme));
+        }
+        if !matches!(&self.footer_cache, Some((cached, _)) if *cached == width) {
+            let lines = self.footer(width);
+            self.footer_cache = Some((width, lines));
+        }
+        if let Some((_, footer)) = &self.footer_cache {
+            out.extend(footer.iter().cloned());
+        }
         (out, cursor)
     }
 
-    fn footer(&self, width: usize) -> Vec<StyledLine> {
+    /// The footer: an extension's, or pi's with extension statuses below.
+    fn footer(&mut self, width: usize) -> Vec<StyledLine> {
+        self.ext.mirror(
+            self.editor.expanded_text(),
+            self.branch.as_deref(),
+            self.provider_count,
+        );
+        if let Some(view) = &mut self.ext.footer {
+            return view.render(width).0;
+        }
+        let (mut lines, providers) = self.builtin_footer(width);
+        self.provider_count = providers;
+        lines.extend(self.ext.status_line(width, &self.theme));
+        lines
+    }
+
+    /// pi's footer, and how many providers have models available.
+    fn builtin_footer(&self, width: usize) -> (Vec<StyledLine>, usize) {
         let model = self.session.model();
         let cwd = footer::format_cwd(&self.cwd, self.home.as_deref());
         let name = self.session.with_session(|session| session.name());
@@ -759,7 +837,7 @@ impl App {
             .as_ref()
             .and_then(|compaction| compaction.enabled)
             .unwrap_or(true);
-        footer::render(
+        let lines = footer::render(
             &footer::FooterData {
                 cwd: &cwd,
                 branch: self.branch.as_deref(),
@@ -777,10 +855,12 @@ impl App {
             },
             &self.theme,
             width,
-        )
+        );
+        (lines, providers.len())
     }
 
     fn draw(&mut self) {
+        self.expire_dialog();
         if let Some(selector) = &mut self.selector {
             selector.tick();
         }
@@ -813,6 +893,7 @@ impl App {
             })
             || self.pending_bash.iter().any(BashView::running)
             || matches!(&self.selector, Some(Selector::Session(selector)) if selector.has_timed_status())
+            || self.countdown().is_some()
     }
 
     // Agent events
@@ -933,12 +1014,14 @@ impl App {
                 Value::Object(Map::new()),
             ))));
             self.tool_items.insert(id, index);
+            self.draw_tool(index);
         }
         if let Some(call) = finished_tool
             && let Some(&index) = self.tool_items.get(&call.id)
             && let Some(view) = self.tool_view(index)
         {
             view.args = Value::Object(call.arguments);
+            self.draw_tool(index);
         }
     }
 
@@ -961,6 +1044,7 @@ impl App {
                     let index = self.push(Item::Assistant(assistant));
                     self.streaming = Some(index);
                 }
+                Message::Custom(custom) => self.push_custom(custom),
                 _ => {}
             },
             AgentEvent::MessageUpdate {
@@ -1025,6 +1109,7 @@ impl App {
                     view.args = args;
                     view.started = Some(Instant::now());
                 }
+                self.draw_tool(index);
             }
             AgentEvent::ToolExecutionUpdate {
                 tool_call_id,
@@ -1035,6 +1120,7 @@ impl App {
                     && let Some(view) = self.tool_view(index)
                 {
                     view.partial = Some(partial_result);
+                    self.draw_tool(index);
                 }
             }
             AgentEvent::ToolExecutionEnd {
@@ -1049,6 +1135,7 @@ impl App {
                     view.result = Some(result);
                     view.is_error = is_error;
                     view.finished = Some(Instant::now());
+                    self.draw_tool(index);
                 }
             }
             AgentEvent::AgentEnd { .. } => {
@@ -1511,6 +1598,8 @@ impl App {
 
     fn toggle_tools(&mut self) {
         self.expanded = !self.expanded;
+        self.ext.set_tools_expanded(self.expanded);
+        self.redraw_transcript();
         self.invalidate_all();
         self.status(if self.expanded {
             "Tool output: expanded"
@@ -1610,6 +1699,7 @@ impl App {
             Some(Dialog::LoginMenu(..) | Dialog::Logout) => {}
             Some(Dialog::LoginProviders(kind, _)) => self.providers_cancelled(kind),
             Some(Dialog::LoginSelect) => self.login_select_done(None),
+            Some(Dialog::Extension(reply)) => reply.cancel(),
             None => {}
         }
     }
@@ -1706,13 +1796,23 @@ impl App {
                     self.status("Resume cancelled");
                 }
             }
+            Some(Dialog::Extension(ExtensionReply::Select(options, reply))) => {
+                let _ = reply.send(options.get(index).cloned());
+            }
+            Some(Dialog::Extension(ExtensionReply::Confirm(reply))) => {
+                let _ = reply.send(index == 0);
+            }
             _ => {}
         }
     }
 
     fn on_text(&mut self, text: String) {
-        if let Some(Dialog::TreeInstructions(id)) = self.dialog.take() {
-            self.navigate(id, true, Some(text));
+        match self.dialog.take() {
+            Some(Dialog::TreeInstructions(id)) => self.navigate(id, true, Some(text)),
+            Some(Dialog::Extension(ExtensionReply::Text(reply))) => {
+                let _ = reply.send(Some(text));
+            }
+            _ => {}
         }
     }
 
@@ -1913,15 +2013,8 @@ impl App {
         self.epoch += 1;
         let old = std::mem::replace(&mut self.session, session);
         subscribe(&self.session, &self.tx, self.epoch);
-        let ui = InteractiveUi {
-            tx: self.tx.clone(),
-            epoch: self.epoch,
-        };
-        let new = self.session.clone();
-        tokio::spawn(async move {
-            old.shutdown().await;
-            new.bind_extensions(Arc::new(ui), Mode::Tui).await;
-        });
+        self.reset_extension_ui();
+        self.binding = Some(Some(old));
         self.cwd = self.session.cwd().to_path_buf();
         self.branch = footer::git_branch(&self.cwd);
         self.running = false;
@@ -2206,11 +2299,6 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     let stdin_paused = Arc::new(AtomicBool::new(false));
     spawn_stdin(tx.clone(), stdin_paused.clone());
     subscribe(&session, &tx, 0);
-    let ui = InteractiveUi {
-        tx: tx.clone(),
-        epoch: 0,
-    };
-    session.bind_extensions(Arc::new(ui), Mode::Tui).await;
     {
         let tx = tx.clone();
         let bin_dir = ri_core::config::bin_dir(&agent_dir);
@@ -2358,6 +2446,10 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         login: None,
         next_login: 0,
         anthropic_warning_shown: false,
+        ext: extension_ui::ExtensionState::default(),
+        initial: options.initial,
+        provider_count: 0,
+        binding: None,
     };
     app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -2383,13 +2475,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         app.handle_key(&key, &mut terminal);
     }
     app.warn_anthropic_subscription(None);
-    let mut initial = options.initial.into_iter();
-    if let Some(first) = initial.next() {
-        app.start_prompt(first);
-        for message in initial {
-            app.session.follow_up(&message, Vec::new());
-        }
-    }
+    app.ext.set_tools_expanded(app.expanded);
+    app.binding = Some(None);
+    app.start_binding();
     app.draw();
 
     #[cfg(unix)]
@@ -2483,6 +2571,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
             _ = terminated => app.quit = true,
             _ = tokio::time::sleep(flush_wait), if dirty => {}
         }
+        app.start_binding();
         if dirty && last_draw.elapsed() >= FRAME_INTERVAL {
             app.draw();
             last_draw = Instant::now();
@@ -2545,6 +2634,30 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
 }
 
 impl App {
+    /// Starts the current session's extensions once the event that replaced
+    /// the session is handled, so they see the app's state (the theme) as it
+    /// ends. Handlers may wait for dialogs, so they run beside the loop.
+    fn start_binding(&mut self) {
+        let Some(old) = self.binding.take() else {
+            return;
+        };
+        self.ext.set_theme(&self.theme);
+        let ui = extension_ui::InteractiveUi {
+            tx: self.tx.clone(),
+            epoch: self.epoch,
+            shared: self.ext.shared.clone(),
+        };
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            if let Some(old) = old {
+                old.shutdown().await;
+            }
+            session.bind_extensions(Arc::new(ui), Mode::Tui).await;
+            let _ = tx.send(Event::Bound);
+        });
+    }
+
     /// Handles everything but input.
     fn on_event(&mut self, event: Event, _terminal: &mut Terminal) {
         self.footer_cache = None;
@@ -2601,6 +2714,24 @@ impl App {
                 NotifyKind::Warning => self.warning(message),
                 NotifyKind::Info => self.status(message),
             },
+            Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
+            Event::Bound => {
+                // Items shown before the extensions started get their components.
+                self.redraw_transcript();
+                let mut initial = std::mem::take(&mut self.initial).into_iter();
+                if let Some(first) = initial.next() {
+                    self.start_prompt(first);
+                    for message in initial {
+                        self.session.follow_up(&message, Vec::new());
+                    }
+                }
+            }
+            Event::Rendered(epoch, key, width, lines) if epoch == self.epoch => {
+                self.on_rendered(key, width, &lines);
+            }
+            Event::Component(epoch, slot, sequence, component) if epoch == self.epoch => {
+                self.on_component(*slot, sequence, component);
+            }
             _ => {}
         }
     }

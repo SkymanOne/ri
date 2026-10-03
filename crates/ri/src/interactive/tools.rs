@@ -32,6 +32,23 @@ pub struct ToolView {
     pub started: Option<Instant>,
     /// When execution finished.
     pub finished: Option<Instant>,
+    /// The extension that draws the call and result, when one does.
+    pub draw: Option<ToolDraw>,
+}
+
+/// How an extension draws a tool (pi's `renderCall` and `renderResult`) and
+/// the components it built for this call.
+pub struct ToolDraw {
+    /// The extension.
+    pub extension: std::sync::Arc<dyn ri_core::extensions::Extension>,
+    /// What it draws.
+    pub renderers: ri_core::extensions::ToolRenderers,
+    /// The call's component.
+    pub call: Option<super::extension_ui::RemoteView>,
+    /// The result's component.
+    pub result: Option<super::extension_ui::RemoteView>,
+    /// Requests sent for the call and the result, to drop stale answers.
+    pub requests: [u64; 2],
 }
 
 /// Strips escape sequences and control characters other than tab and newline.
@@ -233,6 +250,7 @@ impl ToolView {
             is_error: false,
             started: None,
             finished: None,
+            draw: None,
         }
     }
 
@@ -251,6 +269,9 @@ impl ToolView {
     /// The item's rows at `width`.
     pub fn render(&self, width: usize, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
         let theme = ctx.theme;
+        if let Some(draw) = &self.draw {
+            return self.render_drawn(draw, width, ctx);
+        }
         if self.name == "edit" {
             return self.render_edit(width, ctx);
         }
@@ -259,6 +280,47 @@ impl ToolView {
         body.extend(self.result_lines(ctx, inner));
         let mut out = lines::spacer(1);
         out.extend(boxed(body, width, 1, 1, Some(self.background(theme))));
+        out
+    }
+
+    /// pi's composition for tools with a definition: the call's component
+    /// (or the generic call) and the result's (or the output preview), in the
+    /// tool box or, with `renderShell: "self"`, after a blank row.
+    fn render_drawn(
+        &self,
+        draw: &ToolDraw,
+        width: usize,
+        ctx: &RenderContext<'_>,
+    ) -> Vec<StyledLine> {
+        let own = draw.renderers.own_shell;
+        let inner = if own {
+            width
+        } else {
+            box_content_width(width, 1)
+        };
+        let mut body = match &draw.call {
+            Some(view) if draw.renderers.call => view.render(inner).0,
+            _ => lines::wrap_all(
+                &generic_call(&self.name, &self.args, ctx.theme, ctx.expanded),
+                inner,
+            ),
+        };
+        if let Some(result) = self.shown_result() {
+            match &draw.result {
+                Some(view) if draw.renderers.result => body.extend(view.render(inner).0),
+                _ => body.extend(fallback_result(result, ctx, inner)),
+            }
+        }
+        if own {
+            if body.is_empty() {
+                return Vec::new();
+            }
+            let mut out = vec![Line::default()];
+            out.extend(body);
+            return out;
+        }
+        let mut out = lines::spacer(1);
+        out.extend(boxed(body, width, 1, 1, Some(self.background(ctx.theme))));
         out
     }
 
@@ -717,6 +779,32 @@ fn read_range(args: &Value, theme: &Theme) -> Option<Span<'static>> {
 
 /// pi's generic call header: `name key=value ...`, or one `key: value` line per
 /// argument when expanded.
+/// pi's `createResultFallback`: the output's first lines and how many more.
+fn fallback_result(result: &ToolResult, ctx: &RenderContext<'_>, width: usize) -> Vec<StyledLine> {
+    let output = text_output(result);
+    if output.is_empty() {
+        return Vec::new();
+    }
+    let all: Vec<&str> = output.split('\n').collect();
+    let shown = if ctx.expanded {
+        all.len()
+    } else {
+        10.min(all.len())
+    };
+    let mut out: Vec<StyledLine> = all[..shown]
+        .iter()
+        .map(|line| lines::styled((*line).to_owned(), ctx.theme.fg("toolOutput")))
+        .collect();
+    if all.len() > shown {
+        out.push(more_lines_hint(
+            ctx.theme,
+            ctx,
+            format!("... ({} more lines,", all.len() - shown),
+        ));
+    }
+    lines::wrap_all(&out, width)
+}
+
 fn generic_call(name: &str, args: &Value, theme: &Theme, expanded: bool) -> Vec<StyledLine> {
     let header = title(theme, name);
     let entries: Vec<(String, Value)> = match args {

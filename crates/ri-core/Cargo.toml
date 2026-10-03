@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+flate2.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 indexmap.workspace = true
@@ -18,10 +19,14 @@ regex-lite.workspace = true
 reqwest.workspace = true
 ri-ai.workspace = true
 ri-types.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha1.workspace = true
 sha2.workspace = true
+url.workspace = true
 similar.workspace = true
+tar.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
 tokio-util.workspace = true
@@ -31,6 +36,7 @@ unicode-normalization.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
+ri-mock.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]

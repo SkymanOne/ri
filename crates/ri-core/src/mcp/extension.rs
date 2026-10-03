@@ -26,7 +26,8 @@ use super::tools::{
 };
 use crate::extensions::tool_search::{TOOL_SEARCH_TOOL_NAME, is_tool_search};
 use crate::extensions::{
-    Command, Completion, Context, Extension, ExtensionUi, NotifyKind, Tools, builtin_source,
+    Command, Completion, Context, DialogOptions, Extension, ExtensionUi, NotifyKind, Tools,
+    builtin_source,
 };
 use crate::tools::{Exposure, Namespace, RegisteredTool};
 
@@ -684,7 +685,11 @@ impl McpExtension {
                 None
             }
             ([only], _) | (_, [only]) => Some(only.clone()),
-            _ => ctx.ui.select("MCP server", names).await,
+            _ => {
+                ctx.ui
+                    .select("MCP server", names, DialogOptions::default())
+                    .await
+            }
         }
     }
 

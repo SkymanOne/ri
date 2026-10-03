@@ -281,12 +281,12 @@ import {
   _Function_,
   _Object_,
   result_exports
-} from "./chunk-ZTJVV6OQ.mjs";
+} from "./chunk-36PQP7AB.mjs";
 import {
   __export
 } from "./chunk-7P6ASYW6.mjs";
 
-// ../../../../../home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/typebox.mjs
+// tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/typebox.mjs
 var typebox_exports = {};
 __export(typebox_exports, {
   Any: () => Any,

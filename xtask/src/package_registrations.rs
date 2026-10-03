@@ -1,0 +1,193 @@
+//! `cargo xtask package-registrations`: installs the top npm pi packages
+//! (`tests/fixtures/pi/packages/top50.json`) with ri's npm client, loads their
+//! extensions, and compares what they register with pi's
+//! (`registrations.json`, from `packages.mjs` in the fixture generator).
+//!
+//! Needs network access to the npm registry. Extensions run without network,
+//! process or environment access, and see only their scratch directory.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use anyhow::Context;
+use ri_core::packages::{PackageManager, npm::default_registry};
+use ri_core::settings::SettingsManager;
+use ri_ext::{Engine, ExtensionHost, Grants, Options};
+use ri_types::rpc::SourceInfo;
+use serde_json::{Value, json};
+
+const FIXTURES: &str = "tests/fixtures/pi/packages";
+
+/// Compare ri's registrations of the top npm pi packages with pi's.
+#[derive(clap::Args)]
+pub struct Args {
+    /// Only this package.
+    #[arg(long)]
+    only: Option<String>,
+    /// Print load errors in full.
+    #[arg(long)]
+    verbose: bool,
+}
+
+fn dump(loaded: &Value) -> Value {
+    let list = |key: &str| loaded[key].as_array().cloned().unwrap_or_default();
+    json!({
+        "tools": list("tools").iter().map(|tool| json!({
+            "name": tool["name"], "label": tool["label"],
+            "description": tool["description"], "parameters": tool["parameters"],
+        })).collect::<Vec<_>>(),
+        "commands": list("commands").iter().map(|command| json!({
+            "name": command["name"], "description": command["description"],
+        })).collect::<Vec<_>>(),
+        "flags": list("flags"),
+        "shortcuts": list("shortcuts"),
+        "events": list("events"),
+    })
+}
+
+async fn load(
+    engine: &Engine,
+    dir: &Path,
+    name: &str,
+    version: &str,
+    verbose: bool,
+) -> anyhow::Result<Value> {
+    let agent = dir.join("agent");
+    let cwd = dir.join("project");
+    std::fs::create_dir_all(&agent)?;
+    std::fs::create_dir_all(&cwd)?;
+    std::fs::write(
+        agent.join("settings.json"),
+        json!({"packages": [format!("npm:{name}@{version}")]}).to_string(),
+    )?;
+    let settings = SettingsManager::load(&agent, &cwd, false)?;
+    let mut packages =
+        PackageManager::new(cwd.clone(), agent.clone(), settings, default_registry());
+    let mut install_errors = Vec::new();
+    let resolved = packages
+        .resolve(true, |error| install_errors.push(error))
+        .await;
+    if let Some(error) = install_errors.first() {
+        return Ok(json!({"version": version, "install": error}));
+    }
+    let entries: Vec<PathBuf> = resolved
+        .iter()
+        .flat_map(|package| package.resources.extensions.clone())
+        .collect();
+    let sources: Vec<SourceInfo> = entries
+        .iter()
+        .map(|path| SourceInfo {
+            path: path.to_string_lossy().into_owned(),
+            source: format!("npm:{name}@{version}"),
+            scope: "user".into(),
+            origin: "package".into(),
+            base_dir: None,
+        })
+        .collect();
+    let mut options = Options::new(cwd.clone());
+    options.agent_dir = agent.clone();
+    // As pi's harness sets HOME and TMPDIR.
+    options.temp_dir = dir.to_path_buf();
+    options.home_dir = dir.join("home");
+    std::fs::create_dir_all(&options.home_dir)?;
+    options.cache_dir = Some(dir.join("cache"));
+    options.grants = Grants {
+        filesystem: true,
+        process: false,
+        network: false,
+        environment: false,
+    };
+    options.filesystem_roots = vec![dir.to_path_buf()];
+    let (extensions, errors) = if sources.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        let host = ExtensionHost::load(engine, options, &sources).await?;
+        if verbose {
+            for error in host.errors() {
+                eprintln!("{}: {}", error.path.display(), error.error);
+            }
+        }
+        (
+            host.registrations().iter().map(dump).collect::<Vec<_>>(),
+            host.errors()
+                .iter()
+                .map(|error| error.error.lines().next().unwrap_or_default().to_owned())
+                .collect::<Vec<_>>(),
+        )
+    };
+    let text = json!({
+        "version": version,
+        "entries": entries,
+        "extensions": extensions,
+        "errors": errors,
+    })
+    .to_string()
+    .replace(&*agent.to_string_lossy(), "<agent>")
+    .replace(&*cwd.to_string_lossy(), "<cwd>")
+    .replace(".ri/", ".pi/");
+    Ok(serde_json::from_str(&text)?)
+}
+
+pub fn run(args: Args) -> anyhow::Result<ExitCode> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(compare(args))
+}
+
+async fn compare(args: Args) -> anyhow::Result<ExitCode> {
+    let fixtures = Path::new(FIXTURES);
+    let top: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(fixtures.join("top50.json"))?)?;
+    let expected: BTreeMap<String, Value> = serde_json::from_str(
+        &std::fs::read_to_string(fixtures.join("registrations.json")).context(
+            "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
+        )?,
+    )?;
+    let scratch = Path::new("target/package-registrations")
+        .canonicalize()
+        .or_else(|_| {
+            std::fs::create_dir_all("target/package-registrations")?;
+            Path::new("target/package-registrations").canonicalize()
+        })?;
+    let engine = Engine::new(Some(&scratch.join("wasm-cache")))?;
+    let mut actual = BTreeMap::new();
+    let (mut matched, mut compared) = (0, 0);
+    for (index, package) in top.iter().enumerate() {
+        let name = package["name"].as_str().unwrap_or_default();
+        let version = package["version"].as_str().unwrap_or_default();
+        if args.only.as_deref().is_some_and(|only| only != name) {
+            continue;
+        }
+        let dir = scratch.join(index.to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+        let got = load(&engine, &dir, name, version, args.verbose)
+            .await
+            .unwrap_or_else(|err| json!({"version": version, "crash": err.to_string()}));
+        let want = expected.get(name).cloned().unwrap_or(Value::Null);
+        let same = ["extensions", "errors"]
+            .iter()
+            .all(|key| got.get(*key) == want.get(*key))
+            && want.get("crash").is_none()
+            && want.get("install").is_none();
+        compared += 1;
+        if same {
+            matched += 1;
+        }
+        eprintln!(
+            "{} {name}@{version}",
+            if same { "ok    " } else { "DIFFER" }
+        );
+        actual.insert(name.to_owned(), got);
+    }
+    std::fs::write(
+        scratch.join("registrations-ri.json"),
+        ri_types::json::to_string_pretty(&actual, "\t")?,
+    )?;
+    eprintln!(
+        "{matched} of {compared} packages match pi; ri's registrations are in {}",
+        scratch.join("registrations-ri.json").display()
+    );
+    Ok(ExitCode::SUCCESS)
+}

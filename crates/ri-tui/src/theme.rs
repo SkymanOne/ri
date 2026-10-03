@@ -363,7 +363,19 @@ impl Theme {
         self.paints.get(token).copied()
     }
 
-    fn color(&self, token: &str) -> ratatui_core::style::Color {
+    /// The names of its tokens.
+    pub fn tokens(&self) -> impl Iterator<Item = &str> {
+        self.paints.keys().map(String::as_str)
+    }
+
+    /// Whether foreground `token` is drawn faint.
+    pub fn is_dim(&self, token: &str) -> bool {
+        self.dim.contains(token)
+    }
+
+    /// The terminal color of `token`; the default color for tokens without
+    /// one.
+    pub fn color(&self, token: &str) -> ratatui_core::style::Color {
         match self.paints.get(token) {
             Some(Paint::Color(color)) => color.to_terminal(self.mode),
             _ => ratatui_core::style::Color::Reset,

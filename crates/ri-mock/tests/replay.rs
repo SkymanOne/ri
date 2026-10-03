@@ -33,6 +33,7 @@ fn reply(status: u16, chunks: &[&str]) -> Response {
         status,
         headers: Default::default(),
         chunks: chunks.iter().map(|chunk| chunk.to_string()).collect(),
+        body_base64: None,
         chunk_delay_ms: 0,
     }
 }

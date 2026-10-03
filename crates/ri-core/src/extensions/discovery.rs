@@ -40,8 +40,11 @@ pub fn in_dir(dir: &Path) -> Vec<PathBuf> {
     let Ok(read) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
+    // Node's `readdirSync` lists entries sorted by name.
+    let mut listed: Vec<_> = read.flatten().collect();
+    listed.sort_by_key(std::fs::DirEntry::file_name);
     let mut found = Vec::new();
-    for entry in read.flatten() {
+    for entry in listed {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         let Ok(kind) = entry.file_type() else {

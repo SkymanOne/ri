@@ -13,10 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
 use futures_util::future::BoxFuture;
-use ri_core::extensions::{ExtensionUi, Mode, NotifyKind};
+use ri_core::extensions::{DialogOptions, ExtensionUi, Mode, NotifyKind, Placement, Widget};
 use ri_core::time::uuid_v4;
 use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
 
 use ri_core::agent_session::AgentSession;
 use ri_core::session::SessionManager;
@@ -112,19 +111,13 @@ type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<ExtensionUiResponse>>>>
 struct RpcUi {
     out: Output,
     pending: Pending,
+    /// The theme for extensions, as [`ExtensionUi::theme`] describes it.
+    theme: Mutex<Value>,
 }
 
 impl RpcUi {
-    /// Writes a request and waits for its response; `None` when the request
-    /// is cancelled or the session ends.
-    fn ask(
-        &self,
-        mut request: Map<String, Value>,
-        cancel: Option<CancellationToken>,
-    ) -> BoxFuture<'static, Option<ExtensionUiResponse>> {
-        let id = uuid_v4();
-        let (tx, rx) = oneshot::channel();
-        lock(&self.pending).insert(id.clone(), tx);
+    /// Writes request `id`.
+    fn send(&self, id: &str, mut request: Map<String, Value>) {
         let mut line = Map::new();
         line.insert("type".into(), json!("extension_ui_request"));
         line.insert("id".into(), json!(id));
@@ -132,12 +125,44 @@ impl RpcUi {
         if let Ok(text) = ri_types::json::to_string(&line) {
             self.out.line(text);
         }
+    }
+
+    /// Writes a request that needs no response.
+    fn tell(&self, request: Value) {
+        self.send(&uuid_v4(), object(request));
+    }
+
+    /// Writes a request and waits for its response; `None` when the request
+    /// is cancelled, times out or the session ends. A timeout is part of the
+    /// request.
+    fn ask(
+        &self,
+        mut request: Map<String, Value>,
+        dialog: DialogOptions,
+    ) -> BoxFuture<'static, Option<ExtensionUiResponse>> {
+        let id = uuid_v4();
+        let (tx, rx) = oneshot::channel();
+        lock(&self.pending).insert(id.clone(), tx);
+        if let Some(timeout) = dialog.timeout {
+            request.insert("timeout".into(), json!(timeout.as_millis()));
+        }
+        self.send(&id, request);
         let pending = Arc::clone(&self.pending);
         Box::pin(async move {
-            let cancel = cancel.unwrap_or_default();
+            let cancel = dialog.cancel.unwrap_or_default();
+            let expired = async {
+                match dialog.timeout {
+                    Some(timeout) => tokio::time::sleep(timeout).await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 response = rx => response.ok(),
                 () = cancel.cancelled() => {
+                    lock(&pending).remove(&id);
+                    None
+                }
+                () = expired => {
                     lock(&pending).remove(&id);
                     None
                 }
@@ -178,22 +203,18 @@ impl ExtensionUi for RpcUi {
     }
 
     fn notify(&self, message: &str, kind: NotifyKind) {
-        let line = json!({
-            "type": "extension_ui_request",
-            "id": uuid_v4(),
-            "method": "notify",
-            "message": message,
-            "notifyType": kind.as_str(),
-        });
-        if let Ok(text) = ri_types::json::to_string(&line) {
-            self.out.line(text);
-        }
+        self.tell(json!({"method": "notify", "message": message, "notifyType": kind.as_str()}));
     }
 
-    fn select(&self, title: &str, options: Vec<String>) -> BoxFuture<'static, Option<String>> {
+    fn select(
+        &self,
+        title: &str,
+        options: Vec<String>,
+        dialog: DialogOptions,
+    ) -> BoxFuture<'static, Option<String>> {
         let answer = self.ask(
             object(json!({"method": "select", "title": title, "options": options})),
-            None,
+            dialog,
         );
         Box::pin(async move {
             answer
@@ -207,13 +228,13 @@ impl ExtensionUi for RpcUi {
         &self,
         title: &str,
         placeholder: Option<&str>,
-        cancel: Option<CancellationToken>,
+        dialog: DialogOptions,
     ) -> BoxFuture<'static, Option<String>> {
         let mut request = object(json!({"method": "input", "title": title}));
         if let Some(placeholder) = placeholder {
             request.insert("placeholder".into(), json!(placeholder));
         }
-        let answer = self.ask(request, cancel);
+        let answer = self.ask(request, dialog);
         Box::pin(async move {
             answer
                 .await
@@ -222,10 +243,15 @@ impl ExtensionUi for RpcUi {
         })
     }
 
-    fn confirm(&self, title: &str, message: &str) -> BoxFuture<'static, bool> {
+    fn confirm(
+        &self,
+        title: &str,
+        message: &str,
+        dialog: DialogOptions,
+    ) -> BoxFuture<'static, bool> {
         let answer = self.ask(
             object(json!({"method": "confirm", "title": title, "message": message})),
-            None,
+            dialog,
         );
         Box::pin(async move {
             answer
@@ -234,6 +260,62 @@ impl ExtensionUi for RpcUi {
                 .and_then(|response| response.confirmed)
                 .unwrap_or(false)
         })
+    }
+
+    fn editor(&self, title: &str, prefill: Option<&str>) -> BoxFuture<'static, Option<String>> {
+        let mut request = object(json!({"method": "editor", "title": title}));
+        if let Some(prefill) = prefill {
+            request.insert("prefill".into(), json!(prefill));
+        }
+        let answer = self.ask(request, DialogOptions::default());
+        Box::pin(async move {
+            answer
+                .await
+                .filter(|response| response.cancelled != Some(true))
+                .and_then(|response| response.value)
+        })
+    }
+
+    fn set_status(&self, key: &str, text: Option<&str>) {
+        let mut request = object(json!({"method": "setStatus", "statusKey": key}));
+        if let Some(text) = text {
+            request.insert("statusText".into(), json!(text));
+        }
+        self.send(&uuid_v4(), request);
+    }
+
+    /// Only lines reach RPC clients; component widgets are not sent.
+    fn set_widget(&self, key: &str, widget: Option<Widget>, placement: Option<Placement>) {
+        let mut request = object(json!({"method": "setWidget", "widgetKey": key}));
+        match widget {
+            Some(Widget::Lines(lines)) => {
+                request.insert("widgetLines".into(), json!(lines));
+            }
+            Some(Widget::Component(_)) => return,
+            None => {}
+        }
+        match placement {
+            Some(Placement::AboveEditor) => {
+                request.insert("widgetPlacement".into(), json!("aboveEditor"));
+            }
+            Some(Placement::BelowEditor) => {
+                request.insert("widgetPlacement".into(), json!("belowEditor"));
+            }
+            None => {}
+        }
+        self.send(&uuid_v4(), request);
+    }
+
+    fn set_title(&self, title: &str) {
+        self.tell(json!({"method": "setTitle", "title": title}));
+    }
+
+    fn set_editor_text(&self, text: &str) {
+        self.tell(json!({"method": "set_editor_text", "text": text}));
+    }
+
+    fn theme(&self) -> Value {
+        lock(&self.theme).clone()
     }
 }
 
@@ -638,6 +720,10 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
         ui: Arc::new(RpcUi {
             out: out.clone(),
             pending: Arc::default(),
+            theme: Mutex::new(crate::interactive::extension_theme(
+                session.settings().theme.as_deref(),
+                &ri_core::config::agent_dir(),
+            )),
         }),
     });
     let local = tokio::task::LocalSet::new();

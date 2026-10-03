@@ -133,6 +133,10 @@ pub enum Selector {
     Providers(Box<super::login::ProviderSelector>),
     /// A sign-in in progress.
     Login(Box<super::login::LoginDialog>),
+    /// A line of text for an extension.
+    Input(Box<InputDialog>),
+    /// An extension's component.
+    Remote(Box<super::extension_ui::RemoteView>),
 }
 
 impl Selector {
@@ -152,6 +156,8 @@ impl Selector {
             Selector::Tree(selector) => selector.render(width, ui),
             Selector::Providers(selector) => selector.render(width, ui),
             Selector::Login(dialog) => dialog.render(width, ui),
+            Selector::Input(dialog) => dialog.render(width, ui),
+            Selector::Remote(view) => view.render(width),
         }
     }
 
@@ -167,6 +173,11 @@ impl Selector {
             Selector::Tree(selector) => selector.handle_input(data, ui),
             Selector::Providers(selector) => selector.handle_input(data, ui),
             Selector::Login(dialog) => dialog.handle_input(data, ui),
+            Selector::Input(dialog) => dialog.handle_input(data, ui),
+            Selector::Remote(view) => {
+                view.input(data);
+                Outcome::None
+            }
         }
     }
 
@@ -717,11 +728,29 @@ impl ForkSelector {
     }
 }
 
+/// pi's `CountdownTimer` as a title suffix: whole seconds left, rounded up,
+/// until the dialog closes on its own.
+#[derive(Clone, Copy, Debug)]
+pub struct Countdown(pub std::time::Instant);
+
+impl Countdown {
+    /// `title` with the seconds left.
+    fn title(self, title: &str) -> String {
+        let left = self
+            .0
+            .saturating_duration_since(std::time::Instant::now())
+            .as_millis();
+        format!("{title} ({}s)", left.div_ceil(1000))
+    }
+}
+
 /// pi's `ExtensionSelectorComponent`: a titled list of options.
 pub struct ChoiceDialog {
     title: String,
     options: Vec<String>,
     selected: usize,
+    /// When the dialog closes on its own.
+    pub countdown: Option<Countdown>,
 }
 
 impl ChoiceDialog {
@@ -731,6 +760,7 @@ impl ChoiceDialog {
             title: title.to_owned(),
             options: options.iter().map(|option| (*option).to_owned()).collect(),
             selected: 0,
+            countdown: None,
         }
     }
 
@@ -738,8 +768,11 @@ impl ChoiceDialog {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        let title: Vec<StyledLine> = self
-            .title
+        let title = match self.countdown {
+            Some(countdown) => countdown.title(&self.title),
+            None => self.title.clone(),
+        };
+        let title: Vec<StyledLine> = title
             .split('\n')
             .map(|line| styled(line, theme.fg("accent").add_modifier(Modifier::BOLD)))
             .collect();
@@ -808,6 +841,11 @@ impl TextDialog {
         }
     }
 
+    /// Starts the editor with `text`.
+    pub fn prefill(&mut self, text: &str) {
+        self.editor.set_text(text);
+    }
+
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> (Vec<StyledLine>, Option<(usize, usize)>) {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
@@ -848,5 +886,67 @@ impl TextDialog {
             EditorEvent::Submit(text) => Outcome::Done(Action::Text(text)),
             EditorEvent::None => Outcome::None,
         }
+    }
+}
+
+/// pi's `ExtensionInputComponent`: a titled one-line input.
+pub struct InputDialog {
+    title: String,
+    input: TextInput,
+    /// When the dialog closes on its own.
+    pub countdown: Option<Countdown>,
+}
+
+impl InputDialog {
+    /// A dialog titled `title`.
+    pub fn new(title: &str) -> InputDialog {
+        let mut input = TextInput::default();
+        input.focused = true;
+        InputDialog {
+            title: title.to_owned(),
+            input,
+            countdown: None,
+        }
+    }
+
+    fn render(&mut self, width: usize, ui: &Ui<'_>) -> (Vec<StyledLine>, Option<(usize, usize)>) {
+        let theme = ui.theme;
+        let mut out = vec![ui.border(width)];
+        out.extend(lines::spacer(1));
+        let title = match self.countdown {
+            Some(countdown) => countdown.title(&self.title),
+            None => self.title.clone(),
+        };
+        out.extend(lines::text(
+            &[styled(title, theme.fg("accent"))],
+            width,
+            1,
+            0,
+            None,
+        ));
+        out.extend(lines::spacer(1));
+        let row = out.len();
+        out.push(self.input.render(width));
+        let cursor = self.input.cursor_column().map(|column| (row, column));
+        out.extend(lines::spacer(1));
+        let mut hint = ui.key_hint("tui.select.confirm", "submit");
+        hint.push(Span::raw("  "));
+        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::spacer(1));
+        out.push(ui.border(width));
+        (out, cursor)
+    }
+
+    fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
+        let kb = ui.keys;
+        if kb.matches(data, "tui.select.confirm") || data == "\n" {
+            return Outcome::Done(Action::Text(self.input.value().to_owned()));
+        }
+        if kb.matches(data, "tui.select.cancel") {
+            return Outcome::Cancel;
+        }
+        self.input.handle_input(data, kb);
+        Outcome::None
     }
 }

@@ -11,6 +11,7 @@ use ri_tui::color::{Color, ColorMode};
 use ri_tui::keybindings::Keybindings;
 use ri_tui::lines::{self, StyledLine};
 use ri_tui::theme::Theme;
+use ri_types::rpc::SourceInfo;
 
 use super::keybindings::keys_text;
 
@@ -35,12 +36,37 @@ pub fn render(
     width: usize,
 ) -> Vec<StyledLine> {
     let mode = theme.mode();
-    let mut content: Vec<StyledLine> = vec![Line::from(vec![
-        Span::styled("r", brand(228.0, 138.0, 122.0, mode)),
-        Span::styled("i", brand(234.0, 182.0, 93.0, mode)),
-        Span::raw(" "),
-        Span::styled(format!("v{}", env!("CARGO_PKG_VERSION")), theme.fg("dim")),
-    ])];
+    let coral = brand(228.0, 138.0, 122.0, mode);
+    let yellow = brand(234.0, 182.0, 93.0, mode);
+    let version = Span::styled(format!("v{}", env!("CARGO_PKG_VERSION")), theme.fg("dim"));
+    // pi's layout: a two-row, four-cell logo with the version beside its top
+    // row and the hints beside its bottom row; Apple Terminal, which draws
+    // half blocks with gaps, gets the wordmark above the hints instead.
+    let logo = std::env::var("TERM_PROGRAM").ok().as_deref() != Some("Apple_Terminal");
+    let mut content: Vec<StyledLine> = vec![if logo {
+        Line::from(vec![
+            Span::styled("█▀", coral),
+            Span::raw(" "),
+            Span::styled("▀", yellow),
+            Span::raw(" "),
+            version,
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("r", coral),
+            Span::styled("i", yellow),
+            Span::raw(" "),
+            version,
+        ])
+    }];
+    let logo_bottom = || {
+        vec![
+            Span::styled("█", coral),
+            Span::raw("  "),
+            Span::styled("█", yellow),
+            Span::raw(" "),
+        ]
+    };
     let key = |action: &str| keys_text(keys, action);
     if expanded {
         let hints: Vec<(String, &str)> = vec![
@@ -110,6 +136,11 @@ pub fn render(
             theme.fg("dim"),
         ));
     }
+    if logo && let Some(first) = content.get_mut(1) {
+        let mut spans = logo_bottom();
+        spans.append(&mut first.spans);
+        *first = Line::from(spans);
+    }
     let mut out = lines::spacer(1);
     out.extend(lines::text(&content, width, 1, 0, None));
     out.extend(lines::spacer(1));
@@ -128,10 +159,202 @@ fn relative_label(path: &Path, cwd: &Path, home: Option<&Path>) -> String {
     path.display().to_string()
 }
 
-/// The `[Context]`, `[Skills]` and `[Prompts]` sections.
+/// pi's `formatDisplayPath`: the home directory as `~`.
+fn display_path(path: &str, home: Option<&Path>) -> String {
+    match home.and_then(|home| Path::new(path).strip_prefix(home).ok()) {
+        Some(relative) => format!("~/{}", relative.display()),
+        None => path.to_owned(),
+    }
+}
+
+fn is_package(source: &SourceInfo) -> bool {
+    source.source.starts_with("npm:") || source.source.starts_with("git:")
+}
+
+/// pi's `getShortPath`: a package file relative to its package.
+fn short_path(source: &SourceInfo, home: Option<&Path>) -> String {
+    let full = source.path.replace('\\', "/");
+    if is_package(source)
+        && let Some(base) = &source.base_dir
+        && let Ok(relative) = Path::new(&full).strip_prefix(base)
+        && !relative.as_os_str().is_empty()
+    {
+        return relative.to_string_lossy().replace('\\', "/");
+    }
+    // pi's patterns: `node_modules/(@?[^/]+(?:/[^/]+)?)/(.*)` and
+    // `git/[^/]+/[^/]+/(.*)`.
+    let rest_after = |marker: &str| full.find(marker).map(|start| &full[start + marker.len()..]);
+    if source.source.starts_with("npm:")
+        && let Some(rest) = rest_after("node_modules/")
+    {
+        let parts: Vec<&str> = rest.split('/').collect();
+        match parts.len() {
+            0 | 1 => {}
+            2 => return parts[1].to_owned(),
+            _ => return parts[2..].join("/"),
+        }
+    }
+    if source.source.starts_with("git:")
+        && let Some(rest) = rest_after("git/")
+    {
+        let parts: Vec<&str> = rest.split('/').collect();
+        if parts.len() > 3 || (parts.len() == 3 && !parts[2].is_empty()) {
+            return parts[2..].join("/");
+        }
+    }
+    display_path(&source.path, home)
+}
+
+/// pi's compact `[Extensions]` labels: the shortest unique path suffix of a
+/// file, without `index.ts`; for packages, the package and the file in it.
+fn extension_labels(extensions: &[SourceInfo], home: Option<&Path>) -> Vec<String> {
+    let segments = |path: &str| -> Vec<String> {
+        display_path(path, home)
+            .replace('\\', "/")
+            .split('/')
+            .filter(|segment| !segment.is_empty() && *segment != "~")
+            .map(str::to_owned)
+            .collect()
+    };
+    let files: Vec<(&str, Vec<String>)> = extensions
+        .iter()
+        .filter(|source| !is_package(source))
+        .map(|source| {
+            let mut parts = segments(&source.path);
+            if parts.len() > 1
+                && matches!(
+                    parts.last().map(String::as_str),
+                    Some("index.ts" | "index.js")
+                )
+            {
+                parts.pop();
+            }
+            (source.path.as_str(), parts)
+        })
+        .collect();
+    extensions
+        .iter()
+        .map(|source| {
+            if is_package(source) {
+                let label = match source.source.strip_prefix("npm:") {
+                    Some(name) if !name.is_empty() => name.to_owned(),
+                    Some(_) => source.source.clone(),
+                    None => match ri_core::packages::source::parse(&source.source) {
+                        ri_core::packages::source::Source::Git { path, .. } if !path.is_empty() => {
+                            path
+                        }
+                        _ => source.source.clone(),
+                    },
+                };
+                let short = short_path(source, home);
+                let inner = short.strip_prefix("extensions/").unwrap_or(&short);
+                let path = Path::new(inner);
+                return if path.file_stem().is_some_and(|stem| stem == "index") {
+                    match path.parent().map(|dir| dir.to_string_lossy().into_owned()) {
+                        Some(dir) if !dir.is_empty() && dir != "." => format!("{label}:{dir}"),
+                        _ => label,
+                    }
+                } else {
+                    format!("{label}:{inner}")
+                };
+            }
+            let Some(index) = files.iter().position(|(path, _)| *path == source.path) else {
+                return source.path.clone();
+            };
+            let parts = &files[index].1;
+            for count in 1..=parts.len() {
+                let candidate = parts[parts.len() - count..].join("/");
+                let unique = files.iter().enumerate().all(|(other, (_, segments))| {
+                    other == index
+                        || segments[segments.len().saturating_sub(count)..].join("/") != candidate
+                });
+                if unique {
+                    return candidate;
+                }
+            }
+            parts.join("/")
+        })
+        .collect()
+}
+
+/// pi's expanded `[Extensions]` body: files and packages by scope.
+fn extension_groups(
+    extensions: &[SourceInfo],
+    home: Option<&Path>,
+    theme: &Theme,
+) -> Vec<StyledLine> {
+    let group_of = |source: &SourceInfo| match (source.source.as_str(), source.scope.as_str()) {
+        ("cli", _) | (_, "temporary") => "path",
+        (_, "user") => "user",
+        (_, "project") => "project",
+        _ => "path",
+    };
+    let display = |source: &SourceInfo| {
+        let path = display_path(&source.path, home);
+        path.strip_suffix("/index.ts")
+            .or_else(|| path.strip_suffix("/index.js"))
+            .unwrap_or(&path)
+            .to_owned()
+    };
+    let compare = |a: &str, b: &str| ri_types::collate::locale_compare(a, b);
+    let mut out = Vec::new();
+    for group in ["project", "user", "path"] {
+        let members: Vec<&SourceInfo> = extensions
+            .iter()
+            .filter(|source| group_of(source) == group)
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        out.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(group, theme.fg("accent")),
+        ]));
+        let mut paths: Vec<&SourceInfo> =
+            members.iter().copied().filter(|s| !is_package(s)).collect();
+        paths.sort_by(|a, b| compare(&a.path, &b.path));
+        for source in paths {
+            out.push(lines::styled(
+                format!("    {}", display(source)),
+                theme.fg("dim"),
+            ));
+        }
+        let mut packages: Vec<&str> = members
+            .iter()
+            .filter(|source| is_package(source))
+            .map(|source| source.source.as_str())
+            .collect();
+        packages.sort_by(|a, b| compare(a, b));
+        packages.dedup();
+        for package in packages {
+            out.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(package.to_owned(), theme.fg("mdLink")),
+            ]));
+            let mut files: Vec<&SourceInfo> = members
+                .iter()
+                .copied()
+                .filter(|source| source.source == package)
+                .collect();
+            files.sort_by(|a, b| compare(&a.path, &b.path));
+            for source in files {
+                let short = short_path(source, home);
+                let short = short
+                    .strip_suffix("/index.ts")
+                    .or_else(|| short.strip_suffix("/index.js"))
+                    .unwrap_or(&short);
+                out.push(lines::styled(format!("      {short}"), theme.fg("dim")));
+            }
+        }
+    }
+    out
+}
+
+/// The `[Context]`, `[Skills]`, `[Prompts]` and `[Extensions]` sections.
 pub fn listing(
     theme: &Theme,
     resources: &Resources,
+    extensions: &[SourceInfo],
     cwd: &Path,
     home: Option<&Path>,
     expanded: bool,
@@ -189,5 +412,17 @@ pub fn listing(
         .collect();
     prompts.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
     section(&mut out, "Prompts", prompts);
+    if !extensions.is_empty() {
+        let mut content = vec![heading("Extensions")];
+        if expanded {
+            content.extend(extension_groups(extensions, home, theme));
+        } else {
+            let mut labels = extension_labels(extensions, home);
+            labels.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
+            content.push(lines::styled(format!("  {}", labels.join(", ")), dim));
+        }
+        out.extend(lines::text(&content, width, 0, 0, None));
+        out.extend(lines::spacer(1));
+    }
     out
 }

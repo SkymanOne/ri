@@ -140,6 +140,7 @@ async fn reports_http_errors_like_the_sdk() {
                     status: 400,
                     headers: Default::default(),
                     chunks: vec![body.into()],
+                    body_base64: None,
                     chunk_delay_ms: 0,
                 },
             }],

@@ -36,7 +36,7 @@ use crate::compaction::{
     calculate_context_tokens, estimate_context_tokens, estimate_projected_context_tokens,
     estimate_tokens, prepare_compaction, should_compact,
 };
-use crate::extensions::{Context, Extension, ExtensionUi, Mode, NoUi, Tools};
+use crate::extensions::{Context, Extension, ExtensionUi, Mode, NoUi, ToolRenderers, Tools};
 use crate::messages::convert_to_llm;
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::{SessionManager, build_projection};
@@ -2240,6 +2240,29 @@ impl AgentSession {
     /// The session's extensions.
     pub fn extensions(&self) -> &[Arc<dyn Extension>] {
         &self.inner.extensions
+    }
+
+    /// The extension that draws tool `name`, and how.
+    pub fn tool_renderer(&self, name: &str) -> Option<(Arc<dyn Extension>, ToolRenderers)> {
+        self.inner.extensions.iter().find_map(|extension| {
+            let renderers = extension.renderers().tools.get(name).copied()?;
+            Some((extension.clone(), renderers))
+        })
+    }
+
+    /// The extension that draws custom messages of type `custom_type`.
+    pub fn message_renderer(&self, custom_type: &str) -> Option<Arc<dyn Extension>> {
+        self.inner
+            .extensions
+            .iter()
+            .find(|extension| {
+                extension
+                    .renderers()
+                    .messages
+                    .iter()
+                    .any(|kind| kind == custom_type)
+            })
+            .cloned()
     }
 
     /// Whether `text` invokes an extension command.

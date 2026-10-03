@@ -1,0 +1,25 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "[Extensions]",
+    "  dialogs.ts",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "",
+    " Your name?",
+    "",
+    "> Ada Lovelace",
+    "",
+    " enter submit  escape/ctrl+c cancel",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

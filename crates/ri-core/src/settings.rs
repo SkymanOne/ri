@@ -188,6 +188,15 @@ impl SettingsManager {
         self.project_trusted
     }
 
+    /// The settings document of `scope` as written; empty for an untrusted
+    /// project.
+    pub fn document(&self, scope: Scope) -> &Map<String, Value> {
+        match scope {
+            Scope::Global => &self.global,
+            Scope::Project => &self.project,
+        }
+    }
+
     /// Sets a top-level key in a scope and writes that file. `None` removes it.
     pub fn set(
         &mut self,

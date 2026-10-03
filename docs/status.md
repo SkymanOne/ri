@@ -149,7 +149,7 @@ Not yet done:
 
 ## M5: extension host, headless
 
-In progress. The runtime, the registration harness and session integration are done.
+Done for the slice below.
 
 - `ri-js`, a WebAssembly component with QuickJS-NG, Node shims (`fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `Intl`), pi's extension API with pi's loading errors and per-extension event semantics, and the vendored `pi-tui` and `typebox`. `cargo xtask js-runtime` builds it; CI checks the committed artifact against its inputs.
 - `ri-ext`: one actor thread per instance, a compiled-component cache, epoch-based compute limits, a memory limit, restart and replay after a trap, and grants for files, processes, network and environment.
@@ -157,21 +157,49 @@ In progress. The runtime, the registration harness and session integration are d
 - Extension discovery from `-e`, a trusted project's `.ri/extensions` and the agent directory's `extensions`, with `package.json` manifests; pi's load errors, hint and exit code; extension flags on the command line, validated as pi does.
 - Sessions: extension tools (with prompt snippets, guidelines, updates and activation rules), commands, and the events `session_start`, `session_shutdown`, `input`, `before_agent_start` (messages and a forced system prompt), `context`, `tool_call` (blocking), `tool_result` (changes), and the agent, turn, message and tool execution events. Actions: `sendMessage` with every delivery mode, `sendUserMessage`, `appendEntry`, session names and labels, the session manager's reads, active tools, thinking level, model selection, models and credentials, `exec`, notifications and the select, confirm and input dialogs. Each new session runs the factories again, as pi does.
 - Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, error lines in the TUI.
+- Packages: `ri install`, `remove` (`uninstall`), `update` and `list` with pi's arguments, messages and settings entries; npm, git and local sources; the user and project scopes; resources from `package.json` manifests (`ri` before `pi`, with globs and exclusions), conventional directories and settings filters; missing packages installed at startup unless offline; top-level `extensions` in settings; pi's extension order. npm packages install through a built-in client: registry resolution with npm's range syntax, integrity checks, hoisted dependencies, pruning on removal, no lifecycle scripts (native addons stay unbuilt and fail only when loaded) and pi's own packages skipped. `cargo xtask vendor-pi` regenerates the vendored bundles reproducibly.
 - Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with an example (`guest/examples/hello`). A `.wasm` file loads wherever a pi extension file does, in its own instance.
 
-Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%. Four scenarios recorded from pi match: an extension tool called by the model with a result handler, a prompt message and a flag (JSON mode); a command that sends a message (RPC mode); load failures; and an unknown flag.
+Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
+
+Of the 50 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top50.json`), 45 install with ri's npm client and register the same as in pi (`cargo xtask package-registrations`, which runs extensions without network, process or environment access). Two that pi itself fails to load under its harness sandbox (pi-lens, @raindrop-ai/pi-agent) are left out, which makes 45 of 48, or 94%. The other three:
+
+- context-mode loads `better-sqlite3`, a native addon, when it starts.
+- gentle-pi uses `createCodemodeExtension`, which needs the codemode tool (M7).
+- pi-fabric patches pi's internal `ExtensionRunner`.
+
+Nine scenarios recorded from pi match: an extension tool called by the model with a result handler, a prompt message and a flag (JSON mode); a command that sends a message (RPC mode); load failures; an unknown flag; a package directory whose manifest names its extension; and the package commands (local install, list, empty list, removing an unknown package). The npm client is tested against a mock registry.
 
 Not yet done:
 
 - `message_end` replacements, `tool_call` handlers that change the call's input, and the `before_provider_request`, `user_bash`, `model_select`, `resources_discover` and `session_before_*` events.
 - Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), `ctx.executeTool`, and completions through pi-ai from extensions.
 - `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
-- Status lines, widgets, custom components and renderers, which are extension UI (M6).
-- Packages: npm, git and local sources, `extensions` in settings; `cargo xtask vendor-pi`.
+- Themes from packages; package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
 - Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
-- The top 50 npm pi packages.
 
-## M6 and M7
+## M6: extension UI
+
+Done for the slice below.
+
+- `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets above and below the editor, a replaced footer and header, the terminal title, the working message, the hidden thinking label, the editor's text, pasting, tool expansion and the theme.
+- Remote components: pi-tui components stay in the extension runtime by handle. The TUI paints the lines of their last render and asks for a new render when they are stale, so a frame never waits for JS. Keys go to the focused component; `tui.requestRender()` marks components stale.
+- `ctx.ui.custom` in the editor's place, component widgets, `setFooter` and `setHeader` factories, tool `renderCall` and `renderResult` (with `lastComponent`, shared state and `renderShell: "self"`) and message renderers. Custom messages with `display: true` show in the transcript.
+- The theme reaches extensions as escape sequences per token, so `theme.fg`, `theme.bg` and the facade's list, editor, settings and markdown themes produce pi's output.
+- The startup listing names loaded extensions as pi does, compactly or by scope.
+- RPC mode sends `extension_ui_request` lines for statuses, widgets (lines only), the title, the editor text and the editor dialog, and passes dialog timeouts.
+
+Exit criterion. 21 TUI scenarios recorded from pi match row for row at 80×24 and 120×40: widgets and footer statuses during a turn, pi's timed confirm and select examples, select, confirm, input and editor dialogs open and answered, a custom component open and answered, custom messages with and without pi's message renderer example, the editor text, and pi's `question.ts` tool driven by the model, with its custom component and its call and result renderers. An RPC scenario matches pi's `extension_ui_request` lines, themed status text included.
+
+Not yet done:
+
+- Overlays (`custom` with `overlay: true`) show in the editor's place.
+- `onTerminalInput`, `setEditorComponent`, `addAutocompleteProvider`, `setWorkingVisible`, `setWorkingIndicator` and `setTheme`; dialog `signal` options.
+- Entry renderers (`registerEntryRenderer`); extension keybindings inside components use pi-tui's defaults, not `keybindings.json`.
+- A theme change reaches extensions when their session next starts.
+- The `/mcp` manager.
+
+## M7
 
 Not started.
 

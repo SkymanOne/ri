@@ -9,6 +9,12 @@
 
 pub mod discovery;
 pub mod tool_search;
+mod ui;
+
+pub use ui::{
+    ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NoUi, NotifyKind, Placement,
+    RemoteComponent, Widget,
+};
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -35,77 +41,6 @@ pub enum Mode {
     Print,
     /// JSON event mode.
     Json,
-}
-
-/// How a notification is shown.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum NotifyKind {
-    /// A status message.
-    #[default]
-    Info,
-    /// A warning.
-    Warning,
-    /// An error.
-    Error,
-}
-
-impl NotifyKind {
-    /// pi's name for the kind.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            NotifyKind::Info => "info",
-            NotifyKind::Warning => "warning",
-            NotifyKind::Error => "error",
-        }
-    }
-}
-
-/// Dialogs and notifications for extensions; pi's `ExtensionUIContext`.
-/// Methods a mode cannot show resolve as cancelled.
-pub trait ExtensionUi: Send + Sync {
-    /// Whether a person can answer dialogs.
-    fn has_ui(&self) -> bool;
-
-    /// Shows a message.
-    fn notify(&self, message: &str, kind: NotifyKind);
-
-    /// Asks to pick one of `options`; `None` when cancelled.
-    fn select(&self, _title: &str, _options: Vec<String>) -> BoxFuture<'static, Option<String>> {
-        Box::pin(async { None })
-    }
-
-    /// Asks for a line of text; `None` when cancelled. `cancel` dismisses it.
-    fn input(
-        &self,
-        _title: &str,
-        _placeholder: Option<&str>,
-        _cancel: Option<CancellationToken>,
-    ) -> BoxFuture<'static, Option<String>> {
-        Box::pin(async { None })
-    }
-
-    /// Asks a yes or no question; `false` when cancelled.
-    fn confirm(&self, _title: &str, _message: &str) -> BoxFuture<'static, bool> {
-        Box::pin(async { false })
-    }
-
-    /// A handler of extension `path` failed on `event`; print mode's report
-    /// by default.
-    fn extension_error(&self, path: &str, _event: &str, error: &str) {
-        use std::io::Write as _;
-        let _ = writeln!(std::io::stderr(), "Extension error ({path}): {error}");
-    }
-}
-
-/// The UI of print and JSON modes: nothing is shown.
-pub struct NoUi;
-
-impl ExtensionUi for NoUi {
-    fn has_ui(&self) -> bool {
-        false
-    }
-
-    fn notify(&self, _message: &str, _kind: NotifyKind) {}
 }
 
 /// A tool as extensions see it; pi's `ToolInfo`.
@@ -219,6 +154,27 @@ pub struct Completion {
     pub description: Option<String>,
 }
 
+/// How an extension draws one of its tools; pi's `renderCall`,
+/// `renderResult` and `renderShell`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ToolRenderers {
+    /// It draws the call.
+    pub call: bool,
+    /// It draws the result.
+    pub result: bool,
+    /// It draws its own frame (`renderShell: "self"`).
+    pub own_shell: bool,
+}
+
+/// What an extension draws in the transcript.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Renderers {
+    /// Its tools, by name.
+    pub tools: std::collections::HashMap<String, ToolRenderers>,
+    /// Custom message types it draws (`registerMessageRenderer`).
+    pub messages: Vec<String>,
+}
+
 /// An extension. Every hook has a no-op default.
 pub trait Extension: Send + Sync {
     /// Where the extension comes from, as `get_commands` reports it.
@@ -277,6 +233,19 @@ pub trait Extension: Send + Sync {
     /// and returns their combined result as pi's runner combines one
     /// extension's handlers. The session combines results across extensions.
     fn handle<'a>(&'a self, _ctx: &'a Context, _event: &'a Value) -> BoxFuture<'a, Option<Value>> {
+        Box::pin(async { None })
+    }
+
+    /// What it draws in the transcript.
+    fn renderers(&self) -> Renderers {
+        Renderers::default()
+    }
+
+    /// Builds the component for a transcript item it draws. `request` is
+    /// `{"kind": "toolCall" | "toolResult", "name", "toolCallId", "args",
+    /// "result", "options", "context"}` or `{"kind": "message", "key",
+    /// "message", "options"}`. `None` keeps the built-in rendering.
+    fn component<'a>(&'a self, _request: &'a Value) -> BoxFuture<'a, Option<RemoteComponent>> {
         Box::pin(async { None })
     }
 

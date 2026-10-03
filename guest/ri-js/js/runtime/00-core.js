@@ -1010,6 +1010,481 @@
 	};
 	globalThis.global = globalThis;
 
+	// ----- web streams ------------------------------------------------------------------------
+	// Enough of the WHATWG streams for extensions and their libraries: sources,
+	// sinks and transformers run in order; queues are unbounded.
+	class ReadableStream {
+		#source;
+		#controller;
+		#queue = [];
+		#waiters = [];
+		#started = false;
+		#pulling = false;
+		#closed = false;
+		#failure;
+		#failed = false;
+		#locked = false;
+		#highWaterMark;
+		#ended;
+		#end;
+		constructor(source = {}, strategy = {}) {
+			this.#ended = new Promise((resolve, reject) => (this.#end = { resolve, reject }));
+			this.#ended.catch(() => {});
+			this.#source = source ?? {};
+			this.#highWaterMark = strategy?.highWaterMark ?? 1;
+			const stream = this;
+			this.#controller = {
+				enqueue: (chunk) => stream.#enqueue(chunk),
+				close: () => stream.#close(),
+				error: (error) => stream.#fail(error),
+				get desiredSize() {
+					return stream.#highWaterMark - stream.#queue.length;
+				},
+			};
+			let started;
+			try {
+				started = this.#source.start?.(this.#controller);
+			} catch (error) {
+				this.#fail(error);
+			}
+			Promise.resolve(started).then(
+				() => {
+					this.#started = true;
+					this.#pull();
+				},
+				(error) => this.#fail(error),
+			);
+		}
+		static from(iterable) {
+			const iterator = iterable[Symbol.asyncIterator] ? iterable[Symbol.asyncIterator]() : iterable[Symbol.iterator]();
+			return new ReadableStream({
+				async pull(controller) {
+					const { value, done } = await iterator.next();
+					if (done) controller.close();
+					else controller.enqueue(value);
+				},
+				cancel: (reason) => iterator.return?.(reason),
+			});
+		}
+		get locked() {
+			return this.#locked;
+		}
+		#enqueue(chunk) {
+			if (this.#closed || this.#failed) throw new TypeError("Cannot enqueue to a closed stream");
+			const waiter = this.#waiters.shift();
+			if (waiter) waiter.resolve({ value: chunk, done: false });
+			else this.#queue.push(chunk);
+		}
+		#close() {
+			this.#closed = true;
+			this.#end.resolve();
+			if (this.#queue.length === 0) for (const waiter of this.#waiters.splice(0)) waiter.resolve({ value: undefined, done: true });
+		}
+		#fail(error) {
+			if (this.#failed) return;
+			this.#failed = true;
+			this.#failure = error;
+			this.#end.reject(error);
+			this.#queue = [];
+			for (const waiter of this.#waiters.splice(0)) waiter.reject(error);
+		}
+		#pull() {
+			if (!this.#started || this.#pulling || this.#closed || this.#failed || typeof this.#source.pull !== "function") return;
+			if (this.#waiters.length === 0 && this.#queue.length >= this.#highWaterMark) return;
+			this.#pulling = true;
+			Promise.resolve()
+				.then(() => this.#source.pull(this.#controller))
+				.then(
+					() => {
+						this.#pulling = false;
+						if (this.#waiters.length > 0) this.#pull();
+					},
+					(error) => this.#fail(error),
+				);
+		}
+		#read() {
+			if (this.#queue.length > 0) {
+				const value = this.#queue.shift();
+				if (this.#closed && this.#queue.length === 0) for (const waiter of this.#waiters.splice(0)) waiter.resolve({ value: undefined, done: true });
+				this.#pull();
+				return Promise.resolve({ value, done: false });
+			}
+			if (this.#failed) return Promise.reject(this.#failure);
+			if (this.#closed) return Promise.resolve({ value: undefined, done: true });
+			return new Promise((resolve, reject) => {
+				this.#waiters.push({ resolve, reject });
+				this.#pull();
+			});
+		}
+		cancel(reason) {
+			this.#closed = true;
+			this.#end.resolve();
+			this.#queue = [];
+			for (const waiter of this.#waiters.splice(0)) waiter.resolve({ value: undefined, done: true });
+			return Promise.resolve(this.#source.cancel?.(reason));
+		}
+		getReader() {
+			if (this.#locked) throw new TypeError("ReadableStream is locked");
+			this.#locked = true;
+			const stream = this;
+			let released = false;
+			const closed = stream.#ended;
+			return {
+				read: () => (released ? Promise.reject(new TypeError("Reader released")) : stream.#read()),
+				cancel: (reason) => stream.cancel(reason),
+				releaseLock() {
+					released = true;
+					stream.#locked = false;
+				},
+				closed,
+			};
+		}
+		async *values({ preventCancel = false } = {}) {
+			const reader = this.getReader();
+			try {
+				while (true) {
+					const { value, done } = await reader.read();
+					if (done) return;
+					yield value;
+				}
+			} finally {
+				if (!preventCancel) await this.cancel();
+				reader.releaseLock();
+			}
+		}
+		[Symbol.asyncIterator](options) {
+			return this.values(options);
+		}
+		pipeThrough(transform, options) {
+			this.pipeTo(transform.writable, options).catch(() => {});
+			return transform.readable;
+		}
+		async pipeTo(destination, { preventClose = false, preventAbort = false, signal } = {}) {
+			const reader = this.getReader();
+			const writer = destination.getWriter();
+			try {
+				while (true) {
+					if (signal?.aborted) throw signal.reason;
+					const { value, done } = await reader.read();
+					if (done) break;
+					await writer.write(value);
+				}
+				if (!preventClose) await writer.close();
+			} catch (error) {
+				if (!preventAbort) await writer.abort(error);
+				throw error;
+			} finally {
+				reader.releaseLock();
+				writer.releaseLock();
+			}
+		}
+		tee() {
+			const reader = this.getReader();
+			const controllers = [];
+			const branch = () =>
+				new ReadableStream({
+					start(controller) {
+						controllers.push(controller);
+					},
+				});
+			const branches = [branch(), branch()];
+			(async () => {
+				try {
+					while (true) {
+						const { value, done } = await reader.read();
+						if (done) break;
+						for (const controller of controllers) controller.enqueue(value);
+					}
+					for (const controller of controllers) controller.close();
+				} catch (error) {
+					for (const controller of controllers) controller.error(error);
+				}
+			})();
+			return branches;
+		}
+	}
+
+	class WritableStream {
+		#sink;
+		#controller;
+		#chain;
+		#locked = false;
+		constructor(sink = {}) {
+			this.#sink = sink ?? {};
+			const abort = new AbortController();
+			this.#controller = { error: (error) => abort.abort(error), signal: abort.signal };
+			this.#chain = Promise.resolve().then(() => this.#sink.start?.(this.#controller));
+		}
+		get locked() {
+			return this.#locked;
+		}
+		#then(step) {
+			const next = this.#chain.then(step);
+			this.#chain = next.catch(() => {});
+			return next;
+		}
+		abort(reason) {
+			return Promise.resolve(this.#sink.abort?.(reason));
+		}
+		close() {
+			return this.#then(() => this.#sink.close?.());
+		}
+		getWriter() {
+			if (this.#locked) throw new TypeError("WritableStream is locked");
+			this.#locked = true;
+			const stream = this;
+			return {
+				write: (chunk) => stream.#then(() => stream.#sink.write?.(chunk, stream.#controller)),
+				close: () => stream.close(),
+				abort: (reason) => stream.abort(reason),
+				releaseLock() {
+					stream.#locked = false;
+				},
+				get ready() {
+					return Promise.resolve();
+				},
+				get closed() {
+					return stream.#chain;
+				},
+				desiredSize: 1,
+			};
+		}
+	}
+
+	class TransformStream {
+		constructor(transformer = {}, writableStrategy, readableStrategy) {
+			transformer ??= {};
+			let output;
+			this.readable = new ReadableStream({ start: (controller) => void (output = controller) }, readableStrategy);
+			const controller = {
+				enqueue: (chunk) => output.enqueue(chunk),
+				error: (error) => output.error(error),
+				terminate: () => output.close(),
+				get desiredSize() {
+					return output.desiredSize;
+				},
+			};
+			const started = Promise.resolve().then(() => transformer.start?.(controller));
+			this.writable = new WritableStream(
+				{
+					write: async (chunk) => {
+						await started;
+						if (typeof transformer.transform === "function") await transformer.transform(chunk, controller);
+						else controller.enqueue(chunk);
+					},
+					close: async () => {
+						await started;
+						await transformer.flush?.(controller);
+						output.close();
+					},
+					abort: (reason) => output.error(reason),
+				},
+				writableStrategy,
+			);
+		}
+	}
+
+	class TextEncoderStream extends TransformStream {
+		constructor() {
+			const encoder = new TextEncoder();
+			super({ transform: (chunk, controller) => controller.enqueue(encoder.encode(String(chunk))) });
+			this.encoding = "utf-8";
+		}
+	}
+	class TextDecoderStream extends TransformStream {
+		constructor(label = "utf-8", options = {}) {
+			const decoder = new TextDecoder(label, options);
+			super({
+				transform: (chunk, controller) => {
+					const text = decoder.decode(chunk, { stream: true });
+					if (text) controller.enqueue(text);
+				},
+				flush: (controller) => {
+					const text = decoder.decode();
+					if (text) controller.enqueue(text);
+				},
+			});
+			this.encoding = decoder.encoding ?? label;
+		}
+	}
+	class CountQueuingStrategy {
+		constructor({ highWaterMark }) {
+			this.highWaterMark = highWaterMark;
+		}
+		size() {
+			return 1;
+		}
+	}
+	class ByteLengthQueuingStrategy {
+		constructor({ highWaterMark }) {
+			this.highWaterMark = highWaterMark;
+		}
+		size(chunk) {
+			return chunk.byteLength;
+		}
+	}
+	const webStreams = { ReadableStream, WritableStream, TransformStream, TextEncoderStream, TextDecoderStream, CountQueuingStrategy, ByteLengthQueuingStrategy };
+	Object.assign(globalThis, webStreams);
+	ri.webStreams = webStreams;
+
+	// ----- MessageChannel: ports within the instance ----------------------------------------------
+	class MessageEvent extends Event {
+		constructor(type, init = {}) {
+			super(type, init);
+			this.data = init.data;
+		}
+	}
+	class MessagePort extends EventTarget {
+		constructor() {
+			super();
+			this.onmessage = null;
+			this._other = null;
+			this._closed = false;
+		}
+		postMessage(data) {
+			const other = this._other;
+			if (!other || this._closed) return;
+			const copy = structuredClone(data);
+			queueMicrotask(() => {
+				if (other._closed) return;
+				const event = new MessageEvent("message", { data: copy });
+				other.onmessage?.(event);
+				other.dispatchEvent(event);
+			});
+		}
+		start() {}
+		close() {
+			this._closed = true;
+		}
+		ref() {
+			return this;
+		}
+		unref() {
+			return this;
+		}
+	}
+	class MessageChannel {
+		constructor() {
+			this.port1 = new MessagePort();
+			this.port2 = new MessagePort();
+			this.port1._other = this.port2;
+			this.port2._other = this.port1;
+		}
+	}
+	class BroadcastChannel extends EventTarget {
+		constructor(name) {
+			super();
+			this.name = String(name);
+			this.onmessage = null;
+		}
+		postMessage() {}
+		close() {}
+		ref() {
+			return this;
+		}
+		unref() {
+			return this;
+		}
+	}
+	Object.assign(globalThis, { MessageEvent, MessagePort, MessageChannel, BroadcastChannel });
+
+	// ----- Blob, File and FormData --------------------------------------------------------------
+	const blobBytes = (part) => {
+		if (part instanceof Blob) return part._bytes;
+		if (part instanceof Uint8Array) return part;
+		if (part instanceof ArrayBuffer) return new Uint8Array(part);
+		if (ArrayBuffer.isView(part)) return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
+		return utf8Encode(String(part));
+	};
+	class Blob {
+		constructor(parts = [], options = {}) {
+			const chunks = [...parts].map(blobBytes);
+			const bytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+			let offset = 0;
+			for (const chunk of chunks) {
+				bytes.set(chunk, offset);
+				offset += chunk.length;
+			}
+			this._bytes = bytes;
+			this.type = String(options?.type ?? "").toLowerCase();
+		}
+		get size() {
+			return this._bytes.length;
+		}
+		async text() {
+			return utf8Decode(this._bytes);
+		}
+		async arrayBuffer() {
+			return this._bytes.slice().buffer;
+		}
+		async bytes() {
+			return this._bytes.slice();
+		}
+		slice(start = 0, end = this._bytes.length, type = "") {
+			return new Blob([this._bytes.slice(start, end)], { type });
+		}
+		stream() {
+			const bytes = this._bytes;
+			return new ReadableStream({
+				start(controller) {
+					if (bytes.length > 0) controller.enqueue(bytes.slice());
+					controller.close();
+				},
+			});
+		}
+		get [Symbol.toStringTag]() {
+			return "Blob";
+		}
+	}
+	class File extends Blob {
+		constructor(parts, name, options = {}) {
+			super(parts, options);
+			this.name = String(name);
+			this.lastModified = options?.lastModified ?? Date.now();
+		}
+		get [Symbol.toStringTag]() {
+			return "File";
+		}
+	}
+	class FormData {
+		#entries = [];
+		append(name, value, filename) {
+			this.#entries.push([String(name), value instanceof Blob && filename !== undefined ? new File([value], filename) : value]);
+		}
+		set(name, value, filename) {
+			this.delete(name);
+			this.append(name, value, filename);
+		}
+		get(name) {
+			return this.#entries.find(([key]) => key === name)?.[1] ?? null;
+		}
+		getAll(name) {
+			return this.#entries.filter(([key]) => key === name).map(([, value]) => value);
+		}
+		has(name) {
+			return this.#entries.some(([key]) => key === name);
+		}
+		delete(name) {
+			this.#entries = this.#entries.filter(([key]) => key !== name);
+		}
+		*entries() {
+			yield* this.#entries;
+		}
+		*keys() {
+			for (const [key] of this.#entries) yield key;
+		}
+		*values() {
+			for (const [, value] of this.#entries) yield value;
+		}
+		forEach(callback, thisArg) {
+			for (const [key, value] of this.#entries) callback.call(thisArg, value, key, this);
+		}
+		[Symbol.iterator]() {
+			return this.entries();
+		}
+	}
+	Object.assign(globalThis, { Blob, File, FormData });
+
 	// ----- fetch ------------------------------------------------------------------------------
 	class Headers {
 		#map = new Map();
@@ -1080,21 +1555,12 @@
 		}
 		get body() {
 			const bytes = this._bytes;
-			let done = false;
-			return {
-				getReader: () => ({
-					read: async () => {
-						if (done) return { done: true, value: undefined };
-						done = true;
-						return { done: false, value: bytes };
-					},
-					cancel: async () => {},
-					releaseLock() {},
-				}),
-				async *[Symbol.asyncIterator]() {
-					yield bytes;
+			return new ReadableStream({
+				start(controller) {
+					if (bytes.length > 0) controller.enqueue(bytes);
+					controller.close();
 				},
-			};
+			});
 		}
 		clone() {
 			return new Response(this._bytes.slice(), { status: this.status, statusText: this.statusText, headers: this.headers, url: this.url });

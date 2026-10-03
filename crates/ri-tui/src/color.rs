@@ -28,6 +28,16 @@ pub enum ColorMode {
     Ansi256,
 }
 
+impl ColorMode {
+    /// pi's name for the mode.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ColorMode::TrueColor => "truecolor",
+            ColorMode::Ansi256 => "256color",
+        }
+    }
+}
+
 /// sRGB channels, 0 to 255.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb {

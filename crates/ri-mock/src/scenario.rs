@@ -737,12 +737,44 @@ fn is_uuid(text: &str) -> bool {
 /// docs tip, ri's wordmark), with paths and session ids masked, trailing space
 /// trimmed and blank runs collapsed, so the rest compares across programs.
 fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<String> {
+    // The compact header ends with the "Press ... to show full startup help"
+    // row; pi follows it with a docs tip that ri lacks. Rows up to the tip's
+    // end, or the part of the tip at the top of the screen, are dropped.
+    const TIP: &str =
+        "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.";
+    let start = match rows
+        .iter()
+        .position(|row| row.contains("to show full startup help"))
+    {
+        Some(press) => {
+            let mut next = press + 1;
+            while next < rows.len() && rows[next].trim().is_empty() {
+                next += 1;
+            }
+            if rows
+                .get(next)
+                .is_some_and(|row| row.contains("Pi can explain"))
+            {
+                while next < rows.len() && !rows[next].trim().is_empty() {
+                    next += 1;
+                }
+            }
+            next
+        }
+        None => rows
+            .iter()
+            .take_while(|row| !row.trim().is_empty() && TIP.contains(row.trim()))
+            .count(),
+    };
     let mut out: Vec<String> = Vec::new();
-    for row in rows {
-        if row.contains("▀▀█") || row.starts_with(" ri v") || row.contains("Pi can explain") {
+    for row in &rows[start..] {
+        if row.contains("▀▀█") || row.contains("█▀ ▀ v") || row.starts_with(" ri v") {
             continue;
         }
-        let mut row = normalizer.text(row.trim_end()).replacen("█▀ █ ", "", 1);
+        let mut row = normalizer
+            .text(row.trim_end())
+            .replacen("█▀ █ ", "", 1)
+            .replacen("█  █ ", "", 1);
         // ri has no cache warming (docs/compat.md), so its status differs.
         if row.starts_with(" Status: Inactive (") {
             row = " Status: Inactive (<reason>)".to_owned();

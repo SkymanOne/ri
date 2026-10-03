@@ -337,17 +337,168 @@
 		return describe(extension);
 	}
 
+	// ----- theme ------------------------------------------------------------------------------------------
+	const THINKING_TOKENS = { minimal: "thinkingMinimal", low: "thinkingLow", medium: "thinkingMedium", high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax" };
+	/**
+	 * pi's `Theme` over the escape sequences the host reports for each token
+	 * (ri: `load`). Without them text stays plain.
+	 */
+	class Theme {
+		#fg = {};
+		#bg = {};
+		#dim = new Set();
+		#styled = false;
+		#mode = "truecolor";
+		constructor(spec) {
+			this.load(spec);
+		}
+		/** Takes the host's `{ name, mode, fg, bg, dim }`, or `null` for plain text. */
+		load(spec) {
+			this.#styled = !!spec;
+			this.#fg = spec?.fg ?? {};
+			this.#bg = spec?.bg ?? {};
+			this.#dim = new Set(spec?.dim ?? []);
+			this.#mode = spec?.mode ?? "truecolor";
+			this.name = spec?.name;
+		}
+		#sequence(map, token) {
+			const sequence = map[token];
+			if (sequence === undefined) throw new Error(`Unknown theme color: ${token}`);
+			return sequence;
+		}
+		fg(token, text) {
+			if (!this.#styled) return text;
+			const sequence = this.#sequence(this.#fg, token);
+			return this.#dim.has(token) ? `${sequence}\x1b[2m${text}\x1b[22;39m` : `${sequence}${text}\x1b[39m`;
+		}
+		bg(token, text) {
+			return this.#styled ? `${this.#sequence(this.#bg, token)}${text}\x1b[49m` : text;
+		}
+		#wrap(open, close, text) {
+			return this.#styled ? `\x1b[${open}m${text}\x1b[${close}m` : text;
+		}
+		bold(text) {
+			return this.#wrap(1, 22, text);
+		}
+		italic(text) {
+			return this.#wrap(3, 23, text);
+		}
+		underline(text) {
+			return this.#wrap(4, 24, text);
+		}
+		strikethrough(text) {
+			return this.#wrap(9, 29, text);
+		}
+		inverse(text) {
+			return this.#wrap(7, 27, text);
+		}
+		getFgAnsi(token) {
+			if (!this.#styled) return "";
+			const sequence = this.#sequence(this.#fg, token);
+			return this.#dim.has(token) ? `${sequence}\x1b[2m` : sequence;
+		}
+		getBgAnsi(token) {
+			return this.#styled ? this.#sequence(this.#bg, token) : "";
+		}
+		getColorMode() {
+			return this.#mode;
+		}
+		getThinkingBorderColor(level) {
+			const token = THINKING_TOKENS[level] ?? "thinkingOff";
+			return (text) => this.fg(token, text);
+		}
+		getBashModeBorderColor() {
+			return (text) => this.fg("bashMode", text);
+		}
+	}
+	ri.Theme = Theme;
+	const theme = new Theme(null);
+	globalThis.__ri_theme = theme;
+
 	// ----- contexts --------------------------------------------------------------------------------------
+	// ----- components ---------------------------------------------------------------------------------------
+	// Components live here, by handle; the host renders them through
+	// `ri.render` and delivers keys through `ri.input`.
+	const components = new Map();
+	let nextHandle = 1;
+	const widgetHandles = new Map();
+	const slots = { footer: undefined, header: undefined };
+	// Components of transcript items, by tool call or message.
+	const transcriptViews = new Map();
+	function mount(component) {
+		const handle = nextHandle++;
+		components.set(handle, component);
+		return handle;
+	}
+	function unmount(handle) {
+		const component = components.get(handle);
+		components.delete(handle);
+		try {
+			component?.dispose?.();
+		} catch (error) {
+			console.error("Component dispose error:", error);
+		}
+	}
+	const tui = {
+		requestRender: () => {
+			if (bound) ri.request("ui.requestRender", {});
+		},
+		terminal: { columns: 80, rows: 24, write() {}, setTitle: (title) => bound && ri.request("ui.setTitle", { title }) },
+		setFocus() {},
+		showOverlay() {
+			return overlayHandle(undefined);
+		},
+		hideOverlay() {},
+		start() {},
+		stop() {},
+	};
+	function overlayHandle(handle) {
+		let hidden = false;
+		return {
+			hide: () => handle !== undefined && ri.request("ui.close", { handle }),
+			setHidden: (value) => void (hidden = value),
+			isHidden: () => hidden,
+			focus() {},
+			unfocus() {},
+			isFocused: () => !hidden,
+		};
+	}
+	let tuiModule;
+	const keybindings = async () => {
+		tuiModule ??= await import("@earendil-works/pi-tui");
+		return tuiModule.getKeybindings();
+	};
+	ri.render = (handle, width) => {
+		const component = components.get(handle);
+		if (!component) return [];
+		try {
+			return component.render(width).map(String);
+		} catch (error) {
+			return [`Render error: ${errorMessage(error)}`];
+		}
+	};
+	ri.input = (handle, data) => {
+		try {
+			components.get(handle)?.handleInput?.(data);
+		} catch (error) {
+			console.error("Component input error:", error);
+		}
+	};
+
 	function createUi(data) {
 		const request = (kind, payload) => ri.request(`ui.${kind}`, payload);
-		const theme = globalThis.__ri_theme ?? {
-			fg: (_token, text) => text,
-			bg: (_token, text) => text,
-			bold: (text) => text,
-			italic: (text) => text,
-			underline: (text) => text,
-			strikethrough: (text) => text,
-			inverse: (text) => text,
+		const shown = !!(data.hasUI && data.components);
+		const replaceSlot = (slot, factory, ...args) => {
+			if (slots[slot] !== undefined) unmount(slots[slot]);
+			slots[slot] = undefined;
+			if (typeof factory === "function" && shown) slots[slot] = mount(factory(tui, theme, ...args));
+			if (shown) request(slot === "footer" ? "setFooter" : "setHeader", { handle: slots[slot] });
+		};
+		const footerData = {
+			getGitBranch: () => request("footerData", {})?.gitBranch ?? null,
+			getExtensionStatuses: () => new Map(request("footerData", {})?.statuses ?? []),
+			getAvailableProviderCount: () => request("footerData", {})?.providers ?? 0,
+			onBranchChange: () => () => {},
 		};
 		return {
 			select: (title, options, opts) => (data.hasUI ? ri.op("ui.select", { title, options, timeout: opts?.timeout }) : Promise.resolve(undefined)),
@@ -361,11 +512,52 @@
 			setWorkingVisible: (visible) => request("setWorkingVisible", { visible }),
 			setWorkingIndicator: (options) => request("setWorkingIndicator", { options: plain(options) }),
 			setHiddenThinkingLabel: (label) => request("setHiddenThinkingLabel", { label }),
-			setWidget: (key, content, options) => request("setWidget", { key, lines: Array.isArray(content) ? content : undefined, options: plain(options) }),
-			setFooter() {},
-			setHeader() {},
+			setWidget(key, content, options) {
+				const previous = widgetHandles.get(key);
+				widgetHandles.delete(key);
+				if (typeof content === "function") {
+					// Modes without components show no component widgets.
+					if (!shown) return;
+					const handle = mount(content(tui, theme));
+					widgetHandles.set(key, handle);
+					request("setWidget", { key, handle, options: plain(options) });
+				} else {
+					request("setWidget", { key, lines: Array.isArray(content) ? content.map(String) : undefined, options: plain(options) });
+				}
+				if (previous !== undefined) unmount(previous);
+			},
+			setFooter: (factory) => replaceSlot("footer", factory, footerData),
+			setHeader: (factory) => replaceSlot("header", factory),
 			setTitle: (title) => request("setTitle", { title }),
-			custom: () => Promise.resolve(undefined),
+			custom(factory, options) {
+				if (!shown) return Promise.resolve(undefined);
+				return new Promise((resolve, reject) => {
+					let handle;
+					let finished = false;
+					const done = (result) => {
+						if (finished) return;
+						finished = true;
+						if (handle !== undefined) {
+							request("close", { handle });
+							unmount(handle);
+						}
+						resolve(result);
+					};
+					keybindings()
+						.then((manager) => factory(tui, theme, manager, done))
+						.then((component) => {
+							if (finished) {
+								component?.dispose?.();
+								return;
+							}
+							handle = mount(component);
+							const overlayOptions = typeof options?.overlayOptions === "function" ? options.overlayOptions() : options?.overlayOptions;
+							request("custom", { handle, overlay: !!options?.overlay, overlayOptions: plain(overlayOptions) });
+							options?.onHandle?.(overlayHandle(handle));
+						})
+						.catch(reject);
+				});
+			},
 			pasteToEditor: (text) => request("pasteToEditor", { text }),
 			setEditorText: (text) => request("setEditorText", { text }),
 			getEditorText: () => request("getEditorText", {}) ?? "",
@@ -624,10 +816,21 @@
 		},
 		bind() {
 			bound = true;
+			let spec = null;
+			try {
+				spec = ri.request("ui.theme", {}) ?? null;
+			} catch {
+				// Hosts without a UI leave text plain.
+			}
+			theme.load(spec);
 			return null;
 		},
 		async reload() {
 			bound = false;
+			for (const handle of [...components.keys()]) unmount(handle);
+			widgetHandles.clear();
+			transcriptViews.clear();
+			slots.footer = slots.header = undefined;
 			const results = [];
 			for (const [id, extension] of [...extensions]) {
 				extensions.delete(id);
@@ -673,6 +876,54 @@
 			await shortcut.handler(createContext(payload.ctx));
 			return null;
 		},
+		/**
+		 * Builds the component a tool's `renderCall`/`renderResult` or a
+		 * message renderer returns; `{ handle }`, or `null` for the built-in
+		 * rendering. A renderer that returns its last component keeps its
+		 * handle.
+		 */
+		component(payload) {
+			const extension = extensionOf(payload.extension);
+			const key = payload.kind === "message" ? `message:${payload.key}` : `tool:${payload.toolCallId}`;
+			const views = transcriptViews.get(key) ?? { state: {}, call: undefined, result: undefined, message: undefined };
+			transcriptViews.set(key, views);
+			const slot = payload.kind === "toolCall" ? "call" : payload.kind === "toolResult" ? "result" : "message";
+			const previous = views[slot];
+			let component;
+			try {
+				if (slot === "message") {
+					const renderer = extension.messageRenderers.get(payload.message?.customType);
+					component = renderer?.(payload.message, plain(payload.options ?? {}), theme);
+				} else {
+					const tool = extension.tools.get(payload.name);
+					const context = {
+						...(payload.context ?? {}),
+						args: payload.args,
+						toolCallId: payload.toolCallId,
+						invalidate: () => tui.requestRender(),
+						lastComponent: previous?.component,
+						state: views.state,
+					};
+					component =
+						slot === "call"
+							? tool?.renderCall?.(payload.args, theme, context)
+							: tool?.renderResult?.(payload.result, plain(payload.options ?? {}), theme, context);
+				}
+			} catch (error) {
+				console.error("Renderer error:", error);
+				component = undefined;
+			}
+			if (!component) {
+				if (previous) unmount(previous.handle);
+				views[slot] = undefined;
+				return null;
+			}
+			if (previous?.component === component) return { handle: previous.handle };
+			if (previous) unmount(previous.handle);
+			const handle = mount(component);
+			views[slot] = { handle, component };
+			return { handle };
+		},
 		async eval(payload) {
 			return plain(await (0, eval)(payload.source));
 		},
@@ -690,7 +941,5 @@
 				(error) => native.fail(id, errorMessage(error)),
 			);
 	};
-	ri.render = () => [];
-	ri.input = () => {};
 	ri.extensions = extensions;
 })();

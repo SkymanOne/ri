@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
+ri-core.workspace = true
+ri-ext.workspace = true
 ri-mock.workspace = true
 ri-types.workspace = true
 serde.workspace = true
