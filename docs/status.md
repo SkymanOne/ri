@@ -213,13 +213,15 @@ Budgets, from `cargo xtask bench --pi` on this machine (release build, 100×40 t
 
 | Metric | Budget | ri | pi |
 |---|---|---|---|
-| `--version` | < 5 ms | 2.0 ms | 268 ms |
-| Print mode, start to first request byte | < 25 ms | 14.5 ms | 372 ms |
-| Interactive first paint | < 40 ms | 9.7 ms | 372 ms |
-| Keystroke to paint, p99 | < 16 ms | 2.4 ms | 8.3 ms |
-| Idle memory, no extensions | < 30 MB | 15.8 MiB | 107 MiB |
-| Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 112 MiB |
-| Stripped release binary | < 35 MB | 33.2 MB | |
+| `--version` | < 5 ms | 2.0 ms | 246 ms |
+| Print mode, start to first request byte | < 25 ms | 13.1 ms | 336 ms |
+| Interactive first paint | < 40 ms | 10.0 ms | 330 ms |
+| Keystroke to paint, p99 | < 16 ms | 1.9 ms | 6.1 ms |
+| Idle memory, no extensions | < 30 MB | 15.5 MiB | 106 MiB |
+| Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 110 MiB |
+| Stripped release binary | < 35 MB | 33.6 MB | |
+
+The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
 Exit criterion. Scripts cannot reach files, processes, the network, the environment, modules or host natives: the sandbox tests check every global a script sees against pi's list and that imports fail (`crates/ri-ext/tests/codemode.rs`, which also covers output, errors, the store, limits and discovery). Three scenarios recorded from pi match: a script with sequential nested calls and the store (JSON mode, with requests and the session file), a script error, and the interactive rendering.
 
@@ -229,6 +231,22 @@ Not yet done:
 - The `models` global (classifiers and image generation) and grammar-constrained sampling of scripts on the Responses wire APIs.
 - The warning pi prints when a package's `codemode` replaces the built-in.
 - The budgets measured on macOS.
+
+## Final end-to-end pass
+
+Run on Linux x86_64 after M7, on the release candidate at the head of this branch.
+
+| Check | Command | Result |
+|---|---|---|
+| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | All 122 scenarios match: 52 TUI (PTY, 80×24 to 120×40), 41 JSON mode, 17 CLI and print mode, 11 RPC, and pi's `RpcClient` example driving ri. They cover every wire API, sessions, compaction, the TUI, MCP, packages, extensions with their UI, and codemode. |
+| Workspace tests | `cargo test --workspace` | 240 tests pass, including the scenario suite against the recorded goldens. |
+| pi's example extensions | `crates/ri-ext/tests/examples.rs` | 79 of 79 register as in pi. |
+| Top 50 npm pi packages | `cargo xtask package-registrations` | 46 of 48 comparable packages register as in pi (96%); see M5. |
+| Codemode sandbox | `crates/ri-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
+| Budgets | `cargo xtask bench --pi` | All met; see M7. |
+| Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
+
+Deferred work is listed under each milestone; intentional differences are in [compat.md](compat.md).
 
 ## Pending live checks
 
