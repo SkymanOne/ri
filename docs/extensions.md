@@ -14,13 +14,15 @@ ri runs extensions written for `@earendil-works/pi-coding-agent` 1.0, including 
 | Test | Result |
 |---|---|
 | pi's example extensions | 79 of 79 register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi fails |
-| The 50 most-downloaded pi packages on npm | 46 of 48 comparable packages install with ri's npm client and register as in pi (96%) |
+| The 500 most-downloaded pi packages on npm | 443 of 475 comparable packages install with ri's npm client and register the same tools, commands, flags, shortcuts and event handlers as in pi (93%) |
 | Extension UI | Dialogs, widgets, footers, overlays, custom components and tool renderers match pi's screens row for row at 80×24 and 120×40 |
 
-pi itself fails to load two of the 50 packages under the test harness, which leaves 48 to compare. The two that differ in ri:
+The packages are the 500 with the `pi-package` keyword that npm reports the most monthly downloads for. Each one installs and loads in a sandbox of its own, in pi and in ri. pi itself fails to install or load 25 of them there, which leaves 475 to compare. Of the 32 that differ in ri:
 
-- `context-mode` loads `better-sqlite3`, a native Node addon, when it starts.
-- `pi-fabric` patches pi's internal `ExtensionRunner`.
+- 12 need native addons or WebAssembly, which ri's runtime cannot load. pi fails on 8 of them in the sandbox too.
+- 7 use parts of pi beyond the extension API, such as its `SettingsManager`, `ModelRuntime` or internal `ExtensionRunner`.
+- 2 load in ri where pi fails, and 3 fail in both with different errors.
+- 7 register something differently, and 1 depends on an npm alias that ri's npm client does not install yet.
 
 The checks live in `crates/ri-ext/tests/examples.rs` and `cargo xtask package-registrations`.
 

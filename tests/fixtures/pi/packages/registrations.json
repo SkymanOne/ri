@@ -89476,8 +89476,40 @@
 	},
 	"pi-ansicat": {
 		"version": "0.3.7",
-		"entries": [],
-		"extensions": [],
+		"entries": [
+			"<agent>/npm/node_modules/pi-ansicat/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "ansicat",
+						"description": "Clipboard ANSI preview: /ansicat [<image-path> | cols=<n> | maxLines=<n>]"
+					}
+				],
+				"flags": [],
+				"shortcuts": [
+					{
+						"shortcut": "ctrl+v",
+						"description": "Attach clipboard image with ANSI preview"
+					},
+					{
+						"shortcut": "alt+v",
+						"description": "Attach clipboard image with ANSI preview"
+					},
+					{
+						"shortcut": "ctrl+alt+v",
+						"description": "Attach clipboard image with ANSI preview"
+					}
+				],
+				"events": [
+					"input",
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
 		"errors": []
 	},
 	"@juicesharp/rpiv-voice": {
