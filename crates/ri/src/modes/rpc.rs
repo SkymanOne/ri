@@ -17,12 +17,12 @@ use ri_core::extensions::{DialogOptions, ExtensionUi, Mode, NotifyKind, Placemen
 use ri_core::time::uuid_v4;
 use tokio::sync::oneshot;
 
-use ri_core::agent_session::AgentSession;
+use ri_core::agent_session::{AgentSession, InputSource};
 use ri_core::session::SessionManager;
 use ri_types::message::Message;
 use ri_types::rpc::{
     self, CommandSource, ContextUsage, ExtensionUiResponse, ForkMessage, RpcCommand, SessionState,
-    SessionStats, SlashCommand, TokenTotals, response_line,
+    SessionStats, SlashCommand, StreamingBehavior, TokenTotals, response_line,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -441,11 +441,18 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
         let started = Cell::new(false);
         let session = rpc.session();
         let result = session
-            .prompt_with(&message, images, streaming_behavior, |disposition| {
-                started.set(true);
-                let reply = value(&disposition).and_then(|it| data(&json!({ "disposition": it })));
-                rpc.reply(id.as_ref(), Some("prompt"), reply);
-            })
+            .prompt_with(
+                &message,
+                images,
+                streaming_behavior,
+                InputSource::Rpc,
+                |disposition| {
+                    started.set(true);
+                    let reply =
+                        value(&disposition).and_then(|it| data(&json!({ "disposition": it })));
+                    rpc.reply(id.as_ref(), Some("prompt"), reply);
+                },
+            )
             .await;
         if let Err(error) = result
             && !started.get()
@@ -469,12 +476,21 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
     match command {
         RpcCommand::Prompt { .. } | RpcCommand::Unknown => Ok(None),
         RpcCommand::Steer { message, images } => {
-            session.steer(&message, images);
-            data(&json!({"disposition": "queued"}))
+            let disposition = session
+                .queue_input(&message, images, StreamingBehavior::Steer, InputSource::Rpc)
+                .await?;
+            data(&json!({ "disposition": value(&disposition)? }))
         }
         RpcCommand::FollowUp { message, images } => {
-            session.follow_up(&message, images);
-            data(&json!({"disposition": "queued"}))
+            let disposition = session
+                .queue_input(
+                    &message,
+                    images,
+                    StreamingBehavior::FollowUp,
+                    InputSource::Rpc,
+                )
+                .await?;
+            data(&json!({ "disposition": value(&disposition)? }))
         }
         RpcCommand::Abort => {
             session.abort();

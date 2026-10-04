@@ -57,6 +57,7 @@ use ri_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolR
 use ri_types::message::{
     AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
 };
+use ri_types::rpc::StreamingBehavior;
 use ri_types::settings::{DoubleEscapeAction, TuiMode};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -1730,18 +1731,41 @@ impl App {
         let Some((first, _)) = queue.next() else {
             return;
         };
+        let mut messages = Vec::new();
         if self.running {
-            self.session.steer(&first, Vec::new());
+            messages.push((first, StreamingBehavior::Steer));
         } else {
             self.start_prompt(first);
         }
-        for (text, follow_up) in queue {
-            if follow_up {
-                self.session.follow_up(&text, Vec::new());
+        messages.extend(queue.map(|(text, follow_up)| {
+            let behavior = if follow_up {
+                StreamingBehavior::FollowUp
             } else {
-                self.session.steer(&text, Vec::new());
-            }
+                StreamingBehavior::Steer
+            };
+            (text, behavior)
+        }));
+        self.queue_messages(messages);
+    }
+
+    /// pi's `steer` and `followUp` for typed messages, in order: extensions'
+    /// `input` handlers see each before it is queued.
+    fn queue_messages(&self, messages: Vec<(String, StreamingBehavior)>) {
+        if messages.is_empty() {
+            return;
         }
+        let (session, tx, epoch) = (self.session.clone(), self.tx.clone(), self.epoch);
+        tokio::spawn(async move {
+            for (text, behavior) in messages {
+                let source = ri_core::agent_session::InputSource::Interactive;
+                if let Err(error) = session
+                    .queue_input(&text, Vec::new(), behavior, source)
+                    .await
+                {
+                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                }
+            }
+        });
     }
 
     // Input
@@ -1803,7 +1827,7 @@ impl App {
         }
         self.editor.add_to_history(&text);
         if self.running {
-            self.session.steer(&text, Vec::new());
+            self.queue_messages(vec![(text, StreamingBehavior::Steer)]);
             return;
         }
         for view in std::mem::take(&mut self.pending_bash) {
@@ -2056,7 +2080,7 @@ impl App {
                 } else if self.running {
                     self.editor.add_to_history(&text);
                     self.editor.set_text("");
-                    self.session.follow_up(&text, Vec::new());
+                    self.queue_messages(vec![(text, StreamingBehavior::FollowUp)]);
                 } else {
                     self.editor.set_text("");
                     self.on_submit(text);
@@ -3463,9 +3487,11 @@ impl App {
                 let mut initial = std::mem::take(&mut self.initial).into_iter();
                 if let Some(first) = initial.next() {
                     self.start_prompt(first);
-                    for message in initial {
-                        self.session.follow_up(&message, Vec::new());
-                    }
+                    self.queue_messages(
+                        initial
+                            .map(|message| (message, StreamingBehavior::FollowUp))
+                            .collect(),
+                    );
                 }
             }
             Event::Rendered(epoch, key, width, lines) if epoch == self.epoch => {

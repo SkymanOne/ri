@@ -50,6 +50,35 @@ use crate::time::{now_ms, parse_iso};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::{BUILTIN_TOOLS, Described, Exposure, RegisteredTool, Runtime, ToolEnv, builtin};
 
+/// Where user input comes from, as pi's `InputSource` tells extensions'
+/// `input` handlers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputSource {
+    /// Typed in the terminal.
+    Interactive,
+    /// An RPC client.
+    Rpc,
+    /// An extension's `sendUserMessage`.
+    Extension,
+}
+
+impl InputSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            InputSource::Interactive => "interactive",
+            InputSource::Rpc => "rpc",
+            InputSource::Extension => "extension",
+        }
+    }
+}
+
+fn behavior_name(behavior: StreamingBehavior) -> &'static str {
+    match behavior {
+        StreamingBehavior::Steer => "steer",
+        StreamingBehavior::FollowUp => "followUp",
+    }
+}
+
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
 
@@ -1219,6 +1248,31 @@ impl AgentSession {
         }
     }
 
+    /// pi's `steer` and `followUp`: an extension command cannot be queued;
+    /// otherwise the `input` handlers see the message first, then it is
+    /// queued with templates and skills expanded.
+    pub async fn queue_input(
+        &self,
+        text: &str,
+        images: Vec<ImageContent>,
+        behavior: StreamingBehavior,
+        source: InputSource,
+    ) -> Result<PromptDisposition, String> {
+        if self.is_extension_command(text) {
+            let name = text[1..].split(' ').next().unwrap_or_default();
+            return Err(format!(
+                "Extension command \"/{name}\" cannot be queued. Use prompt() or execute the command when not streaming."
+            ));
+        }
+        let streaming = self.is_streaming().then_some(behavior);
+        let Some((text, images)) = self.input_handlers(text, images, source, streaming).await
+        else {
+            return Ok(PromptDisposition::Handled);
+        };
+        self.queue(behavior, self.expand(&text), images);
+        Ok(PromptDisposition::Queued)
+    }
+
     /// Queues a message to steer the current run after its current tool calls.
     pub fn steer(&self, text: &str, images: Vec<ImageContent>) {
         self.queue(StreamingBehavior::Steer, self.expand(text), images);
@@ -1383,7 +1437,8 @@ impl AgentSession {
     /// Sends a user prompt and runs until the agent settles. Templates and
     /// `/skill:` commands expand first.
     pub async fn prompt(&self, text: &str, images: Vec<ImageContent>) -> Result<(), String> {
-        self.prompt_with(text, images, None, |_| {}).await
+        self.prompt_with(text, images, None, InputSource::Interactive, |_| {})
+            .await
     }
 
     /// pi's `prompt`: while a run streams, `behavior` queues the message, and
@@ -1395,6 +1450,7 @@ impl AgentSession {
         text: &str,
         images: Vec<ImageContent>,
         behavior: Option<StreamingBehavior>,
+        source: InputSource,
         preflight: impl FnOnce(PromptDisposition),
     ) -> Result<(), String> {
         if self.run_extension_command(text).await {
@@ -1404,7 +1460,9 @@ impl AgentSession {
         if self.inner.manual_compaction.load(Ordering::SeqCst) {
             return Err("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.".into());
         }
-        let Some((text, images)) = self.input_handlers(text, images).await else {
+        let streaming = behavior.filter(|_| self.is_streaming());
+        let Some((text, images)) = self.input_handlers(text, images, source, streaming).await
+        else {
             preflight(PromptDisposition::Handled);
             return Ok(());
         };
@@ -2568,6 +2626,8 @@ impl AgentSession {
         &self,
         text: &str,
         images: Vec<ImageContent>,
+        source: InputSource,
+        streaming: Option<StreamingBehavior>,
     ) -> Option<(String, Vec<ImageContent>)> {
         let handlers = self.handlers_of("input");
         if handlers.is_empty() {
@@ -2577,9 +2637,12 @@ impl AgentSession {
         let mut text = text.to_owned();
         let mut images = images;
         for extension in handlers {
-            let event = serde_json::json!({
-                "type": "input", "text": text, "images": images, "source": "interactive",
+            let mut event = serde_json::json!({
+                "type": "input", "text": text, "images": images, "source": source.as_str(),
             });
+            if let Some(behavior) = streaming {
+                event["streamingBehavior"] = behavior_name(behavior).into();
+            }
             let Some(result) = extension.handle(&ctx, &event).await else {
                 continue;
             };

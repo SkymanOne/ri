@@ -945,7 +945,11 @@ impl Bridge for SessionBridge {
                     None => None,
                 };
                 self.spawn(async move {
-                    if let Err(error) = session.prompt_with(&text, images, behavior, |_| {}).await {
+                    let source = ri_core::agent_session::InputSource::Extension;
+                    if let Err(error) = session
+                        .prompt_with(&text, images, behavior, source, |_| {})
+                        .await
+                    {
                         let (ui, _) = session.extension_binding();
                         ui.notify(&error, NotifyKind::Error);
                     }
