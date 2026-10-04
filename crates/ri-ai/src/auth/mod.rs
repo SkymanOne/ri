@@ -9,6 +9,8 @@ pub mod chatgpt;
 pub mod codex;
 pub mod copilot;
 pub mod device;
+pub mod federation;
+pub mod google_adc;
 mod lock;
 pub mod pkce;
 pub mod store;
@@ -282,6 +284,37 @@ pub(crate) fn now_ms() -> u64 {
         })
 }
 
+/// Milliseconds since the epoch of an RFC 3339 time such as
+/// `2026-10-04T12:00:00Z` or `2026-10-04T12:00:00.5+02:00`.
+pub(crate) fn rfc3339_ms(text: &str) -> Option<u64> {
+    let (date, time) = text.trim().split_once(['T', 't', ' '])?;
+    let (time, offset_seconds) = if let Some(time) = time.strip_suffix(['Z', 'z']) {
+        (time, 0)
+    } else {
+        let at = time.rfind(['+', '-'])?;
+        let (clock, offset) = time.split_at(at);
+        let sign = if offset.starts_with('-') { -1 } else { 1 };
+        let mut parts = offset[1..].split(':').map(|part| part.parse::<i64>().ok());
+        let (hours, minutes) = (parts.next()??, parts.next().flatten().unwrap_or(0));
+        (clock, sign * (hours * 3600 + minutes * 60))
+    };
+    let mut date = date.split('-').map(|part| part.parse::<i64>().ok());
+    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let time = time.split('.').next()?;
+    let mut time = time.split(':').map(|part| part.parse::<i64>().ok());
+    let (hour, minute, second) = (time.next()??, time.next()??, time.next()??);
+    // Days from the civil date, after Howard Hinnant's algorithm.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let seconds = days * 86_400 + hour * 3600 + minute * 60 + second - offset_seconds;
+    u64::try_from(seconds).ok().map(|s| s * 1000)
+}
+
 /// pi's `OAUTH_CALLBACK_HOST`: `PI_OAUTH_CALLBACK_HOST`, else `127.0.0.1`.
 pub(crate) fn callback_host() -> String {
     std::env::var("PI_OAUTH_CALLBACK_HOST")
@@ -391,6 +424,20 @@ pub(crate) fn network_message(err: &dyn std::error::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_rfc3339_times() {
+        assert_eq!(rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            rfc3339_ms("2026-10-04T12:30:15.5Z"),
+            Some(1_791_117_015_000)
+        );
+        assert_eq!(
+            rfc3339_ms("2026-10-04T14:30:15+02:00"),
+            Some(1_791_117_015_000)
+        );
+        assert_eq!(rfc3339_ms("2026-10-04"), None);
+    }
 
     #[test]
     fn parses_pasted_input_like_pi() {

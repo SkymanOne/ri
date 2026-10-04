@@ -23,8 +23,8 @@ pub struct ApiKeyMethod {
     pub name: &'static str,
     /// Environment variables holding the key, in priority order.
     pub env: &'static [&'static str],
-    /// Whether `/login` can store a key. Providers whose pi login asks for more
-    /// than a key (Bedrock, Vertex, Cloudflare) are configured outside ri.
+    /// Whether `/login` can store a credential; otherwise the provider is
+    /// configured outside ri.
     pub login: bool,
 }
 
@@ -33,14 +33,6 @@ const fn key(name: &'static str, env: &'static [&'static str]) -> Option<ApiKeyM
         name,
         env,
         login: true,
-    })
-}
-
-const fn ambient(name: &'static str, env: &'static [&'static str]) -> Option<ApiKeyMethod> {
-    Some(ApiKeyMethod {
-        name,
-        env,
-        login: false,
     })
 }
 
@@ -63,7 +55,7 @@ pub const PROVIDERS: &[ProviderInfo] = &[
     provider(
         "amazon-bedrock",
         "Amazon Bedrock",
-        ambient("AWS credentials or bearer token", &[]),
+        key("AWS credentials or bearer token", &[]),
         None,
     ),
     provider(
@@ -106,13 +98,13 @@ pub const PROVIDERS: &[ProviderInfo] = &[
     provider(
         "cloudflare-ai-gateway",
         "Cloudflare AI Gateway",
-        ambient("Cloudflare API key", &["CLOUDFLARE_API_KEY"]),
+        key("Cloudflare API key", &["CLOUDFLARE_API_KEY"]),
         None,
     ),
     provider(
         "cloudflare-workers-ai",
         "Cloudflare Workers AI",
-        ambient("Cloudflare API key", &["CLOUDFLARE_API_KEY"]),
+        key("Cloudflare API key", &["CLOUDFLARE_API_KEY"]),
         None,
     ),
     provider(
@@ -142,7 +134,7 @@ pub const PROVIDERS: &[ProviderInfo] = &[
     provider(
         "google-vertex",
         "Google Vertex AI",
-        ambient("Google Cloud credentials", &["GOOGLE_CLOUD_API_KEY"]),
+        key("Google Cloud credentials", &["GOOGLE_CLOUD_API_KEY"]),
         None,
     ),
     provider("groq", "Groq", key("Groq API key", &["GROQ_API_KEY"]), None),

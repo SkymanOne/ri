@@ -7,6 +7,8 @@ use ri_types::model::Model;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::credentials::ProviderEnv;
+
 /// A wire API: turns a model, a transcript and options into a streamed message.
 ///
 /// Implementations never fail the call itself. Every outcome, including request
@@ -67,6 +69,9 @@ pub struct StreamOptions {
     pub max_retry_delay_ms: Option<u64>,
     /// Cancels the request; the stream then ends with an `aborted` error.
     pub cancel: CancellationToken,
+    /// Provider settings from the credential, such as a Cloudflare account id
+    /// or an AWS profile, read ahead of the process environment.
+    pub env: Option<ProviderEnv>,
 }
 
 impl StreamOptions {

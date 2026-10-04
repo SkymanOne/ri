@@ -539,6 +539,15 @@ impl LoginDialog {
         }
     }
 
+    /// Replaces the content with detail lines, as pi's `showDetails`.
+    pub fn show_details(&mut self, lines: Vec<StyledLine>) {
+        self.rows.clear();
+        self.rows.push(Row::Spacer);
+        for line in lines {
+            self.text(line);
+        }
+    }
+
     /// Shows provider information, as pi's `showInfo`.
     pub fn show_info(&mut self, message: &str, ui: &Ui<'_>) {
         self.rows.push(Row::Spacer);
@@ -837,7 +846,21 @@ impl super::App {
         }
         self.next_login += 1;
         let id = self.next_login;
-        let dialog = LoginDialog::new(&option.name, None);
+        let mut dialog = LoginDialog::new(&option.name, None);
+        if option.id == "amazon-bedrock" && option.kind == LoginKind::ApiKey {
+            let theme = &self.theme;
+            dialog.show_details(vec![
+                styled(
+                    "You can also use an AWS profile, IAM keys, or role-based credentials.",
+                    theme.fg("text"),
+                ),
+                styled("See:", theme.fg("muted")),
+                styled(
+                    format!("  {}", ri_core::auth_guidance::PROVIDER_DOCS),
+                    theme.fg("accent"),
+                ),
+            ]);
+        }
         let (interaction, mut requests) = ri_ai::auth::Interaction::new(dialog.cancel.clone());
         let tx = self.tx.clone();
         tokio::spawn(async move {

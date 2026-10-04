@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod aws;
 pub mod catalog;
 pub mod cost;
 pub mod credentials;
@@ -11,6 +12,7 @@ pub mod faux;
 pub mod hash;
 pub mod http;
 pub mod json_parse;
+pub mod key_auth;
 pub mod providers;
 pub mod registry;
 pub mod schema;

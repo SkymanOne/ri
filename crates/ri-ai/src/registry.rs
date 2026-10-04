@@ -23,6 +23,7 @@ use crate::auth::{
 };
 use crate::catalog;
 use crate::credentials::{self, BEARER_TOKEN_ENV, ProviderEnv};
+use crate::key_auth::{self, Ambient};
 use crate::providers;
 
 /// Tokens with less validity left than this are refreshed before use.
@@ -42,9 +43,20 @@ pub struct Auth {
     pub base_url: Option<String>,
     /// Why credentials could not be resolved; a request with it fails.
     pub error: Option<String>,
+    /// Provider settings from the credential, such as a Cloudflare account
+    /// id, that the request reads ahead of the process environment.
+    pub env: Option<ProviderEnv>,
 }
 
 impl Auth {
+    /// Takes the credentials of a provider-specific resolution.
+    fn use_resolved(&mut self, resolved: key_auth::Resolved) {
+        self.api_key = resolved.api_key;
+        self.headers.extend(resolved.headers);
+        self.env = resolved.env;
+        self.source = Some(resolved.source);
+    }
+
     /// Applies the credentials to a request: the key when there is one,
     /// headers over the request's, and the account's base URL. Fails
     /// with [`Auth::error`] when credentials could not be resolved.
@@ -59,8 +71,27 @@ impl Auth {
         if let Some(base_url) = self.base_url {
             request.model.base_url = base_url;
         }
+        if self.env.is_some() {
+            request.options.env = self.env;
+        }
         Ok(())
     }
+}
+
+/// Where `provider`'s credential comes from when nothing is stored or
+/// configured: its key variables, else the provider's ambient sources.
+fn environment_source(provider: &str) -> Option<String> {
+    if key_auth::is_custom(provider) {
+        return key_auth::resolve(provider, None, &Ambient::process()).map(|r| r.source);
+    }
+    credentials::env_api_key(provider, None)
+        .map(|(name, _)| name.to_owned())
+        .or_else(|| {
+            (provider == "anthropic")
+                .then(|| key_auth::anthropic_federation(&Ambient::process()))
+                .flatten()
+                .map(|resolved| resolved.source)
+        })
 }
 
 /// How `/login` authenticates a provider.
@@ -533,6 +564,17 @@ impl ModelRegistry {
         }
         match self.credential(provider) {
             Some(Credential::ApiKey(credential)) => {
+                if key_auth::is_custom(provider) {
+                    // Whether the key resolves is unknown without running its
+                    // command, so a command counts as a key here.
+                    let key = credential.key.clone().filter(|key| {
+                        credentials::is_command(key)
+                            || credentials::is_configured(key, credential.env.as_ref())
+                    });
+                    let credential = ApiKeyCredential { key, ..credential };
+                    return key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                        .map(|_| "stored credential".into());
+                }
                 // An empty stored key counts as none, as in pi.
                 if let Some(key) = credential.key.as_ref().filter(|key| !key.is_empty())
                     && (credentials::is_command(key)
@@ -550,7 +592,7 @@ impl ModelRegistry {
             return (credentials::is_command(key) || credentials::is_configured(key, None))
                 .then(|| "configured API key".into());
         }
-        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+        environment_source(provider)
     }
 
     /// How `provider` is configured, as pi's `getProviderAuthStatus` labels
@@ -584,7 +626,7 @@ impl ModelRegistry {
             };
             return Some(source.into());
         }
-        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+        environment_source(provider)
     }
 
     /// The `apiKey` that `models.json` configures for `provider`, if any.
@@ -641,6 +683,15 @@ impl ModelRegistry {
         }
         let mut env = None;
         match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) if key_auth::is_custom(provider) => {
+                let key = credential
+                    .key
+                    .as_deref()
+                    .and_then(|key| credentials::resolve_template(key, credential.env.as_ref()));
+                let credential = ApiKeyCredential { key, ..credential };
+                return key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                    .and_then(|resolved| resolved.api_key);
+            }
             Some(Credential::ApiKey(credential)) => {
                 if let Some(value) = credential
                     .key
@@ -657,6 +708,10 @@ impl ModelRegistry {
         }
         if let Some(key) = self.configured_key(provider) {
             return credentials::resolve_template(key, None).filter(|value| !value.is_empty());
+        }
+        if key_auth::is_custom(provider) {
+            return key_auth::resolve(provider, None, &Ambient::process())
+                .and_then(|resolved| resolved.api_key);
         }
         credentials::env_api_key(provider, env.as_ref()).map(|(_, value)| value)
     }
@@ -686,6 +741,21 @@ impl ModelRegistry {
         }
         let mut env: Option<ProviderEnv> = None;
         match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) if key_auth::is_custom(provider) => {
+                // The stored credential owns the provider: an unresolved key
+                // leaves the provider's own fallbacks, not other sources.
+                let key = match &credential.key {
+                    Some(key) => credentials::resolve(key, credential.env.as_ref(), true).await,
+                    None => None,
+                };
+                let credential = ApiKeyCredential { key, ..credential };
+                if let Some(resolved) =
+                    key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                {
+                    auth.use_resolved(resolved);
+                }
+                return auth;
+            }
             Some(Credential::ApiKey(credential)) => {
                 env = credential.env.clone();
                 if let Some(key) = &credential.key
@@ -730,6 +800,12 @@ impl ModelRegistry {
             }
             return auth;
         }
+        if key_auth::is_custom(provider) {
+            if let Some(resolved) = key_auth::resolve(provider, None, &Ambient::process()) {
+                auth.use_resolved(resolved);
+            }
+            return auth;
+        }
         if let Some((name, value)) = credentials::env_api_key(provider, env.as_ref()) {
             if name == BEARER_TOKEN_ENV {
                 auth.headers
@@ -738,6 +814,10 @@ impl ModelRegistry {
                 auth.api_key = Some(value);
             }
             auth.source = Some(name.to_owned());
+        } else if provider == "anthropic"
+            && let Some(resolved) = key_auth::anthropic_federation(&Ambient::process())
+        {
+            auth.use_resolved(resolved);
         }
         auth
     }
@@ -831,6 +911,11 @@ impl ModelRegistry {
                 })?;
                 Credential::OAuth(flow.login(interaction, options).await?)
             }
+            LoginKind::ApiKey if key_auth::is_custom(provider) => Credential::ApiKey(
+                key_auth::login(provider, interaction)
+                    .await
+                    .unwrap_or_else(|| Err(AuthError::failed("No login for provider")))?,
+            ),
             LoginKind::ApiKey => {
                 let name = providers::info(provider)
                     .and_then(|info| info.api_key)

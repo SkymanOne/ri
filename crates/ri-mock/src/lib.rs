@@ -90,13 +90,15 @@ pub struct RecordedRequest {
 /// Value that replaces credentials in recorded requests.
 pub const REDACTED: &str = "<redacted>";
 
-const CREDENTIAL_HEADERS: [&str; 6] = [
+const CREDENTIAL_HEADERS: [&str; 8] = [
     "authorization",
     "proxy-authorization",
     "x-api-key",
     "api-key",
     "x-goog-api-key",
     "cookie",
+    "cf-aig-authorization",
+    "x-amz-security-token",
 ];
 const CREDENTIAL_QUERY_KEYS: [&str; 2] = ["key", "api_key"];
 

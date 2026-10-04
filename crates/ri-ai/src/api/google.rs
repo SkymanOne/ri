@@ -15,6 +15,7 @@ use ri_types::model::Model;
 use serde_json::{Map, Value, json};
 
 use super::sanitize_id_part;
+use crate::auth::google_adc;
 use crate::cost::calculate_cost;
 use crate::http::{self, Failure};
 use crate::schema;
@@ -38,9 +39,33 @@ impl Provider for GoogleGenerativeAi {
 
     fn stream(&self, request: Request) -> EventStream {
         let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
+        tokio::spawn(run(request, sender, Flavor::Gemini));
         stream
     }
+}
+
+/// The `google-vertex` wire API: Gemini on Vertex AI, with a Google Cloud API
+/// key or Application Default Credentials. Port of `google-vertex.ts`.
+#[derive(Debug, Default)]
+pub struct GoogleVertex;
+
+impl Provider for GoogleVertex {
+    fn api(&self) -> &str {
+        "google-vertex"
+    }
+
+    fn stream(&self, request: Request) -> EventStream {
+        let (sender, stream) = EventStream::channel();
+        tokio::spawn(run(request, sender, Flavor::Vertex));
+        stream
+    }
+}
+
+/// Which Google API a request goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Flavor {
+    Gemini,
+    Vertex,
 }
 
 /// Message when a request is cancelled, as `fetch` reports it.
@@ -137,7 +162,7 @@ fn google_level(level: ThinkingLevel) -> &'static str {
     }
 }
 
-fn budget(model: &Model, level: ThinkingLevel, custom: &ThinkingBudgets) -> i64 {
+fn budget(model: &Model, level: ThinkingLevel, custom: &ThinkingBudgets, flavor: Flavor) -> i64 {
     let custom = match level {
         ThinkingLevel::Minimal => custom.minimal,
         ThinkingLevel::Low => custom.low,
@@ -149,7 +174,7 @@ fn budget(model: &Model, level: ThinkingLevel, custom: &ThinkingBudgets) -> i64 
     }
     let table: [i64; 4] = if model.id.contains("2.5-pro") {
         [128, 2048, 8192, 32768]
-    } else if model.id.contains("2.5-flash-lite") {
+    } else if flavor == Flavor::Gemini && model.id.contains("2.5-flash-lite") {
         [512, 2048, 8192, 24576]
     } else if model.id.contains("2.5-flash") {
         [128, 2048, 8192, 24576]
@@ -165,7 +190,7 @@ fn budget(model: &Model, level: ThinkingLevel, custom: &ThinkingBudgets) -> i64 
 }
 
 /// pi's `streamSimple` thinking selection.
-fn thinking(model: &Model, options: &StreamOptions) -> Result<Thinking, String> {
+fn thinking(model: &Model, options: &StreamOptions, flavor: Flavor) -> Result<Thinking, String> {
     let Some(level) = options.reasoning else {
         return Ok(Thinking::Disabled);
     };
@@ -177,7 +202,7 @@ fn thinking(model: &Model, options: &StreamOptions) -> Result<Thinking, String> 
     Ok(if uses_thinking_level(model) {
         Thinking::Level(google_level(resolved))
     } else {
-        Thinking::Budget(budget(model, resolved, &options.thinking_budgets))
+        Thinking::Budget(budget(model, resolved, &options.thinking_budgets, flavor))
     })
 }
 
@@ -815,14 +840,15 @@ async fn consume(
     Ok(())
 }
 
-async fn run(request: Request, sender: EventSender) {
+async fn run(request: Request, sender: EventSender, flavor: Flavor) {
     let Request {
         model,
         messages,
         options,
     } = request;
     let output = new_output(&model, now_ms());
-    let Some(api_key) = options.api_key.clone().filter(|key| !key.is_empty()) else {
+    let api_key = options.api_key.clone().filter(|key| !key.is_empty());
+    if flavor == Flavor::Gemini && api_key.is_none() {
         send_error(
             &sender,
             output,
@@ -830,13 +856,31 @@ async fn run(request: Request, sender: EventSender) {
             format!("No API key for provider: {}", model.provider),
         );
         return;
+    }
+    let target = match flavor {
+        Flavor::Gemini => Ok(Target {
+            url: format!(
+                "{}/{}:streamGenerateContent?alt=sse",
+                model.base_url.trim_end_matches('/'),
+                model_path(&model.id)
+            ),
+            auth: Auth::Key(api_key.unwrap_or_default()),
+        }),
+        Flavor::Vertex => vertex::target(&model, &options),
+    };
+    let target = match target {
+        Ok(target) => target,
+        Err(message) => {
+            send_error(&sender, output, &options.cancel, message);
+            return;
+        }
     };
     let max_tokens = clamp_max_tokens_to_context(
         &model,
         &messages,
         options.max_tokens.unwrap_or(model.max_tokens),
     );
-    let body = thinking(&model, &options)
+    let body = thinking(&model, &options, flavor)
         .and_then(|thinking| build_body(&model, &messages, &options, max_tokens, &thinking))
         .and_then(|body| ri_types::json::to_string(&body).map_err(|err| err.to_string()));
     let body = match body {
@@ -852,18 +896,39 @@ async fn run(request: Request, sender: EventSender) {
         headers.insert(name.to_owned(), value);
     };
     set("content-type", Some("application/json".into()));
-    set("x-goog-api-key", Some(api_key));
+    match target.auth {
+        Auth::Key(key) => set("x-goog-api-key", Some(key)),
+        Auth::Credentials { credentials_file } => {
+            match google_adc::token(
+                credentials_file,
+                google_adc::OAUTH2_TOKEN_URL,
+                &options.cancel,
+            )
+            .await
+            {
+                Ok(token) => {
+                    set(
+                        "authorization",
+                        Some(format!("Bearer {}", token.access_token)),
+                    );
+                    if let Some(project) = token.quota_project {
+                        set("x-goog-user-project", Some(project));
+                    }
+                }
+                Err(message) => {
+                    send_error(&sender, output, &options.cancel, message);
+                    return;
+                }
+            }
+        }
+    }
     for (key, value) in model.headers.iter().flatten() {
         set(key, Some(value.clone()));
     }
     for (key, value) in &options.headers {
         set(key, value.clone());
     }
-    let url = format!(
-        "{}/{}:streamGenerateContent?alt=sse",
-        model.base_url.trim_end_matches('/'),
-        model_path(&model.id)
-    );
+    let url = target.url;
     let build = || {
         let mut request = http::client().post(&url).body(body.clone());
         for (name, value) in headers.iter() {
@@ -890,7 +955,10 @@ async fn run(request: Request, sender: EventSender) {
                 return Err(http::ABORTED_DURING_STREAM.into());
             }
             match state.output.stop_reason {
-                StopReason::Pending => Err("Google stream ended without a finish reason".into()),
+                StopReason::Pending => Err(match flavor {
+                    Flavor::Gemini => "Google stream ended without a finish reason".into(),
+                    Flavor::Vertex => "Google Vertex stream ended without a finish reason".into(),
+                }),
                 StopReason::Aborted | StopReason::Error => {
                     Err(match &state.output.raw_stop_reason {
                         Some(reason) => format!("Provider stopped with: {reason}"),
@@ -903,6 +971,222 @@ async fn run(request: Request, sender: EventSender) {
     match result {
         Ok(()) => sender.send(StreamEvent::Done(state.output)),
         Err(message) => send_error(&sender, state.output, &options.cancel, message),
+    }
+}
+
+/// Where a request goes and how it authenticates.
+struct Target {
+    url: String,
+    auth: Auth,
+}
+
+enum Auth {
+    /// `x-goog-api-key`.
+    Key(String),
+    /// A bearer token from Application Default Credentials.
+    Credentials { credentials_file: Option<String> },
+}
+
+/// Vertex AI endpoints, as `@google/genai` 2.21 builds them.
+mod vertex {
+    use ri_types::model::Model;
+
+    use super::{Auth, Target};
+    use crate::auth::google_adc;
+    use crate::credentials::provider_env_value;
+    use crate::stream::StreamOptions;
+
+    /// Marks a request that should use Application Default Credentials.
+    const CREDENTIALS_MARKER: &str = "gcp-vertex-credentials";
+    const API_VERSION: &str = "v1";
+
+    /// pi's `resolveApiKey`: a real key, not a marker or `<placeholder>`.
+    fn api_key(options: &StreamOptions) -> Option<String> {
+        let key = options.api_key.as_deref()?.trim();
+        let placeholder = key.len() > 2
+            && key.starts_with('<')
+            && key.ends_with('>')
+            && !key[1..key.len() - 1].contains('>');
+        (!key.is_empty() && key != CREDENTIALS_MARKER && !placeholder).then(|| key.to_owned())
+    }
+
+    /// The model's base URL unless it is the catalog's `{location}` template.
+    fn custom_base_url(model: &Model) -> Option<&str> {
+        let trimmed = model.base_url.trim();
+        (!trimmed.is_empty() && !trimmed.contains("{location}")).then_some(trimmed)
+    }
+
+    /// Whether a path segment of the URL is an API version such as `v1beta1`.
+    fn includes_api_version(base_url: &str) -> bool {
+        let is_version = |part: &str| {
+            part.strip_prefix('v').is_some_and(|rest| {
+                let digits = rest.chars().take_while(char::is_ascii_digit).count();
+                digits > 0 && {
+                    let tail = &rest[digits..];
+                    tail.is_empty()
+                        || tail
+                            .strip_prefix("beta")
+                            .is_some_and(|n| n.chars().all(|c| c.is_ascii_digit()))
+                }
+            })
+        };
+        match url::Url::parse(base_url) {
+            Ok(url) => url.path().split('/').any(is_version),
+            Err(_) => base_url.split('/').any(is_version),
+        }
+    }
+
+    /// The SDK's `tModel` for Vertex.
+    fn model_path(id: &str) -> String {
+        if id.starts_with("publishers/") || id.starts_with("projects/") || id.starts_with("models/")
+        {
+            id.to_owned()
+        } else if let Some((publisher, model)) = id.split_once('/') {
+            let model = model.split('/').next().unwrap_or(model);
+            format!("publishers/{publisher}/models/{model}")
+        } else {
+            format!("publishers/google/models/{id}")
+        }
+    }
+
+    fn join(base: &str, version: bool, path: &str) -> String {
+        let base = base.strip_suffix('/').unwrap_or(base);
+        let mut url = base.to_owned();
+        if version {
+            url.push('/');
+            url.push_str(API_VERSION);
+        }
+        format!("{url}/{path}:streamGenerateContent?alt=sse")
+    }
+
+    /// The request URL and auth: an API key on the global endpoint, else
+    /// Application Default Credentials on the project's regional endpoint.
+    pub(super) fn target(model: &Model, options: &StreamOptions) -> Result<Target, String> {
+        let env = |name: &str| provider_env_value(name, options.env.as_ref());
+        let custom = custom_base_url(model);
+        let path = model_path(&model.id);
+        if let Some(key) = api_key(options) {
+            let url = match custom {
+                Some(base) => join(base, !includes_api_version(base), &path),
+                None => join("https://aiplatform.googleapis.com", true, &path),
+            };
+            return Ok(Target {
+                url,
+                auth: Auth::Key(key),
+            });
+        }
+        let project = env("GOOGLE_CLOUD_PROJECT")
+            .or_else(|| env("GCLOUD_PROJECT"))
+            .ok_or_else(|| {
+                "Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options.".to_owned()
+            })?;
+        let location = env("GOOGLE_CLOUD_LOCATION").ok_or_else(|| {
+            "Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options."
+                .to_owned()
+        })?;
+        let url = match custom {
+            Some(base) => join(base, !includes_api_version(base), &path),
+            None => {
+                let base = match location.as_str() {
+                    "global" => "https://aiplatform.googleapis.com".to_owned(),
+                    "us" | "eu" => format!("https://aiplatform.{location}.rep.googleapis.com"),
+                    _ => format!("https://{location}-aiplatform.googleapis.com"),
+                };
+                let path = if path.starts_with("projects/") {
+                    path
+                } else {
+                    format!("projects/{project}/locations/{location}/{path}")
+                };
+                join(&base, true, &path)
+            }
+        };
+        Ok(Target {
+            url,
+            auth: Auth::Credentials {
+                credentials_file: google_adc::credentials_file(env),
+            },
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::credentials::ProviderEnv;
+
+        fn options(key: Option<&str>, vars: &[(&str, &str)]) -> StreamOptions {
+            let env: ProviderEnv = vars
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+            StreamOptions {
+                api_key: key.map(str::to_owned),
+                env: Some(env),
+                ..StreamOptions::default()
+            }
+        }
+
+        fn model(id: &str, base_url: &str) -> Model {
+            let mut model = crate::catalog::builtin_models("google-vertex")
+                .into_iter()
+                .next()
+                .unwrap();
+            model.id = id.into();
+            model.base_url = base_url.into();
+            model
+        }
+
+        #[test]
+        fn builds_the_sdk_urls() {
+            let template = "https://{location}-aiplatform.googleapis.com";
+            let url = |key: Option<&str>, location: &str, base: &str| {
+                target(
+                    &model("gemini-2.5-flash", base),
+                    &options(
+                        key,
+                        &[
+                            ("GOOGLE_CLOUD_PROJECT", "proj-1"),
+                            ("GOOGLE_CLOUD_LOCATION", location),
+                        ],
+                    ),
+                )
+                .map(|target| target.url)
+            };
+            assert_eq!(
+                url(Some("AIzaKEY"), "us-central1", template).unwrap(),
+                "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+            );
+            for (location, host) in [
+                (
+                    "us-central1",
+                    "https://us-central1-aiplatform.googleapis.com",
+                ),
+                ("global", "https://aiplatform.googleapis.com"),
+                ("eu", "https://aiplatform.eu.rep.googleapis.com"),
+            ] {
+                assert_eq!(
+                    url(Some("gcp-vertex-credentials"), location, template).unwrap(),
+                    format!(
+                        "{host}/v1/projects/proj-1/locations/{location}/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+                    )
+                );
+            }
+            assert_eq!(
+                url(None, "us-central1", "http://proxy.local/vertex/v1beta1/").unwrap(),
+                "http://proxy.local/vertex/v1beta1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+            );
+            assert_eq!(
+                url(Some("<key>"), "us-central1", "http://proxy.local").unwrap(),
+                "http://proxy.local/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+            );
+            assert_eq!(model_path("meta/llama-4"), "publishers/meta/models/llama-4");
+            let missing = target(&model("gemini-2.5-flash", template), &options(None, &[]));
+            assert_eq!(
+                missing.err().as_deref(),
+                Some(
+                    "Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options."
+                )
+            );
+        }
     }
 }
 
