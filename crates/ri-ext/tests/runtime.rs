@@ -352,3 +352,43 @@ export default function (pi) {
     assert_eq!(extension.get("error"), None, "{extension}");
     assert_eq!(extension["commands"][0]["description"], "0,5,6,Busy,fail,5");
 }
+
+/// `realpath` inside an instance whose filesystem is limited to one folder,
+/// as for a package with restricted grants.
+#[tokio::test(flavor = "multi_thread")]
+async fn resolves_real_paths_under_restricted_roots() {
+    let dir = scratch("realpath-roots");
+    std::fs::write(
+        dir.join("main.ts"),
+        r#"
+import fs from "node:fs";
+import path from "node:path";
+export default function (pi) {
+	const out = [import.meta.filename, path.join(import.meta.dirname, "link.ts"), process.cwd()].map((p) => fs.realpathSync(p));
+	pi.registerCommand("probe", { description: out.join(","), handler: async () => {} });
+}
+"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("main.ts", dir.join("link.ts")).unwrap();
+    let mut options = Options::new(dir.clone());
+    options.filesystem_roots = vec![dir.clone()];
+    let instance = Instance::start(&engine(), options, Arc::new(NoBridge))
+        .await
+        .unwrap();
+    let loaded = instance
+        .call(
+            "load",
+            &json!({"cwd": dir, "extensions": [{"id": 1, "path": dir.join("main.ts")}]}),
+        )
+        .await
+        .unwrap();
+    let extension = &loaded["extensions"][0];
+    assert_eq!(extension.get("error"), None, "{extension}");
+    let main = dir.join("main.ts").display().to_string();
+    assert_eq!(
+        extension["commands"][0]["description"],
+        format!("{main},{main},{}", dir.display())
+    );
+}
