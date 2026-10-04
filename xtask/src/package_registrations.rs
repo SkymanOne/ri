@@ -1,6 +1,6 @@
-//! `cargo xtask package-registrations`: installs the top npm pi packages
-//! (`tests/fixtures/pi/packages/top50.json`) with ri's npm client, loads their
-//! extensions, and compares what they register with pi's
+//! `cargo xtask package-registrations`: installs the most-downloaded npm pi
+//! packages (`tests/fixtures/pi/packages/top500.json`) with ri's npm client,
+//! loads their extensions, and compares what they register with pi's
 //! (`registrations.json`, from `packages.mjs` in the fixture generator).
 //!
 //! Needs network access to the npm registry. Extensions run without network,
@@ -28,6 +28,13 @@ pub struct Args {
     /// Print load errors in full.
     #[arg(long)]
     verbose: bool,
+    /// Packages installed and loaded at once.
+    #[arg(long, default_value_t = 4)]
+    jobs: usize,
+    /// Compare the registrations a previous run saved, without loading the
+    /// packages again.
+    #[arg(long)]
+    compare_only: bool,
 }
 
 fn dump(loaded: &Value) -> Value {
@@ -161,15 +168,42 @@ fn without_models_line(value: Value) -> Value {
     }
 }
 
+/// How one package compares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Outcome {
+    /// ri registers what pi registers.
+    Match,
+    /// pi itself fails to install or load the package.
+    PiFails,
+    /// ri's npm client fails where pi's install succeeds.
+    RiInstall,
+    /// The registrations differ, or ri fails to load an installed package.
+    Differs,
+}
+
+fn outcome(got: &Value, want: &Value) -> Outcome {
+    if want.is_null() || want.get("crash").is_some() || want.get("install").is_some() {
+        return Outcome::PiFails;
+    }
+    if got.get("install").is_some() {
+        return Outcome::RiInstall;
+    }
+    let same = ["extensions", "errors"]
+        .iter()
+        .all(|key| got.get(*key) == want.get(*key));
+    if same {
+        Outcome::Match
+    } else {
+        Outcome::Differs
+    }
+}
+
 async fn compare(args: Args) -> anyhow::Result<ExitCode> {
+    use futures_util::StreamExt as _;
+
     let fixtures = Path::new(FIXTURES);
     let top: Vec<Value> =
-        serde_json::from_str(&std::fs::read_to_string(fixtures.join("top50.json"))?)?;
-    let expected: BTreeMap<String, Value> = serde_json::from_str(
-        &std::fs::read_to_string(fixtures.join("registrations.json")).context(
-            "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
-        )?,
-    )?;
+        serde_json::from_str(&std::fs::read_to_string(fixtures.join("top500.json"))?)?;
     let scratch = Path::new("target/package-registrations")
         .canonicalize()
         .or_else(|_| {
@@ -177,42 +211,88 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             Path::new("target/package-registrations").canonicalize()
         })?;
     let engine = Engine::new(Some(&scratch.join("wasm-cache")))?;
-    let mut actual = BTreeMap::new();
-    let (mut matched, mut compared) = (0, 0);
-    for (index, package) in top.iter().enumerate() {
-        let name = package["name"].as_str().unwrap_or_default();
-        let version = package["version"].as_str().unwrap_or_default();
-        if args.only.as_deref().is_some_and(|only| only != name) {
-            continue;
-        }
-        let dir = scratch.join(index.to_string());
-        let _ = std::fs::remove_dir_all(&dir);
-        let got = load(&engine, &dir, name, version, args.verbose)
+    let selected: Vec<(usize, String, String)> = top
+        .iter()
+        .enumerate()
+        .map(|(index, package)| {
+            let text = |key: &str| package[key].as_str().unwrap_or_default().to_owned();
+            (index, text("name"), text("version"))
+        })
+        .filter(|(_, name, _)| args.only.as_deref().is_none_or(|only| only == name))
+        .collect();
+    let saved = scratch.join("registrations-ri.json");
+    let results: Vec<(String, Value)> = if args.compare_only {
+        let saved: BTreeMap<String, Value> =
+            serde_json::from_str(&std::fs::read_to_string(&saved).context("no saved run")?)?;
+        saved
+            .into_iter()
+            .filter(|(name, _)| selected.iter().any(|(_, selected, _)| selected == name))
+            .collect()
+    } else {
+        futures_util::stream::iter(selected)
+            .map(|(index, name, version)| {
+                let (engine, scratch, verbose) = (&engine, &scratch, args.verbose);
+                async move {
+                    let dir = scratch.join(index.to_string());
+                    let _ = std::fs::remove_dir_all(&dir);
+                    let got = load(engine, &dir, &name, &version, verbose)
+                        .await
+                        .unwrap_or_else(
+                            |err| json!({"version": version, "crash": err.to_string()}),
+                        );
+                    // The installs are large; only the results are kept.
+                    let _ = std::fs::remove_dir_all(&dir);
+                    (name, got)
+                }
+            })
+            .buffer_unordered(args.jobs.max(1))
+            .collect()
             .await
-            .unwrap_or_else(|err| json!({"version": version, "crash": err.to_string()}));
-        let want = without_models_line(expected.get(name).cloned().unwrap_or(Value::Null));
-        let same = ["extensions", "errors"]
-            .iter()
-            .all(|key| got.get(*key) == want.get(*key))
-            && want.get("crash").is_none()
-            && want.get("install").is_none();
-        compared += 1;
-        if same {
-            matched += 1;
-        }
+    };
+    // Read last, so pi's side can be regenerated while ri's runs.
+    let expected: BTreeMap<String, Value> = serde_json::from_str(
+        &std::fs::read_to_string(fixtures.join("registrations.json")).context(
+            "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
+        )?,
+    )?;
+    let mut actual = BTreeMap::new();
+    let mut outcomes: BTreeMap<Outcome, Vec<String>> = BTreeMap::new();
+    for (name, got) in results {
+        let want = without_models_line(expected.get(&name).cloned().unwrap_or(Value::Null));
+        let result = outcome(&got, &want);
+        let version = got["version"].as_str().unwrap_or_default().to_owned();
         eprintln!(
             "{} {name}@{version}",
-            if same { "ok    " } else { "DIFFER" }
+            match result {
+                Outcome::Match => "ok      ",
+                Outcome::PiFails => "pi-fails",
+                Outcome::RiInstall => "install ",
+                Outcome::Differs => "DIFFER  ",
+            }
         );
-        actual.insert(name.to_owned(), got);
+        outcomes.entry(result).or_default().push(name.clone());
+        actual.insert(name, got);
     }
-    std::fs::write(
-        scratch.join("registrations-ri.json"),
-        ri_types::json::to_string_pretty(&actual, "\t")?,
-    )?;
+    if !args.compare_only {
+        std::fs::write(&saved, ri_types::json::to_string_pretty(&actual, "\t")?)?;
+    }
+    let count = |outcome| outcomes.get(&outcome).map_or(0, Vec::len);
+    let comparable = actual.len() - count(Outcome::PiFails);
     eprintln!(
-        "{matched} of {compared} packages match pi; ri's registrations are in {}",
-        scratch.join("registrations-ri.json").display()
+        "{} packages: {} match pi, {} differ, {} fail to install in ri, {} fail in pi itself",
+        actual.len(),
+        count(Outcome::Match),
+        count(Outcome::Differs),
+        count(Outcome::RiInstall),
+        count(Outcome::PiFails),
     );
+    if comparable > 0 {
+        eprintln!(
+            "{} of {comparable} comparable packages match ({:.1}%); ri's registrations are in {}",
+            count(Outcome::Match),
+            100.0 * count(Outcome::Match) as f64 / comparable as f64,
+            saved.display()
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
