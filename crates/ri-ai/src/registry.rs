@@ -536,6 +536,8 @@ impl ModelRegistry {
             return;
         }
         self.llama = true;
+        // Without a stored catalog the provider has no models yet, so the
+        // model list stays as it is.
         if let Some(store) = &self.models_store
             && let Some(entry) = store.read(crate::llama::PROVIDER_ID)
         {
@@ -546,8 +548,8 @@ impl ModelRegistry {
                 crate::llama::PROVIDER_ID.into(),
                 model_catalog::restore(crate::llama::PROVIDER_ID, &source, &entry),
             );
+            self.rebuild();
         }
-        self.rebuild();
     }
 
     /// Whether the llama.cpp provider is present.
@@ -726,7 +728,7 @@ impl ModelRegistry {
             models.extend(registered.iter().cloned());
         }
         // Keep provider order: built-ins in catalog order, then custom providers.
-        models.sort_by_key(|model| providers.iter().position(|p| *p == model.provider));
+        models.sort_by_cached_key(|model| providers.iter().position(|p| *p == model.provider));
         self.models = models;
         if !errors.is_empty() && self.error.is_none() {
             self.error = Some(errors.join("\n"));

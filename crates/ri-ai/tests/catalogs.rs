@@ -306,11 +306,38 @@ async fn llama_server_models_become_chat_models_and_classifiers() {
     let restored = refresh(std::slice::from_ref(&target), &store, &offline).await;
     assert_eq!(restored.models["llama.cpp"], *models);
 
+    // Enabling the provider restores the stored catalog into the registry.
+    let mut registry = ModelRegistry::load(&dir);
+    let before = registry.models().len();
+    registry.enable_llama();
+    assert!(registry.find("llama.cpp", "qwen").is_some());
+    assert_eq!(registry.models().len(), before + 1);
+
     let requests = server.finish().unwrap();
     assert_eq!(requests[0].headers["authorization"], REDACTED);
     assert_eq!(
         requests[2].query.as_deref(),
         Some("model=qwen&autoload=false")
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn enabling_llama_without_a_stored_catalog_keeps_the_models() {
+    let (dir, _) = store("llama-empty");
+    let mut registry = ModelRegistry::load(&dir);
+    let before: Vec<(String, String)> = registry
+        .models()
+        .iter()
+        .map(|model| (model.provider.clone(), model.id.clone()))
+        .collect();
+    registry.enable_llama();
+    assert!(registry.llama_enabled());
+    let after: Vec<(String, String)> = registry
+        .models()
+        .iter()
+        .map(|model| (model.provider.clone(), model.id.clone()))
+        .collect();
+    assert_eq!(after, before);
     std::fs::remove_dir_all(&dir).unwrap();
 }
