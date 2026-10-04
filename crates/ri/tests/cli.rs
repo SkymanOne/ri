@@ -235,3 +235,66 @@ async fn print_mode_kills_running_commands_on_sigterm() {
     assert_eq!(status.code(), Some(143));
     assert!(!left, "the command outlived ri");
 }
+
+/// `list` tags each installed package by its extensions: `[npm]` for pi
+/// extensions, `[wasm]` for native ones, both for a package with each, and
+/// nothing for a package without extensions or one that is not installed.
+#[test]
+fn list_tags_extension_kinds() {
+    let root = std::env::temp_dir().join(format!("ri-list-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let files = [
+        "js/index.ts",
+        "native/extensions/shout.wasm",
+        "mixed/extensions/a.ts",
+        "mixed/extensions/b.wasm",
+        "skills/skills/demo/SKILL.md",
+        "filtered/index.ts",
+        "single.wasm",
+    ];
+    for file in files {
+        let path = root.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "").unwrap();
+    }
+    let agent = root.join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    let path = |name: &str| root.join(name).display().to_string();
+    let settings = serde_json::json!({"packages": [
+        path("js"),
+        path("native"),
+        path("mixed"),
+        path("skills"),
+        {"source": path("filtered"), "extensions": []},
+        path("single.wasm"),
+        "npm:not-installed",
+    ]});
+    std::fs::write(agent.join("settings.json"), settings.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ri"))
+        .arg("list")
+        .current_dir(&root)
+        .env_clear()
+        .env("HOME", &root)
+        .env("RI_CODING_AGENT_DIR", &agent)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let package = |name: &str, tag: &str| format!("  {}{tag}\n    {}\n", path(name), path(name));
+    let expected = [
+        "User packages:\n".to_owned(),
+        package("js", " [npm]"),
+        package("native", " [wasm]"),
+        package("mixed", " [npm, wasm]"),
+        package("skills", ""),
+        format!(
+            "  {} (filtered)\n    {}\n",
+            path("filtered"),
+            path("filtered")
+        ),
+        package("single.wasm", " [wasm]"),
+        "  npm:not-installed\n".to_owned(),
+    ]
+    .concat();
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+    let _ = std::fs::remove_dir_all(&root);
+}
