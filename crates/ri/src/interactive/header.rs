@@ -7,6 +7,7 @@ use std::path::Path;
 use ratatui_core::style::Style;
 use ratatui_core::text::{Line, Span};
 use ri_core::agent_session::Resources;
+use ri_core::resources::Diagnostic;
 use ri_tui::color::{Color, ColorMode};
 use ri_tui::keybindings::Keybindings;
 use ri_tui::lines::{self, StyledLine};
@@ -532,22 +533,44 @@ pub fn extension_issues(
     out
 }
 
-/// pi's `[Theme conflicts]` section: names declared twice, grouped by name,
-/// then paths that failed to load. Empty without diagnostics.
-pub fn theme_conflicts(
+/// pi's `findSourceInfoForPath`: the source of the loaded resource at `path`
+/// or, failing that, at its nearest ancestor, shown for `path`.
+fn source_for(path: &Path, loaded: &[&SourceInfo]) -> Option<SourceInfo> {
+    let text = path.to_string_lossy();
+    let mut current: &str = &text;
+    loop {
+        if let Some(source) = loaded.iter().find(|source| source.path == current) {
+            return Some(SourceInfo {
+                path: text.into_owned(),
+                ..(*source).clone()
+            });
+        }
+        current = &current[..current.rfind('/')?];
+    }
+}
+
+/// pi's `formatDiagnostics` under `title`, such as `[Skill conflicts]`:
+/// names taken twice, grouped by name, then the other problems in order.
+/// Paths show the source of the loaded resource they belong to, as in pi.
+/// Empty without diagnostics.
+pub fn conflicts(
+    title: &str,
     theme: &Theme,
-    diagnostics: &[super::themes::Diagnostic],
+    diagnostics: &[Diagnostic],
+    loaded: &[&SourceInfo],
     home: Option<&Path>,
     width: usize,
 ) -> Vec<StyledLine> {
-    use super::themes::Diagnostic;
     if diagnostics.is_empty() {
         return Vec::new();
     }
-    let display = |path: &Path| display_path(&path.to_string_lossy(), home);
+    let display = |path: &Path| match source_for(path, loaded) {
+        Some(source) => path_with_source(&source, home),
+        None => display_path(&path.to_string_lossy(), home),
+    };
     let warning = theme.fg("warning");
     let dim = theme.fg("dim");
-    let mut content = vec![lines::styled("[Theme conflicts]", warning)];
+    let mut content = vec![lines::styled(title, warning)];
     let mut names: Vec<&str> = Vec::new();
     for diagnostic in diagnostics {
         if let Diagnostic::Collision { name, .. } = diagnostic
@@ -576,24 +599,29 @@ pub fn theme_conflicts(
                 content.push(Line::from(vec![
                     Span::styled("    ", dim),
                     Span::styled("✓", theme.fg("success")),
-                    Span::styled(format!(" {}", path_with_source(winner, home)), dim),
+                    // pi nests the mark's color in the dim line, whose own
+                    // color the mark's reset ends.
+                    Span::raw(format!(" {}", path_with_source(winner, home))),
                 ]));
             }
             content.push(Line::from(vec![
                 Span::styled("    ", dim),
                 Span::styled("✗", warning),
-                Span::styled(format!(" {} (skipped)", display(loser)), dim),
+                Span::raw(format!(" {} (skipped)", display(loser))),
             ]));
         }
     }
     for diagnostic in diagnostics {
-        if let Diagnostic::Warning { message, path } = diagnostic {
-            content.push(lines::styled(format!("  {}", display(path)), warning));
-            // Only the first line of a message is indented, as in pi's text.
-            for (index, line) in message.split('\n').enumerate() {
-                let indent = if index == 0 { "    " } else { "" };
-                content.push(lines::styled(format!("{indent}{line}"), warning));
-            }
+        let (message, path, style) = match diagnostic {
+            Diagnostic::Warning { message, path } => (message, path, warning),
+            Diagnostic::Error { message, path } => (message, path, theme.fg("error")),
+            Diagnostic::Collision { .. } => continue,
+        };
+        content.push(lines::styled(format!("  {}", display(path)), style));
+        // Only the first line of a message is indented, as in pi's text.
+        for (index, line) in message.split('\n').enumerate() {
+            let indent = if index == 0 { "    " } else { "" };
+            content.push(lines::styled(format!("{indent}{line}"), style));
         }
     }
     let mut out = lines::text(&content, width, 0, 0, None);

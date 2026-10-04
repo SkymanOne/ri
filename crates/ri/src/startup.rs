@@ -14,7 +14,7 @@ use ri_core::model_resolver::{
     DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model, resolve_model_scope,
 };
 use ri_core::packages::resolve::ResourceType;
-use ri_core::resources::{context_files, system_prompt_file};
+use ri_core::resources::{Diagnostic, context_files, system_prompt_file};
 use ri_core::session::{self, SessionManager};
 use ri_core::settings::Scope;
 use ri_core::settings::SettingsManager;
@@ -603,14 +603,33 @@ pub fn create(
             .iter()
             .map(|input| prompt_input(input)),
     );
+    let (skills, skill_diagnostics) = ri_core::resources::skills_from(&skill_sources);
+    let (templates, mut template_diagnostics) =
+        ri_core::resources::templates_from(&template_sources);
+    // pi reports the command line's missing template paths; skill paths are
+    // reported as they load.
+    for path in cli_paths(&args.prompt_templates) {
+        if !path.exists()
+            && !template_diagnostics.iter().any(|diagnostic| {
+                matches!(diagnostic, Diagnostic::Warning { path: known, .. } | Diagnostic::Error { path: known, .. } if *known == path)
+            })
+        {
+            template_diagnostics.push(Diagnostic::Error {
+                message: "Prompt template path does not exist".to_owned(),
+                path,
+            });
+        }
+    }
     let resources = Resources {
         context_files: if args.no_context_files {
             Vec::new()
         } else {
             context_files(&cwd, &agent_dir)
         },
-        skills: ri_core::resources::skills_from(&skill_sources),
-        templates: ri_core::resources::templates_from(&template_sources),
+        skills,
+        skill_diagnostics,
+        templates,
+        template_diagnostics,
         custom_prompt: args
             .system_prompt
             .as_deref()

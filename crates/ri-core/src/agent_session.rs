@@ -60,8 +60,12 @@ pub struct Resources {
     pub context_files: Vec<ContextFile>,
     /// Skills.
     pub skills: Vec<Skill>,
+    /// Problems found while loading skills.
+    pub skill_diagnostics: Vec<crate::resources::Diagnostic>,
     /// Prompt templates.
     pub templates: Vec<PromptTemplate>,
+    /// Problems found while loading prompt templates.
+    pub template_diagnostics: Vec<crate::resources::Diagnostic>,
     /// Replaces the default prompt (`SYSTEM.md`, `--system-prompt`).
     pub custom_prompt: Option<String>,
     /// Appended to the prompt (`APPEND_SYSTEM.md`, `--append-system-prompt`).

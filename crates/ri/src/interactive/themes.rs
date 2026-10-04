@@ -9,25 +9,7 @@ use ri_tui::theme::Theme;
 use ri_types::rpc::SourceInfo;
 
 /// A problem with a theme path, shown under `[Theme conflicts]`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Diagnostic {
-    /// A path that cannot be read, or a file that is not a valid theme.
-    Warning {
-        /// What went wrong.
-        message: String,
-        /// The path.
-        path: PathBuf,
-    },
-    /// A file declaring a name an earlier file declared; it is skipped.
-    Collision {
-        /// The declared name.
-        name: String,
-        /// The file that keeps the name, with its source.
-        winner: SourceInfo,
-        /// The skipped file.
-        loser: PathBuf,
-    },
-}
+pub use ri_core::resources::Diagnostic;
 
 /// The registered theme files of a session.
 #[derive(Clone, Debug, Default)]
@@ -79,6 +61,11 @@ impl ThemeFiles {
     /// The names of the registered themes.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.named.iter().map(|(name, _)| name.as_str())
+    }
+
+    /// The registered files' sources.
+    pub fn sources(&self) -> impl Iterator<Item = &SourceInfo> {
+        self.named.iter().map(|(_, source)| source)
     }
 
     /// The file that declares `name`.
@@ -209,6 +196,7 @@ mod tests {
                         .to_string_lossy(),
                     loser.file_name().unwrap().to_string_lossy()
                 ),
+                other => format!("{other:?}"),
             })
             .collect();
         assert_eq!(

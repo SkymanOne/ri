@@ -10,7 +10,6 @@ use indexmap::IndexMap;
 pub use ri_types::rpc::SourceInfo;
 
 use crate::config::PROJECT_DIR;
-use crate::tools::path::home_dir;
 
 /// A context file and its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,6 +18,35 @@ pub struct ContextFile {
     pub path: PathBuf,
     /// Its text, without a byte order mark.
     pub content: String,
+}
+
+/// A problem found while loading skills, prompt templates or themes: pi's
+/// `ResourceDiagnostic`, listed under the startup `[... conflicts]` sections.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Diagnostic {
+    /// A resource that loads with a problem, or a path that does not load.
+    Warning {
+        /// What is wrong.
+        message: String,
+        /// The path.
+        path: PathBuf,
+    },
+    /// A command-line path that does not exist.
+    Error {
+        /// What is wrong.
+        message: String,
+        /// The path.
+        path: PathBuf,
+    },
+    /// A name an earlier resource took; the later one is skipped.
+    Collision {
+        /// The name.
+        name: String,
+        /// The resource that keeps the name, with its source.
+        winner: SourceInfo,
+        /// The skipped file.
+        loser: PathBuf,
+    },
 }
 
 /// A skill: instructions the model reads on demand.
@@ -255,15 +283,6 @@ struct Origin {
 }
 
 impl Origin {
-    fn auto(scope: &str, base_dir: PathBuf) -> Origin {
-        Origin {
-            source: "auto".into(),
-            scope: scope.into(),
-            origin: "top-level".into(),
-            base_dir: Some(base_dir),
-        }
-    }
-
     /// The origin `info` gives the resources under its path.
     fn of(info: &SourceInfo) -> Origin {
         Origin {
@@ -297,13 +316,77 @@ pub fn cli_source(path: &Path) -> SourceInfo {
     }
 }
 
-fn load_skill(path: &Path, origin: &Origin) -> Option<Skill> {
-    let (frontmatter, _) = parse_frontmatter(&read_text(path)?);
+/// The Agent Skills limits pi checks names and descriptions against, in
+/// UTF-16 code units as JavaScript counts them.
+const MAX_NAME_LENGTH: usize = 64;
+const MAX_DESCRIPTION_LENGTH: usize = 1024;
+
+/// pi's `validateName`.
+fn name_problems(name: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let length = name.encode_utf16().count();
+    if length > MAX_NAME_LENGTH {
+        problems.push(format!(
+            "name exceeds {MAX_NAME_LENGTH} characters ({length})"
+        ));
+    }
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        problems.push(
+            "name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)"
+                .to_owned(),
+        );
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        problems.push("name must not start or end with a hyphen".to_owned());
+    }
+    if name.contains("--") {
+        problems.push("name must not contain consecutive hyphens".to_owned());
+    }
+    problems
+}
+
+/// pi's `loadSkillFromFile`: a `SKILL.md` file, or another markdown file with
+/// a description. Problems with the name or description are reported; a
+/// skill without a description does not load.
+fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -> Option<Skill> {
+    let warn = |message: String| Diagnostic::Warning {
+        message,
+        path: path.to_path_buf(),
+    };
+    let declared = path.file_name().is_some_and(|name| name == "SKILL.md");
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text
+            .strip_prefix('\u{feff}')
+            .map(str::to_owned)
+            .unwrap_or(text),
+        Err(error) => {
+            diagnostics.push(warn(crate::tools::node_error(&error, "open", path)));
+            return None;
+        }
+    };
+    let (frontmatter, _) = parse_frontmatter(&text);
     let description = frontmatter
         .get("description")
         .and_then(FrontmatterValue::as_str)
-        .filter(|text| !text.trim().is_empty())?
-        .to_owned();
+        .filter(|text| !text.trim().is_empty());
+    if !declared && description.is_none() {
+        return None;
+    }
+    match description {
+        None => diagnostics.push(warn("description is required".to_owned())),
+        Some(text) => {
+            let length = text.encode_utf16().count();
+            if length > MAX_DESCRIPTION_LENGTH {
+                diagnostics.push(warn(format!(
+                    "description exceeds {MAX_DESCRIPTION_LENGTH} characters ({length})"
+                )));
+            }
+        }
+    }
     let base_dir = path.parent()?.to_path_buf();
     let name = frontmatter
         .get("name")
@@ -315,9 +398,10 @@ fn load_skill(path: &Path, origin: &Origin) -> Option<Skill> {
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
         })?;
+    diagnostics.extend(name_problems(&name).into_iter().map(warn));
     Some(Skill {
         name,
-        description,
+        description: description?.to_owned(),
         file_path: path.to_path_buf(),
         base_dir,
         disable_model_invocation: frontmatter.get("disable-model-invocation")
@@ -329,10 +413,16 @@ fn load_skill(path: &Path, origin: &Origin) -> Option<Skill> {
 /// Skills under `dir`: a directory with `SKILL.md` is one skill; otherwise
 /// subdirectories are searched, and at the top level other `.md` files with a
 /// description are skills too. Hidden entries and `node_modules` are skipped.
-fn skills_in(dir: &Path, top: bool, origin: &Origin, skills: &mut Vec<Skill>) {
+fn skills_in(
+    dir: &Path,
+    top: bool,
+    origin: &Origin,
+    skills: &mut Vec<Skill>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let skill_file = dir.join("SKILL.md");
     if skill_file.is_file() {
-        skills.extend(load_skill(&skill_file, origin));
+        skills.extend(load_skill(&skill_file, origin, diagnostics));
         return;
     }
     let Ok(read) = std::fs::read_dir(dir) else {
@@ -349,103 +439,59 @@ fn skills_in(dir: &Path, top: bool, origin: &Origin, skills: &mut Vec<Skill>) {
             continue;
         }
         if path.is_dir() {
-            skills_in(&path, false, origin, skills);
+            skills_in(&path, false, origin, skills, diagnostics);
         } else if top && path.is_file() && name.ends_with(".md") {
-            skills.extend(load_skill(&path, origin));
+            skills.extend(load_skill(&path, origin, diagnostics));
         }
     }
 }
 
-/// Skills from the user's and the project's skill directories and `extra` paths.
-/// The first skill of a name wins.
-pub fn skills(
-    cwd: &Path,
-    agent_dir: &Path,
-    project_trusted: bool,
-    extra: &[SourceInfo],
-) -> Vec<Skill> {
+/// pi's `loadSkills` over `sources`, in order, each with its source: skill
+/// files, or directories searched for skills. The first skill of a name
+/// wins; later ones are reported as collisions.
+pub fn skills_from(sources: &[SourceInfo]) -> (Vec<Skill>, Vec<Diagnostic>) {
     let mut found = Vec::new();
-    let user_agents = home_dir().join(".agents");
-    skills_in(
-        &agent_dir.join("skills"),
-        true,
-        &Origin::auto("user", agent_dir.to_path_buf()),
-        &mut found,
-    );
-    skills_in(
-        &user_agents.join("skills"),
-        true,
-        &Origin::auto("user", user_agents.clone()),
-        &mut found,
-    );
-    if project_trusted {
-        let project = cwd.join(PROJECT_DIR);
-        skills_in(
-            &project.join("skills"),
-            true,
-            &Origin::auto("project", project.clone()),
-            &mut found,
-        );
-        for dir in cwd.ancestors() {
-            let agents = dir.join(".agents");
-            if agents != user_agents {
-                skills_in(
-                    &agents.join("skills"),
-                    true,
-                    &Origin::auto("project", agents.clone()),
-                    &mut found,
-                );
-            }
-        }
-    }
-    explicit_skills(extra, &mut found);
-    unique_skills(found)
-}
-
-/// Skills at `sources`, in order, each with its source: skill files, or
-/// directories searched for skills. The first skill of a name wins.
-pub fn skills_from(sources: &[SourceInfo]) -> Vec<Skill> {
-    let mut found = Vec::new();
-    explicit_skills(sources, &mut found);
-    unique_skills(found)
-}
-
-/// Skills at `paths` only, as `--skill` gives them: skill files, or
-/// directories searched for skills.
-pub fn skills_at(paths: &[PathBuf]) -> Vec<Skill> {
-    let mut found = Vec::new();
-    let sources: Vec<SourceInfo> = paths.iter().map(|path| cli_source(path)).collect();
-    explicit_skills(&sources, &mut found);
-    unique_skills(found)
-}
-
-/// Skills at explicit paths, each with the source of the entry that named it.
-fn explicit_skills(sources: &[SourceInfo], found: &mut Vec<Skill>) {
+    let mut diagnostics = Vec::new();
     for source in sources {
         let path = Path::new(&source.path);
         let origin = Origin::of(source);
-        if path.is_dir() {
-            skills_in(path, true, &origin, found);
-        } else if path.is_file() {
-            found.extend(load_skill(path, &origin));
+        let warn = |message: &str| Diagnostic::Warning {
+            message: message.to_owned(),
+            path: path.to_path_buf(),
+        };
+        if !path.exists() {
+            diagnostics.push(warn("skill path does not exist"));
+        } else if path.is_dir() {
+            skills_in(path, true, &origin, &mut found, &mut diagnostics);
+        } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+            found.extend(load_skill(path, &origin, &mut diagnostics));
+        } else {
+            diagnostics.push(warn("skill path is not a markdown file"));
         }
     }
-}
-
-/// The first skill of each name and file.
-fn unique_skills(found: Vec<Skill>) -> Vec<Skill> {
     let mut unique: Vec<Skill> = Vec::new();
+    let mut files = std::collections::HashSet::new();
+    let mut collisions = Vec::new();
     for skill in found {
-        let canonical = std::fs::canonicalize(&skill.file_path).ok();
-        let duplicate = unique.iter().any(|existing| {
-            existing.name == skill.name
-                || std::fs::canonicalize(&existing.file_path).ok() == canonical
-        });
-        if !duplicate {
-            unique.push(skill);
+        // The same file reached twice, through a symlink, loads once.
+        let real = std::fs::canonicalize(&skill.file_path).unwrap_or(skill.file_path.clone());
+        if files.contains(&real) {
+            continue;
+        }
+        match unique.iter().find(|existing| existing.name == skill.name) {
+            Some(existing) => collisions.push(Diagnostic::Collision {
+                name: skill.name.clone(),
+                winner: existing.source.clone(),
+                loser: skill.file_path,
+            }),
+            None => {
+                files.insert(real);
+                unique.push(skill);
+            }
         }
     }
-    unique
+    diagnostics.extend(collisions);
+    (unique, diagnostics)
 }
 
 fn escape_xml(text: &str) -> String {
@@ -542,142 +588,37 @@ fn template_at(path: PathBuf, origin: &Origin) -> Option<PromptTemplate> {
     })
 }
 
-/// Theme files and directories from settings and conventional directories, in
-/// pi's order: the `themes` entries of the project's and then the user's
-/// settings (resolved against `.ri` and the agent directory; source `local`),
-/// then the trusted project's and the agent directory's `themes` directories
-/// (source `auto`). Pattern entries (`!`, `+`, `-`), missing paths and files
-/// other than `.json` are skipped silently: only explicit `--theme` paths
-/// report problems.
-pub fn theme_paths(
-    cwd: &Path,
-    agent_dir: &Path,
-    settings: &crate::settings::SettingsManager,
-) -> Vec<SourceInfo> {
-    let info = |path: PathBuf, source: &str, scope: &str| SourceInfo {
-        path: path.to_string_lossy().into_owned(),
-        source: source.into(),
-        scope: scope.into(),
-        origin: "top-level".into(),
-        base_dir: None,
-    };
-    let project = cwd.join(PROJECT_DIR);
-    let mut paths = settings_paths(cwd, agent_dir, settings, "themes", "json");
-    let auto = [
-        (
-            settings.project_trusted(),
-            project.join("themes"),
-            "project",
-        ),
-        (true, agent_dir.join("themes"), "user"),
-    ];
-    for (enabled, dir, scope) in auto {
-        if enabled && dir.is_dir() {
-            paths.push(info(dir, "auto", scope));
-        }
-    }
-    paths
-}
-
-/// The existing paths the `key` entries of the project's and then the user's
-/// settings name, resolved against `.ri` and the agent directory, as pi's
-/// `resolveLocalEntries` records them: source `local`, scope `project` or
-/// `user`. Directories count, and files with extension `extension`. Pattern
-/// entries (`!`, `+`, `-`) are skipped.
-pub fn settings_paths(
-    cwd: &Path,
-    agent_dir: &Path,
-    settings: &crate::settings::SettingsManager,
-    key: &str,
-    extension: &str,
-) -> Vec<SourceInfo> {
-    use crate::settings::Scope;
-    let project = cwd.join(PROJECT_DIR);
-    let mut paths = Vec::new();
-    for (scope, base, name) in [
-        (Scope::Project, project.as_path(), "project"),
-        (Scope::Global, agent_dir, "user"),
-    ] {
-        let entries = settings
-            .document(scope)
-            .get(key)
-            .and_then(serde_json::Value::as_array);
-        for entry in entries.into_iter().flatten().filter_map(|e| e.as_str()) {
-            if entry.starts_with(['!', '+', '-']) {
-                continue;
-            }
-            let path = crate::packages::source::local_path(entry, base);
-            if path.is_dir()
-                || (path.is_file() && path.extension().is_some_and(|ext| ext == extension))
-            {
-                paths.push(SourceInfo {
-                    path: path.to_string_lossy().into_owned(),
-                    source: "local".into(),
-                    scope: name.into(),
-                    origin: "top-level".into(),
-                    base_dir: None,
-                });
-            }
-        }
-    }
-    paths
-}
-
-/// Templates from the user's and the trusted project's `prompts` directories and
-/// `extra` paths.
-pub fn prompt_templates(
-    cwd: &Path,
-    agent_dir: &Path,
-    project_trusted: bool,
-    extra: &[SourceInfo],
-) -> Vec<PromptTemplate> {
-    let mut templates = Vec::new();
-    templates_in(
-        &agent_dir.join("prompts"),
-        &Origin::auto("user", agent_dir.to_path_buf()),
-        &mut templates,
-    );
-    if project_trusted {
-        let project = cwd.join(PROJECT_DIR);
-        templates_in(
-            &project.join("prompts"),
-            &Origin::auto("project", project.clone()),
-            &mut templates,
-        );
-    }
-    explicit_templates(extra, &mut templates);
-    templates
-}
-
-/// Templates at `sources`, in order, each with its source: markdown files,
-/// or directories of them.
-pub fn templates_from(sources: &[SourceInfo]) -> Vec<PromptTemplate> {
-    let mut templates = Vec::new();
-    explicit_templates(sources, &mut templates);
-    templates
-}
-
-/// Templates at `paths` only, as `--prompt-template` gives them: markdown
-/// files, or directories of them.
-pub fn templates_at(paths: &[PathBuf]) -> Vec<PromptTemplate> {
-    let mut templates = Vec::new();
-    let sources: Vec<SourceInfo> = paths.iter().map(|path| cli_source(path)).collect();
-    explicit_templates(&sources, &mut templates);
-    templates
-}
-
-/// Templates at explicit paths, each with the source of the entry that named
-/// it.
-fn explicit_templates(sources: &[SourceInfo], templates: &mut Vec<PromptTemplate>) {
+/// pi's prompt template loading over `sources`, in order, each with its
+/// source: markdown files, or directories of them. The first template of a
+/// name wins; later ones are reported as collisions. Missing paths are
+/// skipped; the command line's are reported by the caller.
+pub fn templates_from(sources: &[SourceInfo]) -> (Vec<PromptTemplate>, Vec<Diagnostic>) {
+    let mut templates: Vec<PromptTemplate> = Vec::new();
     for source in sources {
         let path = PathBuf::from(&source.path);
         let origin = Origin::of(source);
         if path.is_dir() {
-            templates_in(&path, &origin, templates);
+            templates_in(&path, &origin, &mut templates);
         } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
             templates.extend(template_at(path, &origin));
         }
     }
+    let mut unique: Vec<PromptTemplate> = Vec::new();
+    let mut diagnostics = Vec::new();
+    for template in templates {
+        match unique
+            .iter()
+            .find(|existing| existing.name == template.name)
+        {
+            Some(existing) => diagnostics.push(Diagnostic::Collision {
+                name: template.name.clone(),
+                winner: existing.source.clone(),
+                loser: template.file_path,
+            }),
+            None => unique.push(template),
+        }
+    }
+    (unique, diagnostics)
 }
 
 /// Splits arguments on whitespace, honoring single and double quotes.

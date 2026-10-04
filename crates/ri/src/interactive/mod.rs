@@ -853,16 +853,48 @@ impl App {
                 width,
             ));
         }
-        // Diagnostics show even when the listing is quiet, as in pi.
+        // Diagnostics show even when the listing is quiet, as in pi, with the
+        // sources of the loaded resources their paths belong to.
+        let resources = self.session.resources();
+        let extension_sources: Vec<_> = self
+            .session
+            .extensions()
+            .iter()
+            .map(|extension| extension.source())
+            .collect();
+        let loaded: Vec<&ri_types::rpc::SourceInfo> = extension_sources
+            .iter()
+            .chain(resources.skills.iter().map(|skill| &skill.source))
+            .chain(resources.templates.iter().map(|template| &template.source))
+            .chain(self.theme_files.sources())
+            .collect();
+        header.extend(header::conflicts(
+            "[Skill conflicts]",
+            &self.theme,
+            &resources.skill_diagnostics,
+            &loaded,
+            self.home.as_deref(),
+            width,
+        ));
+        header.extend(header::conflicts(
+            "[Prompt conflicts]",
+            &self.theme,
+            &resources.template_diagnostics,
+            &loaded,
+            self.home.as_deref(),
+            width,
+        ));
         header.extend(header::extension_issues(
             &self.theme,
             &self.extension_issues,
             self.home.as_deref(),
             width,
         ));
-        header.extend(header::theme_conflicts(
+        header.extend(header::conflicts(
+            "[Theme conflicts]",
             &self.theme,
             &self.theme_files.diagnostics,
+            &loaded,
             self.home.as_deref(),
             width,
         ));
