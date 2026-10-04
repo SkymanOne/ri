@@ -53,6 +53,13 @@
 
 	globalThis.__ri_cjs = load;
 	globalThis.__ri_require_for = requireFor;
+	// Node's synchronous `import.meta.resolve`: the URL an import of
+	// `specifier` from `referrer` would load.
+	globalThis.__ri_import_meta_resolve = (referrer) => (specifier) => {
+		const builtin = builtinName(specifier);
+		if (builtin) return `node:${builtin}`;
+		return builtins.url.pathToFileURL(ri.request("module.resolve", { specifier: String(specifier), referrer, kind: "import" })).href;
+	};
 })();
 
 // The names an ES module wrapper of CommonJS module `path` exports; loads it.

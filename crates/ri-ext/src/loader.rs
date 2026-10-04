@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
 /// Bumped when the output of [`Loader::transpile`] changes for the same input.
-const TRANSPILE_VERSION: &str = "1";
+const TRANSPILE_VERSION: &str = "2";
 
 /// How a file runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,6 +232,10 @@ impl Loader {
 /// Strips TypeScript, decides the module format and adds what jiti provides
 /// to ES modules: `require`, `__filename`, `__dirname` and `import.meta` paths.
 fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
+    // QuickJS takes sources as C strings. A NUL is legal only in strings,
+    // templates, regular expressions and comments, where `\u0000` stands for
+    // the same character.
+    let text = &text.replace('\0', "\\u0000");
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs());
     let parsed = Parser::new(&allocator, text, source_type).parse();
@@ -282,10 +286,11 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
         .map(|dir| dir.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut prelude = format!(
-        "import.meta.url = {}; import.meta.filename = {}; import.meta.dirname = {};",
+        "import.meta.url = {}; import.meta.filename = {}; import.meta.dirname = {}; import.meta.resolve = globalThis.__ri_import_meta_resolve({});",
         json_text(&format!("file://{file}")),
         json_text(&file),
         json_text(&dir),
+        json_text(&file),
     );
     if uses_require {
         prelude.push_str(&format!(

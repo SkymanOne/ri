@@ -173,3 +173,49 @@ export default function (pi) {
         "from disk,4,6,hi,function"
     );
 }
+
+/// Gaps the npm package comparison found: `import.meta.resolve`, Node's
+/// diagnostic report, and a NUL character in a source file.
+#[tokio::test(flavor = "multi_thread")]
+async fn resolves_import_meta_reads_reports_and_keeps_nul_characters() {
+    let dir = scratch("meta");
+    let main = "
+import lib from \"cjs-lib\";
+const nul = \"a\0b\";
+export default function (pi) {
+	pi.registerCommand(\"probe\", {
+		description: [
+			import.meta.resolve(\"cjs-lib\"),
+			import.meta.resolve(\"./data.txt\"),
+			import.meta.resolve(\"node:fs\"),
+			typeof process.report.getReport().header,
+			nul.length,
+			nul.charCodeAt(1),
+			lib.ok,
+		].join(\",\"),
+		handler: async () => {},
+	});
+}
+";
+    let (_instance, extension) = load(
+        &dir,
+        &[
+            ("main.ts", main),
+            ("data.txt", "data\n"),
+            (
+                "node_modules/cjs-lib/package.json",
+                r#"{"name":"cjs-lib","main":"index.js"}"#,
+            ),
+            ("node_modules/cjs-lib/index.js", "exports.ok = 'yes\0';\n"),
+        ],
+    )
+    .await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    let dir = dir.display();
+    assert_eq!(
+        extension["commands"][0]["description"],
+        format!(
+            "file://{dir}/node_modules/cjs-lib/index.js,file://{dir}/data.txt,node:fs,object,3,0,yes\0"
+        )
+    );
+}
