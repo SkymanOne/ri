@@ -214,6 +214,25 @@ impl SettingsManager {
         &self.merged
     }
 
+    /// pi's `getHttpIdleTimeoutMs`: `httpIdleTimeoutMs` in milliseconds, as a
+    /// number, a numeric string or `"disabled"` (0); five minutes when unset
+    /// or invalid.
+    pub fn http_idle_timeout_ms(&self) -> u64 {
+        let value = self
+            .project
+            .get("httpIdleTimeoutMs")
+            .or_else(|| self.global.get("httpIdleTimeoutMs"));
+        let number = match value {
+            Some(Value::String(text)) if text.trim().eq_ignore_ascii_case("disabled") => Some(0.0),
+            Some(Value::String(text)) => text.trim().parse::<f64>().ok(),
+            Some(Value::Number(number)) => number.as_f64(),
+            _ => None,
+        };
+        number
+            .filter(|ms| ms.is_finite() && *ms >= 0.0)
+            .map_or(300_000, |ms| ms.floor() as u64)
+    }
+
     /// Whether the project scope is loaded.
     pub fn project_trusted(&self) -> bool {
         self.project_trusted

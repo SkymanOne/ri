@@ -395,6 +395,7 @@ pub fn create(
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
     let (settings, trusted) = load_settings(args, &cwd, &agent_dir)?;
+    ri_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
     let mut registry = ModelRegistry::load(&agent_dir);
     if warn && let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");

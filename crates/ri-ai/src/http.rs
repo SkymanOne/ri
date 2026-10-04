@@ -1,6 +1,7 @@
 //! HTTP transport shared by the wire APIs: client, retries, cancellation, errors.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use reqwest::header::HeaderMap;
@@ -21,6 +22,33 @@ pub const ABORTED_READ: &str = "This operation was aborted";
 const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
 
 static SETTINGS_PROXY: OnceLock<String> = OnceLock::new();
+
+/// pi's default `httpIdleTimeoutMs`: five minutes.
+pub const DEFAULT_IDLE_TIMEOUT_MS: u64 = 300_000;
+
+static IDLE_TIMEOUT_MS: AtomicU64 = AtomicU64::new(DEFAULT_IDLE_TIMEOUT_MS);
+
+/// Sets how long provider requests may wait for response headers, and then
+/// for each body chunk, before failing, as pi's `httpIdleTimeoutMs` sets
+/// undici's `headersTimeout` and `bodyTimeout`; 0 waits forever.
+pub fn set_idle_timeout_ms(ms: u64) {
+    IDLE_TIMEOUT_MS.store(ms, Ordering::Relaxed);
+}
+
+fn idle_timeout() -> Option<Duration> {
+    match IDLE_TIMEOUT_MS.load(Ordering::Relaxed) {
+        0 => None,
+        ms => Some(Duration::from_millis(ms)),
+    }
+}
+
+/// Waits for `future` within the idle timeout; `None` when it elapses.
+async fn within_idle_timeout<T>(future: impl std::future::Future<Output = T>) -> Option<T> {
+    match idle_timeout() {
+        Some(limit) => tokio::time::timeout(limit, future).await.ok(),
+        None => Some(future.await),
+    }
+}
 
 /// Applies pi's `httpProxy` setting for this process: it serves as
 /// `HTTP_PROXY` and `HTTPS_PROXY` where those are unset. Call it before the
@@ -151,12 +179,14 @@ pub async fn send(
 type Attempt = Box<(Failure, HeaderMap)>;
 
 async fn attempt(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Attempt> {
-    let response = request.send().await.map_err(|err| {
-        Box::new((
-            Failure::Connection(connection_message(&err)),
-            HeaderMap::new(),
-        ))
-    })?;
+    let failed = |message: String| Box::new((Failure::Connection(message), HeaderMap::new()));
+    // Headers that do not arrive in time fail the fetch, which the SDKs
+    // report as a connection error.
+    let response = match within_idle_timeout(request.send()).await {
+        Some(Ok(response)) => response,
+        Some(Err(err)) => return Err(failed(connection_message(&err))),
+        None => return Err(failed("Connection error.".to_owned())),
+    };
     let status = response.status().as_u16();
     if (200..300).contains(&status) {
         return Ok(response);
@@ -321,13 +351,16 @@ pub async fn read_chunk(
     if cancel.is_cancelled() {
         return Err(ABORTED_DURING_STREAM.to_owned());
     }
+    // A body that goes quiet for longer than the idle timeout fails as
+    // undici's body timeout does.
     let chunk = tokio::select! {
         () = cancel.cancelled() => return Err(interrupted.to_owned()),
-        chunk = response.chunk() => chunk,
+        chunk = within_idle_timeout(response.chunk()) => chunk,
     };
     chunk
+        .and_then(Result::ok)
         .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
-        .map_err(|_| "terminated".to_owned())
+        .ok_or_else(|| "terminated".to_owned())
 }
 
 /// Reads server-sent events from a response until it ends or `cancel` fires.

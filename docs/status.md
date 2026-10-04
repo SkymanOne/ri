@@ -69,6 +69,7 @@ Done for the slice below.
 - Selectors: model (with the all/scoped toggle), thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
 - `/settings` with pi's items, search and submenus (warnings, per-model thinking levels, the theme with live preview and automatic light/dark pairs). Changes apply at once where ri implements the setting, including switching between fullscreen and regular mode, and are saved as pi saves them.
 - `/scoped-models`: enabling, clearing, reordering and provider toggles for the session, saved to `enabledModels` with `ctrl+s`.
+- `httpIdleTimeoutMs`: provider requests fail when headers or body chunks stop arriving for that long, as pi's undici timeouts do, and `/settings` changes it at once.
 - `terminal.showTerminalProgress`: pi's OSC 9;4 progress while the agent runs or compacts, repeated every second and cleared at the end and on exit.
 - `images.blockImages` replaces images sent to providers with pi's notice; `fullscreenExitOutput: "resume-hint"` leaves fullscreen without printing the transcript.
 - Commands: `/model`, `/thinking`, `/settings`, `/scoped-models`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
@@ -96,7 +97,7 @@ Budgets, from `cargo xtask bench` on this machine (release build, 100×40 termin
 
 Not yet done:
 
-- Settings that `/settings` saves but ri does not act on yet: image auto-resize, HTTP idle timeout, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
+- Settings that `/settings` saves but ri does not act on yet: image auto-resize, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
 - Changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.

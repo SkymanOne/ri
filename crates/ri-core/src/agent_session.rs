@@ -789,6 +789,11 @@ impl AgentSession {
         lock(&self.inner.settings).settings().clone()
     }
 
+    /// pi's `getHttpIdleTimeoutMs` for these settings.
+    pub fn http_idle_timeout_ms(&self) -> u64 {
+        lock(&self.inner.settings).http_idle_timeout_ms()
+    }
+
     /// Settings files that failed to load, as pi's warnings word them.
     pub fn settings_errors(&self) -> Vec<String> {
         lock(&self.inner.settings).errors().to_vec()

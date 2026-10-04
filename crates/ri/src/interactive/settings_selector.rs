@@ -1266,21 +1266,6 @@ fn available_themes(agent_dir: &std::path::Path, files: &super::themes::ThemeFil
 }
 
 /// pi's `parseHttpIdleTimeoutMs` of the setting, or its default.
-fn http_idle_timeout_ms(settings: &Settings) -> u64 {
-    let value = serde_json::to_value(&settings.http_idle_timeout_ms).unwrap_or_default();
-    let number = match &value {
-        serde_json::Value::String(text) if text.trim().eq_ignore_ascii_case("disabled") => {
-            Some(0.0)
-        }
-        serde_json::Value::String(text) => text.trim().parse::<f64>().ok(),
-        serde_json::Value::Number(number) => number.as_f64(),
-        _ => None,
-    };
-    number
-        .filter(|ms| ms.is_finite() && *ms >= 0.0)
-        .map_or(300_000, |ms| ms.floor() as u64)
-}
-
 impl super::App {
     /// pi's `showSettingsSelector`.
     pub(super) fn open_settings(&mut self) {
@@ -1302,7 +1287,7 @@ impl super::App {
             auto_compact: self.session.auto_compaction_enabled(),
             steering_mode: mode(self.session.steering_mode()),
             follow_up_mode: mode(self.session.follow_up_mode()),
-            http_idle_timeout_ms: http_idle_timeout_ms(&settings),
+            http_idle_timeout_ms: self.session.http_idle_timeout_ms(),
             hide_thinking: self.hide_thinking,
             fullscreen: self.fullscreen,
             models: self.session.available_models(),
@@ -1408,6 +1393,7 @@ impl super::App {
                     HTTP_IDLE_TIMEOUTS.iter().find(|(label, _)| *label == value)
                 {
                     global("httpIdleTimeoutMs", (*ms).into());
+                    ri_ai::http::set_idle_timeout_ms(*ms);
                     self.status(format!("HTTP idle timeout: {label}"));
                 }
             }
