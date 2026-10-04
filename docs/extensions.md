@@ -46,7 +46,7 @@ Packages with full grants share one runtime instance. Each native extension gets
 ri loads extensions from:
 
 - `~/.ri/agent/extensions`, and `.ri/extensions` in a trusted project
-- installed packages
+- packages and files added with `ri install`, which accepts npm and git sources, local folders and single `.ts`, `.js` or `.wasm` files
 - `-e <path>` for one run, which accepts a file or a package folder
 
 `ri -ne` starts without extensions.

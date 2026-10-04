@@ -66,24 +66,53 @@ cargo build --release --target wasm32-wasip2
 
 The result is `target/wasm32-wasip2/release/shout.wasm`.
 
-## Load it
+## Try it
 
-A `.wasm` file loads wherever a pi extension file does:
+Load the build for a single run without installing it:
 
 ```sh
-ri -e target/wasm32-wasip2/release/shout.wasm      # for one run
-cp target/wasm32-wasip2/release/shout.wasm ~/.ri/agent/extensions/
+ri -e target/wasm32-wasip2/release/shout.wasm
 ```
 
-In a package, list it under the `ri` key of `package.json`. ri reads the `ri` key before the `pi` key, so one package can ship a native build for ri and JavaScript for pi:
+## Install it
+
+`ri install` takes the `.wasm` file directly:
+
+```sh
+ri install ./target/wasm32-wasip2/release/shout.wasm       # for every project
+ri install ./target/wasm32-wasip2/release/shout.wasm -l    # for this project only
+```
+
+ri records the path in `settings.json` and loads the file from where it is, so a rebuild takes effect the next time ri starts. `ri list` shows the installed extension and `ri remove <path>` uninstalls it. `ri config` turns it off without removing it.
+
+## Share it
+
+A native extension is shared as a package that contains the built `.wasm` file. The simplest layout needs no manifest, because ri loads every `.wasm` file in a package's `extensions` folder:
+
+```text
+shout/
+└── extensions/
+    └── shout.wasm
+```
+
+Push that folder to a git repository, and others install it by its URL:
+
+```sh
+ri install git:github.com/you/shout
+```
+
+To publish on npm, add a `package.json` with a name and a version, then install with `ri install npm:shout`. The manifest can also name the files to load. ri reads the `ri` key before the `pi` key, so one package can ship a native build for ri and a JavaScript build for pi:
 
 ```json
 {
   "name": "shout",
+  "version": "0.1.0",
   "pi": { "extensions": ["./dist/shout.js"] },
   "ri": { "extensions": ["./dist/shout.wasm"] }
 }
 ```
+
+Commit or publish the built `.wasm` file, not only the Rust sources. ri installs prebuilt files and never compiles code during installation, because a build runs `build.rs` scripts and procedural macros outside the sandbox. For the same reason ri skips npm lifecycle scripts.
 
 ## API
 

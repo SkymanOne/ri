@@ -77,7 +77,14 @@ fn init(api: &mut Api) {
 ri_extension_api::extension!(init);
 ```
 
-`ri -e shout.wasm` loads the result. See [Extensions](https://skymanone.github.io/ri/extensions.html) and [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html).
+Build it and install the result:
+
+```bash
+cargo build --release --target wasm32-wasip2
+ri install ./target/wasm32-wasip2/release/shout.wasm
+```
+
+To share it, put the `.wasm` file in an `extensions` folder of a git repository or npm package. Others then install it like any pi package, with `ri install git:github.com/you/shout` or `ri install npm:shout`. See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide.
 
 ## Performance
 

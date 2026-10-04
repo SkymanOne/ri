@@ -300,3 +300,61 @@ async fn local_packages_are_stored_relative_to_the_scope() {
     );
     assert_eq!(std::env::current_dir().unwrap(), previous);
 }
+
+/// Native extensions install like any package: a built `.wasm` file by path,
+/// a folder with an `extensions` directory, or an npm package whose `ri` key
+/// names its `.wasm` build ahead of the `pi` key's JavaScript.
+#[tokio::test(flavor = "multi_thread")]
+async fn installs_native_extensions() {
+    const WASM: &str = "\0asm\u{1}\0\0\0";
+    let dir = scratch("native");
+    let shout = tarball(&[
+        (
+            "package.json",
+            r#"{"name": "shout", "pi": {"extensions": ["./dist/shout.js"]}, "ri": {"extensions": ["./dist/shout.wasm"]}}"#,
+        ),
+        ("dist/shout.js", "export default function () {}\n"),
+        ("dist/shout.wasm", WASM),
+    ]);
+    let server = registry(|base| {
+        publish(
+            base,
+            "shout",
+            &[("1.0.0", json!({}), shout.clone())],
+            "1.0.0",
+        )
+    })
+    .await;
+    let mut packages = manager(&dir, &server.url());
+
+    let file = dir.join("project/target/shout.wasm");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, WASM).unwrap();
+    packages
+        .install(&file.to_string_lossy(), false)
+        .await
+        .unwrap();
+
+    let folder = dir.join("project/shout-package");
+    std::fs::create_dir_all(folder.join("extensions")).unwrap();
+    std::fs::write(folder.join("extensions/shout.wasm"), WASM).unwrap();
+    packages
+        .install(&folder.to_string_lossy(), false)
+        .await
+        .unwrap();
+
+    packages.install("npm:shout", false).await.unwrap();
+    let installed = dir.join("agent/npm/node_modules/shout/dist/shout.wasm");
+    assert_eq!(std::fs::read(&installed).unwrap(), WASM.as_bytes());
+
+    let resolved = packages.resolve(false, |error| panic!("{error}")).await;
+    let extensions: Vec<PathBuf> = resolved
+        .iter()
+        .flat_map(|package| package.resources.extensions.clone())
+        .collect();
+    assert_eq!(
+        extensions,
+        [file, folder.join("extensions/shout.wasm"), installed]
+    );
+    server.finish().unwrap();
+}
