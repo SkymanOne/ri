@@ -7,6 +7,7 @@
 //! Settings list them in `packages`.
 
 pub mod npm;
+pub mod resolve;
 pub mod resources;
 pub mod source;
 
@@ -61,6 +62,63 @@ pub struct ResolvedPackage {
     pub root: PathBuf,
     /// Its resources.
     pub resources: PackageResources,
+}
+
+/// Where `source`, written in settings whose directory is `base`, is or
+/// would be installed.
+pub fn install_location(source: &Source, base: &Path) -> PathBuf {
+    match source {
+        Source::Npm { name, .. } => base.join("npm").join("node_modules").join(name),
+        Source::Git { host, path, .. } => base.join("git").join(host).join(path),
+        Source::Local { path } => source::local_path(path, base),
+    }
+}
+
+/// pi's `DefaultPackageManager.resolve` for the settings of `cwd` and
+/// `agent_dir`: every resource of installed packages, settings entries and
+/// the discovered directories, each enabled or not, with `builtins` as the
+/// built-in extensions. Packages that are not installed are left out.
+pub fn resolve_resources(
+    cwd: &Path,
+    agent_dir: &Path,
+    settings: &SettingsManager,
+    builtins: &[&str],
+) -> resolve::ResolvedPaths {
+    let project_dir = cwd.join(PROJECT_DIR);
+    let base = |scope: &str| {
+        if scope == "project" {
+            project_dir.clone()
+        } else {
+            agent_dir.to_path_buf()
+        }
+    };
+    let list = |scope: Scope| -> Vec<Value> {
+        settings
+            .document(scope)
+            .get("packages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let packages = resolve::package_inputs(
+        &list(Scope::Project),
+        &list(Scope::Global),
+        base,
+        |source, scope| install_location(source, &base(scope)),
+    );
+    let user = resolve::settings_lists(settings.document(Scope::Global));
+    let project = resolve::settings_lists(settings.document(Scope::Project));
+    resolve::resolve(&resolve::ResolveInput {
+        cwd: cwd.to_path_buf(),
+        agent_dir: agent_dir.to_path_buf(),
+        project_dir: project_dir.clone(),
+        home: crate::tools::path::home_dir(),
+        project_trusted: settings.project_trusted(),
+        packages,
+        user: [&user[0], &user[1], &user[2], &user[3]],
+        project: [&project[0], &project[1], &project[2], &project[3]],
+        builtins,
+    })
 }
 
 /// A settings entry: a source string or a filtered package.
@@ -151,11 +209,7 @@ impl PackageManager {
     /// Where `source`, as written in `scope`'s settings, is or would be
     /// installed.
     fn install_path(&self, source: &Source, scope: Scope) -> PathBuf {
-        match source {
-            Source::Npm { name, .. } => self.npm_root(scope).join("node_modules").join(name),
-            Source::Git { host, path, .. } => self.base(scope).join("git").join(host).join(path),
-            Source::Local { path } => source::local_path(path, &self.base(scope)),
-        }
+        install_location(source, &self.base(scope))
     }
 
     /// Where `source`, as written in `scope`'s settings, is installed.

@@ -13,7 +13,8 @@ use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
 use ri_core::model_resolver::{
     DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model, resolve_model_scope,
 };
-use ri_core::resources::{context_files, prompt_templates, skills, system_prompt_file};
+use ri_core::packages::resolve::ResourceType;
+use ri_core::resources::{context_files, system_prompt_file};
 use ri_core::session::{self, SessionManager};
 use ri_core::settings::Scope;
 use ri_core::settings::SettingsManager;
@@ -548,32 +549,51 @@ pub fn create(
             .map(|path| ri_core::resources::cli_source(path))
             .collect()
     };
-    let extra_skills: Vec<SourceInfo> =
-        ri_core::resources::settings_paths(&cwd, &agent_dir, &settings, "skills", "md")
-            .into_iter()
-            .chain(cli_sources(&args.skills))
-            .chain(extensions.skills.iter().cloned())
-            .collect();
-    let extra_templates: Vec<SourceInfo> =
-        ri_core::resources::settings_paths(&cwd, &agent_dir, &settings, "prompts", "md")
-            .into_iter()
-            .chain(cli_sources(&args.prompt_templates))
-            .chain(extensions.prompts.iter().cloned())
-            .collect();
-    // pi's order: package themes, settings entries and directories, then
-    // `--theme` paths. `--no-themes` keeps only the latter.
-    let mut themes = Vec::new();
-    if !args.no_themes {
-        themes.extend(extensions.themes.iter().cloned());
-        themes.extend(ri_core::resources::theme_paths(&cwd, &agent_dir, &settings));
-    }
-    themes.extend(cli_paths(&args.themes).into_iter().map(|path| SourceInfo {
-        path: path.to_string_lossy().into_owned(),
-        source: "local".into(),
-        scope: "temporary".into(),
-        origin: "top-level".into(),
-        base_dir: None,
-    }));
+    // pi's order for each kind: `-e` packages' resources, then what settings,
+    // packages and discovery enable (unless `--no-skills` and the like), then
+    // command-line paths; a path counts once.
+    let resolved = ri_core::packages::resolve_resources(&cwd, &agent_dir, &settings, &BUILTINS);
+    let merge = |cli: &[SourceInfo], kind: ResourceType, skip: bool, extra: Vec<SourceInfo>| {
+        let mut seen = std::collections::HashSet::new();
+        cli.iter()
+            .cloned()
+            .chain(resolved.enabled(kind).filter(|_| !skip).cloned())
+            .chain(extra)
+            .filter(|info| {
+                seen.insert(
+                    std::fs::canonicalize(&info.path).unwrap_or_else(|_| PathBuf::from(&info.path)),
+                )
+            })
+            .collect::<Vec<SourceInfo>>()
+    };
+    let skill_sources = merge(
+        &extensions.skills,
+        ResourceType::Skills,
+        args.no_skills,
+        cli_sources(&args.skills),
+    );
+    let template_sources = merge(
+        &extensions.prompts,
+        ResourceType::Prompts,
+        args.no_prompt_templates,
+        cli_sources(&args.prompt_templates),
+    );
+    let theme_paths: Vec<SourceInfo> = cli_paths(&args.themes)
+        .into_iter()
+        .map(|path| SourceInfo {
+            path: path.to_string_lossy().into_owned(),
+            source: "local".into(),
+            scope: "temporary".into(),
+            origin: "top-level".into(),
+            base_dir: None,
+        })
+        .collect();
+    let themes = merge(
+        &extensions.themes,
+        ResourceType::Themes,
+        args.no_themes,
+        theme_paths,
+    );
     let mut appends: Vec<String> =
         system_prompt_file(&cwd, &agent_dir, trusted, "APPEND_SYSTEM.md")
             .into_iter()
@@ -589,18 +609,8 @@ pub fn create(
         } else {
             context_files(&cwd, &agent_dir)
         },
-        // `--no-skills` and `--no-prompt-templates` turn off discovery; paths
-        // given on the command line still load, as in pi.
-        skills: if args.no_skills {
-            ri_core::resources::skills_at(&cli_paths(&args.skills))
-        } else {
-            skills(&cwd, &agent_dir, trusted, &extra_skills)
-        },
-        templates: if args.no_prompt_templates {
-            ri_core::resources::templates_at(&cli_paths(&args.prompt_templates))
-        } else {
-            prompt_templates(&cwd, &agent_dir, trusted, &extra_templates)
-        },
+        skills: ri_core::resources::skills_from(&skill_sources),
+        templates: ri_core::resources::templates_from(&template_sources),
         custom_prompt: args
             .system_prompt
             .as_deref()
@@ -652,7 +662,7 @@ pub fn create(
 const BUILTIN_PREFIX: &str = "builtin:";
 
 /// ri's built-in extensions, in pi's load order. pi's `llama.cpp` is absent.
-const BUILTINS: [&str; 3] = ["codemode", "tool-search", "mcp"];
+pub const BUILTINS: [&str; 3] = ["codemode", "tool-search", "mcp"];
 
 /// Whether built-in extension `name` runs, as in pi: `-e builtin:<name>` loads
 /// it; otherwise it runs unless `--no-extensions` or the `extensions` setting
@@ -715,7 +725,6 @@ pub struct ExtensionErrors {
 /// those installed in a trusted project and in the agent directory. Applies
 /// extension flags from the command line, which must name registered flags.
 pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors> {
-    use ri_core::extensions::discovery;
     let fail = |message: String| ExtensionErrors {
         messages: vec![message],
         load_failed: false,
@@ -723,7 +732,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     let cwd = std::env::current_dir()
         .map_err(|err| fail(format!("reading the working directory: {err}")))?;
     let agent_dir = agent_dir();
-    let (settings, trusted) =
+    let (settings, _) =
         load_settings(args, &cwd, &agent_dir).map_err(|err| fail(err.to_string()))?;
     let mut messages = Vec::new();
     let mut missing = Vec::new();
@@ -756,10 +765,6 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         origin: "top-level".into(),
         base_dir: None,
     };
-    let scope_name = |scope: Scope| match scope {
-        Scope::Global => "user",
-        Scope::Project => "project",
-    };
     let mut themes = Vec::new();
     let mut skills = Vec::new();
     let mut prompts = Vec::new();
@@ -781,50 +786,22 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         ri_core::packages::npm::default_registry(),
     );
     let offline = args.offline || ri_core::tools::external::offline();
-    let resolved = packages
+    // Installs missing packages; what they provide comes from pi's resolver.
+    packages
         .resolve(!offline, |message| eprintln!("Warning: {message}"))
         .await;
-    // `--no-extensions` leaves out discovered extensions only: packages still
-    // provide their skills, prompts and themes.
+    // pi's precedence: the project's settings entries and discovered
+    // extensions, then the user's, then packages. `--no-extensions` leaves
+    // them out; packages still provide their skills, prompts and themes.
     if !args.no_extensions {
-        // pi's precedence: project settings and installed extensions, then
-        // the user's, then packages.
-        let settings_entries = packages.settings_extensions();
-        let installed = discovery::installed(&cwd, &agent_dir, trusted);
-        let project = cwd.join(ri_core::config::PROJECT_DIR);
-        for scope in [Scope::Project, Scope::Global] {
-            for (path, _) in settings_entries.iter().filter(|(_, entry)| *entry == scope) {
-                sources.push(source(path.clone(), "local", scope_name(scope)));
-            }
-            for path in &installed {
-                if path.starts_with(&project) == (scope == Scope::Project) {
-                    sources.push(source(path.clone(), "auto", scope_name(scope)));
-                }
-            }
-        }
-    }
-    for package in resolved {
-        if !args.no_extensions {
-            for path in &package.resources.extensions {
-                sources.push(SourceInfo {
-                    path: path.to_string_lossy().into_owned(),
-                    source: package.source.clone(),
-                    scope: scope_name(package.scope).into(),
-                    origin: "package".into(),
-                    base_dir: Some(package.root.to_string_lossy().into_owned()),
-                });
-            }
-        }
-        let of_package = |path: &PathBuf| SourceInfo {
-            path: path.to_string_lossy().into_owned(),
-            source: package.source.clone(),
-            scope: scope_name(package.scope).into(),
-            origin: "package".into(),
-            base_dir: Some(package.root.to_string_lossy().into_owned()),
-        };
-        themes.extend(package.resources.themes.iter().map(of_package));
-        skills.extend(package.resources.skills.iter().map(of_package));
-        prompts.extend(package.resources.prompts.iter().map(of_package));
+        let resolved =
+            ri_core::packages::resolve_resources(&cwd, &agent_dir, packages.settings(), &BUILTINS);
+        sources.extend(
+            resolved
+                .enabled(ResourceType::Extensions)
+                .filter(|info| !info.path.starts_with(BUILTIN_PREFIX))
+                .cloned(),
+        );
     }
     let mut seen = std::collections::HashSet::new();
     sources.retain(|source| seen.insert(source.path.clone()));

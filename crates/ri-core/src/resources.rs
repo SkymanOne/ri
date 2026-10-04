@@ -402,6 +402,14 @@ pub fn skills(
     unique_skills(found)
 }
 
+/// Skills at `sources`, in order, each with its source: skill files, or
+/// directories searched for skills. The first skill of a name wins.
+pub fn skills_from(sources: &[SourceInfo]) -> Vec<Skill> {
+    let mut found = Vec::new();
+    explicit_skills(sources, &mut found);
+    unique_skills(found)
+}
+
 /// Skills at `paths` only, as `--skill` gives them: skill files, or
 /// directories searched for skills.
 pub fn skills_at(paths: &[PathBuf]) -> Vec<Skill> {
@@ -638,6 +646,14 @@ pub fn prompt_templates(
         );
     }
     explicit_templates(extra, &mut templates);
+    templates
+}
+
+/// Templates at `sources`, in order, each with its source: markdown files,
+/// or directories of them.
+pub fn templates_from(sources: &[SourceInfo]) -> Vec<PromptTemplate> {
+    let mut templates = Vec::new();
+    explicit_templates(sources, &mut templates);
     templates
 }
 
