@@ -51,12 +51,9 @@ pub struct Args {
 const MARKER: &str = "@@registrations@@";
 
 /// Installs and loads the package at `index`, at `version`, in a child
-/// process.
-async fn measure(index: usize, version: &str, verbose: bool) -> Value {
+/// process of `exe`.
+async fn measure(exe: &Path, index: usize, version: &str, verbose: bool) -> Value {
     let crash = |message: String| json!({"version": version, "crash": message});
-    let Ok(exe) = std::env::current_exe() else {
-        return crash("no xtask executable".into());
-    };
     let mut command = tokio::process::Command::new(exe);
     command
         .args(["package-registrations", "--measure", &index.to_string()])
@@ -316,13 +313,16 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             .filter(|(_, name, _)| !args.resume || !previous.contains_key(name))
             .collect();
         let all = std::sync::Mutex::new(if keep { previous } else { BTreeMap::new() });
+        // Found once: a rebuild during the run replaces the file, after which
+        // the running executable's own path reads as deleted.
+        let exe = std::env::current_exe()?;
         let total = selected.len();
         let done = std::sync::atomic::AtomicUsize::new(0);
         futures_util::stream::iter(selected)
             .map(|(index, name, version)| {
-                let (all, done, saved, verbose) = (&all, &done, &saved, args.verbose);
+                let (all, done, saved, verbose, exe) = (&all, &done, &saved, args.verbose, &exe);
                 async move {
-                    let got = measure(index, &version, verbose).await;
+                    let got = measure(exe, index, &version, verbose).await;
                     let mut all = all
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
