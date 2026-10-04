@@ -174,7 +174,8 @@ fn without_models_line(value: Value) -> Value {
 enum Outcome {
     /// ri registers what pi registers.
     Match,
-    /// pi itself fails to install or load the package.
+    /// pi itself fails to install or load the package, or Node's permission
+    /// model, which sandboxes pi's side, stops one of its extensions.
     PiFails,
     /// ri's npm client fails where pi's install succeeds.
     RiInstall,
@@ -183,7 +184,14 @@ enum Outcome {
 }
 
 fn outcome(got: &Value, want: &Value) -> Outcome {
-    if want.is_null() || want.get("crash").is_some() || want.get("install").is_some() {
+    let sandboxed = want["errors"].as_array().is_some_and(|errors| {
+        errors.iter().any(|error| {
+            error
+                .as_str()
+                .is_some_and(|error| error.contains("Access to this API has been restricted"))
+        })
+    });
+    if want.is_null() || want.get("crash").is_some() || want.get("install").is_some() || sandboxed {
         return Outcome::PiFails;
     }
     if got.get("install").is_some() {
