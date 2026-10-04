@@ -57,6 +57,20 @@ async fn e2e(args: Args) -> anyhow::Result<ExitCode> {
         {
             continue;
         }
+        // A golden recorded for another operating system cannot match here.
+        if !args.record_pi
+            && !args.differential
+            && scenario
+                .os
+                .as_deref()
+                .is_some_and(|os| os != std::env::consts::OS)
+        {
+            eprintln!(
+                "skipped {}: its golden shows another operating system's text",
+                scenario.name
+            );
+            continue;
+        }
         let golden_path = goldens.join(format!("{}.json", scenario.name));
         if args.record_pi {
             let outcome = normalize(&run(&scenario, &pi).await?);

@@ -45,13 +45,34 @@ pub struct Scenario {
     /// generator's `node_modules`.
     #[serde(default)]
     pub client: Option<String>,
+    /// The operating system the golden was recorded on, for screens that
+    /// show text pi chooses by platform, such as macOS's Option key name.
+    /// Such a scenario runs only there.
+    #[serde(default)]
+    pub os: Option<String>,
 }
 
 impl Scenario {
-    /// Whether this machine can run the scenario: client scripts need Node
-    /// and the fixture generator's packages.
+    /// Why this machine cannot run the scenario, if it cannot: client
+    /// scripts need Node and the fixture generator's packages, and a golden
+    /// recorded for one operating system holds only there.
+    pub fn skip_reason(&self) -> Option<&'static str> {
+        if self.client.is_some() && !generator_dir().join("node_modules").is_dir() {
+            return Some("needs the fixture generator's packages");
+        }
+        if self
+            .os
+            .as_deref()
+            .is_some_and(|os| os != std::env::consts::OS)
+        {
+            return Some("its golden shows another operating system's text");
+        }
+        None
+    }
+
+    /// Whether this machine can run the scenario; see [`Scenario::skip_reason`].
     pub fn runnable(&self) -> bool {
-        self.client.is_none() || generator_dir().join("node_modules").is_dir()
+        self.skip_reason().is_none()
     }
 }
 
@@ -174,7 +195,20 @@ fn scratch_dir(name: &str) -> PathBuf {
     let n = COUNTER
         .get_or_init(Default::default)
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    std::env::temp_dir().join(format!("ri-scenario-{}-{n}-{name}", std::process::id()))
+    scratch_base().join(format!("ri-scenario-{}-{n}-{name}", std::process::id()))
+}
+
+/// Where scenarios run: `/tmp` with symlinks resolved, as programs report
+/// their working directory. macOS's default temporary directory sits behind
+/// the `/var` symlink, and its length would wrap screens differently from
+/// the goldens.
+fn scratch_base() -> PathBuf {
+    let base = if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    };
+    base.canonicalize().unwrap_or(base)
 }
 
 /// Runs a scenario: starts the mock server, prepares the directories, runs the

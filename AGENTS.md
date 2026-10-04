@@ -246,6 +246,7 @@ These are initial targets, calibrated against pi in M0–M1.
   - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines;
   - RPC scenarios send each command once the previous one's response or awaited event has arrived;
   - client scenarios run a Node script from the fixture generator, such as pi's `RpcClient` example, against the program; `cargo test` skips them when the generator's packages are not installed;
+  - goldens are recorded on Linux; a scenario whose screen shows text pi chooses by platform, such as macOS's Option key name, sets `"os": "linux"` and runs only there;
   - MCP scenarios and tests connect to the Python test server in `tests/fixtures/mcp`, so they need `python3` on `PATH`.
 - Prefer goldens recorded from pi over hand-written expectations. Components with pi counterparts are tested against pi-tui's output (`tests/fixtures/pi/generator`).
 - A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
