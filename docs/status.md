@@ -32,8 +32,7 @@ Not yet done:
 
 - OpenAI grammar-constrained custom tools; such tools are sent as function tools.
 - Image resizing and BMP conversion before upload.
-- GitHub Copilot dynamic headers, Anthropic workload identity federation.
-- Abort scenarios (cancellation is implemented and unit-tested, but has no differential scenario).
+- Anthropic workload identity federation.
 
 ## M2: agent loop, tools, sessions
 
@@ -49,12 +48,9 @@ Done for the slice below.
 
 Differential scenarios compare stdout, stderr, requests and the session files each program writes. Covered: new, continued, opened, forked and id-addressed sessions; retry exhausted and recovered; length stop; threshold compaction; parallel `ls`, `grep` and `find`; `@file` arguments.
 
+Steering, follow-up and abort are covered by the RPC scenarios (M4), and tree navigation by the `/tree` scenarios (M3).
+
 Interop: the scenarios show ri writing the same session files as pi, line by line, and continuing sessions written in pi's format.
-
-Not yet done:
-
-- Steering, follow-up and abort have no differential scenario yet; they need RPC mode (M4).
-- Tree navigation is tested with the faux provider only, until `/tree` exists (M3) or RPC (M4).
 
 ## M3: interactive TUI
 
