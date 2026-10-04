@@ -1334,7 +1334,7 @@
 
 	// Modules ri cannot provide: any use throws. 15-node-exports.js gives them
 	// Node's export names so imports link.
-	for (const name of ["net", "tls", "http", "https", "http2", "dgram", "cluster", "inspector", "vm", "v8", "dns", "dns/promises", "inspector/promises", "repl", "sea", "sqlite", "test", "wasi"]) {
+	for (const name of ["tls", "http2", "dgram", "cluster", "inspector", "vm", "v8", "dns", "dns/promises", "inspector/promises", "repl", "test", "wasi"]) {
 		builtins[name] = new Proxy(
 			{},
 			{
@@ -1345,6 +1345,132 @@
 			},
 		);
 	}
+	// ----- net, http, sea, sqlite ------------------------------------------------------
+	// The parts that need no sockets: address checks, which SSRF guards set
+	// up when they load, and agents passed to clients. Sockets, servers and
+	// requests throw, through the names 15-node-exports.js adds.
+	const ipv4 = (text) => {
+		const parts = String(text).split(".");
+		if (parts.length !== 4) return null;
+		let value = 0n;
+		for (const part of parts) {
+			if (!/^\d{1,3}$/.test(part) || Number(part) > 255) return null;
+			value = value * 256n + BigInt(part);
+		}
+		return value;
+	};
+	const ipv6 = (text) => {
+		let rest = String(text).replace(/%.*$/, "");
+		const embedded = rest.match(/(\d+\.\d+\.\d+\.\d+)$/);
+		if (embedded) {
+			const value = ipv4(embedded[1]);
+			if (value === null) return null;
+			rest = `${rest.slice(0, -embedded[1].length)}${(value >> 16n).toString(16)}:${(value & 0xffffn).toString(16)}`;
+		}
+		const halves = rest.split("::");
+		if (halves.length > 2) return null;
+		const groups = (part) => (part === "" ? [] : part.split(":"));
+		const head = groups(halves[0]);
+		const tail = halves.length === 2 ? groups(halves[1]) : [];
+		const missing = 8 - head.length - tail.length;
+		if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+		let value = 0n;
+		for (const group of [...head, ...Array(halves.length === 2 ? missing : 0).fill("0"), ...tail]) {
+			if (!/^[0-9a-f]{1,4}$/i.test(group)) return null;
+			value = (value << 16n) + BigInt(Number.parseInt(group, 16));
+		}
+		return value;
+	};
+	const isIPv4 = (text) => ipv4(text) !== null;
+	const isIPv6 = (text) => ipv6(text) !== null;
+	class SocketAddress {
+		constructor({ address, port = 0, family = "ipv4", flowlabel = 0 } = {}) {
+			this.address = address ?? (family === "ipv6" ? "::" : "127.0.0.1");
+			this.port = port;
+			this.family = family;
+			this.flowlabel = flowlabel;
+		}
+	}
+	class BlockList {
+		#rules = [];
+		#value(address, family) {
+			if (address instanceof SocketAddress) [address, family] = [address.address, address.family];
+			const value = family === "ipv6" ? ipv6(address) : ipv4(address);
+			if (value === null) throw Object.assign(new TypeError(`Invalid IP address: ${address}`), { code: "ERR_INVALID_ARG_VALUE" });
+			return value;
+		}
+		#add(text, family, start, end) {
+			this.#rules.unshift({ text, family, start, end });
+		}
+		addAddress(address, family = "ipv4") {
+			const value = this.#value(address, family);
+			this.#add(`Address: ${family === "ipv6" ? "IPv6" : "IPv4"} ${address}`, family, value, value);
+		}
+		addRange(start, end, family = "ipv4") {
+			this.#add(`Range: ${family === "ipv6" ? "IPv6" : "IPv4"} ${start}-${end}`, family, this.#value(start, family), this.#value(end, family));
+		}
+		addSubnet(network, prefix, family = "ipv4") {
+			const bits = family === "ipv6" ? 128n : 32n;
+			const host = bits - BigInt(prefix);
+			const start = (this.#value(network, family) >> host) << host;
+			this.#add(`Subnet: ${family === "ipv6" ? "IPv6" : "IPv4"} ${network}/${prefix}`, family, start, start + (1n << host) - 1n);
+		}
+		check(address, family = "ipv4") {
+			if (address instanceof SocketAddress) family = address.family;
+			let value;
+			try {
+				value = this.#value(address, family);
+			} catch {
+				return false;
+			}
+			return this.#rules.some((rule) => rule.family === family && value >= rule.start && value <= rule.end);
+		}
+		get rules() {
+			return this.#rules.map((rule) => rule.text);
+		}
+	}
+	builtins.net = {
+		isIP: (text) => (isIPv4(text) ? 4 : isIPv6(text) ? 6 : 0),
+		isIPv4,
+		isIPv6,
+		BlockList,
+		SocketAddress,
+	};
+	class Agent extends EventEmitter {
+		constructor(options = {}) {
+			super();
+			this.options = { ...options };
+			this.keepAlive = options.keepAlive ?? false;
+			this.maxSockets = options.maxSockets ?? Infinity;
+			this.sockets = {};
+			this.requests = {};
+			this.freeSockets = {};
+		}
+		destroy() {}
+	}
+	builtins.http = { Agent, globalAgent: new Agent() };
+	builtins.https = { Agent, globalAgent: new Agent() };
+	const notInSea = () => {
+		const error = new Error("Operation cannot be invoked when not in a single-executable application");
+		error.code = "ERR_NOT_IN_SINGLE_EXECUTABLE_APPLICATION";
+		throw error;
+	};
+	builtins.sea = { isSea: () => false, getAsset: notInSea, getRawAsset: notInSea, getAssetAsBlob: notInSea, getAssetKeys: notInSea };
+	const noSqlite = () => notSupported("node:sqlite")();
+	builtins.sqlite = {
+		DatabaseSync: class DatabaseSync {
+			constructor() {
+				noSqlite();
+			}
+		},
+		StatementSync: class StatementSync {
+			constructor() {
+				noSqlite();
+			}
+		},
+		constants: {},
+		backup: noSqlite,
+	};
 	builtins.async_hooks = {
 		AsyncLocalStorage: class AsyncLocalStorage {
 			#store;

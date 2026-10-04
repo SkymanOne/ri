@@ -392,3 +392,49 @@ export default function (pi) {
         format!("{main},{main},{}", dir.display())
     );
 }
+
+/// Node modules ri has no sockets for still load, with the parts that need
+/// none: address checks, agents, `node:sea` and the names of `node:sqlite`.
+#[tokio::test(flavor = "multi_thread")]
+async fn loads_socket_free_parts_of_network_modules() {
+    let dir = scratch("network");
+    let main = r#"
+import net, { BlockList } from "node:net";
+import http from "node:http";
+import { isSea } from "node:sea";
+import { DatabaseSync } from "node:sqlite";
+export default function (pi) {
+	const blocked = new BlockList();
+	blocked.addAddress("1.2.3.4");
+	blocked.addRange("10.0.0.1", "10.0.0.9");
+	blocked.addSubnet("fd00::", 8, "ipv6");
+	let sqlite;
+	try {
+		new DatabaseSync(":memory:");
+	} catch (error) {
+		sqlite = error.code;
+	}
+	pi.registerCommand("probe", {
+		description: [
+			net.isIP("10.1.2.3"),
+			net.isIP("::ffff:1.2.3.4"),
+			net.isIP("nope"),
+			blocked.check("10.0.0.5"),
+			blocked.check("10.0.0.10"),
+			blocked.check("fd12::1", "ipv6"),
+			blocked.rules.join(";"),
+			typeof new http.Agent({ keepAlive: true }).destroy,
+			isSea(),
+			sqlite,
+		].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "4,6,0,true,false,true,Subnet: IPv6 fd00::/8;Range: IPv4 10.0.0.1-10.0.0.9;Address: IPv4 1.2.3.4,function,false,ERR_NOT_SUPPORTED"
+    );
+}
