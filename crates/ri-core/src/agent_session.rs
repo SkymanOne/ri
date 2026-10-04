@@ -742,7 +742,7 @@ impl AgentSession {
                     .and_then(|levels| levels.get(&model.reference()))
                     .copied()
             })
-            .or(settings.default_thinking_level)
+            .or_else(|| lock(&self.inner.settings).default_thinking_level())
             .unwrap_or_else(|| self.thinking_level());
         {
             let mut state = lock(&self.inner.state);
@@ -946,7 +946,8 @@ impl AgentSession {
     pub async fn wait_for_idle(&self) {
         loop {
             let idle = self.inner.idle.notified();
-            if !self.is_streaming() {
+            // As pi's `isIdle`, a compaction keeps the session busy.
+            if !self.is_streaming() && !self.is_compacting() {
                 return;
             }
             idle.await;
@@ -2047,6 +2048,7 @@ impl AgentSession {
             .summarize(&model, &preparation, None, reason, cancel)
             .await;
         drop(compacting);
+        self.inner.idle.notify_waiters();
         match outcome {
             Ok(result) if !cancel.is_cancelled() => {
                 let result = self.record_compaction(result);
@@ -2128,6 +2130,8 @@ impl AgentSession {
         *lock(&self.inner.cancel) = None;
         self.inner.manual_compaction.store(false, Ordering::SeqCst);
         drop(compacting);
+        // Waiters for idle run once this returns, after its own outcome.
+        self.inner.idle.notify_waiters();
         if cancel.is_cancelled() {
             self.emit(&AgentEvent::CompactionEnd {
                 reason: CompactionReason::Manual,
@@ -2136,7 +2140,10 @@ impl AgentSession {
                 will_retry: false,
                 error_message: None,
             });
-            return Err("Compaction cancelled".into());
+            // pi reports the summarizer's error, such as an aborted request.
+            return Err(outcome
+                .err()
+                .unwrap_or_else(|| "Compaction cancelled".into()));
         }
         match outcome {
             Ok(result) => {
@@ -3013,123 +3020,121 @@ fn drain(queue: &Mutex<VecDeque<Message>>, mode: Option<QueueMode>) -> Vec<Messa
 
 impl AgentHooks for Hooks {
     fn on_event<'a>(&'a self, event: &'a AgentEvent) -> BoxFuture<'a, ()> {
-        let session = &self.session;
-        if let AgentEvent::MessageStart { message } = event {
-            session.dequeue_started(message);
-        }
-        // pi's interactive mode rewrites an aborted response's error before
-        // the session records it.
-        let rewritten = match event {
-            AgentEvent::MessageEnd {
-                message: Message::Assistant(assistant),
-            } if assistant.stop_reason == StopReason::Aborted
-                && lock(&session.inner.binding).1 == Mode::Tui =>
-            {
-                let attempt = lock(&session.inner.recovery).retry_attempt;
-                let mut assistant = assistant.clone();
-                assistant.error_message = Some(if attempt > 0 {
-                    let plural = if attempt > 1 { "s" } else { "" };
-                    format!("Aborted after {attempt} retry attempt{plural}")
-                } else {
-                    "Operation aborted".to_owned()
-                });
-                Some(AgentEvent::MessageEnd {
-                    message: Message::Assistant(assistant),
-                })
-            }
-            _ => None,
-        };
-        let event = rewritten.as_ref().unwrap_or(event);
-        match event {
-            AgentEvent::AgentEnd { messages, .. } => {
-                session.inner.nested.clear();
-                session.emit(&AgentEvent::AgentEnd {
-                    messages: messages.clone(),
-                    will_retry: session.will_retry_after(messages),
-                });
-            }
-            _ => session.emit(event),
-        }
-        match event {
-            AgentEvent::MessageEnd { message } => {
-                let entry_id = session.with_session(|file| match message {
-                    Message::Custom(custom) => file
-                        .append_custom_message(
-                            &custom.custom_type,
-                            custom.content.clone(),
-                            custom.display,
-                            custom.details.clone(),
-                        )
-                        .ok(),
-                    Message::System(_)
-                    | Message::User(_)
-                    | Message::Assistant(_)
-                    | Message::ToolResult(_) => file.append_message(message.clone()).ok(),
-                    _ => None,
-                });
-                match message {
-                    Message::Assistant(assistant) => {
-                        let finished_retry = {
-                            let mut recovery = lock(&session.inner.recovery);
-                            recovery.last_assistant = Some(((**assistant).clone(), entry_id));
-                            recovery.turn_tool_results.clear();
-                            if !matches!(
-                                assistant.stop_reason,
-                                StopReason::Error | StopReason::Length
-                            ) {
-                                recovery.overflow_recovery_attempted = false;
-                            }
-                            if assistant.stop_reason != StopReason::Error {
-                                std::mem::take(&mut recovery.retry_attempt)
-                            } else {
-                                0
-                            }
-                        };
-                        if finished_retry > 0 {
-                            session.emit(&AgentEvent::AutoRetryEnd {
-                                success: true,
-                                attempt: finished_retry,
-                                final_error: None,
-                            });
-                        }
-                    }
-                    Message::ToolResult(_) => {
-                        if let Some(id) = entry_id {
-                            lock(&session.inner.recovery).turn_tool_results.push(id);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            AgentEvent::TurnEnd { .. } => {
-                let mut recovery = lock(&session.inner.recovery);
-                recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
-            }
-            _ => {}
-        }
-        let kind = extension_event_kind(event).filter(|kind| session.has_handlers(kind));
-        if matches!(event, AgentEvent::AgentStart) {
-            self.turn_index.store(0, Ordering::SeqCst);
-        }
-        let turn_index = self.turn_index.load(Ordering::SeqCst);
-        if matches!(event, AgentEvent::TurnEnd { .. }) {
-            self.turn_index.fetch_add(1, Ordering::SeqCst);
-        }
-        // Custom messages sent during the turn are appended once its handlers
-        // ran, so those that turn_end handlers send join them, as in pi.
-        let turn_end = matches!(event, AgentEvent::TurnEnd { .. });
-        let Some(extension_event) = kind.and_then(|kind| extension_event(event, kind, turn_index))
-        else {
-            if turn_end {
-                session.flush_pending_custom();
-            }
-            return Box::pin(async {});
-        };
         Box::pin(async move {
-            session
-                .emit_extension_event(&extension_event, self.cancel.clone())
-                .await;
-            if turn_end {
+            let session = &self.session;
+            if let AgentEvent::MessageStart { message } = event {
+                session.dequeue_started(message);
+            }
+            // pi's interactive mode rewrites an aborted response's error before
+            // the session records it.
+            let rewritten = match event {
+                AgentEvent::MessageEnd {
+                    message: Message::Assistant(assistant),
+                } if assistant.stop_reason == StopReason::Aborted
+                    && lock(&session.inner.binding).1 == Mode::Tui =>
+                {
+                    let attempt = lock(&session.inner.recovery).retry_attempt;
+                    let mut assistant = assistant.clone();
+                    assistant.error_message = Some(if attempt > 0 {
+                        let plural = if attempt > 1 { "s" } else { "" };
+                        format!("Aborted after {attempt} retry attempt{plural}")
+                    } else {
+                        "Operation aborted".to_owned()
+                    });
+                    Some(AgentEvent::MessageEnd {
+                        message: Message::Assistant(assistant),
+                    })
+                }
+                _ => None,
+            };
+            let event = rewritten.as_ref().unwrap_or(event);
+            let kind = extension_event_kind(event).filter(|kind| session.has_handlers(kind));
+            if matches!(event, AgentEvent::AgentStart) {
+                self.turn_index.store(0, Ordering::SeqCst);
+            }
+            let turn_index = self.turn_index.load(Ordering::SeqCst);
+            if matches!(event, AgentEvent::TurnEnd { .. }) {
+                self.turn_index.fetch_add(1, Ordering::SeqCst);
+            }
+            // As in pi, extensions see the event first, then listeners; then the
+            // session records it, so entries extensions append come before it.
+            if let Some(extension_event) =
+                kind.and_then(|kind| extension_event(event, kind, turn_index))
+            {
+                session
+                    .emit_extension_event(&extension_event, self.cancel.clone())
+                    .await;
+            }
+            match event {
+                AgentEvent::AgentEnd { messages, .. } => {
+                    session.inner.nested.clear();
+                    session.emit(&AgentEvent::AgentEnd {
+                        messages: messages.clone(),
+                        will_retry: session.will_retry_after(messages),
+                    });
+                }
+                _ => session.emit(event),
+            }
+            match event {
+                AgentEvent::MessageEnd { message } => {
+                    let entry_id = session.with_session(|file| match message {
+                        Message::Custom(custom) => file
+                            .append_custom_message(
+                                &custom.custom_type,
+                                custom.content.clone(),
+                                custom.display,
+                                custom.details.clone(),
+                            )
+                            .ok(),
+                        Message::System(_)
+                        | Message::User(_)
+                        | Message::Assistant(_)
+                        | Message::ToolResult(_) => file.append_message(message.clone()).ok(),
+                        _ => None,
+                    });
+                    match message {
+                        Message::Assistant(assistant) => {
+                            let finished_retry = {
+                                let mut recovery = lock(&session.inner.recovery);
+                                recovery.last_assistant = Some(((**assistant).clone(), entry_id));
+                                recovery.turn_tool_results.clear();
+                                if !matches!(
+                                    assistant.stop_reason,
+                                    StopReason::Error | StopReason::Length
+                                ) {
+                                    recovery.overflow_recovery_attempted = false;
+                                }
+                                if assistant.stop_reason != StopReason::Error {
+                                    std::mem::take(&mut recovery.retry_attempt)
+                                } else {
+                                    0
+                                }
+                            };
+                            if finished_retry > 0 {
+                                session.emit(&AgentEvent::AutoRetryEnd {
+                                    success: true,
+                                    attempt: finished_retry,
+                                    final_error: None,
+                                });
+                            }
+                        }
+                        Message::ToolResult(_) => {
+                            if let Some(id) = entry_id {
+                                lock(&session.inner.recovery).turn_tool_results.push(id);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                AgentEvent::TurnEnd { .. } => {
+                    let mut recovery = lock(&session.inner.recovery);
+                    recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
+                }
+                _ => {}
+            }
+            // Custom messages sent during the turn are appended once its handlers
+            // ran, so those that turn_end handlers send join them, as in pi.
+            if matches!(event, AgentEvent::TurnEnd { .. }) {
                 session.flush_pending_custom();
             }
         })

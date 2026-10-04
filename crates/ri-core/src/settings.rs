@@ -214,6 +214,21 @@ impl SettingsManager {
         &self.merged
     }
 
+    /// `defaultThinkingLevel`, if set: a value that names no level becomes
+    /// `off`, the first level pi's clamp offers.
+    pub fn default_thinking_level(&self) -> Option<ri_types::message::ThinkingLevel> {
+        let value = self
+            .project
+            .get("defaultThinkingLevel")
+            .or_else(|| self.global.get("defaultThinkingLevel"))?;
+        Some(
+            value
+                .as_str()
+                .and_then(ri_types::message::ThinkingLevel::parse)
+                .unwrap_or(ri_types::message::ThinkingLevel::Off),
+        )
+    }
+
     /// pi's `getHttpIdleTimeoutMs`: `httpIdleTimeoutMs` in milliseconds, as a
     /// number, a numeric string or `"disabled"` (0); five minutes when unset
     /// or invalid.

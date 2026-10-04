@@ -232,6 +232,17 @@ impl McpClient {
         options: ClientOptions,
         transport: Transport,
     ) -> Result<McpClient, McpError> {
+        Self::connect_with_stderr(options, transport)
+            .await
+            .map_err(|failure| failure.0)
+    }
+
+    /// [`McpClient::connect`], failing with a stdio server's stderr too, as
+    /// pi reads it for every failed connection.
+    pub async fn connect_with_stderr(
+        options: ClientOptions,
+        transport: Transport,
+    ) -> Result<McpClient, Box<(McpError, Option<String>)>> {
         let (events, receiver) = mpsc::unbounded_channel();
         let client = McpClient {
             inner: Arc::new(Inner {
@@ -251,7 +262,7 @@ impl McpClient {
             Ok(()) => Ok(client),
             Err(error) => {
                 client.close().await;
-                Err(error)
+                Err(Box::new((error, client.stderr())))
             }
         }
     }

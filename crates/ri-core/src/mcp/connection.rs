@@ -297,9 +297,7 @@ impl Connection {
                     .map(|name| name.to_string_lossy().into_owned()),
             }],
         };
-        let client = McpClient::connect(options, transport)
-            .await
-            .map_err(|error| Box::new((error, None)))?;
+        let client = McpClient::connect_with_stderr(options, transport).await?;
         let log = super::log::Log::new(self.agent_dir.join("mcp.log"));
         let server = self.entry.name.clone();
         client.on_notification("notifications/message", move |params| {

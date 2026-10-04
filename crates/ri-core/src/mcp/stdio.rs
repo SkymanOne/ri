@@ -147,11 +147,16 @@ impl StdioTransport {
         let line = ri_types::json::to_string(message)
             .map_err(|error| McpError::Other(error.to_string()))?
             + "\n";
-        stdin
-            .write_all(line.as_bytes())
-            .await
-            .map_err(|_| McpError::closed())?;
-        stdin.flush().await.map_err(|_| McpError::closed())
+        // A server that already exited fails the write as Node's does.
+        let failed = |error: std::io::Error| {
+            if error.kind() == std::io::ErrorKind::BrokenPipe {
+                McpError::Other("write EPIPE".into())
+            } else {
+                McpError::closed()
+            }
+        };
+        stdin.write_all(line.as_bytes()).await.map_err(failed)?;
+        stdin.flush().await.map_err(failed)
     }
 
     /// Shuts the server down as the spec asks: stdin closes, then SIGTERM,

@@ -772,7 +772,11 @@ impl SessionBridge {
                 let kind = match payload["type"].as_str() {
                     Some("warning") => NotifyKind::Warning,
                     Some("error") => NotifyKind::Error,
-                    _ => NotifyKind::Info,
+                    Some(_) => NotifyKind::Info,
+                    None => {
+                        ui.notify_untyped(&text(&payload["message"]));
+                        return Value::Null;
+                    }
                 };
                 ui.notify(&text(&payload["message"]), kind);
             }

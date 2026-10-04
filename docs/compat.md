@@ -31,9 +31,11 @@ Intentional differences from pi `v1.0.0`. Anything not listed here is expected t
 | `models.json` errors | JSON.parse and TypeBox messages, such as `Invalid models.json schema:` with one line per path | serde's message for the first problem, with the file path | The messages come from different parsers. |
 | Editor wrapping of a character wider than the editor | Recurses until the stack overflows | Gives the character a line of its own | pi crashes at a one-column width. |
 | Debug log, external editor | `pi-debug.log`; "Pi will resume when the editor exits." | `ri-debug.log`; "ri will resume when the editor exits." | Product name. |
+| Invalid `httpIdleTimeoutMs` | Startup fails with `Invalid httpIdleTimeoutMs setting` | The default of five minutes applies | A mistyped setting should not stop every mode from starting. |
+| Model objects in RPC responses | Keys in the order of each model's catalog entry, which varies between models | One fixed key order | The values are the same; ri's catalog is generated into one type. |
 | RPC parse errors | `Failed to parse command:` followed by V8's `JSON.parse` message | The same prefix followed by serde_json's message | Parser messages are implementation details. |
 | Theme parse errors | `Failed to parse theme <name>:` followed by V8's `JSON.parse` message | The same prefix followed by serde_json's message | Parser messages are implementation details. |
-| MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*` and `pi-codemode-*` temp files | `ri` and ri's version; `ri-mcp-*` and `ri-codemode-*` temp files | Product name. |
+| MCP client identity, saved outputs | `clientInfo` `pi` and pi's version; `pi-mcp-*`, `pi-codemode-*` and `pi-bash-*` temp files | `ri` and ri's version; `ri-mcp-*`, `ri-codemode-*` and `ri-bash-*` temp files | Product name. |
 | Sign in with ChatGPT | `agent_name_hint` `Pi` | `ri` | Product name shown on OpenAI's consent page. |
 | `/login` providers | pi's built-in `llama.cpp` extension adds a provider; Radius offers a sign-in | Neither | Not yet ported; the Radius gateway also needs pi's `pi-messages` wire API. |
 | Node APIs in extensions | All of Node | The shims listed in [status.md](status.md); modules ri cannot provide, such as `http` and `net`, and workers in `worker_threads`, import but throw when used. `require()` of an ES module fails. | The wasm runtime has no sockets or threads; QuickJS loads ES modules asynchronously. |

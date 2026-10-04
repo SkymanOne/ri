@@ -222,6 +222,10 @@ impl ExtensionUi for RpcUi {
         self.tell(json!({"method": "notify", "message": message, "notifyType": kind.as_str()}));
     }
 
+    fn notify_untyped(&self, message: &str) {
+        self.tell(json!({"method": "notify", "message": message}));
+    }
+
     fn select(
         &self,
         title: &str,
@@ -389,6 +393,23 @@ impl Rpc {
     }
 }
 
+/// JavaScript's `String(value)` for a JSON value.
+fn js_string(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::Null => String::new(),
+                item => js_string(item),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+        other => other.to_string(),
+    }
+}
+
 /// The `type` of a command line, for its response; `None` without one.
 fn command_name(value: &Value) -> Option<String> {
     match value.get("type") {
@@ -417,6 +438,24 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
         return;
     }
     let id = parsed.get("id").cloned();
+    // A `type` that is not a string is echoed as it is, as in pi.
+    if let Some(kind) = parsed.get("type").filter(|kind| !kind.is_string()) {
+        let mut line = Map::new();
+        if let Some(id) = &id {
+            line.insert("id".into(), id.clone());
+        }
+        line.insert("type".into(), "response".into());
+        line.insert("command".into(), kind.clone());
+        line.insert("success".into(), false.into());
+        line.insert(
+            "error".into(),
+            format!("Unknown command: {}", js_string(kind)).into(),
+        );
+        if let Ok(text) = ri_types::json::to_string(&Value::Object(line)) {
+            rpc.out.line(text);
+        }
+        return;
+    }
     let name = command_name(&parsed);
     // A line without a `type`, an array or a string included, is an unknown
     // command to pi.
@@ -600,9 +639,12 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
         }
         RpcCommand::SwitchSession { session_path } => {
             let fallback = session.cwd().to_path_buf();
+            // pi resolves the path against the working directory.
+            let path = std::env::current_dir()
+                .map(|cwd| cwd.join(&session_path))
+                .unwrap_or_else(|_| std::path::PathBuf::from(&session_path));
             let manager =
-                runtime::open_session(std::path::Path::new(&session_path), None, &fallback)
-                    .map_err(|error| error.to_string())?;
+                runtime::open_session(&path, None, &fallback).map_err(|error| error.to_string())?;
             rpc.settle().await;
             rpc.replace(manager).await?;
             data(&json!({"cancelled": false}))
@@ -684,7 +726,9 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             commands.extend(session.extension_commands().into_iter().map(|resolved| {
                 SlashCommand {
                     name: resolved.invocation,
-                    description: Some(resolved.command.description),
+                    // pi omits a description the command did not give.
+                    description: Some(resolved.command.description)
+                        .filter(|description| !description.is_empty()),
                     source: CommandSource::Extension,
                     source_info: resolved.extension.source(),
                 }

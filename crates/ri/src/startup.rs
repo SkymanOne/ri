@@ -512,8 +512,8 @@ pub fn create(
             ThinkingLevel::parse(&context.thinking_level)
         } else {
             Some(
-                settings_view
-                    .default_thinking_level
+                settings
+                    .default_thinking_level()
                     .unwrap_or(DEFAULT_THINKING_LEVEL),
             )
         };
@@ -527,7 +527,7 @@ pub fn create(
                 .and_then(|levels| levels.get(&model.reference()))
                 .copied()
         })
-        .or(settings_view.default_thinking_level)
+        .or(settings.default_thinking_level())
         .unwrap_or(DEFAULT_THINKING_LEVEL);
     thinking_level = match &model {
         Some(model) => ri_ai::thinking::clamp_level(model, thinking_level),

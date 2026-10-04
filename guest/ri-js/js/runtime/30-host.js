@@ -508,7 +508,7 @@
 			confirm: (title, message, opts) => (data.hasUI ? ri.op("ui.confirm", { title, message, timeout: opts?.timeout }) : Promise.resolve(false)),
 			input: (title, placeholder, opts) => (data.hasUI ? ri.op("ui.input", { title, placeholder, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
 			editor: (title, prefill) => (data.hasUI ? ri.op("ui.editor", { title, prefill }).then(orUndefined) : Promise.resolve(undefined)),
-			notify: (message, type) => request("notify", { message, type: type ?? "info" }),
+			notify: (message, type) => request("notify", type === undefined ? { message } : { message, type }),
 			onTerminalInput: () => () => {},
 			setStatus: (key, text) => request("setStatus", { key, text }),
 			setWorkingMessage: (message) => request("setWorkingMessage", { message }),

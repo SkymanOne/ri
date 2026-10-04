@@ -178,6 +178,12 @@ pub fn open_session(
     cwd_override: Option<&Path>,
     fallback: &Path,
 ) -> Result<SessionManager, SwitchError> {
+    // Reading a directory fails as Node's `readFile` does in pi.
+    if path.is_dir() {
+        return Err(SwitchError::Open(
+            "EISDIR: illegal operation on a directory, read".into(),
+        ));
+    }
     let manager = SessionManager::open(path, None, cwd_override)
         .map_err(|error| SwitchError::Open(error.to_string()))?;
     if !manager.cwd().as_os_str().is_empty() && !manager.cwd().exists() {

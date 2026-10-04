@@ -147,6 +147,12 @@ pub trait ExtensionUi: Send + Sync {
     /// Shows a message.
     fn notify(&self, message: &str, kind: NotifyKind);
 
+    /// Shows a message that names no kind; hosts show it as information,
+    /// and RPC forwards it without a kind, as pi does.
+    fn notify_untyped(&self, message: &str) {
+        self.notify(message, NotifyKind::Info);
+    }
+
     /// Asks to pick one of `options`; `None` when cancelled.
     fn select(
         &self,

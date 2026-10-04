@@ -884,11 +884,18 @@ impl Summarizer<'_> {
         max_tokens: u64,
         label: &str,
     ) -> Result<Summary, String> {
+        // As in pi, a request started after the abort fails with its kind,
+        // while one aborted mid-stream counts as finished; the caller then
+        // sees the abort.
+        if self.cancel.is_cancelled() {
+            return Err(format!("{label} failed: This operation was aborted"));
+        }
         let response = self.complete(prompt, max_tokens).await;
         if response.stop_reason == StopReason::Aborted {
-            return Err(response
-                .error_message
-                .unwrap_or_else(|| "Request was aborted".into()));
+            return Ok(Summary {
+                text: ri_types::message::blocks_text(&response.content, "\n"),
+                usage: response.usage,
+            });
         }
         if let Some(failure) = summarization_failure(&response, label) {
             return Err(failure);

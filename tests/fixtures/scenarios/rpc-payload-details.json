@@ -1,0 +1,36 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "notify",
+      "message": "plain"
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "id": "<id-3>",
+      "type": "response",
+      "command": 5,
+      "success": false,
+      "error": "Unknown command: 5"
+    },
+    {
+      "id": "<id-4>",
+      "type": "response",
+      "command": "switch_session",
+      "success": false,
+      "error": "EISDIR: illegal operation on a directory, read"
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}
