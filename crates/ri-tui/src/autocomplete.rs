@@ -1,6 +1,8 @@
 //! The editor's completion source.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use ri_types::collate::locale_compare;
 
@@ -59,6 +61,12 @@ pub trait AutocompleteProvider {
     fn trigger_characters(&self) -> Vec<char> {
         Vec::new()
     }
+
+    /// Whether the last [`AutocompleteProvider::suggestions`] call is still
+    /// working in the background; the host asks again when it is done.
+    fn pending(&self) -> bool {
+        false
+    }
 }
 
 /// Completes a command's argument text; `None` or empty shows no list.
@@ -85,6 +93,34 @@ pub struct CombinedProvider {
     base_path: PathBuf,
     fd_path: Option<PathBuf>,
     home: Option<PathBuf>,
+    /// The latest background `fd` search; see [`CombinedProvider::notify_with`].
+    search: Arc<Mutex<Option<FileSearch>>>,
+    /// Called from the search thread when its results are ready.
+    notify: Option<Arc<dyn Fn() + Send + Sync>>,
+    pending: AtomicBool,
+}
+
+/// An `fd` search for one base directory and query, as pi runs it for `@`
+/// completion: in the background, killed when the query changes.
+struct FileSearch {
+    key: (PathBuf, String),
+    /// Its entries once both passes finished.
+    entries: Option<Vec<FoundPath>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Drop for CombinedProvider {
+    fn drop(&mut self) {
+        if let Some(search) = lock(&self.search).as_ref() {
+            search.cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 const PATH_WRAPPERS: [(char, char); 5] =
@@ -275,9 +311,37 @@ fn fd_path_query(query: &str) -> String {
     pattern
 }
 
+#[derive(Clone)]
 struct FoundPath {
     path: String,
     directory: bool,
+}
+
+/// Runs `command` to completion unless `cancelled` is set first, which
+/// kills it; its output, or `None`.
+fn run_cancellable(
+    command: &mut std::process::Command,
+    cancelled: &AtomicBool,
+) -> Option<std::process::Output> {
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        match child.try_wait() {
+            // `--max-results` keeps the output well within a pipe's buffer.
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(_) => return None,
+        }
+    }
 }
 
 fn walk_with_fd(
@@ -286,7 +350,8 @@ fn walk_with_fd(
     query: &str,
     max_results: usize,
     max_depth: Option<usize>,
-) -> Vec<FoundPath> {
+    cancelled: &AtomicBool,
+) -> Option<Vec<FoundPath>> {
     let mut command = std::process::Command::new(fd);
     command
         .arg("--base-directory")
@@ -310,17 +375,11 @@ fn walk_with_fd(
     if !query.is_empty() {
         command.arg(fd_path_query(query));
     }
-    let Ok(output) = command
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-    else {
-        return Vec::new();
-    };
+    let output = run_cancellable(&mut command, cancelled)?;
     if !output.status.success() {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    String::from_utf8_lossy(&output.stdout)
+    let found = String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
@@ -338,7 +397,27 @@ fn walk_with_fd(
                 directory,
             })
         })
-        .collect()
+        .collect();
+    Some(found)
+}
+
+/// pi's two `fd` passes for a fuzzy `@` query: direct children first, then
+/// the whole tree; `None` when cancelled.
+fn search_with_fd(
+    fd: &Path,
+    base: &Path,
+    query: &str,
+    cancelled: &AtomicBool,
+) -> Option<Vec<FoundPath>> {
+    let mut entries = walk_with_fd(fd, base, query, 100, Some(1), cancelled)?;
+    let mut seen: Vec<String> = entries.iter().map(|entry| entry.path.clone()).collect();
+    for entry in walk_with_fd(fd, base, query, 100, None, cancelled)? {
+        if !seen.contains(&entry.path) {
+            seen.push(entry.path.clone());
+            entries.push(entry);
+        }
+    }
+    Some(entries)
 }
 
 fn score_entry(path: &str, query: &str, directory: bool) -> u32 {
@@ -374,7 +453,60 @@ impl CombinedProvider {
             base_path,
             fd_path,
             home,
+            search: Arc::default(),
+            notify: None,
+            pending: AtomicBool::new(false),
         }
+    }
+
+    /// Runs `@` file searches in the background, as pi does, calling
+    /// `notify` when one finishes; the host then asks for suggestions again.
+    /// Without it they run to completion before returning.
+    pub fn notify_with(mut self, notify: Arc<dyn Fn() + Send + Sync>) -> CombinedProvider {
+        self.notify = Some(notify);
+        self
+    }
+
+    /// The entries `fd` finds for `query` under `base`, or `None` while a
+    /// background search runs. A search for another query is cancelled.
+    fn file_entries(&self, fd: &Path, base: &Path, query: &str) -> Option<Vec<FoundPath>> {
+        let Some(notify) = &self.notify else {
+            return search_with_fd(fd, base, query, &AtomicBool::new(false));
+        };
+        let key = (base.to_path_buf(), query.to_owned());
+        let mut slot = lock(&self.search);
+        if let Some(search) = slot.as_ref().filter(|search| search.key == key) {
+            return search.entries.clone();
+        }
+        if let Some(previous) = slot.take() {
+            previous.cancelled.store(true, Ordering::Relaxed);
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        *slot = Some(FileSearch {
+            key: key.clone(),
+            entries: None,
+            cancelled: Arc::clone(&cancelled),
+        });
+        let (fd, search, notify) = (
+            fd.to_path_buf(),
+            Arc::clone(&self.search),
+            Arc::clone(notify),
+        );
+        std::thread::spawn(move || {
+            let Some(entries) = search_with_fd(&fd, &key.0, &key.1, &cancelled) else {
+                return;
+            };
+            if let Some(current) = lock(&search)
+                .as_mut()
+                .filter(|current| current.key == key && !cancelled.load(Ordering::Relaxed))
+            {
+                current.entries = Some(entries);
+            } else {
+                return;
+            }
+            notify();
+        });
+        None
     }
 
     fn expand_home(&self, path: &str) -> String {
@@ -547,9 +679,10 @@ impl CombinedProvider {
         suggestions
     }
 
-    fn fuzzy_file_suggestions(&self, query: &str, quoted: bool) -> Vec<SelectItem> {
+    /// pi's fuzzy `@` suggestions; `None` while their search runs.
+    fn fuzzy_file_suggestions(&self, query: &str, quoted: bool) -> Option<Vec<SelectItem>> {
         let Some(fd) = &self.fd_path else {
-            return Vec::new();
+            return Some(Vec::new());
         };
         let normalized = query.replace('\\', "/");
         let scoped = normalized.rfind('/').and_then(|slash| {
@@ -573,14 +706,7 @@ impl CombinedProvider {
             Some((base, query, _)) => (base.clone(), query.clone()),
             None => (self.base_path.clone(), query.to_owned()),
         };
-        let mut entries = walk_with_fd(fd, &base, &fd_query, 100, Some(1));
-        let mut seen: Vec<String> = entries.iter().map(|entry| entry.path.clone()).collect();
-        for entry in walk_with_fd(fd, &base, &fd_query, 100, None) {
-            if !seen.contains(&entry.path) {
-                seen.push(entry.path.clone());
-                entries.push(entry);
-            }
-        }
+        let entries = self.file_entries(fd, &base, &fd_query)?;
         let mut scored: Vec<(FoundPath, u32)> = entries
             .into_iter()
             .map(|entry| {
@@ -601,7 +727,7 @@ impl CombinedProvider {
                 .then_with(|| utf16_len(&a.path).cmp(&utf16_len(&b.path)))
                 .then_with(|| locale_compare(&a.path, &b.path))
         });
-        scored
+        let items: Vec<SelectItem> = scored
             .into_iter()
             .take(20)
             .map(|(entry, _)| {
@@ -629,7 +755,8 @@ impl CombinedProvider {
                     description: Some(display),
                 }
             })
-            .collect()
+            .collect();
+        Some(items)
     }
 }
 
@@ -643,9 +770,13 @@ impl AutocompleteProvider for CombinedProvider {
     ) -> Option<Suggestions> {
         let current = lines.get(line).map_or("", String::as_str);
         let before = &current[..col.min(current.len())];
+        self.pending.store(false, Ordering::Relaxed);
         if let Some(prefix) = self.extract_at_prefix(before) {
             let PathPrefix { raw, quoted, .. } = parse_path_prefix(prefix);
-            let items = self.fuzzy_file_suggestions(raw, quoted);
+            let Some(items) = self.fuzzy_file_suggestions(raw, quoted) else {
+                self.pending.store(true, Ordering::Relaxed);
+                return None;
+            };
             return (!items.is_empty()).then(|| Suggestions {
                 items,
                 prefix: prefix.to_owned(),
@@ -676,6 +807,10 @@ impl AutocompleteProvider for CombinedProvider {
             items,
             prefix: prefix.to_owned(),
         })
+    }
+
+    fn pending(&self) -> bool {
+        self.pending.load(Ordering::Relaxed)
     }
 
     fn apply(

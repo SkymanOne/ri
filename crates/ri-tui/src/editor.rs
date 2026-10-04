@@ -299,6 +299,9 @@ pub struct Editor {
     autocomplete_mode: Option<AutocompleteMode>,
     autocomplete_list: Option<SelectList>,
     autocomplete_prefix: String,
+    /// A request whose suggestions the provider is still working on: its
+    /// `force` and explicit-Tab flags.
+    autocomplete_pending: Option<(bool, bool)>,
     autocomplete_max_visible: usize,
     pastes: BTreeMap<u32, String>,
     paste_counter: u32,
@@ -340,6 +343,7 @@ impl Editor {
             autocomplete_mode: None,
             autocomplete_list: None,
             autocomplete_prefix: String::new(),
+            autocomplete_pending: None,
             autocomplete_max_visible: autocomplete_max_visible.clamp(3, 20),
             pastes: BTreeMap::new(),
             paste_counter: 0,
@@ -1680,6 +1684,12 @@ impl Editor {
             return;
         }
         let suggestions = provider.suggestions(&self.state.lines, line, col, force);
+        // As in pi, the open list stays until the background answer arrives.
+        if provider.pending() {
+            self.autocomplete_pending = Some((force, explicit_tab));
+            return;
+        }
+        self.autocomplete_pending = None;
         let Some(suggestions) = suggestions.filter(|s| !s.items.is_empty()) else {
             self.cancel_autocomplete();
             return;
@@ -1732,6 +1742,7 @@ impl Editor {
     }
 
     fn cancel_autocomplete(&mut self) {
+        self.autocomplete_pending = None;
         self.autocomplete_mode = None;
         self.autocomplete_list = None;
         self.autocomplete_prefix.clear();
@@ -1741,7 +1752,9 @@ impl Editor {
     /// list is updated, and a slash command's list opens if it has
     /// suggestions now. For providers whose answers arrive later.
     pub fn refresh_autocomplete(&mut self) {
-        if self.autocomplete_mode.is_some() {
+        if let Some((force, explicit_tab)) = self.autocomplete_pending.take() {
+            self.request_autocomplete(force, explicit_tab);
+        } else if self.autocomplete_mode.is_some() {
             self.update_autocomplete();
         } else if self.in_slash_command(self.before_cursor()) {
             self.request_autocomplete(false, false);

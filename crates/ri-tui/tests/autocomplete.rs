@@ -136,3 +136,40 @@ fn completes_like_pi() {
     let _ = std::fs::remove_dir_all(&base);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// With a notifier, `@` file searches run in the background as in pi: the
+/// first request is pending, the notifier fires when `fd` finishes, and the
+/// next request answers from its results. A new query cancels the old one.
+#[test]
+fn file_search_runs_in_the_background() {
+    let Some(fd) = find_fd() else {
+        eprintln!("fd not found: skipping");
+        return;
+    };
+    let base = std::env::temp_dir().join(format!("ri-at-async-{}", std::process::id()));
+    std::fs::create_dir_all(base.join("src")).unwrap();
+    std::fs::write(base.join("src/main.rs"), "").unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let provider = CombinedProvider::new(Vec::new(), base.clone(), Some(fd), None).notify_with(
+        std::sync::Arc::new(move || {
+            let _ = tx.send(());
+        }),
+    );
+    let lines = vec!["@ma".to_owned()];
+    assert_eq!(provider.suggestions(&lines, 0, 3, false), None);
+    assert!(provider.pending());
+    rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+    let suggestions = provider.suggestions(&lines, 0, 3, false).unwrap();
+    assert!(!provider.pending());
+    assert_eq!(suggestions.prefix, "@ma");
+    assert_eq!(suggestions.items[0].value, "@src/main.rs");
+    // Another query starts a new search; its answer arrives the same way.
+    let lines = vec!["@sr".to_owned()];
+    assert_eq!(provider.suggestions(&lines, 0, 3, false), None);
+    rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        provider.suggestions(&lines, 0, 3, false).unwrap().items[0].value,
+        "@src/"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}

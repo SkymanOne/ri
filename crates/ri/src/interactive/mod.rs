@@ -587,7 +587,11 @@ impl App {
     }
 
     fn install_autocomplete(&mut self) {
-        let provider = commands::autocomplete(&self.session, self.fd.clone(), self.home.clone());
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        let provider = commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
+            .notify_with(std::sync::Arc::new(move || {
+                let _ = tx.send(Event::RefreshCompletions(epoch));
+            }));
         self.editor.set_autocomplete(Box::new(provider));
         self.install_shortcuts();
     }
