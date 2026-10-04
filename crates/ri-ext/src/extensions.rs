@@ -879,13 +879,10 @@ impl Bridge for SessionBridge {
             }
             "commands.list" => Ok(Value::Array(
                 session
-                    .extensions()
-                    .iter()
-                    .flat_map(|extension| {
-                        let source = extension.source();
-                        extension.commands().into_iter().map(move |command| {
-                            json!({"name": command.name, "description": command.description, "source": "extension", "sourceInfo": source})
-                        })
+                    .extension_commands()
+                    .into_iter()
+                    .map(|resolved| {
+                        json!({"name": resolved.invocation, "description": resolved.command.description, "source": "extension", "sourceInfo": resolved.extension.source()})
                     })
                     .collect(),
             )),

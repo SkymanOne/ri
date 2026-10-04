@@ -1375,6 +1375,7 @@ impl AgentSession {
             return Ok(());
         }
         self.flush_pending_bash();
+        self.flush_pending_custom();
         // Without a model pi's agent holds a placeholder from provider
         // "unknown", which has no credential.
         let model = lock(&self.inner.state)
@@ -1443,6 +1444,7 @@ impl AgentSession {
         }
         lock(&self.inner.state).streaming = false;
         self.flush_pending_bash();
+        self.flush_pending_custom();
         *lock(&self.inner.cancel) = None;
         // Extensions hear it first, as in pi.
         self.emit_extension_event(
@@ -2633,37 +2635,85 @@ impl AgentSession {
             .await
     }
 
+    /// The extensions' commands in load order, each with the name it is
+    /// invoked by; pi's `resolveRegisteredCommands`. A name registered more
+    /// than once is invoked as `name:1`, `name:2` and so on.
+    pub fn extension_commands(&self) -> Vec<crate::extensions::ResolvedCommand> {
+        let all: Vec<(Arc<dyn Extension>, crate::extensions::Command)> = self
+            .inner
+            .extensions
+            .iter()
+            .flat_map(|extension| {
+                extension
+                    .commands()
+                    .into_iter()
+                    .map(move |command| (Arc::clone(extension), command))
+            })
+            .collect();
+        let count = |name: &str| {
+            all.iter()
+                .filter(|(_, command)| command.name == name)
+                .count()
+        };
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+        all.iter()
+            .map(|(extension, command)| {
+                let occurrence = {
+                    let entry = seen.entry(command.name.clone()).or_default();
+                    *entry += 1;
+                    *entry
+                };
+                let mut invocation = if count(&command.name) > 1 {
+                    format!("{}:{occurrence}", command.name)
+                } else {
+                    command.name.clone()
+                };
+                let mut suffix = occurrence;
+                while taken.contains(&invocation) {
+                    suffix += 1;
+                    invocation = format!("{}:{suffix}", command.name);
+                }
+                taken.insert(invocation.clone());
+                crate::extensions::ResolvedCommand {
+                    invocation,
+                    command: command.clone(),
+                    extension: Arc::clone(extension),
+                }
+            })
+            .collect()
+    }
+
     /// Whether `text` invokes an extension command.
     pub fn is_extension_command(&self, text: &str) -> bool {
         let Some(rest) = text.strip_prefix('/') else {
             return false;
         };
         let name = rest.split(' ').next().unwrap_or_default();
-        self.inner.extensions.iter().any(|extension| {
-            extension
-                .commands()
-                .iter()
-                .any(|command| command.name == name)
-        })
+        self.extension_commands()
+            .iter()
+            .any(|command| command.invocation == name)
     }
 
-    /// Runs `/name args` when an extension registered `name`; whether it did.
-    /// Errors are the extension's to report.
+    /// Runs `/name args` when an extension command is invoked by `name`;
+    /// whether it did. Errors are the extension's to report.
     async fn run_extension_command(&self, text: &str) -> bool {
         let Some(rest) = text.strip_prefix('/') else {
             return false;
         };
         let (name, args) = rest.split_once(' ').unwrap_or((rest, ""));
-        let Some(extension) = self.inner.extensions.iter().find(|extension| {
-            extension
-                .commands()
-                .iter()
-                .any(|command| command.name == name)
-        }) else {
+        let Some(resolved) = self
+            .extension_commands()
+            .into_iter()
+            .find(|command| command.invocation == name)
+        else {
             return false;
         };
         let ctx = self.extension_context(CancellationToken::new());
-        extension.run_command(name, args, &ctx).await;
+        resolved
+            .extension
+            .run_command(&resolved.command.name, args, &ctx)
+            .await;
         true
     }
 
@@ -2850,11 +2900,8 @@ impl AgentHooks for Hooks {
                 }
             }
             AgentEvent::TurnEnd { .. } => {
-                {
-                    let mut recovery = lock(&session.inner.recovery);
-                    recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
-                }
-                session.flush_pending_custom();
+                let mut recovery = lock(&session.inner.recovery);
+                recovery.last_tool_results = std::mem::take(&mut recovery.turn_tool_results);
             }
             _ => {}
         }
@@ -2866,14 +2913,23 @@ impl AgentHooks for Hooks {
         if matches!(event, AgentEvent::TurnEnd { .. }) {
             self.turn_index.fetch_add(1, Ordering::SeqCst);
         }
+        // Custom messages sent during the turn are appended once its handlers
+        // ran, so those that turn_end handlers send join them, as in pi.
+        let turn_end = matches!(event, AgentEvent::TurnEnd { .. });
         let Some(extension_event) = kind.and_then(|kind| extension_event(event, kind, turn_index))
         else {
+            if turn_end {
+                session.flush_pending_custom();
+            }
             return Box::pin(async {});
         };
         Box::pin(async move {
             session
                 .emit_extension_event(&extension_event, self.cancel.clone())
                 .await;
+            if turn_end {
+                session.flush_pending_custom();
+            }
         })
     }
 

@@ -232,8 +232,9 @@ pub fn autocomplete(
         .iter()
         .map(|command| command.name.clone())
         .collect();
-    for extension in session.extensions() {
-        for command in extension.commands() {
+    for resolved in session.extension_commands() {
+        let (extension, command) = (&resolved.extension, resolved.command);
+        {
             if builtin.contains(&command.name) {
                 continue;
             }
@@ -244,7 +245,7 @@ pub fn autocomplete(
                 None => command.description,
             };
             commands.push(SlashCommand {
-                name: command.name,
+                name: resolved.invocation,
                 description: Some(description),
                 argument_hint: None,
                 complete: Some(Box::new(move |prefix: &str| {

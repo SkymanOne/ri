@@ -155,6 +155,18 @@ pub struct Completion {
     pub description: Option<String>,
 }
 
+/// An extension command with the name it is invoked by; pi's
+/// `ResolvedCommand`.
+#[derive(Clone)]
+pub struct ResolvedCommand {
+    /// `name`, or `name:N` when several extensions register `name`.
+    pub invocation: String,
+    /// The command as registered.
+    pub command: Command,
+    /// The extension that handles it.
+    pub extension: Arc<dyn Extension>,
+}
+
 /// A key an extension binds; pi's `registerShortcut`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shortcut {

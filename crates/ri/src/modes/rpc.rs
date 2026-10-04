@@ -665,19 +665,14 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
         RpcCommand::GetCommands => {
             let resources = session.resources();
             let mut commands: Vec<SlashCommand> = Vec::new();
-            for extension in session.extensions() {
-                commands.extend(
-                    extension
-                        .commands()
-                        .into_iter()
-                        .map(|command| SlashCommand {
-                            name: command.name,
-                            description: Some(command.description),
-                            source: CommandSource::Extension,
-                            source_info: extension.source(),
-                        }),
-                );
-            }
+            commands.extend(session.extension_commands().into_iter().map(|resolved| {
+                SlashCommand {
+                    name: resolved.invocation,
+                    description: Some(resolved.command.description),
+                    source: CommandSource::Extension,
+                    source_info: resolved.extension.source(),
+                }
+            }));
             commands.extend(resources.templates.iter().map(|template| SlashCommand {
                 name: template.name.clone(),
                 description: Some(template.description.clone()),
