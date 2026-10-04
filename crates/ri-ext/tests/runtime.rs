@@ -183,10 +183,17 @@ async fn resolves_import_meta_reads_reports_and_keeps_nul_characters() {
     let main = "
 import lib from \"cjs-lib\";
 import util from \"node:util\";
+import EventEmitter from \"node:events\";
 import { createRequire } from \"node:module\";
 const Stream = createRequire(import.meta.url)(\"stream\");
-function Legacy() {}
+function Legacy() {
+	Stream.call(this);
+}
 util.inherits(Legacy, Stream);
+function Emitter() {
+	EventEmitter.call(this);
+}
+util.inherits(Emitter, EventEmitter);
 const nul = \"a\0b\";
 export default function (pi) {
 	pi.registerCommand(\"probe\", {
@@ -199,6 +206,7 @@ export default function (pi) {
 			nul.charCodeAt(1),
 			lib.ok,
 			new Legacy() instanceof Stream && typeof Stream.Readable,
+			new Emitter().on(\"x\", () => {}).listenerCount(\"x\"),
 		].join(\",\"),
 		handler: async () => {},
 	});
@@ -222,7 +230,7 @@ export default function (pi) {
     assert_eq!(
         extension["commands"][0]["description"],
         format!(
-            "file://{dir}/node_modules/cjs-lib/index.js,file://{dir}/data.txt,node:fs,object,3,0,yes\0,function"
+            "file://{dir}/node_modules/cjs-lib/index.js,file://{dir}/data.txt,node:fs,object,3,0,yes\0,function,1"
         )
     );
 }

@@ -679,6 +679,23 @@
 	builtins.url = url;
 
 	// ----- events ---------------------------------------------------------------------------------
+	// Node's EventEmitter and stream classes are plain functions, which old
+	// packages also call on an object of their own: `EventEmitter.call(this)`.
+	// `callable` makes a class answer both ways.
+	const callable = (Class) => {
+		const Callable = function (...args) {
+			if (new.target) return Reflect.construct(Class, args, new.target);
+			Object.assign(this, Reflect.construct(Class, args));
+			return undefined;
+		};
+		for (const key of Reflect.ownKeys(Class)) {
+			if (key !== "prototype" && key !== "length") Object.defineProperty(Callable, key, Object.getOwnPropertyDescriptor(Class, key));
+		}
+		Object.setPrototypeOf(Callable, Object.getPrototypeOf(Class));
+		Callable.prototype = Class.prototype;
+		Object.defineProperty(Class.prototype, "constructor", { value: Callable, writable: true, configurable: true });
+		return Callable;
+	};
 	class EventEmitter {
 		constructor() {
 			this._events = new Map();
@@ -753,6 +770,7 @@
 			return this._maxListeners;
 		}
 	}
+	EventEmitter = callable(EventEmitter);
 	EventEmitter.EventEmitter = EventEmitter;
 	EventEmitter.defaultMaxListeners = 10;
 	EventEmitter.once = (emitter, event) => new Promise((resolve) => emitter.once(event, (...args) => resolve(args)));
@@ -1086,6 +1104,7 @@
 			return destination;
 		}
 	}
+	Stream = callable(Stream);
 	class Readable extends Stream {
 		static from(iterable) {
 			const stream = new Readable();
@@ -1108,6 +1127,7 @@
 			return this;
 		}
 	}
+	Readable = callable(Readable);
 	class Writable extends Stream {
 		write() {
 			return true;
@@ -1120,7 +1140,9 @@
 			return this;
 		}
 	}
+	Writable = callable(Writable);
 	class Transform extends Writable {}
+	Transform = callable(Transform);
 	// As in Node, the module is the legacy `Stream` constructor, which old
 	// packages extend with `util.inherits`, carrying the stream classes.
 	builtins.stream = Object.assign(Stream, { Stream, Readable, Writable, Transform, PassThrough: Transform, Duplex: Transform, pipeline: notSupported("stream.pipeline"), finished: notSupported("stream.finished") });
