@@ -36,14 +36,33 @@ fn write<T: Serialize + ?Sized>(
     Ok(String::from_utf8(out).expect("serde_json writes UTF-8"))
 }
 
-/// Wraps a serde_json formatter, keeping its layout and printing floats with
+/// Wraps a serde_json formatter, keeping its layout and printing numbers with
 /// ECMAScript `Number.prototype.toString`.
 struct JsFormatter<F>(F);
+
+/// The largest integer a JavaScript number holds exactly.
+const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 impl<F: Formatter> Formatter for JsFormatter<F> {
     fn write_f64<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
         // serde_json writes `null` for non-finite values before reaching this point.
         writer.write_all(ryu_js::Buffer::new().format(value).as_bytes())
+    }
+
+    // Integers beyond what a double holds exactly are rounded, as
+    // `JSON.parse` then `JSON.stringify` round them.
+    fn write_i64<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: i64) -> io::Result<()> {
+        if value.unsigned_abs() > MAX_SAFE_INTEGER {
+            return self.write_f64(writer, value as f64);
+        }
+        self.0.write_i64(writer, value)
+    }
+
+    fn write_u64<W: ?Sized + io::Write>(&mut self, writer: &mut W, value: u64) -> io::Result<()> {
+        if value > MAX_SAFE_INTEGER {
+            return self.write_f64(writer, value as f64);
+        }
+        self.0.write_u64(writer, value)
     }
 
     fn begin_array<W: ?Sized + io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
@@ -121,6 +140,19 @@ mod tests {
         for (value, expected) in cases {
             assert_eq!(to_string(&value).unwrap(), expected, "{value:e}");
         }
+    }
+
+    #[test]
+    fn large_integers_round_like_javascript() {
+        // `JSON.stringify(JSON.parse(text))` in JavaScript.
+        let value: Value = serde_json::from_str(
+            "[9007199254740991,9007199254740993,12345678901234567890,-12345678901234567]",
+        )
+        .unwrap();
+        assert_eq!(
+            to_string(&value).unwrap(),
+            "[9007199254740991,9007199254740992,12345678901234567000,-12345678901234568]"
+        );
     }
 
     #[test]
