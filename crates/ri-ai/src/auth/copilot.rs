@@ -502,10 +502,11 @@ impl OAuthProvider for CopilotOAuth {
 
     fn to_auth(&self, credential: &OAuthCredential) -> OAuthAuth {
         OAuthAuth {
-            api_key: credential.access.clone(),
+            api_key: Some(credential.access.clone()),
             base_url: Some(
                 self.base_url(&credential.access, enterprise_domain(credential).as_deref()),
             ),
+            ..OAuthAuth::default()
         }
     }
 }

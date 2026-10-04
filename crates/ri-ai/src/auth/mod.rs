@@ -11,9 +11,13 @@ pub mod copilot;
 pub mod device;
 pub mod federation;
 pub mod google_adc;
+pub mod kimi;
 mod lock;
+pub mod meta;
+pub mod openrouter;
 pub mod pkce;
 pub mod store;
+pub mod xai;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -220,7 +224,9 @@ pub struct LoginOptions {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OAuthAuth {
     /// Sent as the API key.
-    pub api_key: String,
+    pub api_key: Option<String>,
+    /// Headers that carry the token instead; `None` removes a header.
+    pub headers: indexmap::IndexMap<String, Option<String>>,
     /// Replaces the model's base URL, for providers whose endpoint depends on
     /// the account.
     pub base_url: Option<String>,
@@ -258,8 +264,8 @@ pub trait OAuthProvider: Send + Sync {
     /// Request credentials for a valid token.
     fn to_auth(&self, credential: &OAuthCredential) -> OAuthAuth {
         OAuthAuth {
-            api_key: credential.access.clone(),
-            base_url: None,
+            api_key: Some(credential.access.clone()),
+            ..OAuthAuth::default()
         }
     }
 }
@@ -271,6 +277,10 @@ pub fn builtin_oauth(provider: &str) -> Option<Arc<dyn OAuthProvider>> {
         "openai-codex" => Some(Arc::new(codex::CodexOAuth::default())),
         "openai" => Some(Arc::new(chatgpt::ChatGptOAuth::default())),
         "github-copilot" => Some(Arc::new(copilot::CopilotOAuth::default())),
+        "kimi-coding" => Some(Arc::new(kimi::KimiOAuth::default())),
+        "meta" => Some(Arc::new(meta::MetaOAuth::default())),
+        "xai" => Some(Arc::new(xai::XaiOAuth::default())),
+        "openrouter" => Some(Arc::new(openrouter::OpenRouterOAuth::default())),
         _ => None,
     }
 }

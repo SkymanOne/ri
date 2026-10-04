@@ -12,6 +12,10 @@ use ri_ai::auth::anthropic::AnthropicOAuth;
 use ri_ai::auth::chatgpt::ChatGptOAuth;
 use ri_ai::auth::codex::CodexOAuth;
 use ri_ai::auth::copilot::CopilotOAuth;
+use ri_ai::auth::kimi::KimiOAuth;
+use ri_ai::auth::meta::MetaOAuth;
+use ri_ai::auth::openrouter::OpenRouterOAuth;
+use ri_ai::auth::xai::XaiOAuth;
 use ri_ai::auth::{AuthEvent, AuthPrompt, AuthRequest, Interaction, LoginOptions, OAuthProvider};
 use ri_ai::registry::{LoginKind, ModelRegistry};
 use ri_mock::{Cassette, Interaction as Exchange, MockServer, RequestMatch, Response};
@@ -565,4 +569,212 @@ async fn registry_reports_refresh_failures_and_logs_in_with_keys() {
     registry.logout("openai").await.unwrap();
     assert!(registry.store().get("openai").is_none());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn device_code(events: &Events) -> (String, String) {
+    events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|event| match event {
+            AuthEvent::DeviceCode {
+                user_code,
+                verification_uri,
+                ..
+            } => Some((user_code.clone(), verification_uri.clone())),
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[tokio::test]
+async fn kimi_device_login_refresh_and_bearer_header() {
+    let server = mock(vec![
+        exchange(
+            "POST",
+            "/api/oauth/device_authorization",
+            200,
+            &json!({"device_code": "dc", "user_code": "KIMI-1", "verification_uri": "https://kimi.com/device", "verification_uri_complete": "https://kimi.com/device?code=KIMI-1", "interval": 1, "expires_in": 60}),
+        ),
+        exchange("POST", "/api/oauth/token", 400, &json!({"error": "authorization_pending"})),
+        exchange(
+            "POST",
+            "/api/oauth/token",
+            200,
+            &json!({"access_token": "kimi-access", "refresh_token": "kimi-refresh", "expires_in": 3600}),
+        ),
+        exchange(
+            "POST",
+            "/api/oauth/token",
+            401,
+            &json!({"error": "invalid_grant", "error_description": "expired"}),
+        ),
+    ])
+    .await;
+    let oauth = KimiOAuth {
+        oauth_host: Some(server.url()),
+    };
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |_, _, _| None);
+    let credential = oauth
+        .login(&interaction, &LoginOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        device_code(&events),
+        (
+            "KIMI-1".into(),
+            "https://kimi.com/device?code=KIMI-1".into()
+        )
+    );
+    assert_eq!(
+        (credential.access.as_str(), credential.refresh.as_str()),
+        ("kimi-access", "kimi-refresh")
+    );
+    let auth = oauth.to_auth(&credential);
+    assert_eq!(auth.api_key, None);
+    assert_eq!(
+        auth.headers.get("Authorization"),
+        Some(&Some("Bearer kimi-access".to_owned()))
+    );
+    let refused = oauth
+        .refresh(&credential, &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "Kimi Code token refresh unauthorized (status 401): expired"
+    );
+    let requests = server.finish().unwrap();
+    assert!(body(&requests[2]).contains(&(
+        "grant_type".into(),
+        "urn:ietf:params:oauth:grant-type:device_code".into()
+    )));
+    assert!(body(&requests[3]).contains(&("refresh_token".into(), "kimi-refresh".into())));
+}
+
+#[tokio::test]
+async fn meta_device_login_mints_an_api_key() {
+    let server = mock(vec![
+        exchange(
+            "POST",
+            "/oidc/device/authorization/",
+            200,
+            &json!({"device_code": "dc", "user_code": "META-1", "verification_uri": "https://meta.com/device", "interval": 1}),
+        ),
+        exchange(
+            "POST",
+            "/oidc/device/token/",
+            200,
+            &json!({"access_token": "identity"}),
+        ),
+        exchange("POST", "/muse-code/key", 200, &json!({"api_key": "meta-key"})),
+        exchange("POST", "/muse-code/key", 403, &json!({"detail": "session expired"})),
+    ])
+    .await;
+    let url = server.url();
+    let oauth = MetaOAuth {
+        device_authorization_url: format!("{url}/oidc/device/authorization/"),
+        device_token_url: format!("{url}/oidc/device/token/"),
+        api_key_mint_url: format!("{url}/muse-code/key"),
+    };
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |_, _, _| None);
+    let credential = oauth
+        .login(&interaction, &LoginOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(device_code(&events).0, "META-1");
+    assert_eq!(
+        (credential.access.as_str(), credential.refresh.as_str()),
+        ("meta-key", "identity")
+    );
+    let expired = oauth
+        .refresh(&credential, &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        expired.to_string(),
+        "Meta session expired (status 403). Run `/login meta` to sign in again.: session expired"
+    );
+    let requests = server.finish().unwrap();
+    assert_eq!(requests[2].headers["x-api-version"], "1.0.0");
+    assert_eq!(requests[2].body, "{}");
+}
+
+#[tokio::test]
+async fn xai_device_login_and_refresh_keep_the_refresh_token() {
+    let server = mock(vec![
+        exchange(
+            "POST",
+            "/oauth2/device/code",
+            200,
+            &json!({"device_code": "dc", "user_code": "XAI-1", "verification_uri": "https://accounts.x.ai/device", "expires_in": 60, "interval": 1}),
+        ),
+        exchange(
+            "POST",
+            "/oauth2/token",
+            200,
+            &json!({"access_token": "xai-1", "refresh_token": "xr-1", "expires_in": 3600}),
+        ),
+        exchange("POST", "/oauth2/token", 200, &json!({"access_token": "xai-2"})),
+    ])
+    .await;
+    let oauth = XaiOAuth {
+        device_code_url: format!("{}/oauth2/device/code", server.url()),
+        token_url: format!("{}/oauth2/token", server.url()),
+    };
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |_, _, _| None);
+    let credential = oauth
+        .login(&interaction, &LoginOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(device_code(&events).1, "https://accounts.x.ai/device");
+    let refreshed = oauth
+        .refresh(&credential, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(refreshed.access, "xai-2");
+    assert_eq!(refreshed.refresh, "xr-1");
+    let requests = server.finish().unwrap();
+    assert!(body(&requests[0]).contains(&("referrer".into(), "pi".into())));
+}
+
+#[tokio::test]
+async fn openrouter_trades_a_pasted_code_for_a_key() {
+    let server = mock(vec![exchange(
+        "POST",
+        "/api/v1/auth/keys",
+        200,
+        &json!({"key": "sk-or-v1-key"}),
+    )])
+    .await;
+    let oauth = OpenRouterOAuth {
+        authorize_url: format!("{}/auth", server.url()),
+        token_url: format!("{}/api/v1/auth/keys", server.url()),
+    };
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |prompt, _, _| match prompt {
+        AuthPrompt::ManualCode { .. } => {
+            Some("http://127.0.0.1:1/oauth/callback/x?code=or-code".into())
+        }
+        _ => None,
+    });
+    let credential = oauth
+        .login(&interaction, &LoginOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(credential.access, "sk-or-v1-key");
+    assert_eq!(credential.expires, 9_007_199_254_740_991);
+    let url = auth_url(&events.lock().unwrap());
+    let callback = query(&url, "callback_url");
+    assert!(callback.starts_with("http://127.0.0.1:"), "{callback}");
+    assert!(callback.contains("/oauth/callback/"));
+    assert_eq!(query(&url, "code_challenge_method"), "S256");
+    let requests = server.finish().unwrap();
+    let exchange: Value = serde_json::from_str(&requests[0].body).unwrap();
+    assert_eq!(exchange["code"], "or-code");
+    assert_eq!(exchange["code_challenge_method"], "S256");
+    assert!(!oauth.is_subscription());
 }

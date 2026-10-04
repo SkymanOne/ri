@@ -771,7 +771,8 @@ impl ModelRegistry {
             Some(Credential::OAuth(credential)) => {
                 match self.oauth_auth(provider, credential, min_validity_ms).await {
                     Ok(Some(oauth)) => {
-                        auth.api_key = Some(oauth.api_key);
+                        auth.api_key = oauth.api_key;
+                        auth.headers.extend(oauth.headers);
                         auth.base_url = oauth.base_url;
                         auth.source = Some("OAuth".into());
                     }
@@ -835,8 +836,8 @@ impl ModelRegistry {
         let Some(flow) = self.oauth_flow(provider) else {
             // ri has no sign-in for this provider: use the token as stored.
             return Ok(Some(OAuthAuth {
-                api_key: stored.access,
-                base_url: None,
+                api_key: Some(stored.access),
+                ..OAuthAuth::default()
             }));
         };
         let expires_soon = |credential: &OAuthCredential| {

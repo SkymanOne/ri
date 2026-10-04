@@ -67,7 +67,6 @@ type Handler<T> = Box<dyn FnMut(&str, &Url) -> Reply<T> + Send>;
 /// A running loopback server. Dropping it closes the listener and every open
 /// connection.
 pub(crate) struct Server<T> {
-    #[cfg(test)]
     redirect_uri: String,
     outcome: oneshot::Receiver<Result<T, AuthError>>,
     cancel: CancellationToken,
@@ -85,10 +84,7 @@ impl<T: Send + 'static> Server<T> {
         handler: Handler<T>,
     ) -> std::io::Result<Server<T>> {
         let listener = TcpListener::bind((host, port)).await?;
-        #[cfg(test)]
         let redirect_uri = format!("http://{host}:{}{path}", listener.local_addr()?.port());
-        #[cfg(not(test))]
-        let _ = path;
         let (sender, outcome) = oneshot::channel();
         let state = Arc::new(Mutex::new((handler, Some(sender))));
         let tasks = tokio::spawn(async move {
@@ -98,7 +94,6 @@ impl<T: Send + 'static> Server<T> {
             }
         });
         Ok(Server {
-            #[cfg(test)]
             redirect_uri,
             outcome,
             cancel: cancel.clone(),
@@ -106,8 +101,7 @@ impl<T: Send + 'static> Server<T> {
         })
     }
 
-    /// `http://<host>:<port><path>`.
-    #[cfg(test)]
+    /// `http://<host>:<port><path>`, with the port the listener bound.
     pub(crate) fn redirect_uri(&self) -> &str {
         &self.redirect_uri
     }

@@ -1193,8 +1193,12 @@ mod tests {
             [
                 "Anthropic",
                 "GitHub Copilot",
+                "Kimi For Coding",
+                "Meta",
                 "OpenAI",
-                "OpenAI Codex (legacy)"
+                "OpenAI Codex (legacy)",
+                "OpenRouter",
+                "xAI"
             ]
         );
         let anthropic = find_options(&registry, "ANTHROPIC");
