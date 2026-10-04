@@ -48149,10 +48149,654 @@
 		"entries": [
 			"<agent>/npm/node_modules/pi-better-subagents/index.ts"
 		],
-		"extensions": [],
-		"errors": [
-			"Failed to load extension: ENOSPC: no space left on device, write"
-		]
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "subagent_spawn",
+						"label": "Spawn Subagent",
+						"description": "Launch a task in a background pi subagent (a detached `pi -p` process) and return IMMEDIATELY with a run id. The foreground session stays free. Completion is reported later on the user's next turn — never wait or poll for it.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"prompt"
+							],
+							"properties": {
+								"prompt": {
+									"type": "string",
+									"description": "The task for the subagent. This is the only context it gets — be self-contained."
+								},
+								"name": {
+									"type": "string",
+									"description": "Short label for the run (e.g. 'reviewer'). Ignored when agent or role is set, except as the direct-role alias when alias is omitted."
+								},
+								"agent": {
+									"type": "string",
+									"description": "Named agent id (agent.<slug>). Mutually exclusive with role. The navigator shows the defined agent name."
+								},
+								"role": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "One role by short name (developer) for this direct role launch; role.developer also works, case-insensitive. Mutually exclusive with agent."
+										},
+										{
+											"type": "array",
+											"items": {
+												"type": "string",
+												"minLength": 1
+											},
+											"minItems": 1,
+											"description": "Two or more role names for this direct role launch. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+										}
+									],
+									"description": "One role by short name (developer) for this direct role launch; role.developer also works, case-insensitive. Mutually exclusive with agent. Two or more role names for this direct role launch. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+								},
+								"alias": {
+									"type": "string",
+									"description": "Per-run display alias for a direct role launch, such as checkout. Not a reusable agent. Colliding aliases gain a numeric suffix."
+								},
+								"model": {
+									"type": "string",
+									"description": "Pi model pattern, preferably provider/id, optionally suffixed with @effort (for example openai/gpt-5.5@high). Providerless patterns are resolved by Pi. Omit to use the agent or role default; without one, inherit the foreground model. Put authoritative model choices here; do not rely on prompt text."
+								},
+								"thinking": {
+									"type": "string",
+									"description": "Reasoning effort for the child: off, minimal, low, medium, high, xhigh, or max. Omit to use the agent or role default; without one, the Pi/model default."
+								},
+								"tools": {
+									"type": "string",
+									"description": "Tool allowlist: comma-separated names the child may use (e.g. 'read,bash,web_fetch'). This ALSO selects which extensions load — only packages backing a requested tool are loaded. Defaults to the configured safe set."
+								},
+								"exclude_tools": {
+									"type": "string",
+									"description": "Comma-separated tool denylist, applied on top of the allowlist."
+								},
+								"clean": {
+									"type": "boolean",
+									"description": "Run a hermetic child with NO extensions at all (only built-ins: read, bash, edit, write). Default false — the extensions backing the requested tools load, so web_fetch and model auth (e.g. xai) work."
+								},
+								"sandbox": {
+									"type": "boolean",
+									"description": "Use the human Subagents profile from /sandbox. An enabled human profile cannot be bypassed with false. Without published settings, defaults to kernel write confinement; false opts out of that legacy default."
+								},
+								"sandbox_dir": {
+									"type": "string",
+									"description": "Confine writes to (and run the child in) this directory instead of the working dir. Created if missing."
+								},
+								"callback": {
+									"type": "boolean",
+									"description": "Default TRUE: on completion, trigger a turn that calls subagent_result and presents the result. Set false to finish quietly — the result is then read on demand via subagent_result."
+								},
+								"cwd": {
+									"type": "string",
+									"description": "Working directory (default: current)."
+								},
+								"git_clone_workspace": {
+									"type": "boolean",
+									"description": "Prepare a disposable Git clone workspace for sandboxed Git-mutating subagents. The clone has a real .git/ directory inside the sandbox writable root and is self-contained after setup."
+								},
+								"approve": {
+									"type": "boolean",
+									"description": "Trust project-local files in the child (default: false; headless runs cannot prompt for trust)."
+								},
+								"allow_nested": {
+									"type": "boolean",
+									"description": "Allow the child to spawn its own subagents (default: false). Loads this extension in the child and allowlists its tools."
+								},
+								"deadline_minutes": {
+									"anyOf": [
+										{
+											"type": "null"
+										},
+										{
+											"type": "number",
+											"minimum": 0
+										}
+									],
+									"description": "Optional soft deadline in minutes (default: none; 0 = none; null or omitted = inherit: in a batch job the shared value, otherwise the default). At the deadline the child is told to stop starting new work, commit what is done, and report, and you get one wake. Grace starts when the message reaches the child (after its current tool call); if it has not finished by then, the harness stops it with reason deadline."
+								},
+								"grace_minutes": {
+									"anyOf": [
+										{
+											"type": "null"
+										},
+										{
+											"type": "number",
+											"minimum": 0
+										}
+									],
+									"description": "Minutes after the wrap-up message reaches the child before the run is stopped (default 5; null or omitted = inherit)."
+								},
+								"max_minutes": {
+									"anyOf": [
+										{
+											"type": "null"
+										},
+										{
+											"type": "number",
+											"minimum": 0
+										}
+									],
+									"description": "Optional hard ceiling in minutes (default: none; 0 = none; null or omitted = inherit). The run is stopped at once, without grace, with reason ceiling."
+								},
+								"stuck_minutes": {
+									"anyOf": [
+										{
+											"type": "null"
+										},
+										{
+											"type": "number",
+											"minimum": 0
+										}
+									],
+									"description": "No-progress window in minutes (default 10; 0 = off; null or omitted = inherit). Progress is any successful tool call that is not an exact repeat of an earlier one (same tool, same arguments); edits, writes, commits, and a success after a failure always count. Time inside a running tool call does not count. Wakes you once per stuck spell; never stops the run."
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_spawn_batch",
+						"label": "Spawn Subagent Batch",
+						"description": "Launch several independent background pi subagents at once. Each job becomes a normal subagent run with its own run id, process, log, and metadata. 'shared' options are applied to every job; per-job options override them. Codemode callers receive a structured launch receipt: status, batchId when assigned, and launched, failed, skipped arrays with 1-based effective job positions (after any confirmed role split). Inspect all arrays; a returned receipt is not proof that every job launched or completed. Await the launch call and preserve its receipt. Script cancellation does not stop launched runs; use subagent_stop.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"jobs"
+							],
+							"properties": {
+								"batchName": {
+									"type": "string",
+									"description": "Optional display label for the batch."
+								},
+								"shared": {
+									"type": "object",
+									"properties": {
+										"name": {
+											"type": "string",
+											"description": "Label applied to jobs that do not set their own. Direct-role alias when alias is omitted."
+										},
+										"agent": {
+											"type": "string",
+											"description": "Named agent id applied to jobs that do not select their own agent or role."
+										},
+										"role": {
+											"anyOf": [
+												{
+													"type": "string",
+													"description": "One role by short name (developer) for this shared role selector; role.developer also works, case-insensitive. Mutually exclusive with agent."
+												},
+												{
+													"type": "array",
+													"items": {
+														"type": "string",
+														"minLength": 1
+													},
+													"minItems": 1,
+													"description": "Two or more role names for this shared role selector. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+												}
+											],
+											"description": "One role by short name (developer) for this shared role selector; role.developer also works, case-insensitive. Mutually exclusive with agent. Two or more role names for this shared role selector. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+										},
+										"alias": {
+											"type": "string",
+											"description": "Direct-role alias applied when a job does not set alias."
+										},
+										"model": {
+											"type": "string",
+											"description": "Pi model pattern, preferably provider/id, optionally suffixed with @effort. Omit to use the agent or role default; without one, inherit the foreground model. Put authoritative model choices here; prompt text is not parsed."
+										},
+										"thinking": {
+											"type": "string",
+											"description": "Reasoning effort applied to every job: off, minimal, low, medium, high, xhigh, or max."
+										},
+										"tools": {
+											"type": "string",
+											"description": "Tool allowlist applied to every job."
+										},
+										"exclude_tools": {
+											"type": "string",
+											"description": "Comma-separated tool denylist applied to every job."
+										},
+										"sandbox": {
+											"type": "boolean",
+											"description": "Use the human Subagents profile; false cannot override an enabled profile. Legacy default is write confinement."
+										},
+										"sandbox_dir": {
+											"type": "string",
+											"description": "Writable root for every job."
+										},
+										"callback": {
+											"type": "boolean",
+											"description": "Default TRUE: post result back on completion."
+										},
+										"clean": {
+											"type": "boolean",
+											"description": "Hermetic builtins-only child; no extensions load."
+										},
+										"cwd": {
+											"type": "string",
+											"description": "Working directory (default: current)."
+										},
+										"git_clone_workspace": {
+											"type": "boolean",
+											"description": "Prepare a disposable Git clone workspace for each job (same semantics as subagent_spawn)."
+										},
+										"approve": {
+											"type": "boolean",
+											"description": "Trust project-local files in children."
+										},
+										"allow_nested": {
+											"type": "boolean",
+											"description": "Allow children to spawn their own subagents."
+										},
+										"deadline_minutes": {
+											"anyOf": [
+												{
+													"type": "null"
+												},
+												{
+													"type": "number",
+													"minimum": 0
+												}
+											],
+											"description": "Optional soft deadline in minutes (default: none; 0 = none; null or omitted = inherit: in a batch job the shared value, otherwise the default). At the deadline the child is told to stop starting new work, commit what is done, and report, and you get one wake. Grace starts when the message reaches the child (after its current tool call); if it has not finished by then, the harness stops it with reason deadline."
+										},
+										"grace_minutes": {
+											"anyOf": [
+												{
+													"type": "null"
+												},
+												{
+													"type": "number",
+													"minimum": 0
+												}
+											],
+											"description": "Minutes after the wrap-up message reaches the child before the run is stopped (default 5; null or omitted = inherit)."
+										},
+										"max_minutes": {
+											"anyOf": [
+												{
+													"type": "null"
+												},
+												{
+													"type": "number",
+													"minimum": 0
+												}
+											],
+											"description": "Optional hard ceiling in minutes (default: none; 0 = none; null or omitted = inherit). The run is stopped at once, without grace, with reason ceiling."
+										},
+										"stuck_minutes": {
+											"anyOf": [
+												{
+													"type": "null"
+												},
+												{
+													"type": "number",
+													"minimum": 0
+												}
+											],
+											"description": "No-progress window in minutes (default 10; 0 = off; null or omitted = inherit). Progress is any successful tool call that is not an exact repeat of an earlier one (same tool, same arguments); edits, writes, commits, and a success after a failure always count. Time inside a running tool call does not count. Wakes you once per stuck spell; never stops the run."
+										}
+									},
+									"description": "Options applied to every job; per-job values override these."
+								},
+								"jobs": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"prompt"
+										],
+										"properties": {
+											"prompt": {
+												"type": "string",
+												"description": "The task for this job."
+											},
+											"name": {
+												"type": "string",
+												"description": "Short label for this job. Direct-role alias when alias is omitted."
+											},
+											"agent": {
+												"type": "string",
+												"description": "Named agent id for this job. Overrides shared agent and role."
+											},
+											"role": {
+												"anyOf": [
+													{
+														"type": "string",
+														"description": "One role by short name (developer) for this batch job; role.developer also works, case-insensitive. Mutually exclusive with agent."
+													},
+													{
+														"type": "array",
+														"items": {
+															"type": "string",
+															"minLength": 1
+														},
+														"minItems": 1,
+														"description": "Two or more role names for this batch job. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+													}
+												],
+												"description": "One role by short name (developer) for this batch job; role.developer also works, case-insensitive. Mutually exclusive with agent. Two or more role names for this batch job. An array is ambiguous and asks to choose one role or split into separate runs. No child launches until that choice is made."
+											},
+											"alias": {
+												"type": "string",
+												"description": "Direct-role alias for this job."
+											},
+											"model": {
+												"type": "string"
+											},
+											"thinking": {
+												"type": "string"
+											},
+											"tools": {
+												"type": "string"
+											},
+											"exclude_tools": {
+												"type": "string"
+											},
+											"sandbox": {
+												"type": "boolean"
+											},
+											"sandbox_dir": {
+												"type": "string"
+											},
+											"callback": {
+												"type": "boolean"
+											},
+											"clean": {
+												"type": "boolean"
+											},
+											"cwd": {
+												"type": "string"
+											},
+											"git_clone_workspace": {
+												"type": "boolean"
+											},
+											"approve": {
+												"type": "boolean"
+											},
+											"allow_nested": {
+												"type": "boolean"
+											},
+											"deadline_minutes": {
+												"anyOf": [
+													{
+														"type": "null"
+													},
+													{
+														"type": "number",
+														"minimum": 0
+													}
+												],
+												"description": "Optional soft deadline in minutes (default: none; 0 = none; null or omitted = inherit: in a batch job the shared value, otherwise the default). At the deadline the child is told to stop starting new work, commit what is done, and report, and you get one wake. Grace starts when the message reaches the child (after its current tool call); if it has not finished by then, the harness stops it with reason deadline."
+											},
+											"grace_minutes": {
+												"anyOf": [
+													{
+														"type": "null"
+													},
+													{
+														"type": "number",
+														"minimum": 0
+													}
+												],
+												"description": "Minutes after the wrap-up message reaches the child before the run is stopped (default 5; null or omitted = inherit)."
+											},
+											"max_minutes": {
+												"anyOf": [
+													{
+														"type": "null"
+													},
+													{
+														"type": "number",
+														"minimum": 0
+													}
+												],
+												"description": "Optional hard ceiling in minutes (default: none; 0 = none; null or omitted = inherit). The run is stopped at once, without grace, with reason ceiling."
+											},
+											"stuck_minutes": {
+												"anyOf": [
+													{
+														"type": "null"
+													},
+													{
+														"type": "number",
+														"minimum": 0
+													}
+												],
+												"description": "No-progress window in minutes (default 10; 0 = off; null or omitted = inherit). Progress is any successful tool call that is not an exact repeat of an earlier one (same tool, same arguments); edits, writes, commits, and a success after a failure always count. Time inside a running tool call does not count. Wakes you once per stuck spell; never stops the run."
+											}
+										},
+										"description": "A single batch job."
+									},
+									"minItems": 1,
+									"description": "One or more jobs to launch. Each must have a prompt."
+								},
+								"onCapacity": {
+									"type": "string",
+									"description": "Capacity behavior: \"reject\" (default) or \"launch-available\"."
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_list",
+						"label": "List Subagents",
+						"description": "List background subagent runs with compact status rows. Non-blocking. Default: current session, newest first, limit 10 (1 KiB page). Pass all:true for machine-global; limit is clamped to max 100. Pass cursor to continue. Incident counts are compact; full failure text lives on subagent_result/output.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"all": {
+									"type": "boolean",
+									"description": "If true, list every run on this machine. Default false = current session only."
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum rows to display (default 10, max 100; larger values are clamped)."
+								},
+								"status": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Effective statuses to include: running, completed, failed, killed, exited, orphaned, lost."
+								},
+								"cursor": {
+									"type": "string",
+									"description": "Caller-owned page or status cursor from a previous list response."
+								},
+								"max_bytes": {
+									"type": "number",
+									"description": "UTF-8 byte budget for this page (default 1 KiB, max 4 KiB)."
+								},
+								"maxBytes": {
+									"type": "number",
+									"description": "Deprecated alias for max_bytes. max_bytes wins when both are given."
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_output",
+						"label": "Subagent Output",
+						"description": "Read a subagent run's current output without waiting. Default is a 1 KiB / 10-line excerpt of the current session. Pass all:true to read a foreign-session id. Pass mode=raw for retained-log pages (16 KiB default, 64 KiB cap). Pass cursor to continue or to poll for failure-only changes. Missing or unreadable logs are reported as gaps, not as empty healthy output. Spend and tool counts are omitted unless include:[\"cost\",\"tools\"] asks for them.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"description": "Run id from subagent_spawn."
+								},
+								"lines": {
+									"type": "number",
+									"description": "Max lines in the default excerpt (default 10)."
+								},
+								"tail_lines": {
+									"type": "number",
+									"description": "Deprecated alias for lines. lines wins when both are given."
+								},
+								"cursor": {
+									"type": "string",
+									"description": "Caller-owned page or status cursor from a previous response."
+								},
+								"max_bytes": {
+									"type": "number",
+									"description": "UTF-8 byte budget for this page (default 1 KiB, max 4 KiB; raw default 16 KiB, max 64 KiB)."
+								},
+								"maxBytes": {
+									"type": "number",
+									"description": "Deprecated alias for max_bytes. max_bytes wins when both are given."
+								},
+								"mode": {
+									"type": "string",
+									"description": "raw = page retained log bytes. Default is the bounded assembled excerpt."
+								},
+								"include": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Explicit opt-in facts omitted by default: \"cost\" adds one token/cost spend line, \"tools\" adds one tool-call count line with the distinct tool names."
+								},
+								"history": {
+									"type": "boolean",
+									"description": "If true, return an incident page that also lists failure history: unclassified child tool errors, expected failures, and recovered or superseded incidents. Default output lists only failures that need action and counts the rest."
+								},
+								"all": {
+									"type": "boolean",
+									"description": "If true, allow a foreign-session id. Default is current session only."
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_result",
+						"label": "Subagent Result",
+						"description": "Read a subagent's final output if it has finished. NEVER waits. Default current session. Ordinary answers are preserved verbatim in a 2048-byte UTF-8 page (max_bytes up to 8192 bytes, optional lines cap); pass cursor to reconstruct the rest. Pass all:true for a foreign-session id. mode=raw pages retained log bytes (16 KiB default, 64 KiB cap). Failures and exceptional lifecycle facts come before progress. No tool-name histories or default cost lines; pass include:[\"cost\",\"tools\"] to opt in.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"description": "Run id from subagent_spawn."
+								},
+								"cursor": {
+									"type": "string",
+									"description": "Caller-owned answer page or status cursor from a previous response."
+								},
+								"max_bytes": {
+									"type": "number",
+									"description": "UTF-8 byte budget for this page (default 2048 bytes, max 8192 bytes)."
+								},
+								"maxBytes": {
+									"type": "number",
+									"description": "Deprecated alias for max_bytes. max_bytes wins when both are given."
+								},
+								"lines": {
+									"type": "number",
+									"description": "Optional line cap for each answer page (default: bytes only). nextCursor continues after the last line shown."
+								},
+								"tail_lines": {
+									"type": "number",
+									"description": "Deprecated alias for lines. lines wins when both are given."
+								},
+								"mode": {
+									"type": "string",
+									"description": "raw = page retained log bytes (16 KiB default, 64 KiB cap). Default is the bounded assembled result."
+								},
+								"include": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Explicit opt-in facts omitted by default: \"cost\" adds one token/cost spend line, \"tools\" adds one tool-call count line with the distinct tool names."
+								},
+								"history": {
+									"type": "boolean",
+									"description": "If true, return an incident page that also lists failure history: unclassified child tool errors, expected failures, and recovered or superseded incidents. Default output lists only failures that need action and counts the rest."
+								},
+								"all": {
+									"type": "boolean",
+									"description": "If true, allow a foreign-session id. Default is current session only."
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_stop",
+						"label": "Stop Subagent",
+						"description": "Stop a running or orphaned subagent. Terminates identifiable related process-group members when present; otherwise finalizes from log evidence (completed/failed) or records lost.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"description": "Run id from subagent_spawn."
+								}
+							}
+						}
+					},
+					{
+						"name": "agents_catalog",
+						"label": "Agents catalog",
+						"description": "List or inspect role and named-agent definitions, including inheritance, default model and effort, diagnostics, restrictions, and whether launchability is actually known. This tool does not create, import, or edit definitions.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"type": "string",
+									"description": "list or inspect. No other action is accepted."
+								},
+								"id": {
+									"type": "string",
+									"description": "What to inspect: a role's short name (developer) or a named agent's id (agent.payments). The prefixed role id (role.developer) also works. Display names and filenames are not ids."
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "agents",
+						"description": "[list|show|create|reload|import-codex] — List, inspect, create, reload, or import agent definitions"
+					},
+					{
+						"name": "subagents",
+						"description": "[settings|mode manual|adaptive|coordinator|cap <number>|save|reset] — Subagent settings"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"before_agent_start",
+					"message_end",
+					"model_select",
+					"session_before_switch",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"thinking_level_select",
+					"tool_execution_end",
+					"tool_execution_start"
+				]
+			}
+		],
+		"errors": []
 	},
 	"@pi-unipi/fusion": {
 		"version": "2.20.5",
@@ -50676,6 +51320,62 @@
 			{
 				"tools": [
 					{
+						"name": "pylon_docs",
+						"label": "Pylon documentation",
+						"description": "List or read documentation shipped with Pylon and report whether the current host is Pylon Web or Pi TUI/RPC. Use it for questions about Pylon, bundled packages, settings, workflows, safety, storage, or troubleshooting.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"list",
+										"read"
+									]
+								},
+								"path": {
+									"type": "string",
+									"maxLength": 240
+								}
+							},
+							"required": [
+								"action"
+							],
+							"additionalProperties": false
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "compact",
+						"description": "Compact deterministically; optional instructions guide the configured reviewer"
+					},
+					{
+						"name": "tokens",
+						"description": "Show estimated tool payload tokens for the current session branch"
+					},
+					{
+						"name": "pylon",
+						"description": "Show Pylon status, run diagnostics, or manage active tools"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"model_select",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"tool_call",
+					"tool_result",
+					"turn_end"
+				]
+			},
+			{
+				"tools": [
+					{
 						"name": "continuity_recall",
 						"label": "Continuity Recall",
 						"description": "Search bounded historical evidence from the current Pi session or, with explicit project_sessions scope, other persisted sessions in the current project. Use tools mode to retrieve sanitized assistant tool calls and exact stored-result expansions. This is not an exact historical session-ID lookup; use search_sessions for explicit session IDs. Project-session results can be filtered by inclusive ISO-8601 UTC entry timestamps.",
@@ -53019,9 +53719,7 @@
 				]
 			}
 		],
-		"errors": [
-			"Failed to load extension: ENOSPC: no space left on device, write"
-		]
+		"errors": []
 	},
 	"@amaster.ai/pi-web-access": {
 		"version": "0.1.22",
@@ -67012,10 +67710,16 @@
 		"entries": [
 			"<agent>/npm/node_modules/@myk-org/pi-vertex-claude/index.ts"
 		],
-		"extensions": [],
-		"errors": [
-			"Failed to load extension: ENOSPC: no space left on device, write"
-		]
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
 	},
 	"pi-langfuse": {
 		"version": "1.6.1",
@@ -77212,10 +77916,499 @@
 		"entries": [
 			"<agent>/npm/node_modules/@cr1ms0n/pi-subagent/extensions/subagent.ts"
 		],
-		"extensions": [],
-		"errors": [
-			"Failed to load extension: ENOSPC: no space left on device, write"
-		]
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "subagent",
+						"label": "Subagent",
+						"description": "Run isolated Pi subagents in foreground, parallel, or cancellable background mode.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"action": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "status"
+										},
+										{
+											"type": "string",
+											"const": "wait"
+										},
+										{
+											"type": "string",
+											"const": "cancel"
+										},
+										{
+											"type": "string",
+											"const": "steer"
+										},
+										{
+											"type": "string",
+											"const": "diff"
+										},
+										{
+											"type": "string",
+											"const": "apply"
+										},
+										{
+											"type": "string",
+											"const": "discard"
+										},
+										{
+											"type": "string",
+											"const": "plan"
+										}
+									],
+									"description": "Management action on an existing run: status, wait, cancel, steer (inject guidance into a running child), diff/apply/discard (worktree results). action:\"plan\" calls Jev and local preflights, returning a resolved route without spawning a child. Selector fees apply; later dispatch selects again."
+								},
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Run id (or unique prefix) for management actions."
+								},
+								"message": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Steering message injected into the running child (action: steer)."
+								},
+								"index": {
+									"type": "number",
+									"minimum": 0,
+									"description": "Task index within a parallel run for steer/diff/apply/discard. Defaults to the only eligible task."
+								},
+								"task": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Task to delegate (single mode)."
+								},
+								"agent": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Named agent to use (from .pi/agents/<name>.md). Supplies persona system prompt and trusted defaults; supported request fields still override their corresponding defaults. Thinking is configured outside the request body."
+								},
+								"description": {
+									"type": "string",
+									"description": "Short human label (3-5 words) shown in UIs and result indexes."
+								},
+								"system_prompt": {
+									"type": "string",
+									"description": "Extra system prompt appended to the child's prompt (does not replace it)."
+								},
+								"model": {
+									"type": "string",
+									"description": "Legacy field: omit on new work. Jev chooses from the dedicated configured model list; explicit model is rejected rather than bypassing routing."
+								},
+								"tools": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"description": "Ordinary direct tool name."
+									},
+									"description": "Optional ordinary-candidate ceiling for local policy; when provided, every named ordinary tool is a required child capability. Default candidates are the parent's active direct tools; Pi's official native exposure tools are carried automatically and are not caller-selected."
+								},
+								"profile": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "explore"
+										},
+										{
+											"type": "string",
+											"const": "review"
+										},
+										{
+											"type": "string",
+											"const": "general"
+										}
+									],
+									"description": "Capability profile: explore/review cannot write project files; general permits Jev to choose from the parent's active direct catalog and may write. Pi-native non-direct tools retain host-owned exposure semantics."
+								},
+								"difficulty": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "simple"
+										},
+										{
+											"type": "string",
+											"const": "moderate"
+										},
+										{
+											"type": "string",
+											"const": "complex"
+										}
+									],
+									"description": "Optional dispatch difficulty for Jev routing context: simple (bounded read-only review, docs/format checks, local verification), moderate (multi-file analysis, ordinary fix, focused research), complex (architecture, cross-layer implementation, unknown-root-cause debugging, high-risk change). Jev still chooses the model/tools; when no agent, profile or candidate thinking default exists, local policy uses simple→minimal, moderate→medium, complex→high."
+								},
+								"cwd": {
+									"type": "string",
+									"description": "Working directory for the child process."
+								},
+								"timeout_ms": {
+									"type": "number",
+									"minimum": 1,
+									"maximum": 86400000,
+									"description": "Total budget in milliseconds including local preflight, Jev selection, setup, queue and retries. Timed-out runs report which phase timed out."
+								},
+								"max_turns": {
+									"type": "number",
+									"minimum": 1,
+									"maximum": 500,
+									"description": "Budget: at this many turns the child is steered to wrap up and given grace turns for a final answer; ends as 'partial' with output preserved."
+								},
+								"max_cost": {
+									"type": "number",
+									"minimum": 0,
+									"description": "Soft provider-reported execution cost ceiling in dollars, checked after each turn. TypeSafe routing currency is unreported and NOT capped by max_cost."
+								},
+								"grace_turns": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 20,
+									"description": "Wrap-up turns allowed after a budget breach before hard stop. 0 = immediate stop. Default from config (2)."
+								},
+								"fallback_models": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"maxItems": 5,
+									"description": "Legacy field: omit on new work, including an empty list. Ranked alternatives come only from Jev; manual fallback and emergency models are not accepted."
+								},
+								"max_retries": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 5,
+									"description": "Total extra child attempts (0 = initial attempt only; default 1). Before any tool execution, a recognized availability failure advances to the next Jev probability-ranked model with the same tools and no new selection. Auth/quota/context/task-quality failures never switch."
+								},
+								"context": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "fresh"
+										},
+										{
+											"type": "string",
+											"const": "fork"
+										}
+									],
+									"description": "fork starts the child from a branched copy of the parent conversation (needs a persisted parent session); fresh (default) starts clean. Fork is single-task only."
+								},
+								"output": {
+									"type": "string",
+									"description": "File path to write final output."
+								},
+								"output_schema": {
+									"type": "object",
+									"properties": {},
+									"additionalProperties": true,
+									"description": "JSON Schema the child's final result must satisfy. The child ends with a fenced json:result block; successful but invalid answers get one repair round, then end 'partial' with the errors reported. Provider errors/aborts are not repaired and failed attempts cannot publish structured output."
+								},
+								"output_mode": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "inline"
+										},
+										{
+											"type": "string",
+											"const": "file-only"
+										}
+									],
+									"description": "file-only returns a pointer instead of inline text; use for large reports."
+								},
+								"resume": {
+									"type": "string",
+									"description": "Child session id to continue."
+								},
+								"fork_resume": {
+									"type": "boolean",
+									"description": "Fork the resumed session instead of direct resume."
+								},
+								"isolation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "shared"
+										},
+										{
+											"type": "string",
+											"const": "worktree"
+										}
+									],
+									"description": "worktree runs the task in an isolated git worktree; changed work is preserved on a branch."
+								},
+								"include_wip": {
+									"type": "boolean",
+									"description": "Seed a worktree with the parent checkout's uncommitted changes (staged + unstaged + untracked). Only valid with isolation:'worktree'."
+								},
+								"allow_shared_writes": {
+									"type": "boolean",
+									"description": "Unsafe opt-in for parallel writers sharing one checkout."
+								},
+								"keep_background": {
+									"type": "boolean",
+									"description": "Keep processes the child backgrounded (e.g. dev servers) alive after a clean exit."
+								},
+								"async": {
+									"type": "boolean",
+									"description": "Run in the background and return a handle immediately."
+								},
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"task"
+										],
+										"properties": {
+											"task": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Task text for one parallel worker."
+											},
+											"agent": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Named agent to use (from .pi/agents/<name>.md). Supplies persona system prompt and trusted defaults; supported request fields still override their corresponding defaults. Thinking is configured outside the request body."
+											},
+											"description": {
+												"type": "string",
+												"description": "Short human label (3-5 words) shown in UIs and result indexes."
+											},
+											"system_prompt": {
+												"type": "string",
+												"description": "Extra system prompt appended to the child's prompt (does not replace it)."
+											},
+											"model": {
+												"type": "string",
+												"description": "Legacy field: omit on new work. Jev chooses from the dedicated configured model list; explicit model is rejected rather than bypassing routing."
+											},
+											"tools": {
+												"type": "array",
+												"items": {
+													"type": "string",
+													"description": "Ordinary direct tool name."
+												},
+												"description": "Optional ordinary-candidate ceiling for local policy; when provided, every named ordinary tool is a required child capability. Default candidates are the parent's active direct tools; Pi's official native exposure tools are carried automatically and are not caller-selected."
+											},
+											"profile": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "explore"
+													},
+													{
+														"type": "string",
+														"const": "review"
+													},
+													{
+														"type": "string",
+														"const": "general"
+													}
+												],
+												"description": "Capability profile: explore/review cannot write project files; general permits Jev to choose from the parent's active direct catalog and may write. Pi-native non-direct tools retain host-owned exposure semantics."
+											},
+											"difficulty": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "simple"
+													},
+													{
+														"type": "string",
+														"const": "moderate"
+													},
+													{
+														"type": "string",
+														"const": "complex"
+													}
+												],
+												"description": "Optional dispatch difficulty for Jev routing context: simple (bounded read-only review, docs/format checks, local verification), moderate (multi-file analysis, ordinary fix, focused research), complex (architecture, cross-layer implementation, unknown-root-cause debugging, high-risk change). Jev still chooses the model/tools; when no agent, profile or candidate thinking default exists, local policy uses simple→minimal, moderate→medium, complex→high."
+											},
+											"cwd": {
+												"type": "string",
+												"description": "Working directory for the child process."
+											},
+											"timeout_ms": {
+												"type": "number",
+												"minimum": 1,
+												"maximum": 86400000,
+												"description": "Total budget in milliseconds including local preflight, Jev selection, setup, queue and retries. Timed-out runs report which phase timed out."
+											},
+											"max_turns": {
+												"type": "number",
+												"minimum": 1,
+												"maximum": 500,
+												"description": "Budget: at this many turns the child is steered to wrap up and given grace turns for a final answer; ends as 'partial' with output preserved."
+											},
+											"max_cost": {
+												"type": "number",
+												"minimum": 0,
+												"description": "Soft provider-reported execution cost ceiling in dollars, checked after each turn. TypeSafe routing currency is unreported and NOT capped by max_cost."
+											},
+											"grace_turns": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 20,
+												"description": "Wrap-up turns allowed after a budget breach before hard stop. 0 = immediate stop. Default from config (2)."
+											},
+											"fallback_models": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"maxItems": 5,
+												"description": "Legacy field: omit on new work, including an empty list. Ranked alternatives come only from Jev; manual fallback and emergency models are not accepted."
+											},
+											"max_retries": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 5,
+												"description": "Total extra child attempts (0 = initial attempt only; default 1). Before any tool execution, a recognized availability failure advances to the next Jev probability-ranked model with the same tools and no new selection. Auth/quota/context/task-quality failures never switch."
+											},
+											"context": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "fresh"
+													},
+													{
+														"type": "string",
+														"const": "fork"
+													}
+												],
+												"description": "fork starts the child from a branched copy of the parent conversation (needs a persisted parent session); fresh (default) starts clean. Fork is single-task only."
+											},
+											"output": {
+												"type": "string",
+												"description": "File path to write final output."
+											},
+											"output_schema": {
+												"type": "object",
+												"properties": {},
+												"additionalProperties": true,
+												"description": "JSON Schema the child's final result must satisfy. The child ends with a fenced json:result block; successful but invalid answers get one repair round, then end 'partial' with the errors reported. Provider errors/aborts are not repaired and failed attempts cannot publish structured output."
+											},
+											"output_mode": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "inline"
+													},
+													{
+														"type": "string",
+														"const": "file-only"
+													}
+												],
+												"description": "file-only returns a pointer instead of inline text; use for large reports."
+											},
+											"resume": {
+												"type": "string",
+												"description": "Child session id to continue."
+											},
+											"fork_resume": {
+												"type": "boolean",
+												"description": "Fork the resumed session instead of direct resume."
+											},
+											"isolation": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "shared"
+													},
+													{
+														"type": "string",
+														"const": "worktree"
+													}
+												],
+												"description": "worktree runs the task in an isolated git worktree; changed work is preserved on a branch."
+											},
+											"include_wip": {
+												"type": "boolean",
+												"description": "Seed a worktree with the parent checkout's uncommitted changes (staged + unstaged + untracked). Only valid with isolation:'worktree'."
+											},
+											"allow_shared_writes": {
+												"type": "boolean",
+												"description": "Unsafe opt-in for parallel writers sharing one checkout."
+											},
+											"keep_background": {
+												"type": "boolean",
+												"description": "Keep processes the child backgrounded (e.g. dev servers) alive after a clean exit."
+											}
+										},
+										"additionalProperties": false
+									},
+									"minItems": 1,
+									"maxItems": 8,
+									"description": "Array of independent tasks for parallel mode. Parallel tasks default to the read-only explore profile; parallel writers need isolation:'worktree'."
+								},
+								"synthesis": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Optional synthesis prompt for parallel mode: after all tasks finish, one read-only child folds their outputs using this instruction and its result is delivered first."
+								}
+							},
+							"additionalProperties": false,
+							"description": "Subagent request: single, parallel, status, wait, or cancel."
+						}
+					},
+					{
+						"name": "subagent_wait",
+						"label": "Subagent wait",
+						"description": "Block until a background subagent run (async:true) settles, then deliver its output. Equivalent to subagent { action: 'wait', id }. Aborting or timing out leaves the run alive and collectable; use subagent { action: 'cancel' } to stop it.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Run id (or unique prefix) of the background run to collect."
+								},
+								"timeout_ms": {
+									"type": "number",
+									"minimum": 1,
+									"maximum": 86400000,
+									"description": "Give up waiting after this long and return a still-running notice. The run is NOT cancelled; collect it later with subagent_wait or action:'status'. Omit to wait until the run settles."
+								}
+							},
+							"additionalProperties": false,
+							"description": "Block until a background subagent run settles, then deliver its output."
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "subagent-cost",
+						"description": "Show parent / subagent / combined usage for this branch"
+					},
+					{
+						"name": "subagents",
+						"description": "Inspect subagent runs, artifacts, sessions, and combined usage"
+					},
+					{
+						"name": "btw",
+						"description": "Ask a one-off side question in a subagent, hidden from the main agent's context"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"message_end",
+					"session_before_tree",
+					"session_shutdown",
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
 	},
 	"pi-provider-antigravity": {
 		"version": "0.20.0",
@@ -87362,10 +88555,470 @@
 		"entries": [
 			"<agent>/npm/node_modules/@xzzpig/pi-goal-x/extensions/goal.ts"
 		],
-		"extensions": [],
-		"errors": [
-			"Failed to load extension: ENOSPC: no space left on device, write"
-		]
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "get_goal",
+						"label": "Get Goal",
+						"description": "Read focused goal state. Default: compact summary. Retrieve full objective/contracts, tasks, or history in 4000-character pages with section and cursor. verbose preserves full legacy output.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"section": {
+									"type": "string",
+									"enum": [
+										"summary",
+										"objective",
+										"tasks",
+										"history"
+									]
+								},
+								"task_id": {
+									"type": "string",
+									"description": "With section=tasks, retrieve one task."
+								},
+								"cursor": {
+									"type": "string",
+									"maxLength": 256,
+									"description": "Next page; repeat section/task."
+								},
+								"verbose": {
+									"type": "boolean",
+									"description": "Full detail mode."
+								},
+								"include_history": {
+									"type": "boolean"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "create_goal",
+						"label": "Create Goal",
+						"description": "Create and focus a persistent goal only on explicit user request; other open goals remain unchanged.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"objective"
+							],
+							"properties": {
+								"objective": {
+									"type": "string",
+									"description": "Full objective; preserve ordered steps and done criteria."
+								},
+								"mode": {
+									"type": "string",
+									"enum": [
+										"regular",
+										"sisyphus"
+									],
+									"description": "Default regular; sisyphus only if requested."
+								},
+								"token_budget": {
+									"type": "integer",
+									"minimum": 1,
+									"description": "Whole-token budget, only if supplied by the user."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "update_goal",
+						"label": "Update Goal",
+						"description": "Report a terminal or pausing outcome for the current run: \"complete\" runs the independent completion auditor (completion_summary is an untrusted claim only); \"blocked\" records a distinct agent-blocked state and stops continuation per the active-goal policy; \"paused\" pauses immediately with a required reason. Never archive or abandon a goal yourself — ask the user to run /goal-clear. New waits require strictExecutionContract opt-in.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": [
+										"complete",
+										"blocked",
+										"paused"
+									],
+									"description": "Exclusive with continuation."
+								},
+								"continuation": {
+									"anyOf": [
+										{
+											"type": "object",
+											"required": [
+												"kind"
+											],
+											"properties": {
+												"kind": {
+													"type": "string",
+													"const": "ready"
+												}
+											},
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"required": [
+												"kind",
+												"reason",
+												"deadline"
+											],
+											"properties": {
+												"kind": {
+													"type": "string",
+													"const": "wait"
+												},
+												"reason": {
+													"type": "string",
+													"minLength": 1,
+													"maxLength": 2000
+												},
+												"deadline": {
+													"type": "string"
+												},
+												"wait_id": {
+													"type": "string"
+												},
+												"polling": {
+													"type": "object",
+													"required": [
+														"interval_seconds",
+														"max_checks"
+													],
+													"properties": {
+														"interval_seconds": {
+															"type": "integer",
+															"minimum": 1,
+															"maximum": 2147483
+														},
+														"max_checks": {
+															"type": "integer",
+															"minimum": 1,
+															"maximum": 9007199254740991
+														}
+													},
+													"additionalProperties": false
+												}
+											},
+											"additionalProperties": false
+										}
+									]
+								},
+								"reason": {
+									"type": "string",
+									"description": "Required when status is paused or blocked: describe the concrete blocker."
+								},
+								"attempted_actions": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"maxLength": 240
+									},
+									"maxItems": 8,
+									"description": "Actions attempted against the blocker."
+								},
+								"suggested_action": {
+									"type": "string",
+									"description": "Optional suggested next step when status is paused."
+								},
+								"completion_summary": {
+									"type": "string",
+									"description": "Untrusted completion claim; never evidence."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "set_goal_tasks",
+						"label": "Set Goal Tasks",
+						"description": "Set or restructure the task tree with user confirmation. Matching IDs retain progress; removed IDs are deleted. Confirmation stops the turn; continuation follows.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"tasks"
+							],
+							"properties": {
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"id",
+											"title"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Short stable slug e.g. 'task-1'"
+											},
+											"title": {
+												"type": "string",
+												"description": "Human-readable task title"
+											},
+											"parent_id": {
+												"type": "string",
+												"description": "Parent id; omit for roots."
+											},
+											"verification_contract": {
+												"type": "string",
+												"description": "Required completion evidence."
+											},
+											"lightweight_subtasks": {
+												"type": "boolean",
+												"description": "Children do not gate parent completion."
+											}
+										}
+									},
+									"description": "Flat parent-linked task list"
+								},
+								"block_completion": {
+									"type": "boolean",
+									"description": "Require all tasks resolved; default false."
+								},
+								"change_summary": {
+									"type": "string",
+									"description": "Optional summary of the task list change"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "update_goal_task",
+						"label": "Update Goal Task",
+						"description": "Update task progress without stopping the turn. Use ordered updates for an atomic batch, or task_id/status for one task. An invalid update rejects the whole batch.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"task_id": {
+									"type": "string",
+									"description": "Single-task form; omit with updates."
+								},
+								"status": {
+									"type": "string",
+									"enum": [
+										"start",
+										"complete",
+										"skipped",
+										"pending"
+									]
+								},
+								"updates": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"task_id",
+											"status"
+										],
+										"properties": {
+											"task_id": {
+												"type": "string"
+											},
+											"status": {
+												"type": "string",
+												"enum": [
+													"start",
+													"complete",
+													"skipped",
+													"pending"
+												]
+											},
+											"evidence": {
+												"type": "string"
+											},
+											"reason": {
+												"type": "string"
+											}
+										},
+										"additionalProperties": false
+									},
+									"minItems": 1,
+									"maxItems": 100,
+									"description": "Ordered atomic batch; omit all single-task fields."
+								},
+								"evidence": {
+									"type": "string",
+									"description": "Completion evidence; max 200 chars."
+								},
+								"reason": {
+									"type": "string",
+									"description": "Required for skipped."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "propose_goal_draft",
+						"label": "Propose Goal Draft",
+						"description": "Present the drafted objective and agent-selected task plan for explicit user confirmation.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"objective"
+							],
+							"properties": {
+								"objective": {
+									"type": "string",
+									"description": "Complete proposed objective; preserve it exactly for budget-only tweaks."
+								},
+								"token_budget": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"minimum": 1
+										},
+										{
+											"type": "null"
+										}
+									],
+									"description": "Only on user request: positive whole-token lifetime limit; null removes it. Omit to retain the current tweak budget or create without one."
+								},
+								"auto_continue": {
+									"type": "boolean",
+									"description": "Defaults to true."
+								},
+								"sisyphus": {
+									"type": "boolean",
+									"description": "Must match the user-selected goal mode."
+								},
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"id",
+											"title"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Short stable slug, for example task-1."
+											},
+											"title": {
+												"type": "string",
+												"description": "Human-readable task title."
+											},
+											"parent_id": {
+												"type": "string",
+												"description": "Optional parent task id in this proposal."
+											},
+											"verification_contract": {
+												"type": "string",
+												"description": "Evidence required for this task."
+											},
+											"lightweight_subtasks": {
+												"type": "boolean",
+												"description": "True only for a task with lightweight children."
+											}
+										}
+									},
+									"description": "Flat parent-linked task tree to confirm with the goal."
+								},
+								"block_completion": {
+									"type": "boolean",
+									"description": "Require task completion before goal completion."
+								}
+							},
+							"additionalProperties": false
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "goal",
+						"description": "Draft a regular goal with clarification, task planning, and confirmation."
+					},
+					{
+						"name": "sisyphus",
+						"description": "Draft a Sisyphus goal with clarification, task planning, and confirmation."
+					},
+					{
+						"name": "goal-cancel",
+						"description": "Cancel the in-progress guided draft without creating or modifying a goal."
+					},
+					{
+						"name": "goal-direct",
+						"description": "Create and start a regular goal immediately, without drafting."
+					},
+					{
+						"name": "sisyphus-direct",
+						"description": "Create and start a Sisyphus goal immediately, without drafting."
+					},
+					{
+						"name": "goal-list",
+						"description": "List all open goals and the current focus."
+					},
+					{
+						"name": "goal-status",
+						"description": "Show the unified goal dashboard (read-only). Append \"verbose\" for full detail or \"health\" for storage/runtime checks."
+					},
+					{
+						"name": "goal-refresh",
+						"description": "Re-read goal storage caches (pool, ledger, settings) from disk and report what changed. Picks up external edits to .pi files — no file watchers needed."
+					},
+					{
+						"name": "goal-recovery",
+						"description": "Read-only storage/recovery report (malformed goal files, malformed ledger lines, stale locks, orphaned snapshot data). Append \"repair\" to remove stale locks and refresh the pool snapshot after confirmation (with backup)."
+					},
+					{
+						"name": "goal-focus",
+						"description": "Choose which open goal this session focuses on."
+					},
+					{
+						"name": "goal-unfocus",
+						"description": "Stop focusing the current goal (session only; goal stays open)."
+					},
+					{
+						"name": "goal-settings",
+						"description": "Open pi-goal settings (auditor provider/model/thinking level)."
+					},
+					{
+						"name": "goal-tweak",
+						"description": "Revise the current goal or its token budget with confirmation."
+					},
+					{
+						"name": "goal-clear",
+						"description": "Archive the current goal after confirmation (user-owned abandonment)."
+					},
+					{
+						"name": "goal-pause",
+						"description": "Pause the currently running goal. Esc also pauses while running."
+					},
+					{
+						"name": "goal-resume",
+						"description": "Continue now and renew the configured autonomous-run allowance."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_end",
+					"agent_settled",
+					"agent_start",
+					"before_agent_start",
+					"before_provider_request",
+					"context",
+					"message_end",
+					"message_start",
+					"session_before_compact",
+					"session_compact",
+					"session_compact_failed",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"tool_call",
+					"tool_execution_end",
+					"turn_end",
+					"turn_start",
+					"ui_prompt_end",
+					"ui_prompt_start"
+				]
+			}
+		],
+		"errors": []
 	},
 	"@juicesharp/rpiv-workflow": {
 		"version": "2.12.0",
