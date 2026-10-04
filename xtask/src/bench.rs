@@ -114,6 +114,7 @@ fn run_time(
             .args(args)
             .env_clear()
             .envs(env.iter().map(|(key, value)| (*key, value)))
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .status()?;
         samples.push(started.elapsed());
@@ -172,6 +173,8 @@ fn first_request(
             .current_dir(cwd)
             .env_clear()
             .envs(env.iter().map(|(key, value)| (*key, value)))
+            // Print mode reads piped stdin into the prompt.
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()?;
@@ -254,12 +257,14 @@ fn measure(program: &Program, args: &Args, root: &Path) -> anyhow::Result<()> {
     let version = version_time(program, &env, args.runs)?;
     let request = first_request(program, &env, &cwd, &agent, args.runs)?;
     let ready = |rows: &[String]| rows.iter().any(|row| row.contains("claude-sonnet-4-5"));
+    let mut outputs = Vec::new();
     let mut paints = Vec::new();
     for _ in 0..args.runs {
         let pty = Pty::spawn(&program.path, &model, &cwd, &env, (100, 40), true)?;
         let paint = pty
             .wait_for(Duration::from_secs(20), ready)
             .context("no first paint")?;
+        outputs.push(pty.first_output().context("no output")?);
         paints.push(paint);
         pty.finish()?;
     }
@@ -293,12 +298,14 @@ fn measure(program: &Program, args: &Args, root: &Path) -> anyhow::Result<()> {
     // The first start with extensions fills compilation caches.
     idle_rss(program, &model, &cwd, &env)?;
     let with_extensions = idle_rss(program, &model, &cwd, &env)?;
+    let output = percentile(&mut outputs, 50.0);
     let first = percentile(&mut paints, 50.0);
     let p50 = percentile(&mut keys, 50.0);
     let p99 = percentile(&mut keys, 99.0);
     println!("{}:", program.name);
     println!("  --version median                 {:>10}", ms(version));
     println!("  print mode to first request byte {:>10}", ms(request));
+    println!("  first output median              {:>10}", ms(output));
     println!("  first paint median               {:>10}", ms(first));
     println!(
         "  keystroke ({} lines) p50        {:>10}",
