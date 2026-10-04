@@ -408,7 +408,7 @@
           "output": "marker=true ai=set\nsecond\n",
           "truncated": false,
           "exit_code": 0,
-          "wall_time_seconds": 0.1
+          "wall_time_seconds": "<wall_time_seconds>"
         }
       },
       "isError": false

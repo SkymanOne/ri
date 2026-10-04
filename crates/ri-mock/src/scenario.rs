@@ -731,7 +731,10 @@ impl Normalizer<'_> {
                             self.id(item)
                         }
                         (
-                            "timestamp" | "estimatedTokensAfter" | "durationMs",
+                            "timestamp"
+                            | "estimatedTokensAfter"
+                            | "durationMs"
+                            | "wall_time_seconds",
                             Value::String(_) | Value::Number(_),
                         ) => Value::from(format!("<{key}>")),
                         ("sections", Value::Object(sections)) => {

@@ -402,7 +402,7 @@
           "output": "two\n",
           "truncated": false,
           "exit_code": 2,
-          "wall_time_seconds": 0
+          "wall_time_seconds": "<wall_time_seconds>"
         },
         "isError": true
       },

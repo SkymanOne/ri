@@ -245,7 +245,7 @@
     "tty": {"cols": 100, "rows": 40, "keys": ["!!printf 'a\\nb\\n'", "\r"]}
   },
   {
-    "name": "tui-tree",
+    "name": "tui-tree", "os": "linux",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--model", "anthropic/claude-sonnet-4-5"],
     "files": {"AGENTS.md": "Be brief.\n", "hello.txt": "hi\n"},
