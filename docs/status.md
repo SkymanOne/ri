@@ -210,17 +210,19 @@ Done for the slice below.
 - `ri import pi` copies pi's agent directory (settings, credentials, models, keybindings, MCP servers, trust, system prompt files, sessions, prompts, skills, themes, extensions and packages) and the current project's `.pi` into ri's, keeping files ri already has.
 - A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64, with checksums.
 
-Budgets, from `cargo xtask bench --pi` on this machine (release build, 100×40 terminal; keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler):
+Budgets, from `cargo xtask bench --pi` (release build, 100×40 terminal; keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler). Linux is this machine (x86_64). macOS is GitHub's hosted `macos-latest` runner (arm64 VM), measured by the Bench workflow, which runs for a pushed commit whose message contains `[bench]`; the column shows its last run.
 
-| Metric | Budget | ri | pi |
-|---|---|---|---|
-| `--version` | < 5 ms | 2.0 ms | 246 ms |
-| Print mode, start to first request byte | < 25 ms | 13.1 ms | 336 ms |
-| Interactive first paint | < 40 ms | 10.0 ms | 330 ms |
-| Keystroke to paint, p99 | < 16 ms | 1.9 ms | 6.1 ms |
-| Idle memory, no extensions | < 30 MB | 15.5 MiB | 106 MiB |
-| Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 110 MiB |
-| Stripped release binary | < 35 MB | 33.6 MB | |
+| Metric | Budget | ri, Linux | pi, Linux | ri, macOS | pi, macOS |
+|---|---|---|---|---|---|
+| `--version` | < 5 ms | 2.0 ms | 246 ms | 5.8 ms (missed) | 204 ms |
+| Print mode, start to first request byte | < 25 ms | 13.1 ms | 336 ms | 10.8 ms | 323 ms |
+| Interactive first paint | < 40 ms | 10.0 ms | 330 ms | 22.7 ms | 270 ms |
+| Keystroke to paint, p99 | < 16 ms | 1.9 ms | 6.1 ms | 6.7 ms | 9.7 ms |
+| Idle memory, no extensions | < 30 MB | 15.5 MiB | 106 MiB | 14.4 MiB | 119 MiB |
+| Idle memory, 10 JS extensions | < 70 MB | 28.6 MiB | 110 MiB | 26.2 MiB | 124 MiB |
+| Stripped release binary | < 35 MB | 33.6 MB | | 26.5 MB | |
+
+The hosted macOS runner is noisier than Linux. Across five runs, `--version` measured 4.5 to 6.7 ms, while starting `true` took 1.3 to 1.7 ms; first paint met its budget in four of the five runs and measured 56 ms in the other. The `--version` overhead is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower, the same as `ri --version`. ri links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store.
 
 The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
@@ -231,7 +233,7 @@ Not yet done:
 - `codemode.mode: "only"`, which hides direct tools from requests; ri treats it as `on`.
 - The `models` global (classifiers and image generation) and grammar-constrained sampling of scripts on the Responses wire APIs.
 - The warning pi prints when a package's `codemode` replaces the built-in.
-- The budgets measured on macOS.
+- `--version` within its budget on macOS, which needs ri to stop linking Security and CoreFoundation; see the budgets above.
 
 ## Final end-to-end pass
 
@@ -244,7 +246,7 @@ Run on Linux x86_64 after M7, on the release candidate at the head of this branc
 | pi's example extensions | `crates/ri-ext/tests/examples.rs` | 79 of 79 register as in pi. |
 | Top 50 npm pi packages | `cargo xtask package-registrations` | 46 of 48 comparable packages register as in pi (96%); see M5. |
 | Codemode sandbox | `crates/ri-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
-| Budgets | `cargo xtask bench --pi` | All met; see M7. |
+| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `macos-latest` | All met on Linux. On macOS all but `--version` (4.5 to 6.7 ms against 5 ms); see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
 Deferred work is listed under each milestone; intentional differences are in [compat.md](compat.md).

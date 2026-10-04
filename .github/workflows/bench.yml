@@ -44,43 +44,6 @@ jobs:
           else
             ldd target/release/ri
           fi
-      - name: Probe launch cost
-        shell: bash
-        run: |
-          mkdir -p probe && cd probe
-          printf 'fn main() { println!("0.1.0"); }\n' > hello.rs
-          rustc -O -C strip=symbols hello.rs -o hello
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            cat > frameworks.rs <<'RS'
-          #[link(name = "CoreFoundation", kind = "framework")]
-          #[link(name = "Security", kind = "framework")]
-          unsafe extern "C" {
-              fn SecRandomCopyBytes(rnd: *const std::ffi::c_void, count: usize, bytes: *mut u8) -> i32;
-          }
-          fn main() {
-              if std::env::args().count() > 5 {
-                  unsafe { SecRandomCopyBytes(std::ptr::null(), 0, std::ptr::null_mut()) };
-              }
-              println!("0.1.0");
-          }
-          RS
-            rustc -O -C strip=symbols frameworks.rs -o frameworks
-            otool -L frameworks
-          fi
-          python3 - <<'PY'
-          import os, statistics, subprocess, time
-          programs = [("true", ["true"]), ("rust hello", ["./hello"])]
-          if os.path.exists("frameworks"):
-              programs.append(("rust + Security, CoreFoundation", ["./frameworks"]))
-          programs.append(("ri --version", ["../target/release/ri", "--version"]))
-          for name, argv in programs:
-              samples = []
-              for _ in range(60):
-                  start = time.perf_counter()
-                  subprocess.run(argv, stdout=subprocess.DEVNULL, check=True)
-                  samples.append((time.perf_counter() - start) * 1000)
-              print(f"{name:34} median {statistics.median(samples[10:]):.2f} ms")
-          PY
       - name: Measure
         run: cargo xtask bench --pi tests/fixtures/pi/generator/node_modules/.bin/pi --runs 20 | tee bench.txt
       - name: Stripped binary size
