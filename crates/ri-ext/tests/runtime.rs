@@ -219,3 +219,42 @@ export default function (pi) {
         )
     );
 }
+
+/// pi-ai's subpath modules link, and their catalog reads ri's.
+#[tokio::test(flavor = "multi_thread")]
+async fn links_pi_ai_subpaths() {
+    let dir = scratch("ai-subpaths");
+    let main = r#"
+import { getBuiltinModels, getBuiltinProviders, ANTHROPIC_MODELS, ANTHROPIC_IMAGE_MODELS } from "@earendil-works/pi-ai/providers/all";
+import { getProviderEnvValue } from "@earendil-works/pi-ai/utils/provider-env";
+import { DEFAULT_THINKING_BUDGETS } from "@earendil-works/pi-ai/api/simple-options";
+import { anthropicProvider } from "@mariozechner/pi-ai/providers/anthropic";
+export default function (pi) {
+	const ids = getBuiltinModels("anthropic").map((model) => model.id);
+	let stub;
+	try {
+		anthropicProvider();
+	} catch (error) {
+		stub = error.message;
+	}
+	pi.registerCommand("probe", {
+		description: [
+			getBuiltinProviders().includes("anthropic"),
+			ids.length > 0 && ids.every((id) => ANTHROPIC_MODELS[id].id === id),
+			Object.keys(ANTHROPIC_MODELS).length === ids.length,
+			Object.keys(ANTHROPIC_IMAGE_MODELS).length,
+			getProviderEnvValue("RI_TEST_VALUE", { RI_TEST_VALUE: "set" }),
+			DEFAULT_THINKING_BUDGETS.high,
+			stub,
+		].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "true,true,true,0,set,16384,anthropicProvider from @earendil-works/pi-ai is not available in ri extensions"
+    );
+}
