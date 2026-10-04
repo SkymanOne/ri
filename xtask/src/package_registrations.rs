@@ -261,8 +261,12 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     all.insert(name.clone(), got.clone());
+                    // Replaced whole, so a reader never sees half a file.
                     if let Ok(text) = ri_types::json::to_string_pretty(&*all, "\t") {
-                        let _ = std::fs::write(saved, text);
+                        let partial = saved.with_extension("json.partial");
+                        if std::fs::write(&partial, text).is_ok() {
+                            let _ = std::fs::rename(&partial, saved);
+                        }
                     }
                     let done = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                     eprintln!("[{done}/{total}] {name}");
