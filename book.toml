@@ -1,0 +1,17 @@
+# The documentation site, published to GitHub Pages by .github/workflows/docs.yml.
+[book]
+title = "ri"
+description = "A Rust implementation of the pi coding agent."
+authors = ["The ri contributors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+site-url = "/ri/"
+git-repository-url = "https://github.com/SkymanOne/ri"
+edit-url-template = "https://github.com/SkymanOne/ri/edit/main/{path}"
+no-section-label = true

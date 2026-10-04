@@ -159,7 +159,7 @@ Module loading runs on the host, in `ri-ext`:
 - Inside the guest, pi-tui reports a terminal without hyperlink or image support, so components use pi-tui's own text fallbacks.
 - Known losses are listed in [docs/compat.md](docs/compat.md).
 
-Feasibility study, prior art and rejected alternatives: [docs/research/extension-compat.md](docs/research/extension-compat.md).
+Feasibility study, prior art and rejected alternatives: [dev/research/extension-compat.md](dev/research/extension-compat.md).
 
 ## Design decisions
 
@@ -263,13 +263,16 @@ These are initial targets, calibrated against pi in M0–M1.
 ### Docs and git
 
 - Concise, professional prose. Describe contracts and decisions; do not paraphrase code or diffs.
+- Public documentation lives in `docs/` and builds with mdBook from `book.toml`. The Docs workflow publishes it to GitHub Pages from `main`. User-facing prose avoids em dashes and semicolons.
+- Internal notes live in `dev/`: progress in `dev/status.md`, research in `dev/research/`.
+- A change to user-facing behavior updates the matching page in `docs/` in the same commit.
 - A change to the architecture or to a decision updates this file in the same commit.
 - Commit messages use `type(scope): summary`. Type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`; scope is the crate name.
 - Stage explicit paths. Never commit secrets, `target/` or local caches.
 
 ## Milestones
 
-v0.1 is the completion of M7. Progress, deferred work and pending live checks are tracked in [docs/status.md](docs/status.md).
+v0.1 is the completion of M7. Progress, deferred work and pending live checks are tracked in [dev/status.md](dev/status.md).
 
 | Milestone | Scope | Exit criteria |
 |---|---|---|
