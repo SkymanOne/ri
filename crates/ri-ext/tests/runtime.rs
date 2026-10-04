@@ -332,3 +332,23 @@ export default async function (pi) {
         "hello world!,world,hello,EBADF,ENOENT,ab,3"
     );
 }
+
+/// TypeScript enums, whose transform needs their members evaluated.
+#[tokio::test(flavor = "multi_thread")]
+async fn transpiles_typescript_enums() {
+    let dir = scratch("enums");
+    let main = r#"
+enum Status { Idle, Busy = 5, Done }
+enum Label { Ok = "ok", Fail = "fail" }
+const enum Flag { A = 1 << 2, B = A | 1 }
+export default function (pi) {
+	pi.registerCommand("probe", {
+		description: [Status.Idle, Status.Busy, Status.Done, Status[5], Label.Fail, Flag.B].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(extension["commands"][0]["description"], "0,5,6,Busy,fail,5");
+}

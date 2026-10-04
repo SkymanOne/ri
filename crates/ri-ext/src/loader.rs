@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
 /// Bumped when the output of [`Loader::transpile`] changes for the same input.
-const TRANSPILE_VERSION: &str = "2";
+const TRANSPILE_VERSION: &str = "3";
 
 /// How a file runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,7 +248,11 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
     }
     let has_module_syntax = parsed.module_record.has_module_syntax;
     let mut program = parsed.program;
-    let semantic = SemanticBuilder::new().build(&program).semantic;
+    // The TypeScript transform needs enum members evaluated.
+    let semantic = SemanticBuilder::new()
+        .with_enum_eval(true)
+        .build(&program)
+        .semantic;
     let scoping = semantic.into_scoping();
     let unresolved = |name: &str| {
         scoping
