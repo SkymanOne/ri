@@ -76,6 +76,11 @@ impl ThemeFiles {
         files
     }
 
+    /// The names of the registered themes.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.named.iter().map(|(name, _)| name.as_str())
+    }
+
     /// The file that declares `name`.
     pub fn path(&self, name: &str) -> Option<&Path> {
         self.named

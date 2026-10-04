@@ -14,8 +14,10 @@ mod header;
 pub mod keybindings;
 mod login;
 pub mod picker;
+mod scoped_models;
 mod selectors;
 mod session_selector;
+mod settings_selector;
 mod themes;
 mod tools;
 mod tree_selector;
@@ -2060,9 +2062,13 @@ impl App {
                 .next()
                 .and_then(|b| b.parse().ok())
                 .unwrap_or(0);
+            let lines = match self.session.settings().fullscreen_wheel_scroll_lines {
+                Some(ri_types::settings::NumberOr::Number(lines)) => lines.clamp(1, 100) as isize,
+                _ => 1,
+            };
             match button & !0b11100 {
-                64 => self.alt.scroll_by(-1),
-                65 => self.alt.scroll_by(1),
+                64 => self.alt.scroll_by(-lines),
+                65 => self.alt.scroll_by(lines),
                 _ => {}
             }
             return true;
@@ -2158,6 +2164,14 @@ impl App {
                     self.status(format!("Thinking level: {}", level.as_str()));
                 }
             }
+            Action::Setting { id, value } => self.apply_setting(&id, &value),
+            Action::ThemePreview(setting) => self.use_theme(Some(&setting)),
+            Action::ScopedModels { enabled, save } => self.scoped_models_changed(enabled, save),
+            Action::ModelThinking {
+                provider,
+                id,
+                level,
+            } => self.set_model_thinking(&provider, &id, level),
             Action::Fork(id) => self.fork(&id, false),
             Action::Resume(path) => self.resume(&path, None),
             Action::Tree(id) => self.tree_selected(id),
@@ -2256,8 +2270,15 @@ impl App {
             .default_provider
             .clone()
             .zip(settings.default_model.clone());
+        let scoped = self
+            .session
+            .scoped_models()
+            .into_iter()
+            .map(|entry| entry.model)
+            .collect();
         self.selector = Some(Selector::Model(Box::new(selectors::ModelSelector::new(
             self.session.available_models(),
+            scoped,
             self.session.model(),
             default,
             search,
@@ -2540,6 +2561,22 @@ impl App {
     }
 
     // Terminal handoff
+
+    /// pi's `switchTuiMode`: moves the UI between the alternate screen and
+    /// the main screen, which keeps what it last drew.
+    fn switch_tui_mode(&mut self, fullscreen: bool) {
+        if fullscreen == self.fullscreen {
+            return;
+        }
+        if fullscreen {
+            emit(ALT_SCREEN_ENTER);
+            self.alt.invalidate();
+        } else {
+            emit(ALT_SCREEN_LEAVE);
+        }
+        self.fullscreen = fullscreen;
+        self.invalidate_all();
+    }
 
     /// Gives the terminal to another program and takes it back.
     fn with_terminal_released(&mut self, terminal: &mut Terminal, run: impl FnOnce()) {
@@ -3164,7 +3201,11 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     app.indicator = None;
     app.selector = None;
     let mut out = String::new();
-    if app.fullscreen {
+    let transcript = app.session.settings().fullscreen_exit_output
+        != Some(ri_types::settings::FullscreenExitOutput::ResumeHint);
+    if app.fullscreen && !transcript {
+        out.push_str(ALT_SCREEN_LEAVE);
+    } else if app.fullscreen {
         out.push_str(ALT_SCREEN_LEAVE);
         let (width, height) = app.size;
         let mut document = app.transcript(width);

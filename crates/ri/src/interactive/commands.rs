@@ -541,14 +541,7 @@ pub fn hotkeys(
 }
 
 /// Built-ins pi has that ri does not provide yet.
-const UNAVAILABLE: &[&str] = &[
-    "/settings",
-    "/scoped-models",
-    "/share",
-    "/bug",
-    "/arminsayshi",
-    "/dementedelves",
-];
+const UNAVAILABLE: &[&str] = &["/share", "/bug", "/arminsayshi", "/dementedelves"];
 
 impl super::App {
     /// Runs `text` when it is a built-in command, as pi's `onSubmit` matches
@@ -575,6 +568,16 @@ impl super::App {
         if text == "/logout" {
             self.editor.set_text("");
             self.logout_command();
+            return true;
+        }
+        if text == "/scoped-models" {
+            self.editor.set_text("");
+            self.open_scoped_models();
+            return true;
+        }
+        if text == "/settings" {
+            self.open_settings();
+            self.editor.set_text("");
             return true;
         }
         if with_args("/model") {

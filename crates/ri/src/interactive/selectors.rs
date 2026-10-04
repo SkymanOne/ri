@@ -54,6 +54,32 @@ pub enum Action {
     LoginCancelled,
     /// A project trust decision to save.
     Trust(Box<ri_core::trust::TrustOption>),
+    /// A `/settings` change: the setting's id and its new value as shown.
+    Setting {
+        /// The setting.
+        id: String,
+        /// Its new value.
+        value: String,
+    },
+    /// Show a theme setting without saving it.
+    ThemePreview(String),
+    /// The models `ctrl+p` cycles through; `None` is every model. `save`
+    /// also writes them to settings.
+    ScopedModels {
+        /// Enabled model ids in order.
+        enabled: Option<Vec<String>>,
+        /// Save to settings instead of changing the session.
+        save: bool,
+    },
+    /// Set or clear a model's default thinking level.
+    ModelThinking {
+        /// The model's provider.
+        provider: String,
+        /// The model's id.
+        id: String,
+        /// The level; `None` clears the override.
+        level: Option<ThinkingLevel>,
+    },
 }
 
 /// The result of a key.
@@ -141,6 +167,10 @@ pub enum Selector {
     Remote(Box<super::extension_ui::RemoteView>),
     /// `/trust`.
     Trust(Box<TrustSelector>),
+    /// `/settings`.
+    Settings(Box<super::settings_selector::SettingsSelector>),
+    /// `/scoped-models`.
+    ScopedModels(Box<super::scoped_models::ScopedModelsSelector>),
 }
 
 impl Selector {
@@ -163,6 +193,8 @@ impl Selector {
             Selector::Input(dialog) => dialog.render(width, ui),
             Selector::Remote(view) => view.render(width),
             Selector::Trust(selector) => (selector.render(width, ui), None),
+            Selector::Settings(selector) => (selector.render(width, ui), None),
+            Selector::ScopedModels(selector) => selector.render(width, ui),
         }
     }
 
@@ -184,6 +216,8 @@ impl Selector {
                 Outcome::None
             }
             Selector::Trust(selector) => selector.handle_input(data, ui),
+            Selector::Settings(selector) => selector.handle_input(data, ui),
+            Selector::ScopedModels(selector) => selector.handle_input(data, ui),
         }
     }
 
@@ -212,7 +246,12 @@ fn model_search_text(model: &Model) -> String {
 /// The `/model` selector.
 pub struct ModelSelector {
     input: TextInput,
+    /// The models of the current scope.
     models: Vec<Model>,
+    all: Vec<Model>,
+    /// The session's scope, in its order; empty when it has none.
+    scoped: Vec<Model>,
+    in_scope: bool,
     filtered: Vec<usize>,
     selected: usize,
     current: Option<Model>,
@@ -220,9 +259,11 @@ pub struct ModelSelector {
 }
 
 impl ModelSelector {
-    /// A selector over `models`, the current one first, then the default.
+    /// A selector over `models`, the current one first, then the default,
+    /// showing the session's `scoped` models first when there are any.
     pub fn new(
         mut models: Vec<Model>,
+        scoped: Vec<Model>,
         current: Option<Model>,
         default: Option<(String, String)>,
         search: &str,
@@ -243,10 +284,19 @@ impl ModelSelector {
         let mut input = TextInput::default();
         input.focused = true;
         input.set_value(search);
+        let in_scope = !scoped.is_empty();
+        let active = if in_scope {
+            scoped.clone()
+        } else {
+            models.clone()
+        };
         let mut selector = ModelSelector {
             input,
-            filtered: (0..models.len()).collect(),
-            models,
+            filtered: (0..active.len()).collect(),
+            models: active,
+            all: models,
+            scoped,
+            in_scope,
             selected: 0,
             current,
             default,
@@ -260,6 +310,22 @@ impl ModelSelector {
             selector.filter();
         }
         selector
+    }
+
+    /// pi's `setScope`: the other scope's models, the current one selected.
+    fn toggle_scope(&mut self) {
+        self.in_scope = !self.in_scope;
+        self.models = if self.in_scope {
+            self.scoped.clone()
+        } else {
+            self.all.clone()
+        };
+        self.selected = self
+            .models
+            .iter()
+            .position(|model| same_model(self.current.as_ref(), model))
+            .unwrap_or(0);
+        self.filter();
     }
 
     fn is_default(&self, model: &Model) -> bool {
@@ -309,13 +375,30 @@ impl ModelSelector {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        out.extend(text_row(
-            styled(
-                "Only showing models from configured providers. Use /login to add providers.",
-                theme.fg("warning"),
-            ),
-            width,
-        ));
+        if self.scoped.is_empty() {
+            out.extend(text_row(
+                styled(
+                    "Only showing models from configured providers. Use /login to add providers.",
+                    theme.fg("warning"),
+                ),
+                width,
+            ));
+        } else {
+            let muted = theme.fg("muted");
+            let pick = |on: bool| if on { theme.fg("accent") } else { muted };
+            out.extend(text_row(
+                Line::from(vec![
+                    Span::styled("Scope: ", muted),
+                    Span::styled("all", pick(!self.in_scope)),
+                    Span::styled(" | ", muted),
+                    Span::styled("scoped", pick(self.in_scope)),
+                ]),
+                width,
+            ));
+            let mut hint = ui.key_hint("tui.input.tab", "scope");
+            hint.push(Span::styled(" (all/scoped)", muted));
+            out.extend(text_row(Line::from(hint), width));
+        }
         out.extend(lines::spacer(1));
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
@@ -417,6 +500,9 @@ impl ModelSelector {
         let kb = ui.keys;
         let count = self.filtered.len();
         if kb.matches(data, "tui.input.tab") {
+            if !self.scoped.is_empty() {
+                self.toggle_scope();
+            }
             return Outcome::None;
         }
         if kb.matches(data, "tui.select.up") {

@@ -1,0 +1,29 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    ">",
+    "",
+    "  Auto-compact                      true",
+    "  Auto-resize images                true",
+    "→ Block images                      true",
+    "  Skill commands                    true",
+    "  Show hardware cursor              false",
+    "  Editor padding                    0",
+    "  Output padding                    1",
+    "  Autocomplete max items            5",
+    "  Clear on shrink                   false",
+    "  Terminal progress                 false",
+    "  (3/32)",
+    "",
+    "  Prevent images from being sent to LLM providers",
+    "",
+    "  Type to search · Enter/Space to change · Esc to cancel",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

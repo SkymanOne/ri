@@ -138,6 +138,8 @@ Type `/` to see the commands. The ones you will use most:
 | Command | What it does |
 |---|---|
 | `/model`, `/thinking` | Switch model or thinking level |
+| `/settings` | Change settings such as the theme, auto-compaction or fullscreen mode |
+| `/scoped-models` | Choose which models <kbd>Ctrl</kbd>+<kbd>P</kbd> cycles through |
 | `/new`, `/resume` | Start a new session, or open an earlier one |
 | `/tree` | Browse the session's branches and jump to any earlier point |
 | `/fork`, `/clone` | Branch from an earlier message, or duplicate the session |

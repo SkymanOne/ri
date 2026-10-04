@@ -45,6 +45,59 @@ fn user_text(text: String, timestamp: u64) -> Message {
     })
 }
 
+const IMAGES_BLOCKED: &str = "Image reading is disabled.";
+
+/// pi's `blockImages` filter: images in user and tool result messages become
+/// a notice, once for each run of images.
+pub fn block_images(messages: Vec<Message>) -> Vec<Message> {
+    fn filter(blocks: Vec<ContentBlock>) -> Vec<ContentBlock> {
+        let mut out: Vec<ContentBlock> = Vec::with_capacity(blocks.len());
+        for block in blocks {
+            let block = match block {
+                ContentBlock::Image(_) => ContentBlock::Text(TextContent {
+                    text: IMAGES_BLOCKED.to_owned(),
+                    text_signature: None,
+                }),
+                other => other,
+            };
+            let repeated = matches!(
+                (&block, out.last()),
+                (ContentBlock::Text(text), Some(ContentBlock::Text(previous)))
+                    if text.text == IMAGES_BLOCKED && previous.text == IMAGES_BLOCKED
+            );
+            if !repeated {
+                out.push(block);
+            }
+        }
+        out
+    }
+    let has_image = |blocks: &[ContentBlock]| {
+        blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Image(_)))
+    };
+    messages
+        .into_iter()
+        .map(|message| match message {
+            Message::User(mut user) => {
+                if let Content::Blocks(blocks) = &mut user.content
+                    && has_image(blocks)
+                {
+                    *blocks = filter(std::mem::take(blocks));
+                }
+                Message::User(user)
+            }
+            Message::ToolResult(mut result) => {
+                if has_image(&result.content) {
+                    result.content = filter(std::mem::take(&mut result.content));
+                }
+                Message::ToolResult(result)
+            }
+            other => other,
+        })
+        .collect()
+}
+
 /// Converts session messages to provider roles: bash executions, custom messages
 /// and summaries become user messages; `!!` executions are dropped.
 pub fn convert_to_llm(messages: Vec<Message>) -> Vec<Message> {
@@ -80,4 +133,39 @@ pub fn convert_to_llm(messages: Vec<Message>) -> Vec<Message> {
             other => Some(other),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blocks_images_as_pi() {
+        let message: Message = serde_json::from_value(serde_json::json!({
+            "role": "toolResult",
+            "toolCallId": "call",
+            "toolName": "read",
+            "content": [
+                {"type": "image", "data": "AA==", "mimeType": "image/png"},
+                {"type": "image", "data": "AA==", "mimeType": "image/png"},
+                {"type": "text", "text": "after"},
+                {"type": "image", "data": "AA==", "mimeType": "image/png"}
+            ],
+            "isError": false,
+            "timestamp": 0
+        }))
+        .unwrap();
+        let Message::ToolResult(result) = &block_images(vec![message])[0] else {
+            panic!("not a tool result");
+        };
+        let texts: Vec<&str> = result
+            .content
+            .iter()
+            .map(|block| match block {
+                ContentBlock::Text(text) => text.text.as_str(),
+                _ => "image",
+            })
+            .collect();
+        assert_eq!(texts, [IMAGES_BLOCKED, "after", IMAGES_BLOCKED]);
+    }
 }

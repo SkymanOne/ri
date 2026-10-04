@@ -865,7 +865,9 @@ impl AgentSession {
         self.set_nested_global_setting("retry", "enabled", enabled.into())
     }
 
-    fn set_nested_global_setting(
+    /// Sets `key` inside the global object setting `field` and writes
+    /// `settings.json`.
+    pub fn set_nested_global_setting(
         &self,
         field: &str,
         key: &str,
@@ -3082,7 +3084,19 @@ impl AgentHooks for Hooks {
     }
 
     fn convert_to_llm(&self, messages: Vec<Message>) -> Vec<Message> {
-        convert_to_llm(messages)
+        let messages = convert_to_llm(messages);
+        // Read on every request, so a change applies mid-session.
+        let blocked = self
+            .session
+            .settings()
+            .images
+            .and_then(|images| images.block_images)
+            == Some(true);
+        if blocked {
+            crate::messages::block_images(messages)
+        } else {
+            messages
+        }
     }
 
     fn auth<'a>(&'a self, model: &'a Model) -> BoxFuture<'a, Auth> {

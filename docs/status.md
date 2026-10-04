@@ -66,8 +66,11 @@ Done for the slice below.
 - The fullscreen scrollbar (`fullscreenScrollbar`: `auto` while scrolling, `always`, `hidden`), the jump-to-latest label over the last row, and the line, half-page and prompt-to-prompt scroll keys.
 - Built-in `edit` calls preview their diff, or why they cannot apply, inside the tool box while they run.
 - Editor with autocomplete for commands, arguments, paths and `@` files.
-- Selectors: model, thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
-- Commands: `/model`, `/thinking`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
+- Selectors: model (with the all/scoped toggle), thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
+- `/settings` with pi's items, search and submenus (warnings, per-model thinking levels, the theme with live preview and automatic light/dark pairs). Changes apply at once where ri implements the setting, including switching between fullscreen and regular mode, and are saved as pi saves them.
+- `/scoped-models`: enabling, clearing, reordering and provider toggles for the session, saved to `enabledModels` with `ctrl+s`.
+- `images.blockImages` replaces images sent to providers with pi's notice; `fullscreenExitOutput: "resume-hint"` leaves fullscreen without printing the transcript.
+- Commands: `/model`, `/thinking`, `/settings`, `/scoped-models`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
 - Keys: interrupt and double escape, clear and exit, suspend, thinking and model cycling, model selector, tool and thinking toggles, external editor, copy, follow-up and dequeue, fullscreen scrolling.
 - `!` and `!!` commands with streamed output, cancellation and session records.
 - Themes from settings entries, packages, the agent's and a trusted project's `themes` directories and `--theme`, registered by the name each declares, with pi's `[Theme conflicts]` listing; `--use-theme` and `--no-themes`.
@@ -92,7 +95,7 @@ Budgets, from `cargo xtask bench` on this machine (release build, 100×40 termin
 
 Not yet done:
 
-- `/settings`, `/scoped-models`, and the model selector's scope toggle.
+- Settings that `/settings` saves but ri does not act on yet: image auto-resize, terminal progress, HTTP idle timeout, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
 - Changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.

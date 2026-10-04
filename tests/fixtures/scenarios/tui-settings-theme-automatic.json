@@ -1,0 +1,26 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "Automatic Theme",
+    "",
+    "Choose themes for terminal light and dark appearance.",
+    "Light/dark detection requires terminal support.",
+    "",
+    "Dark Theme",
+    "",
+    "Select the theme to use for dark terminal appearance",
+    "",
+    "→ ✓ system    Theme created from your terminal's colors",
+    "    dark",
+    "    light",
+    "",
+    "  Enter to select · Esc to go back",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

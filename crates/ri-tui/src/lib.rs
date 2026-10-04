@@ -15,6 +15,7 @@ pub mod markdown;
 pub mod screen;
 pub mod segment;
 pub mod select_list;
+pub mod settings_list;
 pub mod terminal;
 pub mod text;
 pub mod text_input;
