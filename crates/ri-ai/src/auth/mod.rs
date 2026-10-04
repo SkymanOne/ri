@@ -12,10 +12,11 @@ pub mod device;
 pub mod federation;
 pub mod google_adc;
 pub mod kimi;
-mod lock;
+pub(crate) mod lock;
 pub mod meta;
 pub mod openrouter;
 pub mod pkce;
+pub mod radius;
 pub mod store;
 pub mod xai;
 
@@ -281,6 +282,10 @@ pub fn builtin_oauth(provider: &str) -> Option<Arc<dyn OAuthProvider>> {
         "meta" => Some(Arc::new(meta::MetaOAuth::default())),
         "xai" => Some(Arc::new(xai::XaiOAuth::default())),
         "openrouter" => Some(Arc::new(openrouter::OpenRouterOAuth::default())),
+        "radius" => Some(Arc::new(radius::RadiusOAuth::new(
+            "Radius",
+            radius::DEFAULT_GATEWAY,
+        ))),
         _ => None,
     }
 }

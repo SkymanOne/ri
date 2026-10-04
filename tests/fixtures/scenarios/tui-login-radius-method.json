@@ -1,0 +1,25 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    " Sign in to Radius:",
+    "",
+    " Radius is a service crafted for Pi by the builders of Pi, Earendil Works",
+    "",
+    " → Sign in with browser (recommended)",
+    "   Sign in with device code (when signing in from another device)",
+    "",
+    " ↑↓ navigate  enter select  escape/ctrl+c cancel",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

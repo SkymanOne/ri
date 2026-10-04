@@ -727,9 +727,24 @@ impl super::App {
         true
     }
 
-    /// `/model <ref>`: pi's `findExactModelReferenceMatch`, else the selector
-    /// searching for it.
+    /// `/model <ref>`: pi's `findExactModelMatch`. Without a cached match
+    /// and outside a scope, the catalogs are refreshed before searching again.
     fn select_model(&mut self, reference: &str) {
+        let models = self.session.models_in_scope();
+        let found = ri_core::model_resolver::exact_match(reference, &models).is_some();
+        if found || !self.session.scoped_models().is_empty() {
+            return self.select_model_now(reference);
+        }
+        self.status(super::catalogs::RefreshStatus::RUNNING.to_owned());
+        self.refresh_catalogs(
+            None,
+            super::catalogs::Refresh::ModelSearch(reference.to_owned()),
+        );
+    }
+
+    /// `/model <ref>` among the models listed now: the exact match, else the
+    /// selector searching for it.
+    pub(super) fn select_model_now(&mut self, reference: &str) {
         let models = self.session.models_in_scope();
         let found = ri_core::model_resolver::exact_match(reference, &models);
         match found {

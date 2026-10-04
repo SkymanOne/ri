@@ -15,6 +15,7 @@ use ri_ai::auth::copilot::CopilotOAuth;
 use ri_ai::auth::kimi::KimiOAuth;
 use ri_ai::auth::meta::MetaOAuth;
 use ri_ai::auth::openrouter::OpenRouterOAuth;
+use ri_ai::auth::radius::RadiusOAuth;
 use ri_ai::auth::xai::XaiOAuth;
 use ri_ai::auth::{AuthEvent, AuthPrompt, AuthRequest, Interaction, LoginOptions, OAuthProvider};
 use ri_ai::registry::{LoginKind, ModelRegistry};
@@ -777,4 +778,123 @@ async fn openrouter_trades_a_pasted_code_for_a_key() {
     assert_eq!(exchange["code"], "or-code");
     assert_eq!(exchange["code_challenge_method"], "S256");
     assert!(!oauth.is_subscription());
+}
+
+#[tokio::test]
+async fn radius_device_login_polls_until_authorized() {
+    let server = mock(vec![
+        exchange(
+            "POST",
+            "/v1/oauth/device",
+            200,
+            &json!({"device_code": "dc", "user_code": "RAD-1", "verification_uri": "https://radius.pi.dev/device", "expires_in": 60, "interval": 1}),
+        ),
+        exchange("POST", "/v1/oauth/token", 400, &json!({"error": "authorization_pending"})),
+        exchange(
+            "POST",
+            "/v1/oauth/token",
+            200,
+            &json!({"access_token": "rad-access", "refresh_token": "rad-refresh", "expires_in": 3600, "scope": "gateway offline_access"}),
+        ),
+        exchange(
+            "POST",
+            "/v1/oauth/token",
+            400,
+            &json!({"error": "invalid_grant", "error_description": "revoked"}),
+        ),
+    ])
+    .await;
+    let oauth = RadiusOAuth::new("Radius", &format!("{}/", server.url()));
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |prompt, _, _| match prompt {
+        AuthPrompt::Select { options, .. } => Some(options[1].id.clone()),
+        _ => None,
+    });
+    let credential = oauth
+        .login(&interaction, &LoginOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(device_code(&events).0, "RAD-1");
+    assert_eq!(credential.access, "rad-access");
+    assert_eq!(credential.refresh, "rad-refresh");
+    assert_eq!(credential.extra["scope"], "gateway offline_access");
+    let refused = oauth
+        .refresh(&credential, &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "Radius OAuth token request failed: invalid_grant: revoked"
+    );
+    let requests = server.finish().unwrap();
+    assert_eq!(
+        body(&requests[0]),
+        [
+            ("client_id".to_owned(), "pi-gateway".to_owned()),
+            ("scope".to_owned(), "gateway offline_access".to_owned()),
+        ]
+    );
+    assert!(body(&requests[2]).contains(&("device_code".into(), "dc".into())));
+    assert!(body(&requests[3]).contains(&("refresh_token".into(), "rad-refresh".into())));
+}
+
+#[tokio::test]
+async fn radius_browser_login_checks_the_state() {
+    let server = mock(vec![
+        exchange(
+            "GET",
+            "/v1/oauth",
+            200,
+            &json!({"authorizationEndpoint": "https://radius.example/authorize"}),
+        ),
+        exchange(
+            "POST",
+            "/v1/oauth/token",
+            200,
+            &json!({"access_token": "rad-access", "refresh_token": "rad-refresh", "expires_in": 3600}),
+        ),
+    ])
+    .await;
+    let mut oauth = RadiusOAuth::new("Radius", &server.url());
+    oauth.callback_port = free_port();
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    let events = serve(requests, |prompt, _, _| match prompt {
+        AuthPrompt::Select { options, .. } => Some(options[0].id.clone()),
+        _ => None,
+    });
+    let login = tokio::spawn(async move {
+        oauth
+            .login(&interaction, &LoginOptions::default())
+            .await
+            .map(|credential| credential.access)
+    });
+    let url = loop {
+        let found = events.lock().unwrap().iter().find_map(|event| match event {
+            AuthEvent::AuthUrl { url, .. } => Some(url.clone()),
+            _ => None,
+        });
+        if let Some(url) = found {
+            break url;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    };
+    assert!(
+        url.starts_with("https://radius.example/authorize?response_type=code&client_id=pi-gateway")
+    );
+    assert_eq!(query(&url, "handoff"), "url");
+    let redirect = query(&url, "redirect_uri");
+    let state = query(&url, "state");
+    let wrong = reqwest::get(format!("{redirect}?code=c1&state=other"))
+        .await
+        .unwrap();
+    assert_eq!(wrong.status().as_u16(), 400);
+    let right = reqwest::get(format!("{redirect}?code=c1&state={state}"))
+        .await
+        .unwrap();
+    assert_eq!(right.status().as_u16(), 200);
+    assert_eq!(login.await.unwrap().unwrap(), "rad-access");
+    let requests = server.finish().unwrap();
+    let exchange = body(&requests[1]);
+    assert!(exchange.contains(&("code".into(), "c1".into())));
+    assert!(exchange.contains(&("redirect_uri".into(), redirect)));
 }

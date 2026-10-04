@@ -7,9 +7,11 @@
 //! `packages/coding-agent/src/modes/interactive/components` in pi `v1.0.0`.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
+use ri_tui::color::ColorMode;
 use ri_tui::editor::{Editor, EditorEvent, EditorTheme};
 use ri_tui::fuzzy::fuzzy_filter;
 use ri_tui::keybindings::Keybindings;
@@ -21,6 +23,7 @@ use ri_tui::theme::Theme;
 use ri_types::message::ThinkingLevel;
 use ri_types::model::Model;
 
+use super::catalogs::RefreshStatus;
 use super::keybindings::{keys_display, keys_text};
 use super::session_selector::SessionSelector;
 use super::tree_selector::TreeSelector;
@@ -260,6 +263,23 @@ pub struct ModelSelector {
     selected: usize,
     current: Option<Model>,
     default: Option<(String, String)>,
+    /// The catalog refresh this selector waits on.
+    pub refresh_id: u64,
+    refresh: RefreshStatus,
+}
+
+fn sort_models(models: &mut [Model], current: Option<&Model>, default: Option<&(String, String)>) {
+    let is_default = |model: &Model| {
+        default.is_some_and(|(provider, id)| *provider == model.provider && *id == model.id)
+    };
+    models.sort_by(|a, b| {
+        let a_current = same_model(current, a);
+        let b_current = same_model(current, b);
+        b_current
+            .cmp(&a_current)
+            .then_with(|| is_default(b).cmp(&is_default(a)))
+            .then_with(|| ri_types::collate::locale_compare(&a.provider, &b.provider))
+    });
 }
 
 impl ModelSelector {
@@ -272,19 +292,7 @@ impl ModelSelector {
         default: Option<(String, String)>,
         search: &str,
     ) -> ModelSelector {
-        let is_default = |model: &Model| {
-            default
-                .as_ref()
-                .is_some_and(|(provider, id)| *provider == model.provider && *id == model.id)
-        };
-        models.sort_by(|a, b| {
-            let a_current = same_model(current.as_ref(), a);
-            let b_current = same_model(current.as_ref(), b);
-            b_current
-                .cmp(&a_current)
-                .then_with(|| is_default(b).cmp(&is_default(a)))
-                .then_with(|| ri_types::collate::locale_compare(&a.provider, &b.provider))
-        });
+        sort_models(&mut models, current.as_ref(), default.as_ref());
         let mut input = TextInput::default();
         input.focused = true;
         input.set_value(search);
@@ -304,6 +312,8 @@ impl ModelSelector {
             selected: 0,
             current,
             default,
+            refresh_id: 0,
+            refresh: RefreshStatus::Running,
         };
         selector.selected = selector
             .filtered
@@ -314,6 +324,30 @@ impl ModelSelector {
             selector.filter();
         }
         selector
+    }
+
+    /// The catalog refresh finished: pi's `loadModelsFromSnapshot` with the
+    /// refreshed `models`, then the search again.
+    pub fn refreshed(&mut self, mut models: Vec<Model>, status: RefreshStatus) {
+        sort_models(&mut models, self.current.as_ref(), self.default.as_ref());
+        for scoped in &mut self.scoped {
+            if let Some(model) = models.iter().find(|model| same_model(Some(scoped), model)) {
+                *scoped = model.clone();
+            }
+        }
+        self.all = models;
+        self.models = if self.in_scope {
+            self.scoped.clone()
+        } else {
+            self.all.clone()
+        };
+        self.selected = self
+            .models
+            .iter()
+            .position(|model| same_model(self.current.as_ref(), model))
+            .unwrap_or_else(|| self.selected.min(self.models.len().saturating_sub(1)));
+        self.refresh = status;
+        self.filter();
     }
 
     /// pi's `setScope`: the other scope's models, the current one selected.
@@ -451,12 +485,17 @@ impl ModelSelector {
                 width,
             ));
         }
-        match self.filtered.get(self.selected) {
-            None => out.extend(text_row(
+        match (&self.refresh, self.filtered.get(self.selected)) {
+            (RefreshStatus::Failed(error), _) => {
+                for line in error.split('\n') {
+                    out.extend(text_row(styled(line, theme.fg("error")), width));
+                }
+            }
+            (_, None) => out.extend(text_row(
                 styled("  No matching models", theme.fg("muted")),
                 width,
             )),
-            Some(&index) => {
+            (_, Some(&index)) => {
                 out.extend(lines::spacer(1));
                 out.extend(text_row(
                     styled(
@@ -467,12 +506,18 @@ impl ModelSelector {
                 ));
             }
         }
-        // ri's catalog is built in, so a refresh has nothing to fetch.
-        out.extend(lines::spacer(1));
-        out.extend(text_row(
-            styled("  Model catalogs refreshed.", theme.fg("success")),
-            width,
-        ));
+        let status = match self.refresh {
+            RefreshStatus::Running => Some((RefreshStatus::RUNNING, "muted")),
+            RefreshStatus::Done => Some((RefreshStatus::DONE, "success")),
+            RefreshStatus::Failed(_) => None,
+        };
+        if let Some((text, color)) = status {
+            out.extend(lines::spacer(1));
+            out.extend(text_row(
+                styled(format!("  {text}"), theme.fg(color)),
+                width,
+            ));
+        }
         out.extend(lines::spacer(1));
         out.extend(text_row(
             styled(
@@ -974,6 +1019,46 @@ pub struct ChoiceDialog {
     selected: usize,
     /// When the dialog closes on its own.
     pub countdown: Option<Countdown>,
+    /// Text under the title.
+    pub description: Option<String>,
+    /// Styled text after the option with this index.
+    pub suffix: Option<(usize, Vec<Span<'static>>)>,
+    /// The option with this index shimmers in the Radius colors while
+    /// selected, as pi's `/login` menu, animated from this start.
+    pub shimmer: Option<(usize, Instant)>,
+}
+
+/// The Radius logo colors, in the order they stream across the text.
+const RADIUS_COLORS: [[f64; 3]; 4] = [
+    [77.0, 154.0, 191.0],
+    [131.0, 204.0, 210.0],
+    [241.0, 190.0, 87.0],
+    [240.0, 144.0, 130.0],
+];
+/// How often the shimmer moves.
+pub const SHIMMER_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// pi's `radiusShimmer`: `text` in the Radius colors flowing left to right,
+/// 4 characters per color at 10 characters a second.
+fn radius_shimmer(text: &str, elapsed: std::time::Duration, mode: ColorMode) -> Vec<Span<'static>> {
+    const PER_COLOR: f64 = 4.0;
+    let cycle = RADIUS_COLORS.len() as f64 * PER_COLOR;
+    let offset = elapsed.as_secs_f64() * 10.0;
+    text.chars()
+        .enumerate()
+        .map(|(index, ch)| {
+            let position = ((index as f64 - offset) % cycle + cycle) % cycle;
+            let band = (position / PER_COLOR).floor();
+            let t = position / PER_COLOR - band;
+            // Smoothstep keeps each band recognizable while blending.
+            let amount = t * t * (3.0 - 2.0 * t);
+            let from = RADIUS_COLORS[band as usize % RADIUS_COLORS.len()];
+            let to = RADIUS_COLORS[(band as usize + 1) % RADIUS_COLORS.len()];
+            let [r, g, b] = [0, 1, 2].map(|i| from[i] + (to[i] - from[i]) * amount);
+            let color = ri_tui::color::Color::Rgb(r, g, b).to_terminal(mode);
+            Span::styled(ch.to_string(), Style::default().fg(color))
+        })
+        .collect()
 }
 
 impl ChoiceDialog {
@@ -984,7 +1069,16 @@ impl ChoiceDialog {
             options: options.iter().map(|option| (*option).to_owned()).collect(),
             selected: 0,
             countdown: None,
+            description: None,
+            suffix: None,
+            shimmer: None,
         }
+    }
+
+    /// Whether the selected option shimmers, which needs animation frames.
+    pub fn shimmering(&self) -> bool {
+        self.shimmer
+            .is_some_and(|(index, _)| index == self.selected)
     }
 
     fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
@@ -1000,20 +1094,35 @@ impl ChoiceDialog {
             .map(|line| styled(line, theme.fg("accent").add_modifier(Modifier::BOLD)))
             .collect();
         out.extend(lines::text(&title, width, 1, 0, None));
+        if let Some(description) = &self.description {
+            out.extend(lines::spacer(1));
+            let description: Vec<StyledLine> = description
+                .split('\n')
+                .map(|line| styled(line, theme.fg("text")))
+                .collect();
+            out.extend(lines::text(&description, width, 1, 0, None));
+        }
         out.extend(lines::spacer(1));
         for (index, option) in self.options.iter().enumerate() {
-            let line = if index == self.selected {
-                Line::from(vec![
-                    Span::styled("→ ", theme.fg("accent")),
-                    Span::styled(option.clone(), theme.fg("accent")),
-                ])
+            let mut spans = if index == self.selected {
+                let mut spans = vec![Span::styled("→ ", theme.fg("accent"))];
+                match self.shimmer {
+                    Some((shimmer, start)) if shimmer == index => {
+                        spans.extend(radius_shimmer(option, start.elapsed(), theme.mode()));
+                    }
+                    _ => spans.push(Span::styled(option.clone(), theme.fg("accent"))),
+                }
+                spans
             } else {
-                Line::from(vec![
+                vec![
                     Span::raw("  "),
                     Span::styled(option.clone(), theme.fg("text")),
-                ])
+                ]
             };
-            out.extend(lines::text(&[line], width, 1, 0, None));
+            if let Some((_, suffix)) = self.suffix.as_ref().filter(|(at, _)| *at == index) {
+                spans.extend(suffix.iter().cloned());
+            }
+            out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
         }
         out.extend(lines::spacer(1));
         let mut hint = ui.raw_key_hint("↑↓", "navigate");

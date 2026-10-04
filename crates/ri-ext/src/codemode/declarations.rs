@@ -26,8 +26,7 @@ const INTRO: &str = "Run JavaScript that calls other tools. The input is raw Jav
 - `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.
 - Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`";
 
-/// The globals block. ri has no classifier or image models, so the `models`
-/// line pi adds for them is absent.
+/// The globals block; [`description`] adds the `models` line.
 const GLOBALS: &str = "Globals:
 - `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.
 - `store(key, value)` and `load(key)` keep JSON values across codemode calls.
@@ -454,6 +453,7 @@ pub fn description(
     listed: &[Declaration],
     deferred: &HashSet<String>,
     budget: Option<u64>,
+    docs: Option<&str>,
 ) -> String {
     let declarations: Vec<&Declaration> = listed
         .iter()
@@ -500,7 +500,13 @@ pub fn description(
     });
     let shown = select(&ordered, budget);
 
-    let mut sections = vec![INTRO.to_owned(), GLOBALS.to_owned()];
+    let globals = match docs {
+        Some(docs) => {
+            format!("{GLOBALS}\n- `models`: classifiers and image generation. Read {docs} first.")
+        }
+        None => GLOBALS.to_owned(),
+    };
+    let mut sections = vec![INTRO.to_owned(), globals];
     if declarations.iter().any(|declaration| {
         shown.contains(&declaration.name) && mcp_structured_content(&declaration.output).is_some()
     }) {

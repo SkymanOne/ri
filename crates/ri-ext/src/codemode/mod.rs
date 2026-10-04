@@ -7,13 +7,14 @@
 //! call them.
 
 mod declarations;
+mod models;
 mod run;
 
 pub(crate) use run::Runner;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use futures_util::future::BoxFuture;
 use ri_agent::{Tool, UpdateSink};
@@ -29,6 +30,29 @@ use tokio_util::sync::CancellationToken;
 use declarations::Declaration;
 
 pub use ri_core::extensions::codemode::NAME;
+
+/// What scripts read about `models`: pi's codemode reference, adapted.
+const REFERENCE: &str = include_str!("codemode.md");
+
+/// Where the reference is written, once an extension has a place for it.
+static DOCS: OnceLock<PathBuf> = OnceLock::new();
+
+/// The reference's path, when scripts reach `models`.
+pub(crate) fn docs() -> Option<String> {
+    DOCS.get().map(|path| path.display().to_string())
+}
+
+/// Writes the reference to `path` unless it already holds it.
+fn write_reference(path: &Path) {
+    if std::fs::read_to_string(path).is_ok_and(|text| text == REFERENCE) {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // Without the file the model reads the API from the result errors.
+    let _ = std::fs::write(path, REFERENCE);
+}
 
 /// pi's `CODEMODE_SOURCE_GRAMMAR`, declared for grammar-constrained sampling.
 const GRAMMAR: &str = r"
@@ -92,7 +116,7 @@ pub(crate) fn definition() -> Value {
     json!({
         "name": NAME,
         "label": NAME,
-        "description": declarations::description(&[], &HashSet::new(), None),
+        "description": declarations::description(&[], &HashSet::new(), None, docs().as_deref()),
         "promptSnippet": codemode::SNIPPET,
         "promptGuidelines": [codemode::GUIDELINE],
         "parameters": codemode::parameters(),
@@ -117,15 +141,28 @@ fn is_codemode(tool: &RegisteredTool) -> bool {
 pub struct CodemodeExtension {
     runner: Arc<run::Runner>,
     session: Arc<Mutex<WeakSession>>,
+    /// The reference scripts read about `models`.
+    docs: Option<PathBuf>,
 }
 
 impl CodemodeExtension {
-    /// The extension; compiled runtimes are cached in `cache_dir`.
-    pub fn new(cache_dir: Option<PathBuf>) -> CodemodeExtension {
-        CodemodeExtension {
-            runner: Arc::new(run::Runner::new(cache_dir)),
-            session: Arc::default(),
+    /// The extension; compiled runtimes are cached in `cache_dir`. With
+    /// `docs`, the path of its reference, scripts reach `models`, pi's
+    /// classifiers and image models.
+    pub fn new(cache_dir: Option<PathBuf>, docs: Option<PathBuf>) -> CodemodeExtension {
+        if let Some(path) = &docs {
+            DOCS.get_or_init(|| path.clone());
         }
+        let shown = docs.as_ref().map(|path| path.display().to_string());
+        CodemodeExtension {
+            runner: Arc::new(run::Runner::new(cache_dir, shown)),
+            session: Arc::default(),
+            docs,
+        }
+    }
+
+    fn docs_text(&self) -> Option<String> {
+        self.docs.as_ref().map(|path| path.display().to_string())
     }
 }
 
@@ -143,7 +180,12 @@ impl Extension for CodemodeExtension {
         let tool: Arc<dyn Tool> = Arc::new(CodemodeTool {
             declaration: ToolDeclaration {
                 name: NAME.into(),
-                description: declarations::description(&[], &HashSet::new(), None),
+                description: declarations::description(
+                    &[],
+                    &HashSet::new(),
+                    None,
+                    self.docs_text().as_deref(),
+                ),
                 parameters: codemode::parameters(),
                 constrained_sampling: Some(constrained_sampling()),
             },
@@ -210,9 +252,18 @@ impl Extension for CodemodeExtension {
             .map(|tool| tool.name().to_owned())
             .collect();
         let listed: Vec<Declaration> = listed.into_iter().map(declaration).collect();
+        // Codemode is active, so the model may read the reference.
+        if let Some(path) = &self.docs {
+            write_reference(path);
+        }
         descriptions.insert(
             NAME.to_owned(),
-            declarations::description(&listed, &deferred, Some(budget)),
+            declarations::description(
+                &listed,
+                &deferred,
+                Some(budget),
+                self.docs_text().as_deref(),
+            ),
         );
         descriptions
     }

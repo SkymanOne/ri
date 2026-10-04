@@ -643,13 +643,14 @@ impl Normalizer<'_> {
                 None => break,
             }
         }
-        // So does codemode's `models` line; ri has no classifier or image models.
-        const MODELS: &str = "\n- `models`: classifiers and image generation. Read ";
-        while let Some(start) = text.find(MODELS) {
-            match text[start..].find(" first.") {
-                Some(end) => text.replace_range(start..start + end + " first.".len(), ""),
-                None => break,
-            }
+        // Codemode's reference: in pi's install, and in ri's agent directory.
+        const CODEMODE_DOC: &str = "/pi-coding-agent/docs/codemode.md";
+        text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
+        while let Some(found) = text.find(CODEMODE_DOC) {
+            let start = text[..found]
+                .rfind(|c: char| c.is_whitespace() || c == '"')
+                .map_or(0, |index| index + 1);
+            text.replace_range(start..found + CODEMODE_DOC.len(), "<codemode docs>");
         }
         // Codemode results report the script's wall time.
         let mut rest = text.as_str();

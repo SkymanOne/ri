@@ -21,9 +21,10 @@ use ri_types::message::{ContentBlock, Message, ToolResultMessage};
 use serde_json::{Value, json};
 
 fn codemode() -> Arc<dyn Extension> {
-    Arc::new(CodemodeExtension::new(Some(
-        Path::new(env!("CARGO_TARGET_TMPDIR")).join("wasm-cache"),
-    )))
+    Arc::new(CodemodeExtension::new(
+        Some(Path::new(env!("CARGO_TARGET_TMPDIR")).join("wasm-cache")),
+        None,
+    ))
 }
 
 /// Runs each script as one codemode call of the model, then ends the run.

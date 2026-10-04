@@ -2,10 +2,13 @@
 
 pub mod anthropic;
 pub mod bedrock;
+pub mod classify;
 pub mod google;
+pub mod images;
 pub mod mistral;
 pub mod openai_completions;
 pub mod openai_responses;
+pub mod pi_messages;
 
 use std::sync::Arc;
 
@@ -26,6 +29,7 @@ pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
         "google-vertex" => Some(Arc::new(google::GoogleVertex)),
         "mistral-conversations" => Some(Arc::new(mistral::MistralConversations)),
         "bedrock-converse-stream" => Some(Arc::new(bedrock::BedrockConverseStream)),
+        "pi-messages" => Some(Arc::new(pi_messages::PiMessages)),
         _ => None,
     }
 }

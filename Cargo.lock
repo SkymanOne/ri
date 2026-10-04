@@ -2547,6 +2547,7 @@ dependencies = [
  "aws-lc-rs",
  "base64",
  "crc32fast",
+ "futures-util",
  "getrandom 0.4.3",
  "indexmap",
  "regex-lite",

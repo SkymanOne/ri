@@ -149,6 +149,8 @@ struct Inner {
     cwd: PathBuf,
     settings: Mutex<SettingsManager>,
     registry: RwLock<Arc<ModelRegistry>>,
+    /// Serializes model catalog refreshes.
+    catalog_refresh: tokio::sync::Mutex<()>,
     apis: Apis,
     state: Mutex<State>,
     /// The models cycling moves through; empty means every available one.
@@ -305,6 +307,15 @@ enum CompactionCheck {
     Threshold,
 }
 
+/// Outcome of a model catalog refresh.
+#[derive(Clone, Debug, Default)]
+pub struct CatalogRefresh {
+    /// Providers whose refresh failed, with why.
+    pub errors: Vec<(String, String)>,
+    /// Whether the refresh was cancelled before it finished.
+    pub aborted: bool,
+}
+
 /// A running conversation. Cheap to clone; clones share state.
 #[derive(Clone)]
 pub struct AgentSession {
@@ -400,6 +411,7 @@ impl AgentSession {
                 cwd,
                 settings: Mutex::new(settings),
                 registry: RwLock::new(Arc::new(registry)),
+                catalog_refresh: tokio::sync::Mutex::new(()),
                 apis,
                 state: Mutex::new(State {
                     session,
@@ -2368,6 +2380,33 @@ impl AgentSession {
                     .ok()
             })
         })
+    }
+
+    /// Refreshes the model catalogs that change between releases: restores
+    /// the stored ones and, when `options` allow the network, fetches those of
+    /// configured providers, as pi's `ModelRuntime.refresh`. The session then
+    /// lists the new models. Concurrent refreshes run one after another.
+    pub async fn refresh_model_catalogs(
+        &self,
+        options: ri_ai::model_catalog::RefreshOptions,
+    ) -> CatalogRefresh {
+        let _running = self.inner.catalog_refresh.lock().await;
+        let registry = self.registry();
+        let Some(store) = registry.models_store().cloned() else {
+            return CatalogRefresh::default();
+        };
+        let targets = registry.catalog_targets().await;
+        let refreshed = ri_ai::model_catalog::refresh(&targets, &store, &options).await;
+        // Apply to the registry current now; credentials may have changed.
+        if let Ok(mut slot) = self.inner.registry.write() {
+            let mut next = (**slot).clone();
+            next.apply_catalogs(refreshed.models);
+            *slot = Arc::new(next);
+        }
+        CatalogRefresh {
+            errors: refreshed.errors,
+            aborted: refreshed.aborted,
+        }
     }
 
     /// Model registry access.

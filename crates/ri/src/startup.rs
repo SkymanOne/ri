@@ -665,6 +665,7 @@ fn build(
     };
 
     let codemode_cache = agent_dir.join("cache").join("wasm");
+    let codemode_docs = agent_dir.join("docs").join("codemode.md");
     let builtin_settings = extension_settings(&settings);
     let session = AgentSession::new(SessionConfig {
         cwd,
@@ -683,9 +684,10 @@ fn build(
             .iter()
             .flat_map(ExtensionHost::for_session)
             .chain(
-                std::iter::once(Arc::new(ri_ext::codemode::CodemodeExtension::new(Some(
-                    codemode_cache,
-                )))
+                std::iter::once(Arc::new(ri_ext::codemode::CodemodeExtension::new(
+                    Some(codemode_cache),
+                    Some(codemode_docs),
+                ))
                     as Arc<dyn ri_core::extensions::Extension>)
                 .chain(ri_core::extensions::builtins())
                 .filter(|extension| {

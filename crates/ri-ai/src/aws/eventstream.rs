@@ -161,7 +161,11 @@ mod tests {
         assert_eq!(message.header(":event-type"), Some("messageStart"));
         assert_eq!(message.payload, br#"{"role":"assistant"}"#);
         assert_eq!(
-            decoder.next_message().unwrap().unwrap().header(":message-type"),
+            decoder
+                .next_message()
+                .unwrap()
+                .unwrap()
+                .header(":message-type"),
             Some("exception")
         );
         assert!(!decoder.has_partial());
@@ -169,6 +173,11 @@ mod tests {
         let last = corrupt.len() - 5;
         corrupt[last] ^= 1;
         decoder.push(&corrupt);
-        assert!(decoder.next_message().unwrap_err().contains("message checksum"));
+        assert!(
+            decoder
+                .next_message()
+                .unwrap_err()
+                .contains("message checksum")
+        );
     }
 }

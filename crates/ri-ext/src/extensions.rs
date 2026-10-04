@@ -702,7 +702,10 @@ fn not_bound() -> String {
 impl SessionBridge {
     fn new(engine: &Engine) -> Arc<SessionBridge> {
         Arc::new(SessionBridge {
-            codemode: Arc::new(crate::codemode::Runner::with_engine(engine.clone())),
+            codemode: Arc::new(crate::codemode::Runner::with_engine(
+                engine.clone(),
+                crate::codemode::docs(),
+            )),
             runtime_id: RUNTIMES.fetch_add(1, Ordering::Relaxed),
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),

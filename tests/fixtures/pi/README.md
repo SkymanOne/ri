@@ -16,6 +16,7 @@ node editor.mjs
 node theme.mjs
 node text.mjs
 node autocomplete.mjs   # needs fd on PATH
+node models-api.mjs
 ```
 
 The generator's packages also serve the end-to-end scenarios: `cargo xtask e2e` runs this pi install, and `rpc-client.mjs`, pi's `RpcClient` example, drives the program under test in client scenarios.
@@ -43,6 +44,7 @@ The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and
 | `theme/theme.json` | pi's built-in themes in both color modes; `generateSystemThemeColors` | Every token's escape sequence; system themes for no report, black, white, mid-gray and palette terminals |
 | `text/text.json` | pi-tui `wrapTextWithAnsi`, `truncateToWidth` and `Markdown` with an identity theme | Wrapping, truncation and markdown blocks at three widths, with and without preserved list markers and escapes |
 | `editor/editor.json` | pi-tui `Editor` driven key by key | Text, cursor, rendered rows and submissions after every key: wrapping, word motion, kill ring, undo, history, pastes and markers, sticky columns, jumps, scrolling |
+| `models-api/cases.json` | pi-ai's `pi-messages`, System One, llama.cpp classifier and OpenRouter image APIs, with `fetch` stubbed | Request URLs, headers and bodies, results and error messages; checked by `crates/ri-ai/tests/models_api.rs` |
 | `autocomplete/cases.json` | pi-tui `CombinedAutocompleteProvider` over a generated tree | Slash commands and arguments, skill names, path and quoted completion, `@` search through `fd`, applying the first item |
 
 The excerpts in `legacy/` come from pi, Copyright (c) 2025 Mario Zechner, MIT License.

@@ -30,4 +30,6 @@ By default, ri offers MCP tools through codemode. Instead of one tool call per s
 
 Set `"exposure": "direct"` on a server to offer its tools to the model directly. `--tools read,bash,edit,write,codemode` routes the built-in tools through codemode as well.
 
+Scripts also reach the `models` global: they list the catalog and run classifier and image models with the session's credentials. ri writes the script reference the model reads to `~/.ri/agent/docs/codemode.md` when codemode is active.
+
 pi's [MCP](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/mcp.md) and [codemode](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/codemode.md) documentation describes every option.
