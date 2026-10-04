@@ -252,15 +252,36 @@ fn replace_preserving_lines(
 /// A unified patch with file headers only and 4 lines of context.
 pub fn unified_patch(path: &str, old: &str, new: &str) -> String {
     let diff = TextDiff::from_lines(old, new);
-    let mut output = diff
+    let output = diff
         .unified_diff()
         .context_radius(4)
         .header(path, path)
         .to_string();
     if output.is_empty() {
-        output = format!("--- {path}\n+++ {path}\n");
+        return format!("--- {path}\n+++ {path}\n");
     }
+    // jsdiff writes every range with its count, `-1,1` where GNU style has
+    // `-1`.
     output
+        .split_inclusive('\n')
+        .map(|line| match line.strip_prefix("@@ ") {
+            Some(rest) => {
+                let ranges: Vec<String> = rest
+                    .split_whitespace()
+                    .take_while(|part| *part != "@@")
+                    .map(|range| {
+                        if range.contains(',') {
+                            range.to_owned()
+                        } else {
+                            format!("{range},1")
+                        }
+                    })
+                    .collect();
+                format!("@@ {} @@\n", ranges.join(" "))
+            }
+            None => line.to_owned(),
+        })
+        .collect()
 }
 
 /// pi's numbered diff for the UI, and the first changed line of the new text.
@@ -410,5 +431,15 @@ mod tests {
         let (diff, first) = display_diff("a\nb\nc\n", "a\nB\nc\n");
         assert_eq!(diff, " 1 a\n-2 b\n+2 B\n 3 c");
         assert_eq!(first, Some(2));
+    }
+
+    #[test]
+    fn patch_ranges_carry_counts_as_jsdiff() {
+        assert_eq!(
+            unified_patch("a.txt", "x\n", "y\n"),
+            "--- a.txt\n+++ a.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n"
+        );
+        assert!(unified_patch("a.txt", "a\nb\n", "a\nc\nd\n").contains("@@ -1,2 +1,3 @@\n"));
+        assert!(unified_patch("a.txt", "", "a\n").contains("@@ -0,0 +1,1 @@\n"));
     }
 }

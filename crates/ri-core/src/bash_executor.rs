@@ -146,6 +146,7 @@ pub async fn execute(
         .spawn()
         .map_err(|err| err.to_string())?;
     let pid = child.id();
+    let _tracked = crate::tools::bash::TrackedChild::new(pid);
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
     let mut output = Output {

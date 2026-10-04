@@ -466,11 +466,18 @@ impl AltScreen {
                 out.push_str(&format!("\x1b[{};1H\x1b[2K{line}", index + 1));
             }
         }
+        // pi parks the cursor at the frame cursor even when it stays hidden,
+        // so input methods place their candidate windows there.
         match cursor
             .and_then(|(row, col)| row.checked_sub(dock_skip).map(|row| (viewport + row, col)))
         {
-            Some((row, col)) if self.show_hardware_cursor && row < height => {
-                out.push_str(&format!("\x1b[{};{}H\x1b[?25h", row + 1, col + 1));
+            Some((row, col)) if row < height => {
+                out.push_str(&format!("\x1b[{};{}H", row + 1, col.min(width) + 1));
+                out.push_str(if self.show_hardware_cursor {
+                    "\x1b[?25h"
+                } else {
+                    "\x1b[?25l"
+                });
             }
             _ => out.push_str("\x1b[?25l"),
         }
@@ -523,5 +530,25 @@ mod tests {
         assert!(frame.contains("Jump to latest"));
         screen.bottom();
         assert!(screen.following());
+    }
+
+    #[test]
+    fn alt_screen_parks_hidden_cursor_at_frame_cursor() {
+        let mut screen = AltScreen::new();
+        let transcript = doc(&["1"]);
+        let dock = doc(&["> hi", "footer"]);
+        let frame = screen.frame(&transcript, &dock, Some((0, 4)), 40, 4);
+        assert!(
+            frame.ends_with("\x1b[3;5H\x1b[?25l\x1b[?2026l"),
+            "{frame:?}"
+        );
+        screen.show_hardware_cursor = true;
+        let frame = screen.frame(&transcript, &dock, Some((0, 99)), 40, 4);
+        assert!(
+            frame.ends_with("\x1b[3;41H\x1b[?25h\x1b[?2026l"),
+            "{frame:?}"
+        );
+        let frame = screen.frame(&transcript, &dock, None, 40, 4);
+        assert!(frame.ends_with("\x1b[?25l\x1b[?2026l"), "{frame:?}");
     }
 }

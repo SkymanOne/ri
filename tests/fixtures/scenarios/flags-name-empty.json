@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: --name requires a non-empty value\n",
+  "requests": []
+}

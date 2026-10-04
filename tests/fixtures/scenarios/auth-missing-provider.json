@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Credential printing requires --provider <provider> or --model <model>\n",
+  "requests": []
+}

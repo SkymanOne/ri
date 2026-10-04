@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "Added project MCP server \"loc\" in <cwd>/.pi/mcp.json.\nThe project is not trusted, so <cwd>/.pi/mcp.json is ignored until you start pi in the project and trust it.\nCheck it with: pi mcp list\n",
+  "stderr": "",
+  "requests": []
+}

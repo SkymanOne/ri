@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Unknown auth command \"login\". Use \"pi auth print-api-key\", \"pi auth print-bearer-token\", or \"pi auth check\".\n",
+  "requests": []
+}

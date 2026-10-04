@@ -51,6 +51,10 @@ pub struct SettingsManager {
     project: Map<String, Value>,
     project_trusted: bool,
     merged: Settings,
+    /// Files that failed to load, by scope; they read as empty and are never
+    /// written, so a broken file is not overwritten.
+    broken: [bool; 2],
+    errors: Vec<String>,
 }
 
 fn read_document(path: &Path) -> Result<Map<String, Value>, SettingsError> {
@@ -126,9 +130,27 @@ impl SettingsManager {
     ) -> Result<SettingsManager, SettingsError> {
         let global_path = agent_dir.join(ConfigFile::Settings.file_name());
         let project_path = cwd.join(PROJECT_DIR).join(ConfigFile::Settings.file_name());
-        let global = read_document(&global_path)?;
+        let mut errors = Vec::new();
+        let mut broken = [false; 2];
+        // pi reports a file that fails to load and carries on without it.
+        let mut read = |path: &Path, scope: usize| match read_document(path) {
+            Ok(document) => document,
+            Err(error) => {
+                let message = match error {
+                    SettingsError::Parse { message, .. } => message,
+                    SettingsError::Io { source, .. } => source.to_string(),
+                };
+                errors.push(format!(
+                    "Invalid settings file {}: {message}",
+                    path.display()
+                ));
+                broken[scope] = true;
+                Map::new()
+            }
+        };
+        let global = read(&global_path, 0);
         let project = if project_trusted {
-            read_document(&project_path)?
+            read(&project_path, 1)
         } else {
             Map::new()
         };
@@ -139,6 +161,8 @@ impl SettingsManager {
             project,
             project_trusted,
             merged: Settings::default(),
+            broken,
+            errors,
         };
         manager.remerge();
         Ok(manager)
@@ -153,7 +177,14 @@ impl SettingsManager {
             project: Map::new(),
             project_trusted: false,
             merged: Settings::default(),
+            broken: [false; 2],
+            errors: Vec::new(),
         }
+    }
+
+    /// Why settings files failed to load, as pi's warnings word them.
+    pub fn errors(&self) -> &[String] {
+        &self.errors
     }
 
     fn remerge(&mut self) {
@@ -204,9 +235,9 @@ impl SettingsManager {
         key: &str,
         value: Option<Value>,
     ) -> Result<(), SettingsError> {
-        let (document, path) = match scope {
-            Scope::Global => (&mut self.global, &self.global_path),
-            Scope::Project => (&mut self.project, &self.project_path),
+        let (document, path, broken) = match scope {
+            Scope::Global => (&mut self.global, &self.global_path, self.broken[0]),
+            Scope::Project => (&mut self.project, &self.project_path, self.broken[1]),
         };
         match value {
             Some(value) => {
@@ -216,7 +247,7 @@ impl SettingsManager {
                 document.shift_remove(key);
             }
         }
-        if !path.as_os_str().is_empty() {
+        if !path.as_os_str().is_empty() && !broken {
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir).map_err(|source| SettingsError::Io {
                     path: dir.to_path_buf(),

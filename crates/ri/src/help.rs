@@ -7,8 +7,9 @@ use std::io::{IsTerminal, Write};
 
 use ri_core::config::{AGENT_DIR_ENV, APP_NAME, PROJECT_DIR, SESSION_DIR_ENV};
 
-/// The help text; headings are bold when `bold` is set.
-pub fn text(bold: bool) -> String {
+/// The help text, listing `flags` the loaded extensions registered; headings
+/// are bold when `bold` is set.
+pub fn text(bold: bool, flags: &[ri_ext::Flag]) -> String {
     let b = |text: &str| {
         if bold {
             format!("\x1b[1m{text}\x1b[22m")
@@ -27,7 +28,7 @@ pub fn text(bold: bool) -> String {
   {app} install <source> [-l]     Install extension source and add to settings
   {app} remove <source> [-l]      Remove extension source from settings
   {app} uninstall <source> [-l]   Alias for remove
-  {app} update [source|self]      Update {app}, extensions, or model catalogs
+  {app} update [source|self|{app}]   Update {app}, extensions, or model catalogs
   {app} list                      List installed extensions from settings
   {app} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
   {app} auth <command>            Print credentials or check provider readiness
@@ -81,7 +82,7 @@ pub fn text(bold: bool) -> String {
   --help, -h                     Show this help
   --version, -v                  Show version number
 
-Extensions can register additional flags (e.g., --plan from plan-mode extension).
+Extensions can register additional flags (e.g., --plan from plan-mode extension).{extension_flags}
 
 {examples}
   # Print a provider API key for an external client
@@ -192,8 +193,6 @@ Extensions can register additional flags (e.g., --plan from plan-mode extension)
   {agent_env:<32} - Config directory (default: ~/{dir}/agent)
   {session_env:<32} - Session storage directory (overridden by --session-dir)
   PI_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  PI_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
 
 {tools}
   read       - Read file contents
@@ -213,28 +212,85 @@ Extensions can register additional flags (e.g., --plan from plan-mode extension)
         examples = b("Examples:"),
         environment = b("Environment Variables:"),
         tools = b("Built-in Tool Names:"),
+        extension_flags = extension_flags(bold, flags),
         dir = PROJECT_DIR,
         agent_env = AGENT_DIR_ENV,
         session_env = SESSION_DIR_ENV,
     )
 }
 
-/// Prints the help to stdout.
-pub fn print() {
-    let stdout = std::io::stdout();
-    let bold = stdout.is_terminal() && std::env::var_os("NO_COLOR").is_none();
-    let _ = stdout.lock().write_all(text(bold).as_bytes());
+/// pi's "Extension CLI Flags" section, empty without flags.
+fn extension_flags(bold: bool, flags: &[ri_ext::Flag]) -> String {
+    if flags.is_empty() {
+        return String::new();
+    }
+    let heading = if bold {
+        "\x1b[1mExtension CLI Flags:\x1b[22m"
+    } else {
+        "Extension CLI Flags:"
+    };
+    let lines: Vec<String> = flags
+        .iter()
+        .map(|flag| {
+            let value = if flag.takes_value { " <value>" } else { "" };
+            let description = flag
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("Registered by {}", flag.extension_path));
+            format!("{:<30}{description}", format!("  --{}{value}", flag.name))
+        })
+        .collect();
+    format!("\n{heading}\n{}\n", lines.join("\n"))
+}
+
+/// Prints the help with the loaded extensions' `flags`, to stderr when
+/// `to_stderr` is set, as pi does once print or a mode owns stdout.
+pub fn print(flags: &[ri_ext::Flag], to_stderr: bool) {
+    let colored = |terminal: bool| terminal && std::env::var_os("NO_COLOR").is_none();
+    if to_stderr {
+        let stderr = std::io::stderr();
+        let _ = stderr
+            .lock()
+            .write_all(text(colored(stderr.is_terminal()), flags).as_bytes());
+    } else {
+        let stdout = std::io::stdout();
+        let _ = stdout
+            .lock()
+            .write_all(text(colored(stdout.is_terminal()), flags).as_bytes());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn names_ri() {
-        let text = super::text(false);
+        let text = super::text(false, &[]);
         assert!(text.starts_with("ri - AI coding assistant"));
         assert!(text.contains(
             "  RI_CODING_AGENT_DIR              - Config directory (default: ~/.ri/agent)"
         ));
         assert!(text.contains("https://{resource}.openai.azure.com"));
+    }
+
+    #[test]
+    fn lists_extension_flags() {
+        let flags = [
+            ri_ext::Flag {
+                name: "preset".into(),
+                takes_value: true,
+                description: Some("Preset configuration to use".into()),
+                extension_path: "/x/preset.ts".into(),
+            },
+            ri_ext::Flag {
+                name: "plan".into(),
+                takes_value: false,
+                description: None,
+                extension_path: "/x/plan.ts".into(),
+            },
+        ];
+        let text = super::text(false, &flags);
+        assert!(text.contains(
+            "extension).\nExtension CLI Flags:\n  --preset <value>            Preset configuration to use\n  --plan                      Registered by /x/plan.ts\n\n\nExamples:"
+        ));
     }
 }

@@ -1,0 +1,30 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Prompts]",
+    "  /hello",
+    "",
+    " Saved trust decision: trusted. Restart pi for this to take effect.",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    " Project trust",
+    " <cwd>",
+    "",
+    " Saved decision: trusted (inherited from <root>)",
+    " Current session: trusted",
+    "",
+    "     Trust",
+    " → ✓ Trust parent folder (<root>)",
+    "     Do not trust",
+    "",
+    " ↑↓ navigate  enter save  escape/ctrl+c cancel",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

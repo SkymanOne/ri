@@ -28,16 +28,21 @@ fn format_token_count(count: u64) -> String {
     }
 }
 
-/// Prints the table and returns the exit code.
-pub fn run(pattern: Option<&str>) -> u8 {
+/// Prints the table, to stderr when `to_stderr` is set, and returns the exit
+/// code.
+pub fn run(pattern: Option<&str>, to_stderr: bool) -> u8 {
     let registry = ModelRegistry::load(&agent_dir());
     if let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
-    let mut out = std::io::stdout().lock();
+    let mut out: Box<dyn Write> = if to_stderr {
+        Box::new(std::io::stderr().lock())
+    } else {
+        Box::new(std::io::stdout().lock())
+    };
     let available = registry.available();
     if available.is_empty() {
-        let _ = writeln!(out, "{}", crate::startup::NO_MODELS_MESSAGE);
+        let _ = writeln!(out, "{}", ri_core::auth_guidance::no_models_available());
         return 0;
     }
     let mut models = match pattern {

@@ -147,6 +147,24 @@ fn blank_line_after(source: &str, end: usize, at_end: bool) -> bool {
     newlines >= 2
 }
 
+/// pi's `trimPartialClosingFences`: while a closing fence streams in, the
+/// part that has arrived is not code, so the block does not flicker. `raw` is
+/// the block's source; only an unclosed block can end in such a line.
+fn trim_partial_closing_fence(raw: &str, code: &mut String) {
+    let Some(fence) = raw.chars().next().filter(|c| matches!(c, '`' | '~')) else {
+        return;
+    };
+    let marker = raw.chars().take_while(|c| *c == fence).count();
+    let last = raw.rsplit('\n').next().unwrap_or_default();
+    if marker < 3 || last.is_empty() || last.len() >= marker || last.chars().any(|c| c != fence) {
+        return;
+    }
+    if let Some(kept) = code.strip_suffix(last) {
+        let kept = kept.strip_suffix('\n').unwrap_or(kept).len();
+        code.truncate(kept);
+    }
+}
+
 fn is_inline(event: &Event<'_>) -> bool {
     matches!(
         event,
@@ -175,6 +193,15 @@ impl<'a> Builder<'a> {
     /// Adds one inline event, consuming the rest of a container it opens.
     fn inline(&mut self, event: Event<'a>, range: Range<usize>, out: &mut Vec<Inline>) {
         match event {
+            // pulldown-cmark decodes an entity reference into its own text;
+            // marked, and so pi, prints it as written.
+            Event::Text(text)
+                if self.source.get(range.clone()).is_some_and(|raw| {
+                    raw.len() > 2 && raw.starts_with('&') && raw.ends_with(';') && raw != &*text
+                }) =>
+            {
+                push_text(out, self.source[range].to_owned());
+            }
             Event::Text(text) => {
                 // pulldown-cmark starts an escaped character's text just after
                 // its backslash.
@@ -388,6 +415,10 @@ impl<'a> Builder<'a> {
                         if code.ends_with('\n') {
                             code.pop();
                         }
+                        trim_partial_closing_fence(
+                            self.source.get(range.clone()).unwrap_or_default(),
+                            &mut code,
+                        );
                         Some(Block::Code(lang, code))
                     }
                     Event::Start(Tag::BlockQuote(kind)) => {
@@ -475,6 +506,24 @@ fn patch_under(spans: Vec<Span<'static>>, outer: Style) -> Vec<Span<'static>> {
         .into_iter()
         .map(|span| {
             let style = outer.patch(span.style);
+            Span::styled(span.content, style)
+        })
+        .collect()
+}
+
+/// A quoted line's spans under the quote style. pi colors the whole line,
+/// and the first span with a color of its own, such as a list bullet, ends
+/// with a foreground reset that leaves the rest of the line uncolored but
+/// still italic.
+fn quote_spans(spans: Vec<Span<'static>>, quote: Style) -> Vec<Span<'static>> {
+    let mut outer = quote;
+    spans
+        .into_iter()
+        .map(|span| {
+            let style = outer.patch(span.style);
+            if span.style.fg.is_some() {
+                outer.fg = None;
+            }
             Span::styled(span.content, style)
         })
         .collect()
@@ -623,7 +672,7 @@ impl Renderer<'_> {
                 }
                 let quote_style = self.theme.quote.add_modifier(Modifier::ITALIC);
                 for line in inner {
-                    let styled = line_of(patch_under(line.spans, quote_style));
+                    let styled = line_of(quote_spans(line.spans, quote_style));
                     for wrapped in wrap(&styled, quote_width) {
                         let mut spans = vec![Span::styled("│ ", self.theme.quote_border)];
                         spans.extend(wrapped.spans);
@@ -971,6 +1020,31 @@ mod tests {
         .iter()
         .map(|line| plain(line).trim_end().to_owned())
         .collect()
+    }
+
+    #[test]
+    fn trims_a_streaming_closing_fence() {
+        assert_eq!(
+            md("```rust\nlet a = 1;\n``", 40),
+            ["```rust", "  let a = 1;", "```"]
+        );
+        assert_eq!(
+            md("```rust\nlet a = 1;\n```", 40),
+            ["```rust", "  let a = 1;", "```"]
+        );
+        let tilde = md("~~~\nx\n~", 40);
+        assert_eq!((tilde.len(), tilde[1].as_str()), (3, "  x"));
+    }
+
+    #[test]
+    fn entity_references_stay_as_written() {
+        assert_eq!(
+            md(
+                "Entities: &amp; &lt;tag&gt; &copy; &#x1F600; and `&amp;`",
+                80
+            ),
+            ["Entities: &amp; &lt;tag&gt; &copy; &#x1F600; and &amp;"]
+        );
     }
 
     #[test]

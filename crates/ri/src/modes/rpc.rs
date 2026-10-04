@@ -359,7 +359,7 @@ impl Rpc {
         Ok(())
     }
 
-    fn reply(&self, id: Option<&Value>, command: &str, reply: Reply) {
+    fn reply(&self, id: Option<&Value>, command: Option<&str>, reply: Reply) {
         let outcome = match &reply {
             Ok(data) => Ok(data.as_deref()),
             Err(error) => Err(error.as_str()),
@@ -368,12 +368,12 @@ impl Rpc {
     }
 }
 
-/// The `type` of a command line, for its response.
-fn command_name(value: &Value) -> String {
+/// The `type` of a command line, for its response; `None` without one.
+fn command_name(value: &Value) -> Option<String> {
     match value.get("type") {
-        Some(Value::String(name)) => name.clone(),
-        Some(other) => other.to_string(),
-        None => "undefined".to_owned(),
+        Some(Value::String(name)) => Some(name.clone()),
+        Some(other) => Some(other.to_string()),
+        None => None,
     }
 }
 
@@ -383,7 +383,7 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
         Err(error) => {
             rpc.reply(
                 None,
-                "parse",
+                Some("parse"),
                 Err(format!("Failed to parse command: {error}")),
             );
             return;
@@ -397,10 +397,16 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
     }
     let id = parsed.get("id").cloned();
     let name = command_name(&parsed);
+    // A line without a `type`, an array or a string included, is an unknown
+    // command to pi.
+    if name.is_none() {
+        rpc.reply(id.as_ref(), None, Err("Unknown command: undefined".into()));
+        return;
+    }
     let command = match serde_json::from_value::<RpcCommand>(parsed) {
         Ok(command) => command,
         Err(error) => {
-            rpc.reply(id.as_ref(), &name, Err(error.to_string()));
+            rpc.reply(id.as_ref(), name.as_deref(), Err(error.to_string()));
             return;
         }
     };
@@ -417,21 +423,24 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
             .prompt_with(&message, images, streaming_behavior, |disposition| {
                 started.set(true);
                 let reply = value(&disposition).and_then(|it| data(&json!({ "disposition": it })));
-                rpc.reply(id.as_ref(), "prompt", reply);
+                rpc.reply(id.as_ref(), Some("prompt"), reply);
             })
             .await;
         if let Err(error) = result
             && !started.get()
         {
-            rpc.reply(id.as_ref(), "prompt", Err(error));
+            rpc.reply(id.as_ref(), Some("prompt"), Err(error));
         }
         return;
     }
     let reply = match command {
-        RpcCommand::Unknown => Err(format!("Unknown command: {name}")),
+        RpcCommand::Unknown => Err(format!(
+            "Unknown command: {}",
+            name.as_deref().unwrap_or("undefined")
+        )),
         command => handle(&rpc, id.as_ref(), command).await,
     };
-    rpc.reply(id.as_ref(), &name, reply);
+    rpc.reply(id.as_ref(), name.as_deref(), reply);
 }
 
 async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
@@ -473,10 +482,10 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             data(&model)
         }
         RpcCommand::CycleModel => match session.cycle_model(true) {
-            Some(model) => data(&json!({
+            Some((model, is_scoped)) => data(&json!({
                 "model": value(&model)?,
                 "thinkingLevel": value(&session.thinking_level())?,
-                "isScoped": false,
+                "isScoped": is_scoped,
             })),
             None => data(&Value::Null),
         },
@@ -535,7 +544,23 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             Ok(None)
         }
         RpcCommand::GetSessionStats => data(&stats(&session)),
-        RpcCommand::ExportHtml { .. } => Err("HTML export is not available in ri yet".into()),
+        RpcCommand::ExportHtml { output_path } => {
+            let (theme, appearance) = crate::interactive::export_theme(
+                session.settings().theme.as_deref(),
+                &ri_core::config::agent_dir(),
+            );
+            let path = crate::export_html::export_session(
+                &session,
+                output_path.as_deref(),
+                &crate::export_html::ExportTheme {
+                    theme: &theme,
+                    foreground: None,
+                    background: None,
+                    appearance,
+                },
+            )?;
+            data(&serde_json::json!({"path": path.display().to_string()}))
+        }
         RpcCommand::SwitchSession { session_path } => {
             let fallback = session.cwd().to_path_buf();
             let manager =
@@ -761,6 +786,8 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let session = rpc.session();
     session.abort();
     session.abort_bash();
+    // Commands still running would outlive ri in their own process groups.
+    ri_core::tools::bash::kill_tracked_children();
     session.shutdown().await;
     out.flush();
     drop(writer);
@@ -768,7 +795,7 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
 }
 
 /// Resolves to pi's exit code for SIGTERM (143) or SIGHUP (129).
-async fn termination() -> u8 {
+pub(crate) async fn termination() -> u8 {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};

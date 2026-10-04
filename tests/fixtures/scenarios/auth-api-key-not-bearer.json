@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Provider \"openai\" is not configured with an OAuth bearer token\n",
+  "requests": []
+}

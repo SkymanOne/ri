@@ -137,6 +137,19 @@ async fn write_and_edit_preserve_bom_and_crlf() {
     .await
     .unwrap_err();
     assert_eq!(err, "Could not edit file: nope.txt. Error code: ENOENT.");
+
+    // Node's messages for a directory: `read` names no path, `open` does.
+    std::fs::create_dir(dir.0.join("adir")).unwrap();
+    let err = call(&dir.0, "write", json!({"path": "adir", "content": "x"}))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        format!(
+            "EISDIR: illegal operation on a directory, open '{}'",
+            dir.0.join("adir").display()
+        )
+    );
 }
 
 #[tokio::test]

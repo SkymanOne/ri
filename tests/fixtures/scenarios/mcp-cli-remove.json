@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "Removed global MCP server \"web\" from <agent>/mcp.json.\n",
+  "stderr": "",
+  "requests": []
+}

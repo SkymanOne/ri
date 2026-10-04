@@ -426,3 +426,98 @@ pub fn listing(
     }
     out
 }
+
+/// pi's `formatPathWithSource`: the source's label and scope, then its short
+/// path.
+fn path_with_source(source: &SourceInfo, home: Option<&Path>) -> String {
+    let scope = match source.scope.as_str() {
+        "user" => Some("user"),
+        "project" => Some("project"),
+        "temporary" => Some("temp"),
+        _ => None,
+    };
+    let (label, scope) = match source.source.as_str() {
+        "local" => match source.scope.as_str() {
+            "user" => ("user", None),
+            "project" => ("project", None),
+            "temporary" => ("path", Some("temp")),
+            _ => ("path", None),
+        },
+        "cli" => ("path", scope.filter(|scope| *scope == "temp")),
+        other => (other, scope),
+    };
+    let label = match scope {
+        Some(scope) => format!("{label} ({scope})"),
+        None => label.to_owned(),
+    };
+    format!("{label} {}", short_path(source, home))
+}
+
+/// pi's `[Theme conflicts]` section: names declared twice, grouped by name,
+/// then paths that failed to load. Empty without diagnostics.
+pub fn theme_conflicts(
+    theme: &Theme,
+    diagnostics: &[super::themes::Diagnostic],
+    home: Option<&Path>,
+    width: usize,
+) -> Vec<StyledLine> {
+    use super::themes::Diagnostic;
+    if diagnostics.is_empty() {
+        return Vec::new();
+    }
+    let display = |path: &Path| display_path(&path.to_string_lossy(), home);
+    let warning = theme.fg("warning");
+    let dim = theme.fg("dim");
+    let mut content = vec![lines::styled("[Theme conflicts]", warning)];
+    let mut names: Vec<&str> = Vec::new();
+    for diagnostic in diagnostics {
+        if let Diagnostic::Collision { name, .. } = diagnostic
+            && !names.contains(&name.as_str())
+        {
+            names.push(name);
+        }
+    }
+    for name in names {
+        content.push(lines::styled(format!("  \"{name}\" collision:"), warning));
+        let mut winner_shown = false;
+        for diagnostic in diagnostics {
+            let Diagnostic::Collision {
+                name: declared,
+                winner,
+                loser,
+            } = diagnostic
+            else {
+                continue;
+            };
+            if declared != name {
+                continue;
+            }
+            if !winner_shown {
+                winner_shown = true;
+                content.push(Line::from(vec![
+                    Span::styled("    ", dim),
+                    Span::styled("✓", theme.fg("success")),
+                    Span::styled(format!(" {}", path_with_source(winner, home)), dim),
+                ]));
+            }
+            content.push(Line::from(vec![
+                Span::styled("    ", dim),
+                Span::styled("✗", warning),
+                Span::styled(format!(" {} (skipped)", display(loser)), dim),
+            ]));
+        }
+    }
+    for diagnostic in diagnostics {
+        if let Diagnostic::Warning { message, path } = diagnostic {
+            content.push(lines::styled(format!("  {}", display(path)), warning));
+            // Only the first line of a message is indented, as in pi's text.
+            for (index, line) in message.split('\n').enumerate() {
+                let indent = if index == 0 { "    " } else { "" };
+                content.push(lines::styled(format!("{indent}{line}"), warning));
+            }
+        }
+    }
+    let mut out = lines::text(&content, width, 0, 0, None);
+    out.extend(lines::spacer(1));
+    out
+}

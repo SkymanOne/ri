@@ -186,6 +186,77 @@ pub fn parse_pattern(pattern: &str, models: &[Model], allow_invalid_level: bool)
     }
 }
 
+/// A model in the session's scope, with the level its pattern named.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScopedModel {
+    /// The model.
+    pub model: Model,
+    /// The level from a `:level` suffix; `None` keeps the session's level.
+    pub thinking_level: Option<ThinkingLevel>,
+}
+
+/// pi's `resolveModelScopeFromModels`: the models `patterns` select from
+/// `models`, in pattern order without duplicates, and a warning for each
+/// pattern that selects nothing or names an invalid level. A pattern is a
+/// glob over `provider/id` or the id, ignoring case, or a model pattern as
+/// `--model` takes; either may end in `:level`.
+pub fn resolve_model_scope(
+    patterns: &[String],
+    models: &[Model],
+) -> (Vec<ScopedModel>, Vec<String>) {
+    let mut scoped: Vec<ScopedModel> = Vec::new();
+    let mut warnings = Vec::new();
+    let mut add = |model: &Model, thinking_level: Option<ThinkingLevel>| {
+        if !scoped
+            .iter()
+            .any(|entry| entry.model.provider == model.provider && entry.model.id == model.id)
+        {
+            scoped.push(ScopedModel {
+                model: model.clone(),
+                thinking_level,
+            });
+        }
+    };
+    for pattern in patterns {
+        if pattern.contains(['*', '?', '[']) {
+            let (glob, thinking_level) = match pattern.rsplit_once(':') {
+                Some((glob, suffix)) => match ThinkingLevel::parse(suffix) {
+                    Some(level) => (glob, Some(level)),
+                    None => (pattern.as_str(), None),
+                },
+                None => (pattern.as_str(), None),
+            };
+            if let Some(model) = exact_match(glob, models) {
+                add(model, thinking_level);
+                continue;
+            }
+            let matching: Vec<&Model> = models
+                .iter()
+                .filter(|model| {
+                    crate::glob::matches_with(glob, &model.reference(), true)
+                        || crate::glob::matches_with(glob, &model.id, true)
+                })
+                .collect();
+            if matching.is_empty() {
+                warnings.push(format!("No models match pattern \"{pattern}\""));
+            }
+            for model in matching {
+                add(model, thinking_level);
+            }
+            continue;
+        }
+        let found = parse_pattern(pattern, models, true);
+        if let Some(warning) = found.warning {
+            warnings.push(warning);
+        }
+        match &found.model {
+            Some(model) => add(model, found.thinking_level),
+            None => warnings.push(format!("No models match pattern \"{pattern}\"")),
+        }
+    }
+    (scoped, warnings)
+}
+
 /// The result of `--model` resolution.
 #[derive(Clone, Debug, Default)]
 pub struct CliModel {
@@ -450,5 +521,55 @@ mod tests {
         );
         assert!(is_alias("claude-sonnet-4-5"));
         assert!(!is_alias("claude-sonnet-4-5-20250929"));
+    }
+
+    #[test]
+    fn scopes_models_by_pattern_and_glob() {
+        // As with credentials for Anthropic only.
+        let registry = ModelRegistry::builtin();
+        let models: Vec<Model> = registry
+            .models()
+            .iter()
+            .filter(|model| model.provider == "anthropic")
+            .cloned()
+            .collect();
+        let patterns: Vec<String> = [
+            "claude-sonnet-4-5:high",
+            "anthropic/claude-opus-4-*",
+            "claude-sonnet-4-5",
+            "zzz-nothing",
+            "claude-haiku-4-5:bogus",
+        ]
+        .map(String::from)
+        .to_vec();
+        let (scoped, warnings) = resolve_model_scope(&patterns, &models);
+        assert_eq!(scoped[0].model.reference(), "anthropic/claude-sonnet-4-5");
+        assert_eq!(scoped[0].thinking_level, Some(ThinkingLevel::High));
+        assert!(
+            scoped[1..]
+                .iter()
+                .any(|s| s.model.id.starts_with("claude-opus-4-"))
+        );
+        // A repeated model keeps its first entry.
+        assert_eq!(
+            scoped
+                .iter()
+                .filter(|s| s.model.reference() == "anthropic/claude-sonnet-4-5")
+                .count(),
+            1
+        );
+        assert_eq!(
+            scoped
+                .last()
+                .map(|s| (s.model.id.as_str(), s.thinking_level)),
+            Some(("claude-haiku-4-5", None))
+        );
+        assert_eq!(
+            warnings,
+            [
+                "No models match pattern \"zzz-nothing\"",
+                "Invalid thinking level \"bogus\" in pattern \"claude-haiku-4-5:bogus\". Using default instead.",
+            ]
+        );
     }
 }

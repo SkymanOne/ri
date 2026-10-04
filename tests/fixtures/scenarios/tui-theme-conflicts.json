@@ -1,0 +1,28 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Theme conflicts]",
+    "  \"forest\" collision:",
+    "    ✓ user ~/agent/more-themes/forest.json",
+    "    ✗ ~/agent/themes/forest.json (skipped)",
+    "  \"ocean\" collision:",
+    "    ✓ auto (user) ~/agent/themes/ocean.json",
+    "    ✗ ~/project/extra/ocean.json (skipped)",
+    "  \"sky\" collision:",
+    "    ✓ path (temp) ~/project/sky.json",
+    "    ✗ ~/project/sky-copy.json (skipped)",
+    "  ~/project/missing.json",
+    "    theme path does not exist",
+    "  ~/project/notes.txt",
+    "    theme path is not a json file",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

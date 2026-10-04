@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "--env expects KEY=VALUE, got \"NOPE\".\n",
+  "requests": []
+}

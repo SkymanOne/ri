@@ -13,6 +13,18 @@ pub const AGENT_DIR_ENV: &str = "RI_CODING_AGENT_DIR";
 /// Environment variable overriding the session directory; `--session-dir` wins.
 pub const SESSION_DIR_ENV: &str = "RI_CODING_AGENT_SESSION_DIR";
 
+/// Variables every child process gets, as pi sets them on its own process:
+/// the agent markers `PI_CODING_AGENT=true` and `AI_AGENT=ri`, and the proxy
+/// from the `httpProxy` setting where the environment has none.
+pub fn child_env() -> Vec<(&'static str, String)> {
+    let mut env = vec![
+        ("PI_CODING_AGENT", "true".to_owned()),
+        ("AI_AGENT", APP_NAME.to_owned()),
+    ];
+    env.extend(ri_ai::http::proxy_env());
+    env
+}
+
 /// The agent directory: `RI_CODING_AGENT_DIR`, else `~/.ri/agent`.
 pub fn agent_dir() -> PathBuf {
     match std::env::var(AGENT_DIR_ENV) {

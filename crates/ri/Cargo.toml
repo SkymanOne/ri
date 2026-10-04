@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 indexmap.workspace = true
@@ -29,6 +30,7 @@ unicode-segmentation.workspace = true
 
 [dev-dependencies]
 ri-mock.workspace = true
+sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]

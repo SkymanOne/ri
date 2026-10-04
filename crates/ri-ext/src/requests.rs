@@ -82,6 +82,11 @@ impl Host {
             "platform" => Ok(Value::String(platform().into())),
             "env" => Ok(Value::Object(if self.grants.environment {
                 std::env::vars()
+                    .chain(
+                        ri_core::config::child_env()
+                            .into_iter()
+                            .map(|(key, value)| (key.to_owned(), value)),
+                    )
                     .map(|(key, value)| (key, Value::String(value)))
                     .collect()
             } else {

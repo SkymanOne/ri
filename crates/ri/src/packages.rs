@@ -153,7 +153,8 @@ pub async fn run(args: &[String]) -> Option<u8> {
     };
     let options = parse(command, &args[1..]);
     if options.help {
-        let _ = write!(std::io::stdout(), "{}", command.help());
+        // pi's console.log adds a newline after the text's own.
+        let _ = writeln!(std::io::stdout(), "{}", command.help());
         return Some(0);
     }
     let usage = command.usage();
@@ -175,7 +176,9 @@ pub async fn run(args: &[String]) -> Option<u8> {
         err(&format!("Usage: {usage}"));
         return Some(1);
     }
-    if matches!(command, Command::Install | Command::Remove) && options.source.is_none() {
+    if matches!(command, Command::Install | Command::Remove)
+        && options.source.as_deref().is_none_or(str::is_empty)
+    {
         err(&format!("Missing {} source.", command.name()));
         err(&format!("Usage: {usage}"));
         return Some(1);
@@ -205,6 +208,9 @@ async fn execute(command: Command, options: Options) -> u8 {
             return 1;
         }
     };
+    for error in settings.errors() {
+        err(&format!("Warning: {error}"));
+    }
     let mut packages = PackageManager::new(
         cwd,
         agent_dir,
@@ -260,6 +266,11 @@ async fn execute(command: Command, options: Options) -> u8 {
     };
     match result {
         Ok(()) => 0,
+        // pi prints this one without the prefix.
+        Err(error @ ri_core::packages::PackageError::Untrusted) => {
+            err(&error.to_string());
+            1
+        }
         Err(error) => {
             err(&format!("Error: {error}"));
             1

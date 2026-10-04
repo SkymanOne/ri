@@ -52,6 +52,8 @@ pub enum Action {
     Provider(Box<super::login::ProviderOption>),
     /// The login dialog was closed with escape.
     LoginCancelled,
+    /// A project trust decision to save.
+    Trust(Box<ri_core::trust::TrustOption>),
 }
 
 /// The result of a key.
@@ -137,6 +139,8 @@ pub enum Selector {
     Input(Box<InputDialog>),
     /// An extension's component.
     Remote(Box<super::extension_ui::RemoteView>),
+    /// `/trust`.
+    Trust(Box<TrustSelector>),
 }
 
 impl Selector {
@@ -158,6 +162,7 @@ impl Selector {
             Selector::Login(dialog) => dialog.render(width, ui),
             Selector::Input(dialog) => dialog.render(width, ui),
             Selector::Remote(view) => view.render(width),
+            Selector::Trust(selector) => (selector.render(width, ui), None),
         }
     }
 
@@ -178,6 +183,7 @@ impl Selector {
                 view.input(data);
                 Outcome::None
             }
+            Selector::Trust(selector) => selector.handle_input(data, ui),
         }
     }
 
@@ -741,6 +747,133 @@ impl Countdown {
             .saturating_duration_since(std::time::Instant::now())
             .as_millis();
         format!("{title} ({}s)", left.div_ceil(1000))
+    }
+}
+
+/// pi's `TrustSelectorComponent`: saves whether to trust the project.
+pub struct TrustSelector {
+    cwd: String,
+    options: Vec<ri_core::trust::TrustOption>,
+    saved: Option<(PathBuf, bool)>,
+    trusted: bool,
+    selected: usize,
+}
+
+impl TrustSelector {
+    /// The selector for `cwd`, with its stored decision and whether this
+    /// session trusts it; the stored decision's option starts selected.
+    pub fn new(
+        cwd: &std::path::Path,
+        saved: Option<(PathBuf, bool)>,
+        trusted: bool,
+    ) -> TrustSelector {
+        let options = ri_core::trust::trust_options(cwd, false);
+        let mut selector = TrustSelector {
+            cwd: cwd.display().to_string(),
+            options,
+            saved,
+            trusted,
+            selected: 0,
+        };
+        selector.selected = (0..selector.options.len())
+            .find(|&index| selector.is_saved(index))
+            .unwrap_or(0);
+        selector
+    }
+
+    fn is_saved(&self, index: usize) -> bool {
+        let option = &self.options[index];
+        match (&self.saved, &option.saved_path) {
+            (Some((path, decision)), Some(saved_path)) => {
+                *decision == option.trusted && path == saved_path
+            }
+            _ => false,
+        }
+    }
+
+    fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
+        let theme = ui.theme;
+        let muted =
+            |text: String| lines::text(&[styled(text, theme.fg("muted"))], width, 1, 0, None);
+        let mut out = vec![ui.border(width)];
+        out.extend(lines::spacer(1));
+        out.extend(lines::text(
+            &[styled(
+                "Project trust",
+                theme.fg("accent").add_modifier(Modifier::BOLD),
+            )],
+            width,
+            1,
+            0,
+            None,
+        ));
+        out.extend(muted(self.cwd.clone()));
+        out.extend(lines::spacer(1));
+        let decision = match &self.saved {
+            None => "none".to_owned(),
+            Some((path, decision)) => {
+                let label = if *decision { "trusted" } else { "untrusted" };
+                let own = self
+                    .options
+                    .first()
+                    .and_then(|option| option.saved_path.as_ref());
+                if own.is_some_and(|own| own != path) {
+                    format!("{label} (inherited from {})", path.display())
+                } else {
+                    format!("{label} ({})", path.display())
+                }
+            }
+        };
+        out.extend(muted(format!("Saved decision: {decision}")));
+        out.extend(muted(format!(
+            "Current session: {}",
+            if self.trusted { "trusted" } else { "untrusted" }
+        )));
+        out.extend(lines::spacer(1));
+        for (index, option) in self.options.iter().enumerate() {
+            let selected = index == self.selected;
+            let mut spans = vec![if selected {
+                Span::styled("→ ", theme.fg("accent"))
+            } else {
+                Span::raw("  ")
+            }];
+            spans.push(if self.is_saved(index) {
+                Span::styled("✓ ", theme.fg("accent"))
+            } else {
+                Span::raw("  ")
+            });
+            spans.push(Span::styled(
+                option.label.clone(),
+                theme.fg(if selected { "accent" } else { "text" }),
+            ));
+            out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
+        }
+        out.extend(lines::spacer(1));
+        let mut hint = ui.raw_key_hint("↑↓", "navigate");
+        hint.push(Span::raw("  "));
+        hint.extend(ui.key_hint("tui.select.confirm", "save"));
+        hint.push(Span::raw("  "));
+        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::spacer(1));
+        out.push(ui.border(width));
+        out
+    }
+
+    fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
+        let kb = ui.keys;
+        if kb.matches(data, "tui.select.up") || data == "k" {
+            self.selected = self.selected.saturating_sub(1);
+        } else if kb.matches(data, "tui.select.down") || data == "j" {
+            self.selected = (self.selected + 1).min(self.options.len().saturating_sub(1));
+        } else if kb.matches(data, "tui.select.confirm") || data == "\n" {
+            if let Some(option) = self.options.get(self.selected) {
+                return Outcome::Done(Action::Trust(Box::new(option.clone())));
+            }
+        } else if kb.matches(data, "tui.select.cancel") {
+            return Outcome::Cancel;
+        }
+        Outcome::None
     }
 }
 

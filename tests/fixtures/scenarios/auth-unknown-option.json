@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Unknown option --bogus for \"auth check\".\nUse \"pi --help\" or \"pi auth check --provider <provider> [--json] [--credentials] [--no-refresh]\".\n",
+  "requests": []
+}

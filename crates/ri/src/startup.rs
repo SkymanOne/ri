@@ -10,7 +10,9 @@ use ri_ai::api::Apis;
 use ri_ai::registry::ModelRegistry;
 use ri_core::agent_session::{AgentSession, Resources, SessionConfig};
 use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
-use ri_core::model_resolver::{DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model};
+use ri_core::model_resolver::{
+    DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model, resolve_model_scope,
+};
 use ri_core::packages::PackageResources;
 use ri_core::resources::{context_files, prompt_templates, skills, system_prompt_file};
 use ri_core::session::{self, SessionManager};
@@ -197,9 +199,7 @@ fn open_session(
         };
     }
     if args.resume {
-        bail!(
-            "Selecting a session with --resume needs interactive mode; use --session or --continue"
-        );
+        bail!("Selecting a session with --resume needs a terminal; use --session or --continue");
     }
     if args.continue_ {
         return SessionManager::continue_recent(cwd, &dir, filter).map_err(fail);
@@ -290,10 +290,6 @@ pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, 
 }
 
 /// Builds the session for a run. Errors are user-facing messages.
-/// pi's message when no model can be chosen outside interactive mode.
-pub const NO_MODELS_MESSAGE: &str =
-    "No models available. Use /login to log into a provider via OAuth or API key.";
-
 pub fn start(
     args: &mut Args,
     stdin: Option<String>,
@@ -303,7 +299,17 @@ pub fn start(
     let agent_dir = agent_dir();
     let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
-    let session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
+    let mut session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
+    // pi names the session before anything else is recorded in it.
+    if let Some(name) = &args.name {
+        let name = name.trim();
+        if name.is_empty() {
+            bail!("Error: --name requires a non-empty value");
+        }
+        session
+            .append_session_info(name)
+            .map_err(|err| anyhow::anyhow!("Error: {err}"))?;
+    }
     let session = create(args, session, true, extensions)?;
 
     let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
@@ -318,15 +324,6 @@ pub fn start(
         parts.push(args.messages.remove(0));
     }
     let initial_message = (!parts.is_empty()).then(|| parts.concat());
-
-    if let Some(name) = args
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    {
-        session.set_name(name);
-    }
     Ok(Startup {
         session,
         initial_message,
@@ -353,7 +350,6 @@ pub fn create(
     if warn && let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
-    let existing = session.entries().next().is_some();
 
     // Model: --model, then the session's last model, then defaults.
     let mut model = None;
@@ -365,7 +361,7 @@ pub fn create(
             eprintln!("Warning: {warning}");
         }
         if let Some(error) = resolved.error {
-            bail!(error);
+            bail!("Error: {error}");
         }
         if thinking.is_none() {
             thinking = resolved.thinking_level;
@@ -373,21 +369,70 @@ pub fn create(
         model = resolved.model;
     } else if args.provider.is_some() {
         bail!(
-            "--provider requires --model (for example: --provider {} --model <pattern>)",
+            "Error: --provider requires --model (for example: --provider {} --model <pattern>)",
             args.provider.as_deref().unwrap_or_default()
         );
     }
     let context = session.build_context();
+    let existing = !context.messages.is_empty();
+    let settings_view = settings.settings();
+    // The scope from `--models` or `enabledModels`; without `--model`, a new
+    // session starts on the saved default if it is in scope, else on the
+    // first scoped model.
+    let patterns = args
+        .models
+        .clone()
+        .or_else(|| settings_view.enabled_models.clone())
+        .unwrap_or_default();
+    let scoped = if patterns.is_empty() {
+        Vec::new()
+    } else {
+        let available: Vec<_> = registry.available().into_iter().cloned().collect();
+        let (scoped, warnings) = resolve_model_scope(&patterns, &available);
+        if warn {
+            for warning in warnings {
+                eprintln!("Warning: {warning}");
+            }
+        }
+        scoped
+    };
+    if model.is_none() && !scoped.is_empty() && !existing {
+        let saved = settings_view
+            .default_provider
+            .as_deref()
+            .zip(settings_view.default_model.as_deref());
+        let pick = saved
+            .and_then(|(provider, id)| {
+                scoped
+                    .iter()
+                    .find(|entry| entry.model.provider == provider && entry.model.id == id)
+            })
+            .unwrap_or(&scoped[0]);
+        model = Some(pick.model.clone());
+        if thinking.is_none() {
+            thinking = pick.thinking_level;
+        }
+    }
+    // `--api-key` belongs to the model the command line chose.
+    if let Some(key) = &args.api_key {
+        let Some(model) = &model else {
+            bail!(
+                "Error: --api-key requires a model to be specified via --model, --provider/--model, or --models"
+            );
+        };
+        registry.set_runtime_key(&model.provider, key.clone());
+    }
+    // pi's createAgentSession: the session's model if it still has
+    // credentials, else the initial model.
     if model.is_none()
         && existing
         && let Some((provider, id)) = &context.model
     {
-        model = registry.find(provider, id).cloned();
-        if thinking.is_none() {
-            thinking = ThinkingLevel::parse(&context.thinking_level);
-        }
+        model = registry
+            .find(provider, id)
+            .filter(|found| registry.has_auth(&found.provider))
+            .cloned();
     }
-    let settings_view = settings.settings();
     if model.is_none() {
         model = initial_model(
             &registry,
@@ -395,13 +440,21 @@ pub fn create(
             settings_view.default_model.as_deref(),
         );
     }
-    if let Some(key) = &args.api_key {
-        let Some(model) = &model else {
-            bail!(
-                "--api-key requires a model to be specified via --model, --provider/--model, or --models"
-            );
+    // The session's level unless one was given, whatever chose the model.
+    if thinking.is_none() && existing {
+        let recorded = session
+            .branch_path(None)
+            .iter()
+            .any(|entry| matches!(entry, ri_types::session::FileEntry::ThinkingLevelChange(_)));
+        thinking = if recorded {
+            ThinkingLevel::parse(&context.thinking_level)
+        } else {
+            Some(
+                settings_view
+                    .default_thinking_level
+                    .unwrap_or(DEFAULT_THINKING_LEVEL),
+            )
         };
-        registry.set_runtime_key(&model.provider, key.clone());
     }
     let mut thinking_level = thinking
         .or_else(|| {
@@ -414,27 +467,49 @@ pub fn create(
         })
         .or(settings_view.default_thinking_level)
         .unwrap_or(DEFAULT_THINKING_LEVEL);
-    if let Some(model) = &model {
-        thinking_level = ri_ai::thinking::clamp_level(model, thinking_level);
-    }
+    thinking_level = match &model {
+        Some(model) => ri_ai::thinking::clamp_level(model, thinking_level),
+        None => ThinkingLevel::Off,
+    };
 
     let tools = tool_names(args, &settings);
+    let cli_paths = |paths: &[String]| -> Vec<PathBuf> {
+        paths
+            .iter()
+            .map(|path| resolve_to_cwd(path, &cwd))
+            .collect()
+    };
+    // Command-line paths are relative to the working directory.
     let extra_skills: Vec<PathBuf> = settings_view
         .skills
         .iter()
         .flatten()
-        .chain(&args.skills)
         .map(|path| PathBuf::from(expand(path)))
+        .chain(cli_paths(&args.skills))
         .chain(extensions.resources.skills.iter().cloned())
         .collect();
     let extra_templates: Vec<PathBuf> = settings_view
         .prompts
         .iter()
         .flatten()
-        .chain(&args.prompt_templates)
         .map(|path| PathBuf::from(expand(path)))
+        .chain(cli_paths(&args.prompt_templates))
         .chain(extensions.resources.prompts.iter().cloned())
         .collect();
+    // pi's order: package themes, settings entries and directories, then
+    // `--theme` paths. `--no-themes` keeps only the latter.
+    let mut themes = Vec::new();
+    if !args.no_themes {
+        themes.extend(extensions.themes.iter().cloned());
+        themes.extend(ri_core::resources::theme_paths(&cwd, &agent_dir, &settings));
+    }
+    themes.extend(cli_paths(&args.themes).into_iter().map(|path| SourceInfo {
+        path: path.to_string_lossy().into_owned(),
+        source: "local".into(),
+        scope: "temporary".into(),
+        origin: "top-level".into(),
+        base_dir: None,
+    }));
     let mut appends: Vec<String> =
         system_prompt_file(&cwd, &agent_dir, trusted, "APPEND_SYSTEM.md")
             .into_iter()
@@ -450,13 +525,15 @@ pub fn create(
         } else {
             context_files(&cwd, &agent_dir)
         },
+        // `--no-skills` and `--no-prompt-templates` turn off discovery; paths
+        // given on the command line still load, as in pi.
         skills: if args.no_skills {
-            Vec::new()
+            ri_core::resources::skills_at(&cli_paths(&args.skills))
         } else {
             skills(&cwd, &agent_dir, trusted, &extra_skills)
         },
         templates: if args.no_prompt_templates {
-            Vec::new()
+            ri_core::resources::templates_at(&cli_paths(&args.prompt_templates))
         } else {
             prompt_templates(&cwd, &agent_dir, trusted, &extra_templates)
         },
@@ -466,10 +543,12 @@ pub fn create(
             .map(prompt_input)
             .or_else(|| system_prompt_file(&cwd, &agent_dir, trusted, "SYSTEM.md")),
         append_prompt: (!appends.is_empty()).then(|| appends.join("\n\n")),
+        themes,
     };
 
     let codemode_cache = agent_dir.join("cache").join("wasm");
-    Ok(AgentSession::new(SessionConfig {
+    let builtin_settings = extension_settings(&settings);
+    let session = AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
         settings,
@@ -485,16 +564,76 @@ pub fn create(
             .hosts
             .iter()
             .flat_map(ExtensionHost::for_session)
-            .chain(std::iter::once(
-                Arc::new(ri_ext::codemode::CodemodeExtension::new(Some(
+            .chain(
+                std::iter::once(Arc::new(ri_ext::codemode::CodemodeExtension::new(Some(
                     codemode_cache,
-                ))) as Arc<dyn ri_core::extensions::Extension>,
-            ))
-            .chain(ri_core::extensions::builtins())
+                )))
+                    as Arc<dyn ri_core::extensions::Extension>)
+                .chain(ri_core::extensions::builtins())
+                .filter(|extension| {
+                    let source = extension.source();
+                    let name = source.path.strip_prefix(BUILTIN_PREFIX).unwrap_or_default();
+                    builtin_enabled(name, args, &builtin_settings)
+                }),
+            )
             .collect(),
         include_extension_tools: args.tools.is_none() && !args.no_tools,
         resources,
-    }))
+    });
+    session.set_scoped_models(scoped);
+    Ok(session)
+}
+
+/// The path prefix naming a built-in extension, as in `-e builtin:mcp`.
+const BUILTIN_PREFIX: &str = "builtin:";
+
+/// ri's built-in extensions, in pi's load order. pi's `llama.cpp` is absent.
+const BUILTINS: [&str; 3] = ["codemode", "tool-search", "mcp"];
+
+/// Whether built-in extension `name` runs, as in pi: `-e builtin:<name>` loads
+/// it; otherwise it runs unless `--no-extensions` or the `extensions` setting
+/// excludes it. In the user's setting `-builtin:<name>` wins over
+/// `+builtin:<name>`, which wins over a `!` pattern; in the project's, the last
+/// matching entry decides and overrides the user's.
+fn builtin_enabled(name: &str, args: &Args, settings: &[Vec<String>; 2]) -> bool {
+    let path = format!("{BUILTIN_PREFIX}{name}");
+    if args.extensions.contains(&path) {
+        return true;
+    }
+    if args.no_extensions {
+        return false;
+    }
+    // `+` and `-` name a path exactly; `!` takes a glob.
+    let matches = |entry: &str| match entry.split_at(entry.chars().next().map_or(0, char::len_utf8))
+    {
+        ("+" | "-", target) => target == path,
+        ("!", pattern) => ri_core::glob::matches(pattern, &path),
+        _ => false,
+    };
+    let [project, user] = settings;
+    if let Some(entry) = project.iter().rev().find(|entry| matches(entry)) {
+        return entry.starts_with('+');
+    }
+    let has = |sign: char| {
+        user.iter()
+            .any(|entry| entry.starts_with(sign) && matches(entry))
+    };
+    !has('-') && (has('+') || !has('!'))
+}
+
+/// The `extensions` setting of the project and the user, for
+/// [`builtin_enabled`].
+fn extension_settings(settings: &SettingsManager) -> [Vec<String>; 2] {
+    [Scope::Project, Scope::Global].map(|scope| {
+        settings
+            .document(scope)
+            .get("extensions")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.as_str().map(str::to_owned))
+            .collect()
+    })
 }
 
 /// pi's hint after an extension fails to load.
@@ -526,6 +665,14 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     let mut missing = Vec::new();
     let mut requested = Vec::new();
     for path in &args.extensions {
+        if let Some(name) = path.strip_prefix(BUILTIN_PREFIX) {
+            if !BUILTINS.contains(&name) {
+                missing.push(format!(
+                    "Failed to load extension \"{path}\": Unknown built-in extension: {path}"
+                ));
+            }
+            continue;
+        }
         let resolved = resolve_to_cwd(path, &cwd);
         if resolved.exists() {
             requested.push(path.clone());
@@ -554,17 +701,20 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         .map(|path| source(path, "cli", "temporary"))
         .collect();
     let mut resources = PackageResources::default();
+    let mut themes = Vec::new();
+    let mut packages = ri_core::packages::PackageManager::new(
+        cwd.clone(),
+        agent_dir.clone(),
+        settings,
+        ri_core::packages::npm::default_registry(),
+    );
+    let offline = args.offline || ri_core::tools::external::offline();
+    let resolved = packages
+        .resolve(!offline, |message| eprintln!("Warning: {message}"))
+        .await;
+    // `--no-extensions` leaves out discovered extensions only: packages still
+    // provide their skills, prompts and themes.
     if !args.no_extensions {
-        let mut packages = ri_core::packages::PackageManager::new(
-            cwd.clone(),
-            agent_dir.clone(),
-            settings,
-            ri_core::packages::npm::default_registry(),
-        );
-        let offline = args.offline || ri_core::tools::external::offline();
-        let resolved = packages
-            .resolve(!offline, |message| eprintln!("Warning: {message}"))
-            .await;
         // pi's precedence: project settings and installed extensions, then
         // the user's, then packages.
         let settings_entries = packages.settings_extensions();
@@ -580,7 +730,9 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
                 }
             }
         }
-        for package in resolved {
+    }
+    for package in resolved {
+        if !args.no_extensions {
             for path in &package.resources.extensions {
                 sources.push(SourceInfo {
                     path: path.to_string_lossy().into_owned(),
@@ -590,10 +742,19 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
                     base_dir: Some(package.root.to_string_lossy().into_owned()),
                 });
             }
-            resources.skills.extend(package.resources.skills);
-            resources.prompts.extend(package.resources.prompts);
-            resources.themes.extend(package.resources.themes);
         }
+        for path in &package.resources.themes {
+            themes.push(SourceInfo {
+                path: path.to_string_lossy().into_owned(),
+                source: package.source.clone(),
+                scope: scope_name(package.scope).into(),
+                origin: "package".into(),
+                base_dir: Some(package.root.to_string_lossy().into_owned()),
+            });
+        }
+        resources.skills.extend(package.resources.skills);
+        resources.prompts.extend(package.resources.prompts);
+        resources.themes.extend(package.resources.themes);
     }
     let mut seen = std::collections::HashSet::new();
     sources.retain(|source| seen.insert(source.path.clone()));
@@ -675,7 +836,11 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
                 .map_err(|err| fail(err.to_string()))?;
         }
     }
-    Ok(Extensions { hosts, resources })
+    Ok(Extensions {
+        hosts,
+        resources,
+        themes,
+    })
 }
 
 /// The run's loaded extensions, and the skills, prompt templates and themes
@@ -686,4 +851,71 @@ pub struct Extensions {
     pub hosts: Vec<Arc<ExtensionHost>>,
     /// Package resources besides extensions.
     pub resources: PackageResources,
+    /// Package themes with their packages as sources.
+    pub themes: Vec<SourceInfo>,
+}
+
+#[cfg(test)]
+mod builtin_tests {
+    use super::*;
+
+    fn args(extensions: &[&str], no_extensions: bool) -> Args {
+        Args {
+            extensions: extensions.iter().map(|path| (*path).to_owned()).collect(),
+            no_extensions,
+            ..Args::default()
+        }
+    }
+
+    fn entries(list: &[&str]) -> Vec<String> {
+        list.iter().map(|entry| (*entry).to_owned()).collect()
+    }
+
+    #[test]
+    fn builtins_follow_flags_and_settings() {
+        let none = [Vec::new(), Vec::new()];
+        assert!(builtin_enabled("mcp", &args(&[], false), &none));
+        assert!(!builtin_enabled("mcp", &args(&[], true), &none));
+        assert!(builtin_enabled("mcp", &args(&["builtin:mcp"], true), &none));
+        assert!(!builtin_enabled(
+            "codemode",
+            &args(&["builtin:mcp"], true),
+            &none
+        ));
+
+        let user = |list: &[&str]| [Vec::new(), entries(list)];
+        assert!(!builtin_enabled(
+            "mcp",
+            &args(&[], false),
+            &user(&["-builtin:mcp"])
+        ));
+        assert!(!builtin_enabled(
+            "mcp",
+            &args(&[], false),
+            &user(&["!builtin:*"])
+        ));
+        assert!(builtin_enabled(
+            "codemode",
+            &args(&[], false),
+            &user(&["-builtin:mcp"])
+        ));
+        assert!(builtin_enabled(
+            "mcp",
+            &args(&[], false),
+            &user(&["!builtin:*", "+builtin:mcp"])
+        ));
+        assert!(!builtin_enabled(
+            "mcp",
+            &args(&[], false),
+            &user(&["-builtin:mcp", "+builtin:mcp"])
+        ));
+
+        let both = [
+            entries(&["-builtin:mcp", "+builtin:mcp"]),
+            entries(&["-builtin:mcp"]),
+        ];
+        assert!(builtin_enabled("mcp", &args(&[], false), &both));
+        let project_off = [entries(&["!builtin:m*"]), Vec::new()];
+        assert!(!builtin_enabled("mcp", &args(&[], false), &project_off));
+    }
 }

@@ -1,7 +1,9 @@
-//! The `--resume` session picker that runs before interactive mode starts.
+//! Selectors that run before interactive mode starts: the `--resume` session
+//! picker and the project trust prompt.
 //!
-//! Port of `cli/session-picker.ts` in `packages/coding-agent/src` in pi
-//! `v1.0.0`: the `/resume` selector on the main screen, without renaming.
+//! Ports of `cli/session-picker.ts` and the startup selector of
+//! `cli/startup-ui.ts` in `packages/coding-agent/src` in pi `v1.0.0`, on the
+//! main screen.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -15,7 +17,7 @@ use ri_tui::terminal::{
     color_query,
 };
 
-use super::selectors::{Action, Outcome, Ui};
+use super::selectors::{Action, ChoiceDialog, Outcome, Selector, Ui};
 use super::session_selector::{SessionSelector, Sources};
 use super::{COLOR_QUERY_TIMEOUT, emit, home_dir, keybindings, load_theme, true_color};
 
@@ -26,6 +28,47 @@ pub fn pick_session(
     sources: Sources,
     theme_setting: Option<&str>,
 ) -> std::io::Result<Option<PathBuf>> {
+    let home = home_dir().and_then(|home| home.to_str().map(str::to_owned));
+    let selector = Selector::Session(Box::new(SessionSelector::new(sources, None, home, false)));
+    Ok(
+        match run_selector(agent_dir, theme_setting, selector, false)? {
+            Some(Action::Resume(path)) => Some(path),
+            _ => None,
+        },
+    )
+}
+
+/// pi's startup trust prompt for `cwd`: stores the chosen decision and returns
+/// whether the project is trusted; `None` when cancelled.
+pub fn ask_project_trust(
+    agent_dir: &Path,
+    cwd: &Path,
+    theme_setting: Option<&str>,
+) -> std::io::Result<Option<bool>> {
+    let options = ri_core::trust::trust_options(cwd, true);
+    let labels: Vec<&str> = options.iter().map(|option| option.label.as_str()).collect();
+    let title = ri_core::trust::prompt_title(cwd);
+    let dialog = Selector::Choice(ChoiceDialog::new(&title, &labels));
+    let Some(Action::Choice(index)) = run_selector(agent_dir, theme_setting, dialog, true)? else {
+        return Ok(None);
+    };
+    let Some(option) = options.get(index) else {
+        return Ok(None);
+    };
+    if !option.updates.is_empty() {
+        ri_core::trust::TrustStore::new(agent_dir).set_many(&option.updates)?;
+    }
+    Ok(Some(option.trusted))
+}
+
+/// Runs `selector` on the main screen until it finishes; its action, or
+/// `None` when cancelled. With `clear`, its rows are erased afterwards.
+fn run_selector(
+    agent_dir: &Path,
+    theme_setting: Option<&str>,
+    mut selector: Selector,
+    clear: bool,
+) -> std::io::Result<Option<Action>> {
     #[cfg(unix)]
     let raw = ri_tui::terminal::RawMode::enable()?;
     let mut protocol = KeyboardProtocol::default();
@@ -75,11 +118,15 @@ pub fn pick_session(
     } else {
         ColorMode::Ansi256
     };
-    let (theme, _) = load_theme(theme_setting, agent_dir, &query.colors(), mode);
+    let (theme, _) = load_theme(
+        theme_setting,
+        &super::themes::ThemeFiles::default(),
+        agent_dir,
+        &query.colors(),
+        mode,
+    );
     let mut keys = keybindings::load(agent_dir, Keys::detect(protocol.kitty));
     keys.set_kitty(protocol.kitty);
-    let home = home_dir().and_then(|home| home.to_str().map(str::to_owned));
-    let mut selector = SessionSelector::new(sources, None, home, false);
     let mut screen = MainScreen::new();
     let escape_wait = escape_timeout(|name| std::env::var(name).ok());
     let mut chosen = None;
@@ -96,8 +143,8 @@ pub fn pick_session(
                 continue;
             }
             match selector.handle_input(&key, &ui) {
-                Outcome::Done(Action::Resume(path)) => {
-                    chosen = Some(path);
+                Outcome::Done(action) => {
+                    chosen = Some(action);
                     break 'outer;
                 }
                 Outcome::Cancel => break 'outer,
@@ -116,6 +163,10 @@ pub fn pick_session(
             keys_in.extend(protocol.flush());
         }
         keys.set_kitty(protocol.kitty);
+    }
+    if clear {
+        let (width, height) = ri_tui::terminal::size();
+        emit(&screen.frame(&[], None, width, height));
     }
     let mut out = screen.stop();
     out.push_str(BRACKETED_PASTE_DISABLE);

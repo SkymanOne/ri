@@ -45,6 +45,8 @@ pub struct Flag {
     pub takes_value: bool,
     /// What it does.
     pub description: Option<String>,
+    /// The extension that registered it.
+    pub extension_path: String,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -149,11 +151,17 @@ impl ExtensionHost {
     pub fn flags(&self) -> Vec<Flag> {
         lock(&self.loaded)
             .iter()
-            .flat_map(|extension| list(&extension["flags"]))
-            .map(|flag| Flag {
+            .flat_map(|extension| {
+                let path = text(&extension["path"]);
+                list(&extension["flags"])
+                    .into_iter()
+                    .map(move |flag| (path.clone(), flag))
+            })
+            .map(|(extension_path, flag)| Flag {
                 name: text(&flag["name"]),
                 takes_value: flag["type"] == "string",
                 description: flag["description"].as_str().map(str::to_owned),
+                extension_path,
             })
             .collect()
     }

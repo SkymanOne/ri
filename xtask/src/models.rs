@@ -42,7 +42,8 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().starts_with('.'))
     });
-    files.sort();
+    // By provider id, as pi lists them: `opencode` before `opencode-go`.
+    files.sort_by_key(|path| path.file_stem().map(std::ffi::OsStr::to_os_string));
 
     let out_dir = Path::new("crates/ri-ai/data");
     if out_dir.exists() {

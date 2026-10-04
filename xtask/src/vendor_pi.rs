@@ -1,7 +1,8 @@
 //! `cargo xtask vendor-pi`: bundle the npm packages pi extensions import and
 //! ri provides, `typebox` and `@earendil-works/pi-tui`, into
 //! `guest/ri-js/js/vendor`. The bundles share chunks, so each package is
-//! included once.
+//! included once. Also copies pi's HTML export template, unchanged, into
+//! `crates/ri/assets/export-html`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,17 @@ const ENTRIES: [(&str, &str); 4] = [
     ("typebox-compile", "typebox/compile"),
     ("pi-tui", "@earendil-works/pi-tui"),
 ];
+/// pi's HTML export template in the installed package, and where ri keeps it.
+const EXPORT_TEMPLATE: &str = "tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html";
+const EXPORT_ASSETS: &str = "crates/ri/assets/export-html";
+const EXPORT_FILES: [&str; 5] = [
+    "template.html",
+    "template.css",
+    "template.js",
+    "vendor/marked.min.js",
+    "vendor/highlight.min.js",
+];
+
 /// Node built-ins the bundles import by their bare names.
 const BARE_BUILTINS: [&str; 7] = ["events", "fs", "path", "os", "child_process", "util", "url"];
 
@@ -90,6 +102,16 @@ pub fn run(_args: Args) -> anyhow::Result<()> {
         }
     }
     let _ = fs::remove_dir_all(&scratch);
-    eprintln!("wrote {written} modules to {VENDOR}; now run cargo xtask js-runtime");
+    for file in EXPORT_FILES {
+        let target = Path::new(EXPORT_ASSETS).join(file);
+        if let Some(dir) = target.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::copy(Path::new(EXPORT_TEMPLATE).join(file), &target)
+            .with_context(|| format!("copying the export template's {file}"))?;
+    }
+    eprintln!(
+        "wrote {written} modules to {VENDOR} and the export template to {EXPORT_ASSETS}; now run cargo xtask js-runtime"
+    );
     Ok(())
 }

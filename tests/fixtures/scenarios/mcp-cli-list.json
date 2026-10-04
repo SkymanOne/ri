@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "demo: connected, 9 tools (direct, global)\n  python3 <fixtures>/mcp/server.py\n  tools: echo [hidden], add, fail, progress, picture, big, sleep, exit, env\n  resources: 1, URI templates: 0\noff: disabled (codemode, global)\n  python3 x.py\nbroken: failed (deferred, global)\n  ri-no-such-command\n  spawn ri-no-such-command ENOENT\nconfig error: <agent>/mcp.json: server \"bad\": url must be an http or https URL\n",
+  "stderr": "",
+  "requests": []
+}

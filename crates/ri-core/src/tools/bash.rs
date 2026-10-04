@@ -1,6 +1,6 @@
 //! `bash`: run a command, stream its combined output, keep the tail.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
@@ -94,6 +94,7 @@ pub(crate) fn shell_command(
 ) -> tokio::process::Command {
     let mut process = tokio::process::Command::new(shell);
     process
+        .envs(crate::config::child_env())
         .args(shell_args)
         .arg(command)
         .current_dir(cwd)
@@ -340,11 +341,67 @@ fn format_output(
     (text, Some(details))
 }
 
+/// A progress update with the output so far.
+fn progress(truncation: &Truncation, path: Option<&Path>) -> ToolResult {
+    let mut details = json!({});
+    if truncation.truncated {
+        details["truncation"] = json!(truncation);
+    }
+    if let Some(path) = path {
+        details["fullOutputPath"] = json!(path.display().to_string());
+    }
+    text_result(truncation.content.clone(), Some(details))
+}
+
 fn with_status(text: &str, status: &str) -> String {
     if text.is_empty() {
         status.to_owned()
     } else {
         format!("{text}\n\n{status}")
+    }
+}
+
+/// Process groups of running commands: pi's tracked detached children,
+/// killed when ri is terminated.
+static TRACKED: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+/// Keeps a command's process group tracked until it is dropped.
+pub(crate) struct TrackedChild(Option<u32>);
+
+impl TrackedChild {
+    /// Tracks the process group led by `pid`.
+    pub(crate) fn new(pid: Option<u32>) -> TrackedChild {
+        if let Some(pid) = pid {
+            TRACKED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(pid);
+        }
+        TrackedChild(pid)
+    }
+}
+
+impl Drop for TrackedChild {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            TRACKED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retain(|tracked| *tracked != pid);
+        }
+    }
+}
+
+/// Kills every running command's process tree, as pi's
+/// `killTrackedDetachedChildren` does before exiting on a signal.
+pub fn kill_tracked_children() {
+    let tracked = std::mem::take(
+        &mut *TRACKED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    for pid in tracked {
+        kill_tree(Some(pid));
     }
 }
 
@@ -427,6 +484,7 @@ impl Tool for Bash {
             }
             let mut child = process.spawn().map_err(|err| err.to_string())?;
             let pid = child.id();
+            let _tracked = TrackedChild::new(pid);
             let mut stdout = child.stdout.take();
             let mut stderr = child.stderr.take();
 
@@ -490,19 +548,16 @@ impl Tool for Bash {
                         dirty = false;
                         last_update = Instant::now();
                         let (truncation, path) = output.snapshot(true);
-                        let mut details = json!({});
-                        if truncation.truncated {
-                            details["truncation"] = json!(truncation);
-                        }
-                        if let Some(path) = path {
-                            details["fullOutputPath"] = json!(path.display().to_string());
-                        }
-                        updates(text_result(truncation.content, Some(details)));
+                        updates(progress(&truncation, path.as_deref()));
                     }
                 }
             }
             output.finish();
             let (truncation, path) = output.snapshot(true);
+            // pi's finishOutput sends output still waiting for the throttle.
+            if dirty {
+                updates(progress(&truncation, path.as_deref()));
+            }
             let ending = ending.unwrap_or(Ending::Exited(exit_code));
             match ending {
                 Ending::Aborted => {

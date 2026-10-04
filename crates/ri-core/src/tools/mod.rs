@@ -308,7 +308,13 @@ fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> St
     match err.kind() {
         ErrorKind::NotFound => format!("ENOENT: no such file or directory, {syscall} '{path}'"),
         ErrorKind::PermissionDenied => format!("EACCES: permission denied, {syscall} '{path}'"),
-        ErrorKind::IsADirectory => "EISDIR: illegal operation on a directory, read".to_owned(),
+        // Node names no path for a read, as `readFile` reports it.
+        ErrorKind::IsADirectory if syscall == "read" => {
+            "EISDIR: illegal operation on a directory, read".to_owned()
+        }
+        ErrorKind::IsADirectory => {
+            format!("EISDIR: illegal operation on a directory, {syscall} '{path}'")
+        }
         ErrorKind::NotADirectory => format!("ENOTDIR: not a directory, {syscall} '{path}'"),
         _ => format!("{err}, {syscall} '{path}'"),
     }

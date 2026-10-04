@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "Replaced global MCP server \"web\" in <agent>/mcp.json.\nCheck it with: pi mcp list. If it requires sign-in: pi mcp login web\n",
+  "stderr": "",
+  "requests": []
+}

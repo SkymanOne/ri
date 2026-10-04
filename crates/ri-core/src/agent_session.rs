@@ -66,6 +66,9 @@ pub struct Resources {
     pub custom_prompt: Option<String>,
     /// Appended to the prompt (`APPEND_SYSTEM.md`, `--append-system-prompt`).
     pub append_prompt: Option<String>,
+    /// Theme files and directories with their sources, in precedence order:
+    /// the first file to declare a name wins.
+    pub themes: Vec<crate::resources::SourceInfo>,
 }
 
 /// What a session starts with.
@@ -110,6 +113,8 @@ struct Inner {
     registry: RwLock<Arc<ModelRegistry>>,
     apis: Apis,
     state: Mutex<State>,
+    /// The models cycling moves through; empty means every available one.
+    scoped_models: Mutex<Vec<crate::model_resolver::ScopedModel>>,
     tools: Tools,
     extensions: Vec<Arc<dyn Extension>>,
     /// The UI and mode extensions see.
@@ -285,16 +290,6 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// pi's message when no model is selected.
-pub const NO_MODEL_MESSAGE: &str = "No model selected.\n\nSet an API key environment variable (e.g. ANTHROPIC_API_KEY) or use --model to select a model.";
-
-/// pi's message when a provider has no credential.
-pub fn no_api_key_message(provider: &str) -> String {
-    format!(
-        "No API key found for {provider}.\n\nUse /login or set an API key environment variable. See docs/providers.md for details."
-    )
-}
-
 impl AgentSession {
     /// Starts a session. A new session records its model and thinking level.
     pub fn new(config: SessionConfig) -> AgentSession {
@@ -340,10 +335,13 @@ impl AgentSession {
         }
         tool_registry.set_active(tools);
 
-        let has_entries = session.entries().next().is_some();
-        if has_entries {
+        // As pi: a session with messages gains a missing thinking level; any
+        // other records its model and level.
+        let has_messages = !session.build_context().messages.is_empty();
+        if has_messages {
             let has_thinking = session
-                .entries()
+                .branch_path(None)
+                .iter()
                 .any(|entry| matches!(entry, ri_types::session::FileEntry::ThinkingLevelChange(_)));
             if !has_thinking {
                 let _ = session.append_thinking_level_change(thinking_level.as_str());
@@ -367,6 +365,7 @@ impl AgentSession {
                     thinking_level,
                     streaming: false,
                 }),
+                scoped_models: Mutex::new(Vec::new()),
                 tools: tool_registry,
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
@@ -603,19 +602,104 @@ impl AgentSession {
         if !self.registry().has_auth(&model.provider) {
             return Err(format!("No API key for {}/{}", model.provider, model.id));
         }
-        self.apply_model(model);
+        self.apply_model(model, None);
         Ok(())
     }
 
-    /// Records `model` and applies the thinking level for it: its level in
-    /// settings, else the default level, else the current one.
-    fn apply_model(&self, model: Model) {
+    /// Takes over the model, thinking level and scope of the session this one
+    /// replaces on `/reload`, which pi keeps without recording anything.
+    pub fn keep_selection(&self, from: &AgentSession) {
+        let (model, level) = {
+            let state = lock(&from.inner.state);
+            (state.model.clone(), state.thinking_level)
+        };
+        {
+            let mut state = lock(&self.inner.state);
+            state.model = model;
+            state.thinking_level = level;
+        }
+        self.set_scoped_models(from.scoped_models());
+    }
+
+    /// The models cycling moves through, from `--models` or the
+    /// `enabledModels` setting; empty when every available model is in scope.
+    pub fn scoped_models(&self) -> Vec<crate::model_resolver::ScopedModel> {
+        lock(&self.inner.scoped_models).clone()
+    }
+
+    /// The scoped models, or every available model when the scope is empty.
+    pub fn models_in_scope(&self) -> Vec<Model> {
+        let scoped = self.scoped_models();
+        if scoped.is_empty() {
+            self.available_models()
+        } else {
+            scoped.into_iter().map(|entry| entry.model).collect()
+        }
+    }
+
+    /// Replaces the scope; an empty list puts every available model in it.
+    pub fn set_scoped_models(&self, models: Vec<crate::model_resolver::ScopedModel>) {
+        *lock(&self.inner.scoped_models) = models;
+    }
+
+    /// Saves `model` as the default in the global settings. A non-empty scope
+    /// gains it, and so does a non-empty `enabledModels` setting, as in pi.
+    pub fn save_default_model(&self, model: &Model) {
+        let _ = self.set_global_setting(
+            "defaultProvider",
+            Some(serde_json::Value::String(model.provider.clone())),
+        );
+        let _ = self.set_global_setting(
+            "defaultModel",
+            Some(serde_json::Value::String(model.id.clone())),
+        );
+        {
+            let mut scoped = lock(&self.inner.scoped_models);
+            if scoped.is_empty()
+                || scoped.iter().any(|entry| {
+                    entry.model.provider == model.provider && entry.model.id == model.id
+                })
+            {
+                return;
+            }
+            scoped.push(crate::model_resolver::ScopedModel {
+                model: model.clone(),
+                thinking_level: None,
+            });
+        }
+        let Some(enabled) = self
+            .settings()
+            .enabled_models
+            .filter(|list| !list.is_empty())
+        else {
+            return;
+        };
+        let reference = model.reference();
+        if enabled
+            .iter()
+            .any(|pattern| pattern.eq_ignore_ascii_case(&reference))
+        {
+            return;
+        }
+        let mut list: Vec<serde_json::Value> =
+            enabled.into_iter().map(serde_json::Value::String).collect();
+        list.push(serde_json::Value::String(reference));
+        let _ = self.set_global_setting("enabledModels", Some(serde_json::Value::Array(list)));
+    }
+
+    /// Records `model` and applies the thinking level for it: `explicit`,
+    /// else its level in settings, else the default level, else the current
+    /// one.
+    fn apply_model(&self, model: Model, explicit: Option<ThinkingLevel>) {
         let settings = self.settings();
-        let level = settings
-            .model_thinking_levels
-            .as_ref()
-            .and_then(|levels| levels.get(&model.reference()))
-            .copied()
+        let level = explicit
+            .or_else(|| {
+                settings
+                    .model_thinking_levels
+                    .as_ref()
+                    .and_then(|levels| levels.get(&model.reference()))
+                    .copied()
+            })
             .or(settings.default_thinking_level)
             .unwrap_or_else(|| self.thinking_level());
         {
@@ -628,19 +712,36 @@ impl AgentSession {
         self.set_thinking_level(level);
     }
 
-    /// pi's `cycleModel` over the models with credentials, forward or
-    /// backward. `None` when there is at most one.
-    pub fn cycle_model(&self, forward: bool) -> Option<Model> {
-        let models = self.available_models();
+    /// pi's `cycleModel`, forward or backward, over the scoped models that
+    /// have credentials, or over every available model when the scope is
+    /// empty. Returns the new model and whether the scope applied; `None`
+    /// when there is at most one model to cycle through.
+    pub fn cycle_model(&self, forward: bool) -> Option<(Model, bool)> {
+        let scoped = self.scoped_models();
+        let available = self.available_models();
+        let is_scoped = !scoped.is_empty();
+        let models: Vec<(Model, Option<ThinkingLevel>)> = if is_scoped {
+            scoped
+                .into_iter()
+                .filter(|entry| {
+                    available
+                        .iter()
+                        .any(|m| m.provider == entry.model.provider && m.id == entry.model.id)
+                })
+                .map(|entry| (entry.model, entry.thinking_level))
+                .collect()
+        } else {
+            available.into_iter().map(|model| (model, None)).collect()
+        };
         if models.len() <= 1 {
             return None;
         }
         let index = self
             .model()
             .and_then(|current| {
-                models
-                    .iter()
-                    .position(|model| model.provider == current.provider && model.id == current.id)
+                models.iter().position(|(model, _)| {
+                    model.provider == current.provider && model.id == current.id
+                })
             })
             .unwrap_or(0);
         let next = if forward {
@@ -648,9 +749,9 @@ impl AgentSession {
         } else {
             (index + models.len() - 1) % models.len()
         };
-        let model = models[next].clone();
-        self.apply_model(model.clone());
-        Some(model)
+        let (model, level) = models[next].clone();
+        self.apply_model(model.clone(), level);
+        Some((model, is_scoped))
     }
 
     /// Sets the thinking level, clamped to what the model supports; a change
@@ -682,6 +783,16 @@ impl AgentSession {
     /// A snapshot of the merged settings.
     pub fn settings(&self) -> ri_types::settings::Settings {
         lock(&self.inner.settings).settings().clone()
+    }
+
+    /// Settings files that failed to load, as pi's warnings word them.
+    pub fn settings_errors(&self) -> Vec<String> {
+        lock(&self.inner.settings).errors().to_vec()
+    }
+
+    /// Whether this session loads the project's settings and resources.
+    pub fn project_trusted(&self) -> bool {
+        lock(&self.inner.settings).project_trusted()
     }
 
     /// Sets a global setting and writes `settings.json`.
@@ -767,7 +878,12 @@ impl AgentSession {
 
     /// Cancels the wait before an automatic retry; the failed response stands.
     pub fn abort_retry(&self) {
-        if let Some(cancel) = lock(&self.inner.retry_cancel).as_ref() {
+        let cancel = lock(&self.inner.retry_cancel).clone();
+        if let Some(cancel) = cancel {
+            // The retry's end is reported before this returns, as pi reports
+            // it before answering `abort_retry`; the waiting retry then finds
+            // nothing left to report.
+            self.finish_cancelled_retry();
             cancel.cancel();
         }
     }
@@ -1259,10 +1375,12 @@ impl AgentSession {
             return Ok(());
         }
         self.flush_pending_bash();
+        // Without a model pi's agent holds a placeholder from provider
+        // "unknown", which has no credential.
         let model = lock(&self.inner.state)
             .model
             .clone()
-            .ok_or(NO_MODEL_MESSAGE)?;
+            .ok_or_else(|| crate::auth_guidance::no_api_key_found("unknown"))?;
         let has_auth = self
             .inner
             .registry
@@ -1270,7 +1388,7 @@ impl AgentSession {
             .map(|registry| registry.has_auth(&model.provider))
             .unwrap_or(false);
         if !has_auth {
-            return Err(no_api_key_message(&model.provider));
+            return Err(crate::auth_guidance::no_api_key_found(&model.provider));
         }
         let mut sections = IndexMap::new();
         let ctx = self.extension_context(CancellationToken::new());
@@ -1833,7 +1951,9 @@ impl AgentSession {
             reason: CompactionReason::Manual,
         });
         let outcome = async {
-            let model = self.model().ok_or(NO_MODEL_MESSAGE)?;
+            let model = self
+                .model()
+                .ok_or_else(crate::auth_guidance::no_model_selected)?;
             let settings =
                 CompactionSettings::resolve(lock(&self.inner.settings).settings(), Some(&model));
             let preparation = self.with_session(|session| {
@@ -2089,6 +2209,26 @@ impl AgentSession {
     /// The active tool names.
     pub fn active_tool_names(&self) -> Vec<String> {
         self.inner.tools.active()
+    }
+
+    /// What pi's HTML export takes from a live session: the system prompt as
+    /// the model reads it, and the active tools' names, descriptions and
+    /// parameter schemas.
+    pub fn export_context(&self) -> (Option<String>, Vec<serde_json::Value>) {
+        let active = self.inner.tools.active();
+        let all = self.inner.tools.all();
+        let tools = active
+            .iter()
+            .filter_map(|name| all.iter().find(|tool| tool.name == *name))
+            .map(|tool| {
+                serde_json::json!({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                })
+            })
+            .collect();
+        (self.system_prompt_text(&active).ok(), tools)
     }
 
     /// The session's tools.
@@ -2595,6 +2735,29 @@ impl AgentHooks for Hooks {
         if let AgentEvent::MessageStart { message } = event {
             session.dequeue_started(message);
         }
+        // pi's interactive mode rewrites an aborted response's error before
+        // the session records it.
+        let rewritten = match event {
+            AgentEvent::MessageEnd {
+                message: Message::Assistant(assistant),
+            } if assistant.stop_reason == StopReason::Aborted
+                && lock(&session.inner.binding).1 == Mode::Tui =>
+            {
+                let attempt = lock(&session.inner.recovery).retry_attempt;
+                let mut assistant = assistant.clone();
+                assistant.error_message = Some(if attempt > 0 {
+                    let plural = if attempt > 1 { "s" } else { "" };
+                    format!("Aborted after {attempt} retry attempt{plural}")
+                } else {
+                    "Operation aborted".to_owned()
+                });
+                Some(AgentEvent::MessageEnd {
+                    message: Message::Assistant(assistant),
+                })
+            }
+            _ => None,
+        };
+        let event = rewritten.as_ref().unwrap_or(event);
         match event {
             AgentEvent::AgentEnd { messages, .. } => {
                 session.inner.nested.clear();

@@ -518,6 +518,112 @@ pub fn load(agent_dir: &Path, cwd: &Path, project_trusted: bool) -> LoadedConfig
     loaded
 }
 
+/// pi's `resolveExposureAliases`: `raw` with exposure aliases, in
+/// `exposure` and `toolExposure`, replaced by their current names.
+pub fn resolve_exposure_aliases(raw: &Value) -> Value {
+    let canonical = |value: &Value| match McpExposure::parse(value) {
+        Some(exposure) => Value::String(exposure.as_str().to_owned()),
+        None => value.clone(),
+    };
+    let mut resolved = raw.clone();
+    if let Some(object) = resolved.as_object_mut() {
+        if let Some(exposure) = object.get_mut("exposure") {
+            *exposure = canonical(exposure);
+        }
+        if let Some(Value::Object(tools)) = object.get_mut("toolExposure") {
+            for value in tools.values_mut() {
+                *value = canonical(value);
+            }
+        }
+    }
+    resolved
+}
+
+/// pi's `addMcpServerConfig`: adds `config` as server `name` to the
+/// `mcp.json` at `path`, creating the file when missing. Returns whether an
+/// entry of that name was replaced.
+pub fn add_server_config(path: &Path, name: &str, config: Value) -> Result<bool, String> {
+    let mut replaced = false;
+    edit_servers(path, |document| {
+        let servers = document
+            .entry("mcpServers")
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Value::Object(servers) = servers {
+            replaced = servers.insert(name.to_owned(), config).is_some();
+        }
+        true
+    })?;
+    Ok(replaced)
+}
+
+/// pi's `removeMcpServerConfig`: removes server `name` from the `mcp.json`
+/// at `path`. Returns false when the file does not define it.
+pub fn remove_server_config(path: &Path, name: &str) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let mut removed = false;
+    edit_servers(path, |document| {
+        removed = document
+            .get_mut("mcpServers")
+            .and_then(Value::as_object_mut)
+            .is_some_and(|servers| servers.shift_remove(name).is_some());
+        removed
+    })?;
+    Ok(removed)
+}
+
+/// Reads an `mcp.json` (empty when missing), lets `edit` change it, and
+/// writes it back with its own indentation when `edit` returns true. Other
+/// content is kept.
+fn edit_servers(
+    path: &Path,
+    edit: impl FnOnce(&mut Map<String, Value>) -> bool,
+) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).ok();
+    let parsed: Value = match &text {
+        Some(text) => serde_json::from_str(text).map_err(|err| err.to_string())?,
+        None => Value::Object(Map::new()),
+    };
+    let Value::Object(mut document) = parsed else {
+        return Err(format!(
+            "{}: expected an object with an \"mcpServers\" object",
+            path.display()
+        ));
+    };
+    if document
+        .get("mcpServers")
+        .is_some_and(|servers| !servers.is_object())
+    {
+        return Err(format!(
+            "{}: expected an object with an \"mcpServers\" object",
+            path.display()
+        ));
+    }
+    if !edit(&mut document) {
+        return Ok(());
+    }
+    // The first indented line's indentation, as pi detects it.
+    let indent = text
+        .as_deref()
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                let rest = line.trim_start_matches([' ', '\t']);
+                (rest.len() < line.len()
+                    && !rest.is_empty()
+                    && !rest.starts_with(char::is_whitespace))
+                .then(|| &line[..line.len() - rest.len()])
+            })
+        })
+        .unwrap_or("  ");
+    let json = ri_types::json::to_string_pretty(&Value::Object(document), indent)
+        .map_err(|err| err.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    std::fs::write(path, format!("{json}\n")).map_err(|err| err.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,5 +695,36 @@ mod tests {
         assert_eq!(config.tool_exposure("merge_pr"), McpExposure::Codemode);
         assert_eq!(config.tool_exposure("delete"), McpExposure::Hidden);
         assert_eq!(namespace("my-server"), "mcp__my_server");
+    }
+
+    #[test]
+    fn edits_servers_keeping_indentation() {
+        let dir = std::env::temp_dir().join(format!("ri-mcp-edit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("mcp.json");
+        assert!(!remove_server_config(&path, "x").unwrap());
+        assert!(!add_server_config(&path, "a", json!({"command": "a"})).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\n  \"mcpServers\": {\n    \"a\": {\n      \"command\": \"a\"\n    }\n  }\n}\n"
+        );
+        std::fs::write(
+            &path,
+            "{\n\t\"other\": 1,\n\t\"mcpServers\": {\"a\": {\"url\": \"https://x\"}}\n}",
+        )
+        .unwrap();
+        assert!(add_server_config(&path, "a", json!({"command": "b"})).unwrap());
+        assert!(remove_server_config(&path, "a").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\n\t\"other\": 1,\n\t\"mcpServers\": {}\n}\n"
+        );
+        assert_eq!(
+            resolve_exposure_aliases(
+                &json!({"exposure": "codemode-deferred", "toolExposure": {"t": "codemode-deferred"}})
+            ),
+            json!({"exposure": "codemode", "toolExposure": {"t": "codemode"}})
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

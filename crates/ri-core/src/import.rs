@@ -14,6 +14,11 @@ pub const AGENT_ENTRIES: &[&str] = &[
     "trust.json",
     "SYSTEM.md",
     "APPEND_SYSTEM.md",
+    "AGENTS.override.md",
+    "AGENTS.md",
+    "AGENTS.MD",
+    "CLAUDE.md",
+    "CLAUDE.MD",
     "sessions",
     "prompts",
     "skills",
@@ -57,15 +62,45 @@ pub fn pi_agent_dir() -> PathBuf {
     }
 }
 
-fn copy_tree(from: &Path, to: &Path, imported: &mut Imported) -> std::io::Result<()> {
-    let metadata = std::fs::metadata(from)?;
+/// An I/O error naming the path it concerns.
+fn at(path: &Path, error: std::io::Error) -> std::io::Error {
+    std::io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+}
+
+/// Copies `from` to `to`, following symbolic links. Links that lead nowhere,
+/// loop, or lead back into a directory being copied are skipped.
+fn copy_tree(
+    from: &Path,
+    to: &Path,
+    imported: &mut Imported,
+    ancestors: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
+    let metadata = match std::fs::metadata(from) {
+        Ok(metadata) => metadata,
+        Err(_) if from.symlink_metadata().is_ok_and(|link| link.is_symlink()) => return Ok(()),
+        Err(error) => return Err(at(from, error)),
+    };
     if metadata.is_dir() {
-        std::fs::create_dir_all(to)?;
-        let mut entries: Vec<_> = std::fs::read_dir(from)?.flatten().collect();
-        entries.sort_by_key(std::fs::DirEntry::file_name);
-        for entry in entries {
-            copy_tree(&entry.path(), &to.join(entry.file_name()), imported)?;
+        let real = std::fs::canonicalize(from).map_err(|error| at(from, error))?;
+        if ancestors.contains(&real) {
+            return Ok(());
         }
+        std::fs::create_dir_all(to).map_err(|error| at(to, error))?;
+        let mut entries: Vec<_> = std::fs::read_dir(from)
+            .map_err(|error| at(from, error))?
+            .flatten()
+            .collect();
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        ancestors.push(real);
+        for entry in entries {
+            copy_tree(
+                &entry.path(),
+                &to.join(entry.file_name()),
+                imported,
+                ancestors,
+            )?;
+        }
+        ancestors.pop();
         return Ok(());
     }
     if to.exists() {
@@ -73,10 +108,10 @@ fn copy_tree(from: &Path, to: &Path, imported: &mut Imported) -> std::io::Result
         return Ok(());
     }
     if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(|error| at(parent, error))?;
     }
     // `copy` keeps the permissions, so credentials stay private.
-    std::fs::copy(from, to)?;
+    std::fs::copy(from, to).map_err(|error| at(from, error))?;
     imported.copied += 1;
     Ok(())
 }
@@ -87,14 +122,14 @@ pub fn import(from: &Path, to: &Path, entries: &[&str]) -> std::io::Result<Vec<I
     let mut out = Vec::new();
     for entry in entries {
         let source = from.join(entry);
-        if !source.exists() {
+        if source.symlink_metadata().is_err() {
             continue;
         }
         let mut imported = Imported {
             entry: (*entry).to_owned(),
             ..Imported::default()
         };
-        copy_tree(&source, &to.join(entry), &mut imported)?;
+        copy_tree(&source, &to.join(entry), &mut imported, &mut Vec::new())?;
         out.push(imported);
     }
     Ok(out)
@@ -144,5 +179,35 @@ mod tests {
         assert!(ri.join("sessions/--a--/two.jsonl").is_file());
         assert!(!ri.join("bin").exists());
         assert!(!ri.join("pi-debug.log").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copies_context_files_and_survives_bad_links() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("ri-import-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (pi, ri) = (dir.join("pi"), dir.join("ri"));
+        write(&pi, "AGENTS.md", "global rules\n");
+        write(&pi, "skills/real/SKILL.md", "skill\n");
+        symlink(pi.join("nowhere"), pi.join("skills/dangling")).unwrap();
+        symlink(pi.join("skills/loop-b"), pi.join("skills/loop-a")).unwrap();
+        symlink(pi.join("skills/loop-a"), pi.join("skills/loop-b")).unwrap();
+        symlink(pi.join("skills"), pi.join("skills/real/up")).unwrap();
+        symlink(pi.join("skills/real"), pi.join("skills/alias")).unwrap();
+
+        let imported = import(&pi, &ri, AGENT_ENTRIES).unwrap();
+
+        // On a case-insensitive file system `AGENTS.MD` names the same file
+        // and is kept.
+        let summary: Vec<(&str, usize)> = imported
+            .iter()
+            .filter(|entry| entry.copied > 0)
+            .map(|entry| (entry.entry.as_str(), entry.copied))
+            .collect();
+        assert_eq!(summary, [("AGENTS.md", 1), ("skills", 2)]);
+        assert!(ri.join("skills/alias/SKILL.md").is_file());
+        assert!(!ri.join("skills/dangling").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

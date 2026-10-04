@@ -67,6 +67,13 @@ Done for the slice below.
 - Commands: `/model`, `/thinking`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
 - Keys: interrupt and double escape, clear and exit, suspend, thinking and model cycling, model selector, tool and thinking toggles, external editor, copy, follow-up and dequeue, fullscreen scrolling.
 - `!` and `!!` commands with streamed output, cancellation and session records.
+- Themes from settings entries, packages, the agent's and a trusted project's `themes` directories and `--theme`, registered by the name each declares, with pi's `[Theme conflicts]` listing; `--use-theme` and `--no-themes`.
+- Project trust: the startup prompt before anything project-local loads, with session-only choices, `/trust` and the untrusted-project notice.
+- HTML export through `/export`, `--export` and RPC `export_html`: pi's viewer template, unchanged, with the session, prompt, tools and theme colors filled in as pi does; `--export` output is byte-identical to pi's.
+- A settings file that fails to parse is reported as a warning and left untouched; ri runs without it, as pi does.
+- On SIGTERM or SIGHUP every mode kills the commands it started, whose process groups would otherwise outlive it.
+- Model scope from `--models` or `enabledModels`, with pi's glob and `:level` patterns: the startup model, the "Model scope" line, cycling, `/model` completion and the footer's provider count.
+- `/reload` keeps the model and thinking level; a resumed session keeps its thinking level whatever chose the model; an aborted response reads "Operation aborted" or "Aborted after N retry attempts", as pi writes it.
 
 Exit criterion. Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. 23 terminal scenarios, recorded from pi and run by `cargo test`, match pi's screens: startup, command autocomplete, a tool-call turn, `/session`, `!` and `!!`, `/tree` with its summary dialog and navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, the model and thinking selectors, `/model <ref>`, `/thinking <level>`, `@` and Tab completion, double escape and regular mode. `--resume` was compared by hand.
 
@@ -80,8 +87,8 @@ Budgets, from `cargo xtask bench` on this machine (release build, 100×40 termin
 
 Not yet done:
 
-- `/settings`, `/scoped-models`, `/trust`.
-- HTML export; changelog entries.
+- `/settings`, `/scoped-models`, and the model selector's scope toggle.
+- Changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.
 
@@ -98,23 +105,22 @@ Exit criterion. Nine scenarios recorded from pi match: prompting and queries, st
 
 Not yet done:
 
-- `export_html` (as `/export` to HTML in M3).
 - `get_commands` lists prompt templates and skills; pi also lists its built-in `llama` and `mcp` extension commands.
-- `cycle_model` over scoped models (`--models`, `enabledModels`).
 
 MCP is done for the slice below.
 
 - Client: a port of pi-mcp over stdio and streamable HTTP, with timeouts that progress restarts, cancellation, pagination, resumable event streams and pi's shutdown sequence for server processes.
 - `mcp.json` from the agent directory and trusted projects, validated with pi's messages.
+- `ri mcp add`, `remove` and `list` (with `--json`), which edit `mcp.json` with its own indentation and check servers outside a session, as `pi mcp` does.
 - The built-in extension: tools as `mcp__<server>__<tool>` with `direct`, `deferred` and `hidden` exposure and `toolExposure` overrides, the resource tools, the `mcp_servers` system prompt section, the startup wait for direct servers, problem reports, server logs in `mcp.log`, and `/mcp` status, `reconnect`, `login` and `logout` routing.
 - The extension runner it needs: the `Extension` trait, a tool registry with pi's activation rules, `tool_search` with pi's BM25 ranking, extension commands from prompts, and notifications in every mode.
 
-Exit criterion. MCP scenarios recorded from pi match: direct tools with text, structured, error, progress, image and resource-link results and the resource tools; deferred tools found and loaded by `tool_search`; and `/mcp` in RPC mode with configuration errors, a failed and a disabled server, reconnect and the subcommand errors. Client tests cover both transports against the test server.
+Exit criterion. MCP scenarios recorded from pi match: direct tools with text, structured, error, progress, image and resource-link results and the resource tools; deferred tools found and loaded by `tool_search`; and `/mcp` in RPC mode with configuration errors, a failed and a disabled server, reconnect and the subcommand errors. 16 `ri mcp` scenarios match pi's output and exit codes, and the `mcp.json` both write is byte-identical. Client tests cover both transports against the test server.
 
 Not yet done:
 
 - pi's wait, before a script runs, for the `codemode` servers it names that have not connected yet.
-- OAuth sign-in for HTTP servers and `auth.provider` tokens.
+- OAuth sign-in for HTTP servers and `auth.provider` tokens, and so `ri mcp login` and `logout`, which report it.
 - The `/mcp` manager in the TUI; `/mcp` shows the status instead.
 - Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
 - pi's built-in `llama` extension.
@@ -125,8 +131,9 @@ OAuth is done for the slice below.
 - `auth.json` as pi's credential store: reads follow the file's revision, changes take a `proper-lockfile`-compatible lock and rewrite the document as pi does. Tokens expiring within five minutes refresh under the lock after a second check, so concurrent ri and pi processes refresh once.
 - `/login` and `/logout` in the TUI: pi's method menu, provider selector with configuration status, login dialog, API key login, default model selection after a first login, and the Anthropic subscription notice.
 - GitHub Copilot's per-request headers on all three of its wire APIs.
+- `ri auth print-api-key`, `print-bearer-token` and `check` for external clients, with pi's resolution, refresh, JSON output and exit codes.
 
-Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Four `/login` and `/logout` screens recorded from pi match.
+Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Four `/login` and `/logout` screens recorded from pi match, and 16 `ri auth` scenarios match pi's output and exit codes.
 
 Not yet done:
 
@@ -174,7 +181,7 @@ Not yet done:
 - `message_end` replacements, `tool_call` handlers that change the call's input, and the `before_provider_request`, `user_bash`, `model_select`, `resources_discover` and `session_before_*` events.
 - Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), and completions through pi-ai from extensions.
 - `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
-- Themes from packages; package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
+- Package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
 - Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
 
 ## M6: extension UI

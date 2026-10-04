@@ -438,6 +438,17 @@ impl Color {
         }
     }
 
+    /// `#rrggbb`, channels rounded as pi's `colorToHex`.
+    pub fn to_hex(self) -> String {
+        let [r, g, b] = self.to_rgb();
+        let channel = |value: f64| {
+            // JavaScript's Math.round: halves round up.
+            let rounded = (value + 0.5).floor().clamp(0.0, 255.0);
+            format!("{:02x}", rounded as u8)
+        };
+        format!("#{}{}{}", channel(r), channel(g), channel(b))
+    }
+
     /// OKLCH channels.
     pub fn to_oklch(self) -> (f64, f64, f64) {
         if let Color::Oklch(l, c, h) = self {

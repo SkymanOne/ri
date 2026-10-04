@@ -718,6 +718,23 @@ impl SessionManager {
         self.labels.get(id).map(|(label, _)| label.as_str())
     }
 
+    /// The header and the other entries as stored, in file order: what pi's
+    /// HTML export embeds.
+    pub fn documents(&self) -> (Option<&Value>, Vec<&Value>) {
+        let header = self
+            .entries
+            .first()
+            .filter(|entry| entry.kind() == "session")
+            .map(|entry| &entry.doc);
+        let entries = self
+            .entries
+            .iter()
+            .filter(|entry| entry.kind() != "session")
+            .map(|entry| &entry.doc)
+            .collect();
+        (header, entries)
+    }
+
     /// Every entry except the header, in file order.
     pub fn entries(&self) -> impl Iterator<Item = &FileEntry> {
         self.entries

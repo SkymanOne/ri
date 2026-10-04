@@ -34,6 +34,9 @@ pub struct ToolView {
     pub finished: Option<Instant>,
     /// The extension that draws the call and result, when one does.
     pub draw: Option<ToolDraw>,
+    /// Whether the session has a tool of this name. pi shows a call to any
+    /// other tool, which the model made up, as plain text.
+    pub known: bool,
 }
 
 /// How an extension draws a tool (pi's `renderCall` and `renderResult`) and
@@ -337,6 +340,7 @@ impl ToolView {
             started: None,
             finished: None,
             draw: None,
+            known: true,
         }
     }
 
@@ -358,6 +362,9 @@ impl ToolView {
         if let Some(draw) = &self.draw {
             return self.render_drawn(draw, width, ctx);
         }
+        if !self.known {
+            return self.render_unknown(width, ctx);
+        }
         if self.name == "edit" {
             return self.render_edit(width, ctx);
         }
@@ -366,6 +373,33 @@ impl ToolView {
         body.extend(self.result_lines(ctx, inner));
         let mut out = lines::spacer(1);
         out.extend(boxed(body, width, 1, 1, Some(self.background(theme))));
+        out
+    }
+
+    /// pi's `formatToolExecution` for a tool without a definition: the name,
+    /// the arguments as indented JSON and the output, as plain text.
+    fn render_unknown(&self, width: usize, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
+        let inner = box_content_width(width, 1);
+        let mut text = vec![Line::from(title(ctx.theme, &self.name))];
+        let json = ri_types::json::to_string_pretty(&self.args, "  ").unwrap_or_default();
+        if !json.is_empty() {
+            text.push(Line::default());
+            text.extend(json.split('\n').map(|line| Line::from(line.to_owned())));
+        }
+        if let Some(result) = self.shown_result() {
+            let output = text_output(result);
+            if !output.is_empty() {
+                text.extend(output.split('\n').map(|line| Line::from(line.to_owned())));
+            }
+        }
+        let mut out = lines::spacer(1);
+        out.extend(boxed(
+            lines::wrap_all(&text, inner),
+            width,
+            1,
+            1,
+            Some(self.background(ctx.theme)),
+        ));
         out
     }
 
@@ -1073,20 +1107,20 @@ fn parse_diff_line(line: &str) -> Option<(char, &str, &str)> {
     boundaries.into_iter().rev().find_map(split_at)
 }
 
+/// pi's `renderIntraLineDiff`: jsdiff's word diff, with changed words in
+/// inverse video and the first change's indentation left plain.
 fn intra_line(old: &str, new: &str) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
-    use similar::{ChangeTag, TextDiff};
-    let diff = TextDiff::from_words(old, new);
+    use super::word_diff::{Tag, diff_words};
     let mut removed = Vec::new();
     let mut added = Vec::new();
     let mut first_removed = true;
     let mut first_added = true;
     let inverse = Style::new().add_modifier(Modifier::REVERSED);
-    for change in diff.iter_all_changes() {
-        let value = change.value().to_owned();
-        let (target, first) = match change.tag() {
-            ChangeTag::Delete => (&mut removed, &mut first_removed),
-            ChangeTag::Insert => (&mut added, &mut first_added),
-            ChangeTag::Equal => {
+    for (tag, value) in diff_words(old, new) {
+        let (target, first) = match tag {
+            Tag::Removed => (&mut removed, &mut first_removed),
+            Tag::Added => (&mut added, &mut first_added),
+            Tag::Keep => {
                 removed.push(Span::raw(value.clone()));
                 added.push(Span::raw(value));
                 continue;

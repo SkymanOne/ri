@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "MCP server \"demo\" does not use OAuth. Only HTTP servers without an Authorization header do.\n",
+  "requests": []
+}

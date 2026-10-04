@@ -26,6 +26,9 @@ pub enum PackageError {
     /// A failure with pi's message.
     #[error("{0}")]
     Message(String),
+    /// Project settings cannot change while the project is untrusted.
+    #[error("Project is not trusted. Use --approve to modify local package config.")]
+    Untrusted,
     /// The npm client failed.
     #[error(transparent)]
     Npm(#[from] npm::NpmError),
@@ -84,7 +87,10 @@ impl std::fmt::Debug for PackageManager {
 
 fn run_git(args: &[&str], dir: Option<&Path>) -> Result<(), PackageError> {
     let mut command = std::process::Command::new("git");
-    command.args(args).env("GIT_TERMINAL_PROMPT", "0");
+    command
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .envs(crate::config::child_env());
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
@@ -160,9 +166,7 @@ impl PackageManager {
 
     fn assert_writable(&self, scope: Scope) -> Result<(), PackageError> {
         if scope == Scope::Project && !self.settings.project_trusted() {
-            return Err(PackageError::Message(
-                "Project is not trusted. Use --approve to modify local package config.".into(),
-            ));
+            return Err(PackageError::Untrusted);
         }
         Ok(())
     }
@@ -219,6 +223,7 @@ impl PackageManager {
                 version.map_or_else(|| name.to_owned(), |version| format!("{name}@{version}"));
             std::fs::create_dir_all(&root).map_err(|err| PackageError::Message(err.to_string()))?;
             let status = std::process::Command::new(program)
+                .envs(crate::config::child_env())
                 .args(args)
                 .args(["install", &spec, "--prefix"])
                 .arg(&root)

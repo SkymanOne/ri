@@ -86,6 +86,8 @@ pub(crate) async fn exec(payload: Value) -> Result<Value, String> {
     if let Some(cwd) = &spawn.cwd {
         command.current_dir(cwd);
     }
+    // An explicit environment replaces the process's, as in Node.
+    command.envs(ri_core::config::child_env());
     if let Some(env) = spawn.env_pairs() {
         command.env_clear().envs(env);
     }
@@ -153,6 +155,8 @@ pub(crate) fn exec_sync(payload: &Value) -> Result<Value, String> {
     if let Some(cwd) = &spawn.cwd {
         command.current_dir(cwd);
     }
+    // An explicit environment replaces the process's, as in Node.
+    command.envs(ri_core::config::child_env());
     if let Some(env) = spawn.env_pairs() {
         command.env_clear().envs(env);
     }

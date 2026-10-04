@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Model \"claude-sonnet-4-5\" not found. Use --list-models to see available models.\n",
+  "requests": []
+}

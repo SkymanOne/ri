@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Unknown mcp command \"frobnicate\".\nUse \"pi mcp --help\" for usage.\n",
+  "requests": []
+}

@@ -105,6 +105,39 @@ fn source_tag(path: &Path, agent_dir: &Path, cwd: &Path) -> &'static str {
     }
 }
 
+/// pi's `getAutocompleteSourceTag` for an extension: none for built-ins, the
+/// scope (`u`, `p` or `t`) for local files, and the scope with the package
+/// for npm and git packages.
+fn extension_tag(source: &ri_types::rpc::SourceInfo) -> Option<String> {
+    if source.source == "builtin" {
+        return None;
+    }
+    let scope = match source.scope.as_str() {
+        "user" => "u",
+        "project" => "p",
+        _ => "t",
+    };
+    let origin = source.source.trim();
+    if matches!(origin, "auto" | "local" | "cli") {
+        return Some(scope.to_owned());
+    }
+    if origin.starts_with("npm:") {
+        return Some(format!("{scope}:{origin}"));
+    }
+    match ri_core::packages::source::parse(origin) {
+        ri_core::packages::source::Source::Git {
+            host,
+            path,
+            reference,
+            ..
+        } => {
+            let reference = reference.map(|r| format!("@{r}")).unwrap_or_default();
+            Some(format!("{scope}:git:{host}/{path}{reference}"))
+        }
+        _ => Some(scope.to_owned()),
+    }
+}
+
 fn tagged(description: &str, tag: &str) -> String {
     if description.is_empty() {
         format!("[{tag}]")
@@ -145,7 +178,7 @@ pub fn autocomplete(
             "model" => {
                 let session = session.clone();
                 command.complete = Some(Box::new(move |prefix: &str| {
-                    let models = session.available_models();
+                    let models = session.models_in_scope();
                     if models.is_empty() {
                         return None;
                     }
@@ -206,9 +239,13 @@ pub fn autocomplete(
             }
             let owner = Arc::clone(extension);
             let name = command.name.clone();
+            let description = match extension_tag(&extension.source()) {
+                Some(tag) => tagged(&command.description, &tag),
+                None => command.description,
+            };
             commands.push(SlashCommand {
                 name: command.name,
-                description: Some(command.description),
+                description: Some(description),
                 argument_hint: None,
                 complete: Some(Box::new(move |prefix: &str| {
                     owner.complete(&name, prefix).map(|items| {
@@ -510,7 +547,6 @@ const UNAVAILABLE: &[&str] = &[
     "/scoped-models",
     "/share",
     "/bug",
-    "/trust",
     "/arminsayshi",
     "/dementedelves",
 ];
@@ -583,7 +619,7 @@ impl super::App {
         }
         let command = match text {
             "/copy" | "/session" | "/changelog" | "/hotkeys" | "/fork" | "/clone" | "/tree"
-            | "/new" | "/reload" | "/debug" | "/resume" | "/quit" => text,
+            | "/new" | "/reload" | "/debug" | "/resume" | "/trust" | "/quit" => text,
             _ if with_args("/name") => "/name",
             _ if with_args("/compact") => "/compact",
             _ => return false,
@@ -626,6 +662,15 @@ impl super::App {
                 self.push(super::Item::Lines(lines));
             }
             "/fork" => self.open_fork(),
+            "/trust" => {
+                let store = ri_core::trust::TrustStore::new(&self.agent_dir);
+                let selector = super::selectors::TrustSelector::new(
+                    &self.cwd,
+                    store.entry(&self.cwd),
+                    self.session.project_trusted(),
+                );
+                self.selector = Some(super::Selector::Trust(Box::new(selector)));
+            }
             "/clone" => {
                 let leaf = self
                     .session
@@ -658,32 +703,11 @@ impl super::App {
     /// `/model <ref>`: pi's `findExactModelReferenceMatch`, else the selector
     /// searching for it.
     fn select_model(&mut self, reference: &str) {
-        let models = self.session.available_models();
-        let lower = reference.to_lowercase();
-        let mut matches: Vec<&ri_types::model::Model> = models
-            .iter()
-            .filter(|model| format!("{}/{}", model.provider, model.id).to_lowercase() == lower)
-            .collect();
-        if matches.is_empty()
-            && let Some((provider, id)) = reference.split_once('/')
-        {
-            matches = models
-                .iter()
-                .filter(|model| {
-                    model.provider.eq_ignore_ascii_case(provider)
-                        && model.id.eq_ignore_ascii_case(id)
-                })
-                .collect();
-        }
-        if matches.is_empty() {
-            matches = models
-                .iter()
-                .filter(|model| model.id.eq_ignore_ascii_case(reference))
-                .collect();
-        }
-        match matches.as_slice() {
-            [model] => {
-                let model = (*model).clone();
+        let models = self.session.models_in_scope();
+        let found = ri_core::model_resolver::exact_match(reference, &models);
+        match found {
+            Some(model) => {
+                let model = model.clone();
                 let id = model.id.clone();
                 match self.session.set_model(model) {
                     Ok(()) => {
@@ -693,10 +717,9 @@ impl super::App {
                     Err(error) => self.error(error),
                 }
             }
-            _ => self.open_model_selector(reference),
+            None => self.open_model_selector(reference),
         }
     }
-
     fn set_thinking(&mut self, value: &str) {
         let levels = self.session.available_thinking_levels();
         match levels
@@ -719,8 +742,25 @@ impl super::App {
 
     fn export(&mut self, text: &str) {
         let path = path_argument(text, "/export");
-        let Some(path) = path.filter(|path| path.ends_with(".jsonl")) else {
-            self.error("Failed to export session: HTML export is not available in ri yet");
+        let Some(path) = path.clone().filter(|path| path.ends_with(".jsonl")) else {
+            let rgb =
+                |rgb: Option<[f64; 3]>| rgb.map(|[r, g, b]| ri_tui::color::Color::Rgb(r, g, b));
+            let appearance = match self.colors.background {
+                Some(background) => {
+                    ri_tui::theme::terminal_appearance(background, self.colors.foreground)
+                }
+                None => ri_tui::theme::Appearance::Dark,
+            };
+            let theme = crate::export_html::ExportTheme {
+                theme: &self.theme,
+                foreground: rgb(self.colors.foreground),
+                background: rgb(self.colors.background),
+                appearance,
+            };
+            match crate::export_html::export_session(&self.session, path.as_deref(), &theme) {
+                Ok(target) => self.status(format!("Session exported to: {}", target.display())),
+                Err(error) => self.error(format!("Failed to export session: {error}")),
+            }
             return;
         };
         let cwd = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
@@ -824,18 +864,24 @@ impl super::App {
             self.warning("Wait for compaction to finish before reloading.");
             return;
         }
+        // pi reloads the session in place, keeping its model and level.
+        let previous = self.session.clone();
         let manager = self.session.take_session();
         let replaced = self.replace_session(manager);
         if let Err(error) = replaced {
             self.error(format!("Reload failed: {error}"));
             return;
         }
+        self.session.keep_selection(&previous);
         self.keys = super::keybindings::load(&self.agent_dir, Keys::detect(self.kitty));
         self.keys.set_kitty(self.kitty);
         self.expand_key = super::keybindings::keys_text(&self.keys, "app.tools.expand");
         self.cancel_key = super::keybindings::keys_text(&self.keys, "tui.select.cancel");
         let (theme, theme_error) = super::load_theme(
-            self.session.settings().theme.as_deref(),
+            self.theme_override
+                .as_deref()
+                .or(self.session.settings().theme.as_deref()),
+            &self.theme_files,
             &self.agent_dir,
             &self.colors,
             self.color_mode,

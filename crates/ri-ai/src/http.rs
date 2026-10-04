@@ -20,14 +20,46 @@ pub const ABORTED_READ: &str = "This operation was aborted";
 
 const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
 
-/// The process-wide HTTP client. It honors the standard proxy variables.
+static SETTINGS_PROXY: OnceLock<String> = OnceLock::new();
+
+/// Applies pi's `httpProxy` setting for this process: it serves as
+/// `HTTP_PROXY` and `HTTPS_PROXY` where those are unset. Call it before the
+/// first request; only the first call counts.
+pub fn set_settings_proxy(proxy: Option<&str>) {
+    if let Some(proxy) = proxy.map(str::trim).filter(|proxy| !proxy.is_empty()) {
+        let _ = SETTINGS_PROXY.set(proxy.to_owned());
+    }
+}
+
+/// The proxy variables the `httpProxy` setting adds for child processes:
+/// `HTTP_PROXY` and `HTTPS_PROXY`, each where the environment lacks it.
+pub fn proxy_env() -> Vec<(&'static str, String)> {
+    let Some(proxy) = SETTINGS_PROXY.get() else {
+        return Vec::new();
+    };
+    ["HTTP_PROXY", "HTTPS_PROXY"]
+        .into_iter()
+        .filter(|name| std::env::var_os(name).is_none())
+        .map(|name| (name, proxy.clone()))
+        .collect()
+}
+
+/// The process-wide HTTP client. It honors the standard proxy variables and
+/// the `httpProxy` setting.
 pub fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .user_agent(user_agent())
-            .build()
-            .unwrap_or_default()
+        let mut builder = reqwest::Client::builder().user_agent(user_agent());
+        for (name, proxy) in proxy_env() {
+            let proxy = match name {
+                "HTTP_PROXY" => reqwest::Proxy::http(&proxy),
+                _ => reqwest::Proxy::https(&proxy),
+            };
+            if let Ok(proxy) = proxy {
+                builder = builder.proxy(proxy.no_proxy(reqwest::NoProxy::from_env()));
+            }
+        }
+        builder.build().unwrap_or_default()
     })
 }
 
@@ -353,6 +385,21 @@ impl SseReader {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn settings_proxy_fills_unset_variables() {
+        assert!(proxy_env().is_empty());
+        set_settings_proxy(Some("  "));
+        assert!(proxy_env().is_empty());
+        set_settings_proxy(Some(" http://proxy.test:8080 "));
+        set_settings_proxy(Some("http://ignored.test"));
+        let expected: Vec<(&str, String)> = ["HTTP_PROXY", "HTTPS_PROXY"]
+            .into_iter()
+            .filter(|name| std::env::var_os(name).is_none())
+            .map(|name| (name, "http://proxy.test:8080".to_owned()))
+            .collect();
+        assert_eq!(proxy_env(), expected);
+    }
 
     #[test]
     fn formats_like_the_sdks() {

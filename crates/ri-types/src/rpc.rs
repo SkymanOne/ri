@@ -130,10 +130,12 @@ pub enum RpcCommand {
     Unknown,
 }
 
-/// A response line: `data` is serialized JSON, or absent.
+/// A response line: `data` is serialized JSON, or absent. A line without a
+/// `type` gets a response without `command`, as `JSON.stringify` drops pi's
+/// `undefined`.
 pub fn response_line(
     id: Option<&Value>,
-    command: &str,
+    command: Option<&str>,
     outcome: Result<Option<&str>, &str>,
 ) -> String {
     let mut line = String::from("{");
@@ -144,8 +146,11 @@ pub fn response_line(
         line.push_str(&id);
         line.push(',');
     }
-    line.push_str("\"type\":\"response\",\"command\":");
-    line.push_str(&crate::json::to_string(command).unwrap_or_else(|_| "\"\"".into()));
+    line.push_str("\"type\":\"response\"");
+    if let Some(command) = command {
+        line.push_str(",\"command\":");
+        line.push_str(&crate::json::to_string(command).unwrap_or_else(|_| "\"\"".into()));
+    }
     match outcome {
         Ok(data) => {
             line.push_str(",\"success\":true");
@@ -387,15 +392,15 @@ mod tests {
     fn responses_match_pi() {
         let id = Value::from("7");
         assert_eq!(
-            response_line(Some(&id), "abort", Ok(None)),
+            response_line(Some(&id), Some("abort"), Ok(None)),
             r#"{"id":"7","type":"response","command":"abort","success":true}"#
         );
         assert_eq!(
-            response_line(None, "cycle_model", Ok(Some("null"))),
+            response_line(None, Some("cycle_model"), Ok(Some("null"))),
             r#"{"type":"response","command":"cycle_model","success":true,"data":null}"#
         );
         assert_eq!(
-            response_line(Some(&Value::from(3)), "x", Err("Unknown command: x")),
+            response_line(Some(&Value::from(3)), Some("x"), Err("Unknown command: x")),
             r#"{"id":3,"type":"response","command":"x","success":false,"error":"Unknown command: x"}"#
         );
     }

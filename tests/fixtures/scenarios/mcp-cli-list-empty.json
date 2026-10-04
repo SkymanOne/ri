@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "No MCP servers configured. Add them to <agent>/mcp.json or .pi/mcp.json.\n",
+  "stderr": "",
+  "requests": []
+}

@@ -160,8 +160,40 @@ pub struct Theme {
     pub name: Option<String>,
     mode: ColorMode,
     paints: HashMap<String, Paint>,
+    /// Tokens in pi's order: the document's, then fallbacks it lacks.
+    order: Vec<String>,
     dim: HashSet<String>,
     appearance: Option<Appearance>,
+    /// The `export` section's page, card and info backgrounds.
+    export: [Option<String>; 3],
+}
+
+/// The terminal's default colors when it did not report them, by appearance:
+/// pi's `GUESSED_DEFAULT_COLORS`.
+fn guessed_defaults(appearance: Appearance) -> (Color, Color) {
+    match appearance {
+        Appearance::Dark => (Color::Rgb(229.0, 229.0, 231.0), Color::Rgb(0.0, 0.0, 0.0)),
+        Appearance::Light => (Color::Rgb(0.0, 0.0, 0.0), Color::Rgb(255.0, 255.0, 255.0)),
+    }
+}
+
+/// An `export` color for CSS, as pi's `getThemeExportColors` resolves it:
+/// palette indexes and `okhsl()` become hex, `""` means unset, and other
+/// values pass through.
+fn export_color(value: &Value, vars: &Map<String, Value>) -> Option<String> {
+    let resolved = resolve(value, vars, &mut Vec::new()).ok()?;
+    match resolved {
+        Value::Number(number) => {
+            let index = u8::try_from(number.as_u64()?).ok()?;
+            Some(Color::Indexed(index).to_hex())
+        }
+        Value::String(text) if text.is_empty() => None,
+        Value::String(text) if text.to_ascii_lowercase().starts_with("okhsl(") => {
+            Color::parse(&text).ok().map(Color::to_hex)
+        }
+        Value::String(text) => Some(text),
+        _ => None,
+    }
 }
 
 fn is_literal(value: &str) -> bool {
@@ -239,7 +271,7 @@ fn detect_appearance(foregrounds: &[Color], backgrounds: &[Color]) -> Option<App
 impl Theme {
     fn new(
         name: Option<String>,
-        paints: HashMap<String, Paint>,
+        (paints, order): (HashMap<String, Paint>, Vec<String>),
         dim: HashSet<String>,
         appearance: Option<Appearance>,
         mode: ColorMode,
@@ -261,8 +293,10 @@ impl Theme {
             name,
             mode,
             paints,
+            order,
             dim,
             appearance,
+            export: [None, None, None],
         }
     }
 
@@ -295,14 +329,17 @@ impl Theme {
             .and_then(Value::as_object)
             .unwrap_or(&empty);
         let mut paints = HashMap::new();
+        let mut order = Vec::new();
         for (token, value) in colors {
             let resolved = resolve(value, vars, &mut Vec::new())?;
             paints.insert(token.clone(), paint_of(&resolved)?);
+            order.push(token.clone());
         }
         for (token, fallback) in OPTIONAL_TOKENS {
             if !paints.contains_key(token) {
                 let paint = paints.get(fallback).copied().unwrap_or(Paint::Default);
                 paints.insert(token.to_owned(), paint);
+                order.push(token.to_owned());
             }
         }
         let appearance = json
@@ -310,7 +347,12 @@ impl Theme {
             .and_then(Value::as_str)
             .and_then(Appearance::parse);
         let name = json.get("name").and_then(Value::as_str).map(str::to_owned);
-        Ok(Theme::new(name, paints, HashSet::new(), appearance, mode))
+        let mut theme = Theme::new(name, (paints, order), HashSet::new(), appearance, mode);
+        if let Some(export) = json.get("export").and_then(Value::as_object) {
+            theme.export = ["pageBg", "cardBg", "infoBg"]
+                .map(|key| export.get(key).and_then(|value| export_color(value, vars)));
+        }
+        Ok(theme)
     }
 
     /// A built-in theme by name: `dark` or `light`.
@@ -326,6 +368,11 @@ impl Theme {
     /// The system theme for what the terminal reported.
     pub fn system(input: &SystemThemeInput, mode: ColorMode) -> Theme {
         let generated = generate_system_theme(input);
+        let order = generated
+            .colors
+            .iter()
+            .map(|(token, _)| (*token).to_owned())
+            .collect();
         let paints = generated
             .colors
             .into_iter()
@@ -341,7 +388,7 @@ impl Theme {
         let dim = generated.dim.into_iter().map(str::to_owned).collect();
         Theme::new(
             Some(SYSTEM_THEME_NAME.to_owned()),
-            paints,
+            (paints, order),
             dim,
             generated.appearance,
             mode,
@@ -356,6 +403,50 @@ impl Theme {
     /// The background the theme is designed for, when known.
     pub fn appearance(&self) -> Option<Appearance> {
         self.appearance
+    }
+
+    /// The `export` section's page, card and info backgrounds as CSS colors,
+    /// each `None` when unset.
+    pub fn export_colors(&self) -> [Option<&str>; 3] {
+        [0, 1, 2].map(|index| self.export[index].as_deref())
+    }
+
+    /// pi's `Theme.colors`: every token's concrete color, in pi's order.
+    /// Tokens set to the terminal default take `foreground` or `background`,
+    /// guessed from the appearance (else `fallback`) when unknown; faint
+    /// tokens mix 40% toward the background.
+    pub fn resolved_colors(
+        &self,
+        foreground: Option<Color>,
+        background: Option<Color>,
+        fallback: Appearance,
+    ) -> Vec<(String, Color)> {
+        let (guess_fg, guess_bg) = guessed_defaults(self.appearance.unwrap_or(fallback));
+        let foreground = foreground.unwrap_or(guess_fg);
+        let background = background.unwrap_or(guess_bg);
+        let is_background = |token: &str| BACKGROUND_TOKENS.contains(&token);
+        let side = |backgrounds: bool| {
+            self.order
+                .iter()
+                .filter(move |token| is_background(token) == backgrounds)
+        };
+        let mut concrete = Vec::new();
+        let mut defaults = (Vec::new(), Vec::new());
+        for token in side(false).chain(side(true)) {
+            match self.paints.get(token) {
+                Some(Paint::Color(color)) => concrete.push((token.clone(), *color)),
+                _ if is_background(token) => defaults.1.push((token.clone(), background)),
+                _ => defaults.0.push((token.clone(), foreground)),
+            }
+        }
+        concrete.extend(defaults.0);
+        concrete.extend(defaults.1);
+        for (token, color) in &mut concrete {
+            if self.dim.contains(token.as_str()) {
+                *color = color.mix(background, 0.4);
+            }
+        }
+        concrete
     }
 
     /// A token's paint.

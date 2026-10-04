@@ -89,6 +89,7 @@ impl StdioTransport {
         command
             .args(&self.options.args)
             .current_dir(&self.options.cwd)
+            .envs(crate::config::child_env())
             .envs(self.options.env.iter().map(|(key, value)| (key, value)))
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

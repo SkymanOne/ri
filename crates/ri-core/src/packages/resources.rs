@@ -23,37 +23,7 @@ pub struct PackageResources {
     pub themes: Vec<PathBuf>,
 }
 
-/// Whether `text` matches glob `pattern`: `*` within a path segment, `**`
-/// across segments.
-fn glob_match(pattern: &str, text: &str) -> bool {
-    fn segments(pattern: &[&str], text: &[&str]) -> bool {
-        match (pattern.first(), text.first()) {
-            (None, None) => true,
-            (Some(&"**"), _) => {
-                segments(&pattern[1..], text) || (!text.is_empty() && segments(pattern, &text[1..]))
-            }
-            (Some(part), Some(segment)) => {
-                segment_match(part, segment) && segments(&pattern[1..], &text[1..])
-            }
-            _ => false,
-        }
-    }
-    fn segment_match(pattern: &str, text: &str) -> bool {
-        match pattern.split_once('*') {
-            None => pattern == text,
-            Some((prefix, rest)) => {
-                text.starts_with(prefix)
-                    && (0..=text.len() - prefix.len()).any(|skip| {
-                        let tail = &text[prefix.len() + skip..];
-                        text.is_char_boundary(prefix.len() + skip) && segment_match(rest, tail)
-                    })
-            }
-        }
-    }
-    let pattern: Vec<&str> = pattern.trim_start_matches("./").split('/').collect();
-    let text: Vec<&str> = text.split('/').collect();
-    segments(&pattern, &text)
-}
+use crate::glob::matches as glob_match;
 
 /// Files under `root` as paths relative to it, skipping dot entries and
 /// `node_modules`.
@@ -97,7 +67,7 @@ fn manifest_paths(root: &Path, entries: &[String]) -> Vec<PathBuf> {
                     .replace('\\', "/");
                 !glob_match(excluded, &relative)
             });
-        } else if entry.contains('*') {
+        } else if crate::glob::is_glob(entry) {
             let all = all.get_or_insert_with(|| files(root));
             paths.extend(
                 all.iter()

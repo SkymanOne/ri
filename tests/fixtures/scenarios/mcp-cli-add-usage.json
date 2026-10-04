@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Usage: pi mcp add <server> [options] (--url <url> | -- <command> [args...])\nUse \"pi mcp --help\" for usage.\n",
+  "requests": []
+}

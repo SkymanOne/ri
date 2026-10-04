@@ -534,6 +534,12 @@ impl ModelRegistry {
     /// Credentials for a request to `model`, with its configured headers. A
     /// stored OAuth token about to expire is refreshed first.
     pub async fn auth(&self, model: &Model) -> Auth {
+        self.auth_valid_for(model, OAUTH_MINIMUM_VALIDITY_MS).await
+    }
+
+    /// [`ModelRegistry::auth`], refreshing a stored OAuth token that is valid
+    /// for less than `min_validity_ms`, as pi's `minOAuthValidityMs`.
+    pub async fn auth_valid_for(&self, model: &Model, min_validity_ms: u64) -> Auth {
         let provider = model.provider.as_str();
         let mut auth = Auth {
             headers: self.headers(model).await,
@@ -557,7 +563,7 @@ impl ModelRegistry {
                 }
             }
             Some(Credential::OAuth(credential)) => {
-                match self.oauth_auth(provider, credential).await {
+                match self.oauth_auth(provider, credential, min_validity_ms).await {
                     Ok(Some(oauth)) => {
                         auth.api_key = Some(oauth.api_key);
                         auth.base_url = oauth.base_url;
@@ -594,13 +600,14 @@ impl ModelRegistry {
     }
 
     /// Request credentials from a stored OAuth token. A token that expires
-    /// within five minutes is refreshed under the `auth.json` lock, after
+    /// within `min_validity_ms` is refreshed under the `auth.json` lock, after
     /// checking again that no other process refreshed it. `Ok(None)` means the
     /// provider was logged out meanwhile.
     async fn oauth_auth(
         &self,
         provider: &str,
         stored: OAuthCredential,
+        min_validity_ms: u64,
     ) -> Result<Option<OAuthAuth>, String> {
         let Some(flow) = self.oauth_flow(provider) else {
             // ri has no sign-in for this provider: use the token as stored.
@@ -610,7 +617,7 @@ impl ModelRegistry {
             }));
         };
         let expires_soon = |credential: &OAuthCredential| {
-            crate::auth::now_ms() + OAUTH_MINIMUM_VALIDITY_MS >= credential.expires
+            crate::auth::now_ms() + min_validity_ms >= credential.expires
         };
         let mut credential = stored;
         if expires_soon(&credential) {

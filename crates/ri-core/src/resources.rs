@@ -382,13 +382,30 @@ pub fn skills(
             }
         }
     }
-    for path in extra {
+    explicit_skills(extra, &mut found);
+    unique_skills(found)
+}
+
+/// Skills at `paths` only, as `--skill` gives them: skill files, or
+/// directories searched for skills.
+pub fn skills_at(paths: &[PathBuf]) -> Vec<Skill> {
+    let mut found = Vec::new();
+    explicit_skills(paths, &mut found);
+    unique_skills(found)
+}
+
+fn explicit_skills(paths: &[PathBuf], found: &mut Vec<Skill>) {
+    for path in paths {
         if path.is_dir() {
-            skills_in(path, true, &Origin::cli(), &mut found);
+            skills_in(path, true, &Origin::cli(), found);
         } else if path.is_file() {
             found.extend(load_skill(path, &Origin::cli()));
         }
     }
+}
+
+/// The first skill of each name and file.
+fn unique_skills(found: Vec<Skill>) -> Vec<Skill> {
     let mut unique: Vec<Skill> = Vec::new();
     for skill in found {
         let canonical = std::fs::canonicalize(&skill.file_path).ok();
@@ -456,43 +473,103 @@ fn templates_in(dir: &Path, origin: &Origin, templates: &mut Vec<PromptTemplate>
     let mut paths: Vec<PathBuf> = read.flatten().map(|entry| entry.path()).collect();
     paths.sort();
     for path in paths {
-        if !path.is_file() || path.extension().is_none_or(|ext| ext != "md") {
-            continue;
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+            templates.extend(template_at(path, origin));
         }
-        let Some(text) = read_text(&path) else {
-            continue;
-        };
-        let (frontmatter, body) = parse_frontmatter(&text);
-        let name = path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let mut description = frontmatter
-            .get("description")
+    }
+}
+
+/// The template in a markdown file.
+fn template_at(path: PathBuf, origin: &Origin) -> Option<PromptTemplate> {
+    let text = read_text(&path)?;
+    let (frontmatter, body) = parse_frontmatter(&text);
+    let name = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut description = frontmatter
+        .get("description")
+        .and_then(FrontmatterValue::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    if description.is_empty()
+        && let Some(first) = body.lines().find(|line| !line.trim().is_empty())
+    {
+        let units: Vec<u16> = first.encode_utf16().collect();
+        description = String::from_utf16_lossy(&units[..units.len().min(60)]);
+        if units.len() > 60 {
+            description += "...";
+        }
+    }
+    Some(PromptTemplate {
+        name,
+        description,
+        argument_hint: frontmatter
+            .get("argument-hint")
             .and_then(FrontmatterValue::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        if description.is_empty()
-            && let Some(first) = body.lines().find(|line| !line.trim().is_empty())
-        {
-            let units: Vec<u16> = first.encode_utf16().collect();
-            description = String::from_utf16_lossy(&units[..units.len().min(60)]);
-            if units.len() > 60 {
-                description += "...";
+            .map(str::to_owned),
+        content: body,
+        source: origin.info(&path),
+        file_path: path,
+    })
+}
+
+/// Theme files and directories from settings and conventional directories, in
+/// pi's order: the `themes` entries of the project's and then the user's
+/// settings (resolved against `.ri` and the agent directory; source `local`),
+/// then the trusted project's and the agent directory's `themes` directories
+/// (source `auto`). Pattern entries (`!`, `+`, `-`), missing paths and files
+/// other than `.json` are skipped silently: only explicit `--theme` paths
+/// report problems.
+pub fn theme_paths(
+    cwd: &Path,
+    agent_dir: &Path,
+    settings: &crate::settings::SettingsManager,
+) -> Vec<SourceInfo> {
+    use crate::settings::Scope;
+    let info = |path: PathBuf, source: &str, scope: &str| SourceInfo {
+        path: path.to_string_lossy().into_owned(),
+        source: source.into(),
+        scope: scope.into(),
+        origin: "top-level".into(),
+        base_dir: None,
+    };
+    let project = cwd.join(PROJECT_DIR);
+    let mut paths = Vec::new();
+    for (scope, base, name) in [
+        (Scope::Project, project.as_path(), "project"),
+        (Scope::Global, agent_dir, "user"),
+    ] {
+        let entries = settings
+            .document(scope)
+            .get("themes")
+            .and_then(serde_json::Value::as_array);
+        for entry in entries.into_iter().flatten().filter_map(|e| e.as_str()) {
+            if entry.starts_with(['!', '+', '-']) {
+                continue;
+            }
+            let path = crate::packages::source::local_path(entry, base);
+            if path.is_dir()
+                || (path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+            {
+                paths.push(info(path, "local", name));
             }
         }
-        templates.push(PromptTemplate {
-            name,
-            description,
-            argument_hint: frontmatter
-                .get("argument-hint")
-                .and_then(FrontmatterValue::as_str)
-                .map(str::to_owned),
-            content: body,
-            source: origin.info(&path),
-            file_path: path,
-        });
     }
+    let auto = [
+        (
+            settings.project_trusted(),
+            project.join("themes"),
+            "project",
+        ),
+        (true, agent_dir.join("themes"), "user"),
+    ];
+    for (enabled, dir, scope) in auto {
+        if enabled && dir.is_dir() {
+            paths.push(info(dir, "auto", scope));
+        }
+    }
+    paths
 }
 
 /// Templates from the user's and the trusted project's `prompts` directories and
@@ -517,12 +594,26 @@ pub fn prompt_templates(
             &mut templates,
         );
     }
-    for path in extra {
+    explicit_templates(extra, &mut templates);
+    templates
+}
+
+/// Templates at `paths` only, as `--prompt-template` gives them: markdown
+/// files, or directories of them.
+pub fn templates_at(paths: &[PathBuf]) -> Vec<PromptTemplate> {
+    let mut templates = Vec::new();
+    explicit_templates(paths, &mut templates);
+    templates
+}
+
+fn explicit_templates(paths: &[PathBuf], templates: &mut Vec<PromptTemplate>) {
+    for path in paths {
         if path.is_dir() {
-            templates_in(path, &Origin::cli(), &mut templates);
+            templates_in(path, &Origin::cli(), templates);
+        } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+            templates.extend(template_at(path.clone(), &Origin::cli()));
         }
     }
-    templates
 }
 
 /// Splits arguments on whitespace, honoring single and double quotes.

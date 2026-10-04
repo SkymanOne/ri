@@ -188,10 +188,15 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     };
     std::fs::create_dir_all(&cwd).map_err(io(&cwd))?;
     std::fs::create_dir_all(&agent_dir).map_err(io(&agent_dir))?;
+    // Project configuration is `.ri/` for ri and `.pi/` for pi.
+    let project_file = |relative: &str| match (program, relative.strip_prefix(".ri/")) {
+        (Program::Pi(_), Some(rest)) => cwd.join(".pi").join(rest),
+        _ => cwd.join(relative),
+    };
     let files = scenario
         .files
         .iter()
-        .map(|(relative, content)| (cwd.join(relative), content))
+        .map(|(relative, content)| (project_file(relative), content))
         .chain(
             scenario
                 .agent_files
@@ -512,15 +517,41 @@ impl Normalizer<'_> {
     /// prompt, pi's docs section.
     fn text(&mut self, text: &str) -> String {
         let mut text = text
+            .replace(&fixtures_dir().to_string_lossy().into_owned(), "<fixtures>")
             .replace(
                 &self.run.agent_dir.to_string_lossy().into_owned(),
                 "<agent>",
             )
             .replace(&self.run.cwd.to_string_lossy().into_owned(), "<cwd>")
+            .replace(
+                &self
+                    .run
+                    .cwd
+                    .parent()
+                    .map(|root| root.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                "<root>",
+            )
             .replace(&self.run.url, "<mock>")
             .replace(&encoded_dir(&self.run.cwd), "<cwd-dir>")
             .replace("operating inside ri,", "operating inside pi,")
-            .replace("extensions using \"ri -ne\"", "extensions using \"pi -ne\"");
+            .replace("extensions using \"ri -ne\"", "extensions using \"pi -ne\"")
+            .replace(
+                "allows ri to load .ri settings",
+                "allows pi to load .pi settings",
+            )
+            .replace("Restart ri for this", "Restart pi for this")
+            .replace("Project .ri resources", "Project .pi resources")
+            .replace("then restart ri.", "then restart pi.")
+            // Command names in usage text.
+            .replace("ri auth ", "pi auth ")
+            .replace("\"ri auth\"", "\"pi auth\"")
+            .replace("\"ri --help\"", "\"pi --help\"")
+            .replace("Usage: ri ", "Usage: pi ")
+            .replace("ri mcp ", "pi mcp ")
+            .replace(".ri/mcp.json", ".pi/mcp.json")
+            .replace("~/.ri/agent", "~/.pi/agent")
+            .replace("start ri in the project", "start pi in the project");
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }

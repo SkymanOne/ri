@@ -157,7 +157,10 @@ pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Te
             }
             wrap_at = None;
         }
-        if width > max_width {
+        // A paste marker wider than a line breaks into its characters. pi
+        // recurses for one wide character too and never returns; ri gives it
+        // a chunk of its own.
+        if width > max_width && marker {
             let sub = word_wrap_line(seg.text, max_width, &[]);
             for chunk in &sub[..sub.len() - 1] {
                 chunks.push(TextChunk {
@@ -1750,6 +1753,15 @@ mod tests {
     use super::*;
     use crate::keybindings::{UserBindings, tui_definitions};
     use crate::keys::Keys;
+
+    #[test]
+    fn wide_characters_wider_than_the_line_take_a_chunk_each() {
+        let chunks: Vec<String> = word_wrap_line("日本", 1, &[])
+            .into_iter()
+            .map(|chunk| chunk.text)
+            .collect();
+        assert_eq!(chunks, ["日", "本"]);
+    }
 
     fn bindings() -> Keybindings {
         Keybindings::new(

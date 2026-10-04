@@ -16,8 +16,10 @@ mod login;
 pub mod picker;
 mod selectors;
 mod session_selector;
+mod themes;
 mod tools;
 mod tree_selector;
+mod word_diff;
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Read, Write};
@@ -175,6 +177,8 @@ pub struct Options {
     pub initial: Vec<String>,
     /// Builds replacement sessions for `/new`, `/resume`, `/fork` and `/clone`.
     pub factory: SessionFactory,
+    /// `--use-theme`: the theme for this run instead of the `theme` setting.
+    pub use_theme: Option<String>,
 }
 
 fn true_color() -> bool {
@@ -293,6 +297,10 @@ struct App {
     overlay: Option<Value>,
     /// The startup header shows (`quietStartup` is not `true`).
     show_header: bool,
+    /// The session's registered theme files.
+    theme_files: themes::ThemeFiles,
+    /// `--use-theme`, which replaces the `theme` setting for this run.
+    theme_override: Option<String>,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -330,6 +338,29 @@ fn editor_theme(theme: &Theme) -> EditorTheme {
     }
 }
 
+/// The theme an export outside the terminal UI uses: the `theme` setting
+/// when it names a theme, else the system theme, without terminal colors.
+pub(crate) fn export_theme(setting: Option<&str>, agent_dir: &Path) -> (Theme, Appearance) {
+    let appearance =
+        detect_colorfgbg(std::env::var("COLORFGBG").ok().as_deref()).unwrap_or(Appearance::Dark);
+    let named = resolve_theme_setting(setting, appearance)
+        .filter(|name| name != ri_tui::theme::SYSTEM_THEME_NAME)
+        .and_then(|name| {
+            let (theme, error) = load_theme(
+                Some(&name),
+                &themes::ThemeFiles::default(),
+                agent_dir,
+                &ri_tui::terminal::TerminalColors::default(),
+                ColorMode::TrueColor,
+            );
+            error.is_none().then_some(theme)
+        });
+    (
+        named.unwrap_or_else(|| crate::export_html::system_theme(appearance)),
+        appearance,
+    )
+}
+
 /// The configured theme as extensions see it outside the terminal UI, where
 /// no terminal colors are known.
 pub(crate) fn extension_theme(setting: Option<&str>, agent_dir: &Path) -> Value {
@@ -340,6 +371,7 @@ pub(crate) fn extension_theme(setting: Option<&str>, agent_dir: &Path) -> Value 
     };
     let (theme, _) = load_theme(
         setting,
+        &themes::ThemeFiles::default(),
         agent_dir,
         &ri_tui::terminal::TerminalColors::default(),
         mode,
@@ -350,6 +382,7 @@ pub(crate) fn extension_theme(setting: Option<&str>, agent_dir: &Path) -> Value 
 /// Picks the configured theme for the terminal's colors.
 fn load_theme(
     setting: Option<&str>,
+    files: &themes::ThemeFiles,
     agent_dir: &Path,
     colors: &ri_tui::terminal::TerminalColors,
     mode: ColorMode,
@@ -378,10 +411,15 @@ fn load_theme(
     if name == ri_tui::theme::SYSTEM_THEME_NAME {
         return (system(), None);
     }
-    if let Some(theme) = Theme::builtin(&name, mode) {
+    // pi's order: registered theme files, built-in themes, then the agent
+    // directory's `themes`.
+    let registered = files.path(&name).map(Path::to_path_buf);
+    if registered.is_none()
+        && let Some(theme) = Theme::builtin(&name, mode)
+    {
         return (theme, None);
     }
-    let path = agent_dir.join("themes").join(format!("{name}.json"));
+    let path = registered.unwrap_or_else(|| agent_dir.join("themes").join(format!("{name}.json")));
     match std::fs::read_to_string(&path) {
         Ok(text) => match Theme::from_json(&path.display().to_string(), &text, mode) {
             Ok(theme) => (theme, None),
@@ -513,8 +551,8 @@ impl App {
                     self.push(Item::Assistant(assistant.clone()));
                     for block in &assistant.content {
                         if let ContentBlock::ToolCall(call) = block {
-                            let mut view =
-                                ToolView::new(&call.name, Value::Object(call.arguments.clone()));
+                            let mut view = self
+                                .new_tool_view(&call.name, Value::Object(call.arguments.clone()));
                             if matches!(
                                 assistant.stop_reason,
                                 StopReason::Aborted | StopReason::Error
@@ -555,6 +593,27 @@ impl App {
         }
         for text in history {
             self.editor.add_to_history(&text);
+        }
+        if !self.session.project_trusted() && ri_core::trust::requires_trust(&self.cwd) {
+            let mut out = if self.chat.is_empty() {
+                Vec::new()
+            } else {
+                lines::spacer(1)
+            };
+            out.extend(lines::text(
+                &[lines::styled(
+                    format!(
+                        "This project is not trusted. Project {} resources and packages are ignored. Use /trust to save a trust decision, then restart ri.",
+                        ri_core::config::PROJECT_DIR
+                    ),
+                    self.theme.fg("warning"),
+                )],
+                self.size.0,
+                1,
+                0,
+                None,
+            ));
+            self.push(Item::Lines(out));
         }
         let compactions = self.session.with_session(|session| {
             session
@@ -655,6 +714,13 @@ impl App {
                 width,
             ));
         }
+        // Diagnostics show even when the listing is quiet, as in pi.
+        header.extend(header::theme_conflicts(
+            &self.theme,
+            &self.theme_files.diagnostics,
+            self.home.as_deref(),
+            width,
+        ));
         let generation = self.generation;
         let reusable = self
             .flat_key
@@ -840,7 +906,7 @@ impl App {
         let name = self.session.with_session(|session| session.name());
         let providers: std::collections::HashSet<String> = self
             .session
-            .available_models()
+            .models_in_scope()
             .into_iter()
             .map(|model| model.provider)
             .collect();
@@ -1028,10 +1094,9 @@ impl App {
         if let Some((id, name)) = new_tool
             && !self.tool_items.contains_key(&id)
         {
-            let index = self.push(Item::Tool(Box::new(ToolView::new(
-                &name,
-                Value::Object(Map::new()),
-            ))));
+            let index = self.push(Item::Tool(Box::new(
+                self.new_tool_view(&name, Value::Object(Map::new())),
+            )));
             self.tool_items.insert(id, index);
             self.draw_tool(index);
         }
@@ -1047,8 +1112,9 @@ impl App {
     fn on_agent_event(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::AgentStart => self.running = true,
+            // pi replaces any other indicator, such as a retry countdown.
             AgentEvent::TurnStart => {
-                if self.indicator.is_none() {
+                if !matches!(self.indicator, Some((Indicator::Working, _))) {
                     self.indicator = Some((Indicator::Working, Instant::now()));
                 }
             }
@@ -1129,10 +1195,9 @@ impl App {
                 let index = match self.tool_items.get(&tool_call_id) {
                     Some(&index) => index,
                     None => {
-                        let index = self.push(Item::Tool(Box::new(ToolView::new(
-                            &tool_name,
-                            args.clone(),
-                        ))));
+                        let index = self.push(Item::Tool(Box::new(
+                            self.new_tool_view(&tool_name, args.clone()),
+                        )));
                         self.tool_items.insert(tool_call_id, index);
                         index
                     }
@@ -1399,6 +1464,19 @@ impl App {
     }
 
     /// The tool view at `index`, marked for re-rendering.
+    /// A view for a call to `name`, which knows whether the session has
+    /// such a tool.
+    fn new_tool_view(&self, name: &str, args: Value) -> ToolView {
+        let mut view = ToolView::new(name, args);
+        view.known = self
+            .session
+            .tools()
+            .all()
+            .iter()
+            .any(|tool| tool.name == name);
+        view
+    }
+
     fn tool_view(&mut self, index: usize) -> Option<&mut ToolView> {
         self.touch(index);
         match self.chat.get_mut(index) {
@@ -1652,8 +1730,12 @@ impl App {
     }
 
     fn cycle_model(&mut self, forward: bool) {
-        let Some(model) = self.session.cycle_model(forward) else {
-            self.status("Only one model available");
+        let Some((model, _)) = self.session.cycle_model(forward) else {
+            self.status(if self.session.scoped_models().is_empty() {
+                "Only one model available"
+            } else {
+                "Only one model in scope"
+            });
             return;
         };
         let name = if model.name.is_empty() {
@@ -1741,18 +1823,12 @@ impl App {
             Action::Model { model, default } => {
                 let id = model.id.clone();
                 let provider = model.provider.clone();
-                if let Err(error) = self.session.set_model(*model) {
+                if let Err(error) = self.session.set_model((*model).clone()) {
                     self.error(error);
                     return;
                 }
                 if default {
-                    let _ = self.session.set_global_setting(
-                        "defaultProvider",
-                        Some(Value::String(provider.clone())),
-                    );
-                    let _ = self
-                        .session
-                        .set_global_setting("defaultModel", Some(Value::String(id.clone())));
+                    self.session.save_default_model(&model);
                     self.status(format!("Default model: {provider}/{id}"));
                 } else {
                     self.status(format!("Model: {id}"));
@@ -1791,6 +1867,21 @@ impl App {
             Action::LoginCancelled => self.login_cancelled(),
             Action::Choice(index) => self.on_choice(index),
             Action::Text(text) => self.on_text(text),
+            Action::Trust(option) => {
+                let saved =
+                    ri_core::trust::TrustStore::new(&self.agent_dir).set_many(&option.updates);
+                match saved {
+                    Ok(()) => self.status(format!(
+                        "Saved trust decision: {}. Restart ri for this to take effect.",
+                        if option.trusted {
+                            "trusted"
+                        } else {
+                            "untrusted"
+                        }
+                    )),
+                    Err(error) => self.error(format!("Failed to save trust decision: {error}")),
+                }
+            }
         }
     }
 
@@ -2048,6 +2139,7 @@ impl App {
         self.reset_extension_ui();
         self.binding = Some(Some(old));
         self.cwd = self.session.cwd().to_path_buf();
+        self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
         self.branch = footer::git_branch(&self.cwd);
         self.running = false;
         self.indicator = None;
@@ -2399,8 +2491,13 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     } else {
         ColorMode::Ansi256
     };
+    let theme_files = themes::ThemeFiles::load(&session.resources().themes);
+    let theme_override = options.use_theme.clone();
     let (theme, theme_error) = load_theme(
-        session.settings().theme.as_deref(),
+        theme_override
+            .as_deref()
+            .or(session.settings().theme.as_deref()),
+        &theme_files,
         &agent_dir,
         &query.colors(),
         mode,
@@ -2487,6 +2584,8 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         binding: None,
         overlay: None,
         show_header,
+        theme_files,
+        theme_override,
     };
     app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -2497,11 +2596,38 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         .as_ref()
         .and_then(|terminal| terminal.clear_on_shrink)
         .unwrap_or(false);
+    let scoped = app.session.scoped_models();
+    if !scoped.is_empty() && show_details {
+        let list: Vec<String> = scoped
+            .iter()
+            .map(|entry| match entry.thinking_level {
+                Some(level) => format!("{}:{}", entry.model.id, level.as_str()),
+                None => entry.model.id.clone(),
+            })
+            .collect();
+        let keys = keybindings::keys_display(&app.keys, "app.model.cycleForward");
+        let dim = ri_tui::ansi::sgr(app.theme.fg("dim"));
+        let hint = if keys.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "{} ({keys} to cycle)\x1b[39m{dim}",
+                ri_tui::ansi::sgr(app.theme.fg("muted"))
+            )
+        };
+        emit(&format!(
+            "{dim}Model scope: {}{hint}\x1b[39m\r\n",
+            list.join(", ")
+        ));
+    }
     if fullscreen {
         emit(ALT_SCREEN_ENTER);
     }
     app.install_autocomplete();
     app.render_history();
+    for error in app.session.settings_errors() {
+        app.warning(error);
+    }
     if let Some(error) = theme_error {
         app.error(error);
     }
@@ -2523,6 +2649,8 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     #[cfg(unix)]
     let mut terminate =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+    #[cfg(unix)]
+    let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()).ok();
     let escape_wait = escape_timeout(|name| std::env::var(name).ok());
     let mut last_draw = Instant::now();
     let mut dirty = false;
@@ -2544,11 +2672,24 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         };
         #[cfg(not(unix))]
         let resized = std::future::pending::<Option<()>>();
+        // SIGTERM, or SIGHUP when the terminal goes away.
         #[cfg(unix)]
         let terminated = async {
-            match terminate.as_mut() {
-                Some(signal) => signal.recv().await,
-                None => std::future::pending().await,
+            let term = async {
+                match terminate.as_mut() {
+                    Some(signal) => signal.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+            let hup = async {
+                match hangup.as_mut() {
+                    Some(signal) => signal.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                received = term => received,
+                received = hup => received,
             }
         };
         #[cfg(not(unix))]
@@ -2619,6 +2760,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     // Teardown: leave the screen as pi does and restore the terminal.
     app.session.abort();
     app.session.abort_bash();
+    ri_core::tools::bash::kill_tracked_children();
     app.indicator = None;
     app.selector = None;
     let mut out = String::new();
@@ -2654,7 +2796,6 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         && let (Some(file), Some(id)) = (file, id)
         && file.exists()
     {
-        let dim = ri_tui::ansi::sgr(app.theme.fg("dim"));
         let default_dir = ri_core::config::default_session_dir(&agent_dir, &app.cwd);
         let command = match file.parent() {
             Some(dir) if dir != default_dir => {
@@ -2665,7 +2806,10 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
             }
             _ => format!("ri --session {id}"),
         };
-        emit(&format!("{dim}To resume this session:\x1b[0m {command}\n"));
+        // chalk's dim, not the theme's.
+        emit(&format!(
+            "\x1b[2mTo resume this session:\x1b[22m {command}\n"
+        ));
     }
     app.exit_code
 }

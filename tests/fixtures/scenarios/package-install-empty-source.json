@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Missing install source.\nUsage: pi install <source> [-l] [--approve|--no-approve]\n",
+  "requests": []
+}
