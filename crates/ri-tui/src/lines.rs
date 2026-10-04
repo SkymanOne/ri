@@ -231,8 +231,9 @@ pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine
 
 /// pi-tui's `compositeTuiLine`: `top`, cut or padded to `width` columns,
 /// drawn over `base` from column `col`; the base shows before and after it.
-/// A wide character cut by an edge becomes spaces, and the result is no wider
-/// than `total`.
+/// A wide character cut by the left edge becomes spaces; one cut by the
+/// right edge is dropped, so the rest of the base moves left and the line is
+/// padded at its end. The result is no wider than `total`.
 pub fn composite(
     base: &Line<'_>,
     top: &Line<'_>,
@@ -270,13 +271,13 @@ pub fn composite(
     let mut column = 0;
     for cell in &base {
         let cell_width = grapheme_width(&cell.text);
-        if column >= end {
+        if column >= end && column + cell_width <= total {
             out.push(cell.clone());
-        } else if column + cell_width > end {
-            out.extend(std::iter::repeat_with(space).take(column + cell_width - end));
         }
         column += cell_width;
     }
+    let filled = cells_width(&out);
+    out.extend(std::iter::repeat_with(space).take(total.saturating_sub(filled)));
     let mut line = from_cells(&out);
     if cells_width(&out) > total {
         line = truncate(&line, total, "");
@@ -414,6 +415,16 @@ mod tests {
     use ratatui_core::style::{Color, Modifier};
 
     use super::*;
+
+    #[test]
+    fn composite_drops_a_wide_character_cut_by_the_right_edge() {
+        let base = Line::from("ab日本cd");
+        let top = Line::from("XY");
+        assert_eq!(plain(&composite(&base, &top, 2, 3, 8)), "abXY cd ");
+        // At the left edge it becomes a space.
+        assert_eq!(plain(&composite(&base, &top, 3, 2, 8)), "ab XYcd ");
+        assert_eq!(plain(&composite(&base, &top, 2, 2, 8)), "abXY本cd");
+    }
 
     fn texts(lines: &[StyledLine]) -> Vec<String> {
         lines.iter().map(plain).collect()

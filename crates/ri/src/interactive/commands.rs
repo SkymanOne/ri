@@ -422,6 +422,7 @@ pub fn session_info(session: &AgentSession, theme: &Theme, width: usize) -> Vec<
 /// The `/hotkeys` block.
 pub fn hotkeys(
     keys: &Keybindings,
+    shortcuts: &[ri_core::extensions::ShortcutBinding],
     theme: &Theme,
     markdown_theme: &MarkdownTheme,
     width: usize,
@@ -516,6 +517,18 @@ pub fn hotkeys(
         k("app.message.dequeue"),
         k("app.clipboard.pasteImage"),
     );
+    let mut text = text;
+    if !shortcuts.is_empty() {
+        text.push_str("\n\n**Extensions**\n| Key | Action |\n|-----|--------|\n");
+        for shortcut in shortcuts {
+            let description = shortcut.description.as_deref().unwrap_or(&shortcut.path);
+            text.push_str(&format!(
+                "| `{}` | {description} |\n",
+                super::keybindings::key_display(&shortcut.key)
+            ));
+        }
+    }
+    let text = text.trim().to_owned();
     let mut out = lines::spacer(1);
     out.push(lines::border(width, theme.fg("border")));
     out.extend(lines::text(
@@ -658,7 +671,13 @@ impl super::App {
                 self.push(super::Item::Lines(out));
             }
             "/hotkeys" => {
-                let lines = hotkeys(&self.keys, &self.theme, &self.markdown, self.size.0);
+                let lines = hotkeys(
+                    &self.keys,
+                    &self.shortcuts,
+                    &self.theme,
+                    &self.markdown,
+                    self.size.0,
+                );
                 self.push(super::Item::Lines(lines));
             }
             "/fork" => self.open_fork(),
@@ -877,6 +896,7 @@ impl super::App {
         self.keys.set_kitty(self.kitty);
         self.expand_key = super::keybindings::keys_text(&self.keys, "app.tools.expand");
         self.cancel_key = super::keybindings::keys_text(&self.keys, "tui.select.cancel");
+        self.install_shortcuts();
         let (theme, theme_error) = super::load_theme(
             self.theme_override
                 .as_deref()

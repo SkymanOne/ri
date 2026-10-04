@@ -9,7 +9,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
 use futures_util::future::BoxFuture;
@@ -111,11 +111,23 @@ type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<ExtensionUiResponse>>>>
 struct RpcUi {
     out: Output,
     pending: Pending,
+    /// pi's `shutdownRequested`: an extension asked to exit once the agent
+    /// settles or the current command answers.
+    shutdown: AtomicBool,
+    /// Wakes the main loop to exit.
+    exit: tokio::sync::Notify,
     /// The theme for extensions, as [`ExtensionUi::theme`] describes it.
     theme: Mutex<Value>,
 }
 
 impl RpcUi {
+    /// pi's `checkShutdownRequested`: exits when an extension asked to.
+    fn check_shutdown(&self) {
+        if self.shutdown.load(Ordering::SeqCst) {
+            self.exit.notify_one();
+        }
+    }
+
     /// Writes request `id`.
     fn send(&self, id: &str, mut request: Map<String, Value>) {
         let mut line = Map::new();
@@ -193,6 +205,10 @@ fn object(value: Value) -> Map<String, Value> {
 impl ExtensionUi for RpcUi {
     fn has_ui(&self) -> bool {
         true
+    }
+
+    fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
     }
 
     fn extension_error(&self, path: &str, event: &str, error: &str) {
@@ -330,11 +346,15 @@ impl Rpc {
         let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let current = Arc::clone(&self.epoch);
         let out = self.out.clone();
+        let ui = Arc::clone(&self.ui);
         session.subscribe(Box::new(move |event| {
             if current.load(Ordering::SeqCst) == epoch
                 && let Ok(line) = ri_types::json::to_string(event)
             {
                 out.line(line);
+            }
+            if matches!(event, ri_types::event::AgentEvent::AgentSettled) {
+                ui.check_shutdown();
             }
         }));
         *self.session.borrow_mut() = session.clone();
@@ -365,6 +385,7 @@ impl Rpc {
             Err(error) => Err(error.as_str()),
         };
         self.out.line(response_line(id, command, outcome));
+        self.ui.check_shutdown();
     }
 }
 
@@ -745,6 +766,8 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
         ui: Arc::new(RpcUi {
             out: out.clone(),
             pending: Arc::default(),
+            shutdown: AtomicBool::new(false),
+            exit: tokio::sync::Notify::new(),
             theme: Mutex::new(crate::interactive::extension_theme(
                 session.settings().theme.as_deref(),
                 &ri_core::config::agent_dir(),
@@ -764,6 +787,7 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
                 let read = tokio::select! {
                     read = stdin.read_until(b'\n', &mut buffer) => read,
                     code = &mut signal => return code,
+                    () = rpc.ui.exit.notified() => return 0,
                 };
                 match read {
                     Ok(0) | Err(_) => return 0,

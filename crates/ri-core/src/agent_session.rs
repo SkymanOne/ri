@@ -1444,6 +1444,12 @@ impl AgentSession {
         lock(&self.inner.state).streaming = false;
         self.flush_pending_bash();
         *lock(&self.inner.cancel) = None;
+        // Extensions hear it first, as in pi.
+        self.emit_extension_event(
+            &serde_json::json!({"type": "agent_settled"}),
+            CancellationToken::new(),
+        )
+        .await;
         self.emit(&AgentEvent::AgentSettled);
         self.inner.idle.notify_waiters();
     }
@@ -2601,6 +2607,30 @@ impl AgentSession {
                     .any(|kind| kind == custom_type)
             })
             .cloned()
+    }
+
+    /// The shortcuts the session's extensions bind, given the keys of each
+    /// built-in action, and pi's warnings about conflicts.
+    pub fn extension_shortcuts(
+        &self,
+        builtin: &[(String, Vec<String>)],
+    ) -> (
+        Vec<crate::extensions::ShortcutBinding>,
+        Vec<(String, String)>,
+    ) {
+        crate::extensions::resolve_shortcuts(&self.inner.extensions, builtin)
+    }
+
+    /// Runs an extension shortcut's handler; the error is the handler's.
+    pub async fn run_shortcut(
+        &self,
+        binding: &crate::extensions::ShortcutBinding,
+    ) -> Result<(), String> {
+        let ctx = self.extension_context(CancellationToken::new());
+        binding
+            .extension
+            .run_shortcut(&binding.registered, &ctx)
+            .await
     }
 
     /// Whether `text` invokes an extension command.

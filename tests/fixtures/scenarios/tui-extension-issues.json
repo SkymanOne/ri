@@ -1,0 +1,26 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Extensions]",
+    "  issues.ts",
+    "",
+    "[Extension issues]",
+    "  path (temp) ~/project/issues.ts",
+    "    Extension command '/quit' conflicts with built-in interactive command. Skipping in autocomplete.",
+    "  path (temp) ~/project/issues.ts",
+    "    Extension shortcut 'ctrl+c' from <cwd>/issues.ts conflicts with built-in shortcut. Skipping.",
+    "  path (temp) ~/project/issues.ts",
+    "    Extension shortcut conflict: 'alt+b' is built-in shortcut for tui.editor.cursorWordLeft and <cwd>/issues.ts. Using <cwd>/issues.ts.",
+    "",
+    " alt+b is mine",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                                                                                                                                                                                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

@@ -55,6 +55,7 @@ pub(super) enum Request {
     Close(RemoteComponent),
     Render,
     ToolsExpanded(bool),
+    Shutdown,
 }
 
 /// What extensions read without waiting, kept current by the app.
@@ -88,6 +89,10 @@ impl InteractiveUi {
 impl ExtensionUi for InteractiveUi {
     fn has_ui(&self) -> bool {
         true
+    }
+
+    fn shutdown(&self) {
+        self.send(Request::Shutdown);
     }
 
     fn notify(&self, message: &str, kind: NotifyKind) {
@@ -609,6 +614,16 @@ impl super::App {
             }
             Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);
+                // An overlay over an open overlay stacks on it.
+                if options.overlay
+                    && let Some(below) = self.overlay.take()
+                    && let Some(Selector::Remote(covered)) = self.selector.take()
+                {
+                    self.overlays_below.push((*covered, below));
+                    self.selector = Some(Selector::Remote(Box::new(view)));
+                    self.overlay = Some(options.overlay_options);
+                    return;
+                }
                 self.open_extension_dialog(Selector::Remote(Box::new(view)), None);
                 self.overlay = options.overlay.then_some(options.overlay_options);
             }
@@ -616,6 +631,15 @@ impl super::App {
                 if matches!(&self.selector, Some(Selector::Remote(view)) if view.key() == component.key())
                 {
                     self.selector = None;
+                    self.overlay = None;
+                    // The overlay it covered takes the keys again.
+                    if let Some((view, options)) = self.overlays_below.pop() {
+                        self.selector = Some(Selector::Remote(Box::new(view)));
+                        self.overlay = Some(options);
+                    }
+                } else {
+                    self.overlays_below
+                        .retain(|(view, _)| view.key() != component.key());
                 }
             }
             Request::Render => {
@@ -635,6 +659,17 @@ impl super::App {
                 }
                 if let Some(Selector::Remote(view)) = &mut self.selector {
                     view.invalidate();
+                }
+                for (view, _) in &mut self.overlays_below {
+                    view.invalidate();
+                }
+            }
+            // pi's shutdown handler: exit now when idle, else once the agent
+            // settles.
+            Request::Shutdown => {
+                self.shutdown_requested = true;
+                if !self.running {
+                    self.quit = true;
                 }
             }
             Request::ToolsExpanded(expanded) => {
@@ -670,6 +705,11 @@ impl super::App {
         {
             view.rendered(width, lines);
         }
+        for (view, _) in &mut self.overlays_below {
+            if view.key() == key {
+                view.rendered(width, lines);
+            }
+        }
         let touched: Vec<usize> = self
             .transcript_views()
             .into_iter()
@@ -701,6 +741,7 @@ impl super::App {
         if matches!(&self.selector, Some(Selector::Remote(_))) {
             self.selector = None;
         }
+        self.overlays_below.clear();
         self.ext.reset();
         self.invalidate_all();
     }
@@ -1050,23 +1091,33 @@ pub(super) fn overlay_layout(
 
 impl super::App {
     /// The overlay of the open custom component, as pi-tui composites it.
+    /// The overlays of open custom components, bottom first, as pi-tui
+    /// composites them.
     pub(super) fn overlays(&self) -> Vec<ri_tui::screen::Overlay> {
         use super::selectors::Selector;
-        let (Some(Selector::Remote(view)), Some(options)) = (&self.selector, &self.overlay) else {
+        let (Some(Selector::Remote(top)), Some(top_options)) = (&self.selector, &self.overlay)
+        else {
             return Vec::new();
         };
         let (width, height) = self.size;
-        let sized = overlay_layout(options, 0, width, height);
-        let (mut lines, _) = view.render(sized.width);
-        if let Some(max) = sized.max_height {
-            lines.truncate(max);
-        }
-        let placed = overlay_layout(options, lines.len(), width, height);
-        vec![ri_tui::screen::Overlay {
-            row: placed.row,
-            col: placed.col,
-            width: placed.width,
-            lines,
-        }]
+        self.overlays_below
+            .iter()
+            .map(|(view, options)| (view, options))
+            .chain(std::iter::once((&**top, top_options)))
+            .map(|(view, options)| {
+                let sized = overlay_layout(options, 0, width, height);
+                let (mut lines, _) = view.render(sized.width);
+                if let Some(max) = sized.max_height {
+                    lines.truncate(max);
+                }
+                let placed = overlay_layout(options, lines.len(), width, height);
+                ri_tui::screen::Overlay {
+                    row: placed.row,
+                    col: placed.col,
+                    width: placed.width,
+                    lines,
+                }
+            })
+            .collect()
     }
 }

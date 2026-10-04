@@ -453,6 +453,31 @@ fn path_with_source(source: &SourceInfo, home: Option<&Path>) -> String {
     format!("{label} {}", short_path(source, home))
 }
 
+/// pi's `[Extension issues]` section: each issue under the extension it
+/// concerns. Empty without issues.
+pub fn extension_issues(
+    theme: &Theme,
+    issues: &[(SourceInfo, String)],
+    home: Option<&Path>,
+    width: usize,
+) -> Vec<StyledLine> {
+    if issues.is_empty() {
+        return Vec::new();
+    }
+    let warning = theme.fg("warning");
+    let mut content = vec![lines::styled("[Extension issues]", warning)];
+    for (source, message) in issues {
+        content.push(lines::styled(
+            format!("  {}", path_with_source(source, home)),
+            warning,
+        ));
+        content.push(lines::styled(format!("    {message}"), warning));
+    }
+    let mut out = lines::text(&content, width, 0, 0, None);
+    out.extend(lines::spacer(1));
+    out
+}
+
 /// pi's `[Theme conflicts]` section: names declared twice, grouped by name,
 /// then paths that failed to load. Empty without diagnostics.
 pub fn theme_conflicts(

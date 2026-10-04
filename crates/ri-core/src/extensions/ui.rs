@@ -131,6 +131,9 @@ pub trait ExtensionUi: Send + Sync {
     /// Whether a person can answer dialogs.
     fn has_ui(&self) -> bool;
 
+    /// pi's `ctx.shutdown()`: the mode exits once the agent is idle.
+    fn shutdown(&self) {}
+
     /// Shows a message.
     fn notify(&self, message: &str, kind: NotifyKind);
 

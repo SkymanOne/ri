@@ -155,6 +155,129 @@ pub struct Completion {
     pub description: Option<String>,
 }
 
+/// A key an extension binds; pi's `registerShortcut`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    /// The key id, such as `alt+u`.
+    pub key: String,
+    /// What it does, for `/hotkeys`.
+    pub description: Option<String>,
+}
+
+/// An extension shortcut the interactive mode honors.
+#[derive(Clone)]
+pub struct ShortcutBinding {
+    /// The key id, lowercased.
+    pub key: String,
+    /// The key id as the extension registered it.
+    pub registered: String,
+    /// What it does.
+    pub description: Option<String>,
+    /// The extension's path.
+    pub path: String,
+    /// The extension.
+    pub extension: Arc<dyn Extension>,
+}
+
+/// Actions whose keys extensions may not take; pi's
+/// `RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS`.
+pub const RESERVED_ACTIONS: [&str; 18] = [
+    "app.interrupt",
+    "app.clear",
+    "app.exit",
+    "app.suspend",
+    "app.thinking.cycle",
+    "app.model.cycleForward",
+    "app.model.cycleBackward",
+    "app.model.select",
+    "app.tools.expand",
+    "app.thinking.toggle",
+    "app.editor.external",
+    "app.message.copy",
+    "app.message.followUp",
+    "tui.input.submit",
+    "tui.select.confirm",
+    "tui.select.cancel",
+    "tui.input.copy",
+    "tui.editor.deleteToLineEnd",
+];
+
+/// pi's `getShortcuts`: the shortcuts of `extensions` in load order, given
+/// the keys bound to each built-in action. A key a reserved action uses is
+/// refused; another built-in key, or one an earlier extension took, goes to
+/// the later extension. Returns the bindings and pi's warnings, each with the
+/// path of the extension it concerns.
+pub fn resolve_shortcuts(
+    extensions: &[Arc<dyn Extension>],
+    builtin: &[(String, Vec<String>)],
+) -> (Vec<ShortcutBinding>, Vec<(String, String)>) {
+    let mut taken: std::collections::HashMap<String, (&str, bool)> =
+        std::collections::HashMap::new();
+    for (action, keys) in builtin {
+        let reserved = RESERVED_ACTIONS.contains(&action.as_str());
+        for key in keys {
+            let key = key.to_lowercase();
+            if taken
+                .get(&key)
+                .is_some_and(|(_, existing)| *existing && !reserved)
+            {
+                continue;
+            }
+            taken.insert(key, (action.as_str(), reserved));
+        }
+    }
+    let mut bindings: Vec<ShortcutBinding> = Vec::new();
+    let mut warnings = Vec::new();
+    for extension in extensions {
+        let path = extension.source().path;
+        for shortcut in extension.shortcuts() {
+            let key = shortcut.key.to_lowercase();
+            match taken.get(&key) {
+                Some((_, true)) => {
+                    warnings.push((
+                        path.clone(),
+                        format!(
+                            "Extension shortcut '{}' from {path} conflicts with built-in shortcut. Skipping.",
+                            shortcut.key
+                        ),
+                    ));
+                    continue;
+                }
+                Some((action, false)) => warnings.push((
+                    path.clone(),
+                    format!(
+                        "Extension shortcut conflict: '{}' is built-in shortcut for {action} and {path}. Using {path}.",
+                        shortcut.key
+                    ),
+                )),
+                None => {}
+            }
+            let binding = ShortcutBinding {
+                key: key.clone(),
+                registered: shortcut.key.clone(),
+                description: shortcut.description,
+                path: path.clone(),
+                extension: extension.clone(),
+            };
+            // Like a `Map`, the later binding keeps the earlier one's place.
+            match bindings.iter_mut().find(|existing| existing.key == key) {
+                Some(existing) => {
+                    warnings.push((
+                        path.clone(),
+                        format!(
+                            "Extension shortcut conflict: '{}' registered by both {} and {path}. Using {path}.",
+                            shortcut.key, existing.path
+                        ),
+                    ));
+                    *existing = binding;
+                }
+                None => bindings.push(binding),
+            }
+        }
+    }
+    (bindings, warnings)
+}
+
 /// How an extension draws one of its tools; pi's `renderCall`,
 /// `renderResult` and `renderShell`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -202,6 +325,20 @@ pub trait Extension: Send + Sync {
     /// Completions for the argument of `command`; `None` offers none.
     fn complete(&self, _command: &str, _prefix: &str) -> Option<Vec<Completion>> {
         None
+    }
+
+    /// The keys it binds.
+    fn shortcuts(&self) -> Vec<Shortcut> {
+        Vec::new()
+    }
+
+    /// Runs the handler of shortcut `key`; the error is the handler's.
+    fn run_shortcut<'a>(
+        &'a self,
+        _key: &'a str,
+        _ctx: &'a Context,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async { Ok(()) })
     }
 
     /// Runs `command` with its argument text.

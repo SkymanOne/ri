@@ -341,6 +341,30 @@ impl Extension for JsExtension {
             .collect()
     }
 
+    fn shortcuts(&self) -> Vec<ri_core::extensions::Shortcut> {
+        list(&self.description["shortcuts"])
+            .iter()
+            .map(|shortcut| ri_core::extensions::Shortcut {
+                key: text(&shortcut["shortcut"]),
+                description: shortcut["description"].as_str().map(str::to_owned),
+            })
+            .collect()
+    }
+
+    fn run_shortcut<'a>(
+        &'a self,
+        key: &'a str,
+        ctx: &'a Context,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let payload = json!({"extension": self.id, "shortcut": key, "ctx": context_data(ctx)});
+            match self.call(ctx, "shortcut", payload).await {
+                Some(Err(err)) => Err(err.to_string()),
+                _ => Ok(()),
+            }
+        })
+    }
+
     fn run_command<'a>(
         &'a self,
         command: &'a str,
@@ -901,7 +925,10 @@ impl Bridge for SessionBridge {
                     .map(|system| system.text())
                     .unwrap_or_default(),
             )),
-            "agent.shutdown" => Ok(Value::Null),
+            "agent.shutdown" => {
+                session.extension_binding().0.shutdown();
+                Ok(Value::Null)
+            }
             _ if kind.starts_with("ui.") => Ok(self.ui_request(&session, kind, payload)),
             "util.convertToLlm" => {
                 let messages = serde_json::from_value(payload["messages"].clone()).map_err(|err| err.to_string())?;

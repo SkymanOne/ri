@@ -377,20 +377,27 @@ pub fn keys_text(bindings: &Keybindings, action: &str) -> String {
 pub fn keys_display(bindings: &Keybindings, action: &str) -> String {
     keys_text(bindings, action)
         .split('/')
-        .map(|key| {
-            key.split('+')
-                .map(|part| {
-                    let mut chars = part.chars();
-                    match chars.next() {
-                        Some(first) => first.to_uppercase().chain(chars).collect(),
-                        None => String::new(),
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join("+")
-        })
+        .map(capitalized)
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// pi's `formatKeyText` with `capitalize`: `alt+u` as `Alt+U`.
+pub fn key_display(key: &str) -> String {
+    capitalized(&key_text(key))
+}
+
+fn capitalized(key: &str) -> String {
+    key.split('+')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("+")
 }
 
 #[cfg(test)]

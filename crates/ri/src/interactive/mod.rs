@@ -295,12 +295,21 @@ struct App {
     initial: Vec<String>,
     /// pi's `OverlayOptions` when the open custom component is an overlay.
     overlay: Option<Value>,
+    /// Overlays an open overlay covers, bottom first, with their options;
+    /// each gets the keys again once those above it close, as in pi-tui.
+    overlays_below: Vec<(extension_ui::RemoteView, Value)>,
     /// The startup header shows (`quietStartup` is not `true`).
     show_header: bool,
     /// The session's registered theme files.
     theme_files: themes::ThemeFiles,
     /// `--use-theme`, which replaces the `theme` setting for this run.
     theme_override: Option<String>,
+    /// Keys the session's extensions bind.
+    shortcuts: Vec<ri_core::extensions::ShortcutBinding>,
+    /// An extension asked to exit once the agent settles.
+    shutdown_requested: bool,
+    /// pi's `[Extension issues]`: the extension each concerns, and what.
+    extension_issues: Vec<(ri_types::rpc::SourceInfo, String)>,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -532,6 +541,61 @@ impl App {
             self.home.clone(),
         );
         self.editor.set_autocomplete(Box::new(provider));
+        self.install_shortcuts();
+    }
+
+    /// The extensions' shortcuts against the current key bindings, and pi's
+    /// `[Extension issues]` about them and about commands named like built-in
+    /// ones.
+    fn install_shortcuts(&mut self) {
+        let builtin: Vec<(String, Vec<String>)> = self
+            .keys
+            .definitions()
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.to_owned(),
+                    self.keys.keys(definition.id).to_vec(),
+                )
+            })
+            .collect();
+        let (shortcuts, warnings) = self.session.extension_shortcuts(&builtin);
+        self.shortcuts = shortcuts;
+        let extensions = self.session.extensions();
+        let source_of = |path: &str| {
+            extensions
+                .iter()
+                .map(|extension| extension.source())
+                .find(|source| source.path == path)
+                .unwrap_or_else(|| ri_types::rpc::SourceInfo {
+                    path: path.to_owned(),
+                    source: "local".into(),
+                    scope: "temporary".into(),
+                    origin: "top-level".into(),
+                    base_dir: None,
+                })
+        };
+        let mut issues = Vec::new();
+        for extension in extensions.iter() {
+            for command in extension.commands() {
+                if commands::BUILTIN
+                    .iter()
+                    .any(|(name, ..)| *name == command.name)
+                {
+                    issues.push((
+                        extension.source(),
+                        format!(
+                            "Extension command '/{}' conflicts with built-in interactive command. Skipping in autocomplete.",
+                            command.name
+                        ),
+                    ));
+                }
+            }
+        }
+        for (path, message) in warnings {
+            issues.push((source_of(&path), message));
+        }
+        self.extension_issues = issues;
     }
 
     /// Renders the current branch's messages, as when a session opens.
@@ -685,16 +749,22 @@ impl App {
     /// Brings the flattened transcript (header, resources and chat) up to date
     /// for `width`, re-rendering only items that changed or animate.
     fn refresh_transcript(&mut self, width: usize) {
-        let mut header = if self.show_header {
-            header::render(
+        // An extension's header replaces the built-in one, as in pi.
+        let mut header = match &self.ext.header {
+            Some(view) => {
+                let mut lines = lines::spacer(1);
+                lines.extend(view.render(width).0);
+                lines.extend(lines::spacer(1));
+                lines
+            }
+            None if self.show_header => header::render(
                 &self.theme,
                 &self.keys,
                 self.expanded,
                 self.show_details,
                 width,
-            )
-        } else {
-            Vec::new()
+            ),
+            None => Vec::new(),
         };
         if self.show_details {
             let extensions: Vec<_> = self
@@ -715,6 +785,12 @@ impl App {
             ));
         }
         // Diagnostics show even when the listing is quiet, as in pi.
+        header.extend(header::extension_issues(
+            &self.theme,
+            &self.extension_issues,
+            self.home.as_deref(),
+            width,
+        ));
         header.extend(header::theme_conflicts(
             &self.theme,
             &self.theme_files.diagnostics,
@@ -942,6 +1018,13 @@ impl App {
         self.expire_dialog();
         if !matches!(self.selector, Some(Selector::Remote(_))) {
             self.overlay = None;
+            // A covered overlay comes back once nothing else is open.
+            if self.selector.is_none()
+                && let Some((view, options)) = self.overlays_below.pop()
+            {
+                self.selector = Some(Selector::Remote(Box::new(view)));
+                self.overlay = Some(options);
+            }
         }
         let overlays = self.overlays();
         self.alt.overlays.clone_from(&overlays);
@@ -1235,6 +1318,7 @@ impl App {
                     self.draw_tool(index);
                 }
             }
+            AgentEvent::AgentSettled if self.shutdown_requested => self.quit = true,
             AgentEvent::AgentEnd { .. } => {
                 if matches!(self.indicator, Some((Indicator::Working, _))) {
                     self.indicator = None;
@@ -1565,6 +1649,9 @@ impl App {
     fn handle_key(&mut self, data: &str, terminal: &mut Terminal) {
         if self.dispatch_key(data, terminal) {
             self.footer_cache = None;
+            if let Some(view) = &self.ext.footer {
+                view.invalidate();
+            }
         }
     }
 
@@ -1575,6 +1662,25 @@ impl App {
         }
         if self.selector.is_some() {
             self.handle_selector_key(data);
+            return true;
+        }
+        // Extension shortcuts come first, as in pi's editor.
+        let decoder = self.keys.decoder();
+        if let Some(binding) = self
+            .shortcuts
+            .iter()
+            .find(|binding| decoder.matches(data, &binding.key))
+            .cloned()
+        {
+            let session = self.session.clone();
+            let tx = self.tx.clone();
+            let epoch = self.epoch;
+            tokio::spawn(async move {
+                if let Err(error) = session.run_shortcut(&binding).await {
+                    let message = format!("Shortcut handler error: {error}");
+                    let _ = tx.send(Event::Notify(epoch, message, NotifyKind::Error));
+                }
+            });
             return true;
         }
         let keys = &self.keys;
@@ -2583,9 +2689,13 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         provider_count: 0,
         binding: None,
         overlay: None,
+        overlays_below: Vec::new(),
         show_header,
         theme_files,
         theme_override,
+        shortcuts: Vec::new(),
+        shutdown_requested: false,
+        extension_issues: Vec::new(),
     };
     app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -2842,6 +2952,13 @@ impl App {
     /// Handles everything but input.
     fn on_event(&mut self, event: Event, _terminal: &mut Terminal) {
         self.footer_cache = None;
+        // pi draws an extension's footer every frame; its stats change with
+        // the agent's events.
+        if matches!(event, Event::Agent(..))
+            && let Some(view) = &self.ext.footer
+        {
+            view.invalidate();
+        }
         match event {
             Event::Input(_) => {}
             Event::InputClosed => self.quit = true,
