@@ -1,6 +1,6 @@
 # Status
 
-Progress against the milestones in [AGENTS.md](../AGENTS.md). Each milestone is delivered as a vertical slice: its exit criterion is met on the subset stated here, and what remains is listed. Intentional differences from pi are in [compat.md](compat.md); everything below is either done or not yet done.
+Progress against the milestones in [AGENTS.md](../AGENTS.md). Each milestone is delivered as a vertical slice: its exit criterion is met on the subset stated here, and what remains is listed. Intentional differences from pi are in [compat.md](../docs/compat.md); everything below is either done or not yet done.
 
 Differential results come from the scenario suite (`cargo xtask e2e`), which compares ri with pi `v1.0.0` on the same cassettes.
 
@@ -263,14 +263,14 @@ Run on Linux x86_64 after M7, on the release candidate at the head of this branc
 |---|---|---|
 | Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | All 239 scenarios match: 93 TUI (PTY, 80×16 to 400×40), 50 JSON mode (six replaying live OpenCode Go streams), 77 CLI and print mode, 18 RPC, and pi's `RpcClient` example driving ri. They cover every wire API, sessions, compaction, the TUI, sign-in, MCP, packages, extensions with their UI, and codemode. |
 | Workspace tests | `cargo test --workspace` | 296 tests pass, including the scenario suite against the recorded goldens. |
-| QA review | Agents drove ri and pi side by side on the same inputs and compared screens, styles, requests, files and exit codes | Seven areas: the CLI, TUI rendering, slash commands, extensions, print, JSON and RPC modes, sign-in and MCP, and the editor. Every finding is fixed, with a regression test or a scenario recorded from pi, or listed in [compat.md](compat.md). |
+| QA review | Agents drove ri and pi side by side on the same inputs and compared screens, styles, requests, files and exit codes | Seven areas: the CLI, TUI rendering, slash commands, extensions, print, JSON and RPC modes, sign-in and MCP, and the editor. Every finding is fixed, with a regression test or a scenario recorded from pi, or listed in [compat.md](../docs/compat.md). |
 | pi's example extensions | `crates/ri-ext/tests/examples.rs` | 79 of 79 register as in pi. |
 | Top 50 npm pi packages | `cargo xtask package-registrations` | 46 of 48 comparable packages register as in pi (96%); see M5. |
 | Codemode sandbox | `crates/ri-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
 | Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `macos-latest` | All met on Linux. On macOS all but `--version` (4.5 to 6.7 ms against 5 ms); see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
-Deferred work is listed under each milestone; intentional differences are in [compat.md](compat.md).
+Deferred work is listed under each milestone; intentional differences are in [compat.md](../docs/compat.md).
 
 One QA finding is unresolved: ri exited with SIGABRT, after writing all of its output, in 2 of about 190 RPC runs with an extension loaded. It did not recur in 365 further runs, and no core dump has been captured yet.
 

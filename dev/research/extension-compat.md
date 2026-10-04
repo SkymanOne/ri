@@ -111,7 +111,7 @@ goose and Codex CLI extend through MCP servers and external processes. Neither r
 | Node API long tail and npm dependency graphs. | Prioritize shims by measured use across a package corpus. The Node-style resolver with CJS interop lands in M5. Unknown modules fail with a clear "unsupported module" error. |
 | Synchronous rendering against a wasmtime `Store` that cannot be re-entered. | One actor per instance. The TUI paints cached lines. Host imports never re-enter a guest. |
 | QuickJS gaps: `Intl.Segmenter`, which pi-tui's editor uses, and the `Intl` formatters. | Guest polyfills that share ratatui's `unicode-width` tables. |
-| ANSI bridge losses: OSC 8 links and image escapes. | pi-tui in the guest reports no hyperlink or image support (its `TerminalCapabilities`), so components use their text fallbacks. Remaining escapes are stripped. Listed in [compat.md](../compat.md). |
+| ANSI bridge losses: OSC 8 links and image escapes. | pi-tui in the guest reports no hyperlink or image support (its `TerminalCapabilities`), so components use their text fallbacks. Remaining escapes are stripped. Listed in [compat.md](../../docs/compat.md). |
 | QuickJS is an interpreter and slower than V8 on CPU-heavy code. | Wizer snapshot of the vendored modules, render caching, bytecode cache. A sidecar remains possible. |
 | Upstream API drift. | Pin the pi version per ri release. Diff the extension `types.ts` on every bump. Pin the oracle to the same version. |
 | First-run compile latency for `ri-js.wasm`. | Lazy instantiation, a cached `.cwasm`, and optionally precompiled artifacts in releases. |
