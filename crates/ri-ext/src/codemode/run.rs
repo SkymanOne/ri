@@ -606,7 +606,7 @@ fn store_entry(writes: &str) -> Option<Value> {
 /// What runs scripts: the engine, created on first use.
 pub(crate) struct Runner {
     cache_dir: Option<std::path::PathBuf>,
-    engine: tokio::sync::OnceCell<Engine>,
+    engine: Arc<tokio::sync::OnceCell<Engine>>,
 }
 
 impl Runner {
@@ -615,7 +615,7 @@ impl Runner {
     pub fn new(cache_dir: Option<std::path::PathBuf>) -> Runner {
         Runner {
             cache_dir,
-            engine: tokio::sync::OnceCell::new(),
+            engine: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
@@ -623,20 +623,33 @@ impl Runner {
     pub fn with_engine(engine: Engine) -> Runner {
         Runner {
             cache_dir: None,
-            engine: tokio::sync::OnceCell::new_with(Some(engine)),
+            engine: Arc::new(tokio::sync::OnceCell::new_with(Some(engine))),
         }
     }
 
+    /// The engine, loaded on first use. The load runs in a task of its own,
+    /// as pi's wasm module promise does, so a script that times out or is
+    /// aborted while it loads leaves it to finish for the next script.
     async fn engine(&self) -> Result<&Engine, String> {
-        self.engine
-            .get_or_try_init(|| async {
-                let cache = self.cache_dir.clone();
+        if let Some(engine) = self.engine.get() {
+            return Ok(engine);
+        }
+        let (cell, cache) = (Arc::clone(&self.engine), self.cache_dir.clone());
+        tokio::spawn(async move {
+            cell.get_or_try_init(|| async move {
                 tokio::task::spawn_blocking(move || Engine::new(cache.as_deref()))
                     .await
                     .map_err(|err| err.to_string())?
                     .map_err(|err| err.to_string())
             })
             .await
+            .map(|_| ())
+        })
+        .await
+        .map_err(|err| err.to_string())??;
+        self.engine
+            .get()
+            .ok_or_else(|| "the engine was not loaded".to_owned())
     }
 
     /// Runs script `args.code` for tool call `call_id`. `Err` for invalid
@@ -836,6 +849,23 @@ impl Runner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A script that gives up while the engine loads, as one with a short
+    /// timeout does, leaves the load running for the next script.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn engine_load_outlives_a_script_that_gives_up() {
+        let runner = Runner::new(None);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), runner.engine())
+                .await
+                .is_err()
+        );
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while !runner.engine.initialized() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(runner.engine.initialized());
+    }
 
     #[test]
     fn parses_pi_options_lines() {
