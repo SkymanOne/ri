@@ -10,6 +10,7 @@ use ri_ai::api::Apis;
 use ri_ai::registry::ModelRegistry;
 use ri_core::agent_session::{AgentSession, Resources, SessionConfig};
 use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
+use ri_core::extensions::discovery::is_native;
 use ri_core::model_resolver::{
     DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model, resolve_model_scope,
 };
@@ -817,7 +818,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     // and a directory brings its manifest's or conventional resources.
     let mut sources: Vec<SourceInfo> = Vec::new();
     for path in &requested {
-        let found = ri_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None);
+        let found = ri_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None, true);
         let cli = |path: &PathBuf| source(path.clone(), "cli", "temporary");
         sources.extend(found.extensions.iter().map(cli));
         skills.extend(found.skills.iter().map(cli));
@@ -861,7 +862,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         options.cache_dir = Some(cache.join("js"));
         let (native, js): (Vec<SourceInfo>, Vec<SourceInfo>) = sources
             .into_iter()
-            .partition(|source| source.path.ends_with(".wasm"));
+            .partition(|source| is_native(Path::new(&source.path)));
         if !js.is_empty() {
             let host = ExtensionHost::load(&engine, options.clone(), &js)
                 .await

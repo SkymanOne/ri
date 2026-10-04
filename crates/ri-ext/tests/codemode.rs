@@ -252,6 +252,9 @@ async fn limits_stop_scripts() {
     let (_session, _faux, results) = run(
         &dir,
         &[
+            // Loads the engine, which pi's timeouts also count, so the
+            // timeouts below measure the scripts on a busy machine too.
+            "return 1",
             "// @options: {\"timeout_ms\": 200}\nwhile (true) {}",
             "// @options: {\"timeout_ms\": 3000}\nawait tools.bash({command: 'sleep 30'})",
             "function f() { return f() } f()",
@@ -262,13 +265,13 @@ async fn limits_stop_scripts() {
     .await;
     assert!(started.elapsed() < Duration::from_secs(20));
     assert_eq!(
-        output(&results[0]),
+        output(&results[1]),
         [
             "Script error:\nScript timed out: Execution timed out after 200 ms\n\nNo tool calls were made."
         ]
     );
     assert_eq!(
-        output(&results[1]),
+        output(&results[2]),
         [
             "Script error:\nScript timed out: Execution timed out after 3000 ms\n\nTool calls made before the failure (they are not undone): bash (cancelled)"
         ]
@@ -276,22 +279,22 @@ async fn limits_stop_scripts() {
     // QuickJS has no stack limit on WASI: runaway recursion stops the
     // sandbox instead of throwing a RangeError.
     assert!(
-        output(&results[2])[0].starts_with("Script error:\nScript sandbox failed: wasm trap: "),
+        output(&results[3])[0].starts_with("Script error:\nScript sandbox failed: wasm trap: "),
         "{:?}",
-        output(&results[2])
+        output(&results[3])
     );
-    let truncated = output(&results[3]);
+    let truncated = output(&results[4]);
     assert!(truncated[0].starts_with("Warning: truncated output (original token count: 28)"));
-    let path = results[3].details.as_ref().unwrap()["fullOutputPath"]
+    let path = results[4].details.as_ref().unwrap()["fullOutputPath"]
         .as_str()
         .unwrap()
         .to_owned();
     assert!(path.contains("ri-codemode-"));
     let _ = std::fs::remove_file(path);
     assert!(
-        output(&results[4])[0].starts_with("Script error:\nInternalError: out of memory"),
+        output(&results[5])[0].starts_with("Script error:\nInternalError: out of memory"),
         "{:?}",
-        output(&results[4])
+        output(&results[5])
     );
 }
 

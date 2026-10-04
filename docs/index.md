@@ -17,7 +17,7 @@ ri is tested against pi itself. Every check below runs both programs on the same
 | Check | Result |
 |---|---|
 | pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in pi |
-| The 50 most-downloaded pi packages on npm | 46 of 48 comparable packages install and register as in pi (96%) |
+| The 500 most-downloaded pi packages on npm | 443 of 475 comparable packages install and register as in pi (93%) |
 | End-to-end scenarios | 239 of 239 match pi, including 93 terminal screens |
 | Settings, credentials and session files | Read and written back byte for byte |
 

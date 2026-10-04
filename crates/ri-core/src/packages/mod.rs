@@ -49,6 +49,9 @@ pub struct Configured {
     pub filtered: bool,
     /// Where it is installed, when it is.
     pub installed_path: Option<PathBuf>,
+    /// Its extension entry files after the entry's filters. Empty when it
+    /// is not installed.
+    pub extensions: Vec<PathBuf>,
 }
 
 /// An installed package and what it provides.
@@ -437,9 +440,22 @@ impl PackageManager {
             .flat_map(|scope| {
                 self.packages(scope).into_iter().filter_map(move |entry| {
                     let source = entry_source(&entry)?.to_owned();
+                    let installed_path = self.installed_path(&source, scope);
+                    let filters: Option<FilteredPackage> = entry
+                        .is_object()
+                        .then(|| serde_json::from_value(entry.clone()).ok())
+                        .flatten();
+                    let extensions = installed_path
+                        .as_deref()
+                        .map(|root| {
+                            package_resources(root, filters.as_ref(), source::is_local(&source))
+                                .extensions
+                        })
+                        .unwrap_or_default();
                     Some(Configured {
-                        installed_path: self.installed_path(&source, scope),
+                        installed_path,
                         filtered: entry.is_object(),
+                        extensions,
                         source,
                         scope,
                     })
@@ -562,7 +578,11 @@ impl PackageManager {
                     .then(|| serde_json::from_value(entry.clone()).ok())
                     .flatten();
                 resolved.push(ResolvedPackage {
-                    resources: package_resources(&root, filters.as_ref()),
+                    resources: package_resources(
+                        &root,
+                        filters.as_ref(),
+                        matches!(parsed, Source::Local { .. }),
+                    ),
                     source: configured,
                     scope,
                     root,

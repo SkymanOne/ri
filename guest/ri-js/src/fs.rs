@@ -71,6 +71,55 @@ fn stat(metadata: &std::fs::Metadata) -> Value {
     })
 }
 
+/// Node's `realpath` for absolute `path`. wasi-libc resolves every ancestor
+/// and fails above a preopened directory, so links are resolved here one
+/// component at a time. Ancestors that cannot be read count as directories.
+fn realpath(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    use std::path::{Component, PathBuf};
+    if let Ok(resolved) = std::fs::canonicalize(path) {
+        return Ok(resolved);
+    }
+    let mut pending: Vec<std::ffi::OsString> = Vec::new();
+    for component in path.components().rev() {
+        if let Component::Normal(name) = component {
+            pending.push(name.to_owned());
+        } else if component == Component::ParentDir {
+            pending.push("..".into());
+        }
+    }
+    let mut resolved = PathBuf::from("/");
+    let mut links = 0;
+    while let Some(name) = pending.pop() {
+        if name == ".." {
+            resolved.pop();
+            continue;
+        }
+        let candidate = resolved.join(&name);
+        match std::fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                links += 1;
+                if links > 40 {
+                    return Err(std::io::Error::other("too many symbolic links"));
+                }
+                let target = std::fs::read_link(&candidate)?;
+                if target.is_absolute() {
+                    resolved = PathBuf::from("/");
+                }
+                for component in target.components().rev() {
+                    match component {
+                        Component::Normal(name) => pending.push(name.to_owned()),
+                        Component::ParentDir => pending.push("..".into()),
+                        _ => {}
+                    }
+                }
+            }
+            _ => resolved = candidate,
+        }
+    }
+    std::fs::metadata(&resolved)?;
+    Ok(resolved)
+}
+
 fn text(args: &Value, key: &str) -> String {
     args[key].as_str().unwrap_or_default().to_owned()
 }
@@ -170,7 +219,7 @@ fn run(op: &str, args: &Value) -> Value {
         "copyFile" => std::fs::copy(&path, text(args, "to"))
             .map(|_| Value::Null)
             .map_err(|err| (err, "copyfile")),
-        "realpath" => std::fs::canonicalize(&path)
+        "realpath" => realpath(Path::new(&path))
             .map(|resolved| Value::String(resolved.to_string_lossy().into_owned()))
             .map_err(|err| (err, "realpath")),
         "readlink" => std::fs::read_link(&path)

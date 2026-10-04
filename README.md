@@ -52,7 +52,7 @@ Compatibility is measured against pi itself:
 | Test | Result |
 |---|---|
 | pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in pi |
-| The 50 most-downloaded pi packages on npm | 46 of 48 comparable packages install and register as in pi (96%) |
+| The 500 most-downloaded pi packages on npm | 443 of 475 comparable packages install and register as in pi (93%) |
 | Extension UI | Dialogs, widgets, overlays and custom components match pi's screens row for row |
 
 pi extensions run in a QuickJS-NG runtime compiled to WebAssembly. ri bundles pi's packages and shims Node's built-in modules, so no Node.js install is needed.
@@ -77,7 +77,14 @@ fn init(api: &mut Api) {
 ri_extension_api::extension!(init);
 ```
 
-`ri -e shout.wasm` loads the result. See [Extensions](https://skymanone.github.io/ri/extensions.html) and [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html).
+Build it and install the result:
+
+```bash
+cargo build --release --target wasm32-wasip2
+ri install ./target/wasm32-wasip2/release/shout.wasm
+```
+
+To share it, put the `.wasm` file in an `extensions` folder of a git repository or npm package. Others then install it like any pi package, with `ri install git:github.com/you/shout` or `ri install npm:shout`. See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.
 
 ## Performance
 

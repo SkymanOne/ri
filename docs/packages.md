@@ -6,12 +6,27 @@ A package bundles extensions, skills, prompt templates and themes. ri installs p
 ri install npm:@scope/some-pi-package     # from npm
 ri install git:github.com/user/repo       # from git
 ri install ./my-package -l                 # a local folder, for this project only
+ri install ./shout.wasm                    # a single native extension
 ri list
 ri update --extensions
 ri remove npm:@scope/some-pi-package
 ```
 
-Installed packages are recorded in `settings.json` as pi records them. `-l` installs into the project's `.ri` folder instead of the global one.
+Installed packages are recorded in `settings.json` as pi records them. `-l` installs into the project's `.ri` folder instead of the global one. Local folders and files are used where they are, not copied.
+
+`ri list` shows each package with its install location. A tag after the source says what kind of extensions it contains: `[npm]` for pi extensions in JavaScript or TypeScript, `[wasm]` for native extensions, and `[npm, wasm]` for both. Packages that hold only skills, prompt templates or themes, and packages that are not installed yet, have no tag.
+
+```
+User packages:
+  npm:pi-mcp-adapter [npm]
+    /home/you/.ri/agent/npm/node_modules/pi-mcp-adapter
+  /home/you/extensions/shout.wasm [wasm]
+    /home/you/extensions/shout.wasm
+```
+
+## Native extensions
+
+Packages can contain [native extensions](native-extensions.md) as `.wasm` files next to, or instead of, JavaScript ones. ri loads `.wasm` files from a package's `extensions` folder and from the files its manifest names. `ri install` also accepts a single `.wasm` file.
 
 ## The npm client
 

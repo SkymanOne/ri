@@ -2317,6 +2317,17 @@ impl AgentSession {
             Ok(summary_entry)
         })?;
         self.restore_tools_from_transcript();
+        // pi's `session_tree` event, after the leaf has moved.
+        let mut event = serde_json::json!({
+            "type": "session_tree",
+            "newLeafId": self.with_session(|session| session.leaf_id().map(str::to_owned)),
+            "oldLeafId": old_leaf,
+        });
+        if let Some(entry) = &summary_entry {
+            event["summaryEntry"] = serde_json::to_value(entry).unwrap_or_default();
+        }
+        self.emit_extension_event(&event, CancellationToken::new())
+            .await;
         Ok(TreeOutcome {
             editor_text,
             cancelled: false,

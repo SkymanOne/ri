@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["examples/hello", "ri-extension-api", "ri-js"]
+members = [
+    "examples/hello",
+    "examples/permission-gate",
+    "examples/protected-paths",
+    "examples/repo-status",
+    "examples/todo",
+    "ri-extension-api",
+    "ri-js",
+]
 
 [workspace.package]
 version = "0.1.0"

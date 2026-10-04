@@ -112,6 +112,9 @@ pub struct Options {
     pub memory_limit: usize,
     /// Where transpiled modules are cached; `None` disables the cache.
     pub cache_dir: Option<PathBuf>,
+    /// The environment variables extensions see when the environment is
+    /// granted: these alone, or with `None`, the process's own.
+    pub environment: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl Options {
@@ -127,6 +130,7 @@ impl Options {
             filesystem_roots: vec![PathBuf::from("/")],
             memory_limit: 1 << 30,
             cache_dir: None,
+            environment: None,
         }
     }
 }
@@ -236,6 +240,7 @@ impl Instance {
             agent_dir: options.agent_dir.clone(),
             home_dir: options.home_dir.clone(),
             temp_dir: options.temp_dir.clone(),
+            environment: options.environment.clone(),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();

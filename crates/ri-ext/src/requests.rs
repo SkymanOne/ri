@@ -27,6 +27,7 @@ pub(crate) struct Host {
     pub(crate) agent_dir: PathBuf,
     pub(crate) home_dir: PathBuf,
     pub(crate) temp_dir: PathBuf,
+    pub(crate) environment: Option<std::collections::BTreeMap<String, String>>,
 }
 
 fn denied(what: &str) -> String {
@@ -73,25 +74,31 @@ impl Host {
                 .find(|model| model.id == text(payload, "id"))
                 .and_then(|model| serde_json::to_value(model).ok())
                 .unwrap_or_default()),
-            "models.envApiKey" if self.grants.environment => Ok(ri_ai::credentials::env_api_key(
-                text(payload, "provider"),
-                None,
-            )
-            .map_or(Value::Null, |(_, key)| Value::String(key))),
+            "models.envApiKey" if self.grants.environment && self.environment.is_none() => Ok(
+                ri_ai::credentials::env_api_key(text(payload, "provider"), None)
+                    .map_or(Value::Null, |(_, key)| Value::String(key)),
+            ),
             "models.envApiKey" => Ok(Value::Null),
             "platform" => Ok(Value::String(platform().into())),
-            "env" => Ok(Value::Object(if self.grants.environment {
-                std::env::vars()
-                    .chain(
-                        ri_core::config::child_env()
-                            .into_iter()
-                            .map(|(key, value)| (key.to_owned(), value)),
-                    )
-                    .map(|(key, value)| (key, Value::String(value)))
-                    .collect()
-            } else {
-                Map::new()
-            })),
+            "env" => Ok(Value::Object(
+                if let (true, Some(environment)) = (self.grants.environment, &self.environment) {
+                    environment
+                        .iter()
+                        .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                        .collect()
+                } else if self.grants.environment {
+                    std::env::vars()
+                        .chain(
+                            ri_core::config::child_env()
+                                .into_iter()
+                                .map(|(key, value)| (key.to_owned(), value)),
+                        )
+                        .map(|(key, value)| (key, Value::String(value)))
+                        .collect()
+                } else {
+                    Map::new()
+                },
+            )),
             "random" => {
                 let count = payload["bytes"].as_u64().unwrap_or(0).min(65536) as usize;
                 let mut bytes = vec![0; count];

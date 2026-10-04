@@ -2,9 +2,10 @@
 //! commands (`package-manager-cli.ts` in pi `v1.0.0`).
 
 use std::io::{IsTerminal as _, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ri_core::config::agent_dir;
+use ri_core::extensions::discovery::is_native;
 use ri_core::packages::PackageManager;
 use ri_core::settings::{Scope, SettingsManager};
 use ri_core::trust::{TrustStore, needs_prompt, resolve_trusted};
@@ -294,6 +295,20 @@ async fn execute(command: Command, options: Options) -> u8 {
     }
 }
 
+/// The kinds of a package's extensions, as `list` tags them: `[npm]` for
+/// pi extensions, which run in ri-js, and `[wasm]` for native ones. Empty
+/// for a package without extensions.
+fn kinds(extensions: &[PathBuf]) -> &'static str {
+    let native = extensions.iter().any(|path| is_native(path));
+    let js = extensions.iter().any(|path| !is_native(path));
+    match (js, native) {
+        (true, true) => " [npm, wasm]",
+        (true, false) => " [npm]",
+        (false, true) => " [wasm]",
+        (false, false) => "",
+    }
+}
+
 fn list(packages: &PackageManager) {
     let configured = packages.list();
     if configured.is_empty() {
@@ -303,7 +318,8 @@ fn list(packages: &PackageManager) {
     let print = |scope: Scope| {
         for package in configured.iter().filter(|package| package.scope == scope) {
             let filtered = if package.filtered { " (filtered)" } else { "" };
-            out(&format!("  {}{filtered}", package.source));
+            let kinds = kinds(&package.extensions);
+            out(&format!("  {}{kinds}{filtered}", package.source));
             if let Some(path) = &package.installed_path {
                 out(&format!("    {}", path.display()));
             }

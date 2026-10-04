@@ -884,6 +884,13 @@
 		version: "v22.0.0",
 		versions: { node: "22.0.0", ri: "0.1.0" },
 		release: { name: "node" },
+		// Node's diagnostic report, which probes such as detect-libc read: no
+		// C library to name, and no native libraries loaded.
+		report: {
+			excludeNetwork: false,
+			getReport: () => ({ header: { reportVersion: 3, nodejsVersion: "v22.0.0", arch: "wasm32" }, javascriptStack: {}, sharedObjects: [] }),
+			writeReport: () => "",
+		},
 		features: {},
 		exitCode: undefined,
 		title: "ri",

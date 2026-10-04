@@ -174,7 +174,88 @@ Done for the slice below.
 - Packages: `ri install`, `remove` (`uninstall`), `update` and `list` with pi's arguments, messages and settings entries; npm, git and local sources; the user and project scopes; resources from `package.json` manifests (`ri` before `pi`, with globs and exclusions), conventional directories and settings filters; missing packages installed at startup unless offline; top-level `extensions` in settings; pi's extension order. npm packages install through a built-in client: registry resolution with npm's range syntax, integrity checks, hoisted dependencies, pruning on removal, no lifecycle scripts (native addons stay unbuilt and fail only when loaded) and pi's own packages skipped. `cargo xtask vendor-pi` regenerates the vendored bundles reproducibly.
 - `ri config`: pi's resource selector, globally or for the project (`-l`), which writes the same settings patterns. Package commands and `ri config` ask whether to trust the project in a terminal, as pi does.
 - Resources resolve as pi's package manager resolves them: auto-discovered directories (including `.agents/skills` up to the git root), settings entries, packages and built-ins, with `+path`, `-path` and `!glob` overrides, ignore files, project precedence and per-package `autoload` deltas. `crates/ri-core/tests/resolve.rs` compares the result with pi's on eight trees (`tests/fixtures/pi/resolve`).
-- Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with an example (`guest/examples/hello`). A `.wasm` file loads wherever a pi extension file does, in its own instance.
+- Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with five examples in `guest/examples` (`hello`, and ports of pi's `permission-gate`, `protected-paths` and `todo`, plus `repo-status`), each tested in `crates/ri-ext/tests/native.rs`. A `.wasm` file loads wherever a pi extension file does, in its own instance. `ri list` tags packages `[npm]`, `[wasm]` or both.
+
+Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
+
+The 500 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top500.json`, from `top-packages.mjs`) are compared with `cargo xtask package-registrations` against pi's registrations (`packages.mjs`). Each package installs and loads in a child process of its own on both sides, with file access limited to its scratch directory, no process or network grant on ri's side, and the same five environment variables. 443 of the 475 comparable packages register the same as in pi, or 93%. pi itself fails on 25 under the sandbox: six platform-specific binaries, and the rest blocked by Node's permission model. Of the 32 that differ:
+
+- Native addons or WebAssembly (12): context-mode, opencode-codebase-index, open-codebase-index and @shanepadgett/tau-agent, and eight that pi fails on too (sharp, libsql, wreq-js, the parcel watcher, imagescript).
+- pi internals beyond the extension API (7): pi-fabric patches `ExtensionRunner`; @gotgenes/pi-subagents uses `createToolSearchExtension`; pi-multi-codex and pi-plus use `builtinProviders`; pi-landstrip and pi-smart-router construct `SettingsManager` and `ModelRuntime`; pi-llama-cpp fails the same way.
+- Loads in ri where pi fails (2): pi-harness-runtime, @amaster.ai/pi-task-scheduler. Both fail with different errors (3): doompi-workflow, pi-shipd-checks, opl-pi-sht.
+- Other (7): pi-crew and pi-retry register fewer tools and commands; pi-free registers an extra `glob`; pi-docparser and pi-memory differ in tool details; pi-vertex-claude needs Node's deprecated `punycode`; supi-code-intelligence imports a type as a value.
+- Install (1): @runfusion/fusion depends on an `npm:` alias, which ri's npm client does not resolve yet.
+
+The comparison found and fixed: `import.meta.resolve`, `process.report`, NUL characters in sources, pi-ai's subpath modules and API provider registry, `stream` and `EventEmitter` as callable constructors, file descriptors and file streams, TypeScript enums, `realpath` under restricted roots, package resolution for npm and git sources, `net` address checks and `http` agents, `node:sea` and `node:sqlite` names, CommonJS scripts without module syntax, imports with queries, and TypeScript grammar checks.
+
+Nine scenarios recorded from pi match: prompting and queries, steering, follow-up, clearing the queue, abort, session commands (entries, tree, fork messages, fork, switch, clone, new, naming), user bash commands, and settings, model and thinking commands. pi's `RpcClient` example (`tests/fixtures/pi/generator/rpc-client.mjs`) drives ri to the same output and requests as pi.
+
+Not yet done:
+
+- `get_commands` lists prompt templates and skills; pi also lists its built-in `llama` and `mcp` extension commands.
+
+MCP is done for the slice below.
+
+- Client: a port of pi-mcp over stdio and streamable HTTP, with timeouts that progress restarts, cancellation, pagination, resumable event streams and pi's shutdown sequence for server processes.
+- `mcp.json` from the agent directory and trusted projects, validated with pi's messages.
+- `ri mcp add`, `remove` and `list` (with `--json`), which edit `mcp.json` with its own indentation and check servers outside a session, as `pi mcp` does.
+- The built-in extension: tools as `mcp__<server>__<tool>` with `direct`, `deferred` and `hidden` exposure and `toolExposure` overrides, the resource tools, the `mcp_servers` system prompt section, the startup wait for direct servers, problem reports, server logs in `mcp.log`, and `/mcp` status, `reconnect`, `login` and `logout` routing.
+- pi's tool renderers: the `server/tool` label, output colored by outcome and collapsed to five wrapped rows with the path of output saved for the model. A server that cannot be reached reports `fetch failed`, as Node's `fetch` does.
+- The extension runner it needs: the `Extension` trait, a tool registry with pi's activation rules, `tool_search` with pi's BM25 ranking, extension commands from prompts, and notifications in every mode.
+
+Exit criterion. MCP scenarios recorded from pi match: direct tools with text, structured, error, progress, image and resource-link results and the resource tools; deferred tools found and loaded by `tool_search`; and `/mcp` in RPC mode with configuration errors, a failed and a disabled server, reconnect and the subcommand errors. 16 `ri mcp` scenarios match pi's output and exit codes, and the `mcp.json` both write is byte-identical. Client tests cover both transports against the test server.
+
+Not yet done:
+
+- pi's wait, before a script runs, for the `codemode` servers it names that have not connected yet.
+- OAuth sign-in for HTTP servers and `auth.provider` tokens, and so `ri mcp login` and `logout`, which report it.
+- The `/mcp` manager in the TUI; `/mcp` shows the status instead.
+- Servers registered by extensions (`pi.registerMcpServer`), and saving enable and exposure changes, which only the manager makes.
+- pi's built-in `llama` extension.
+
+OAuth is done for the slice below.
+
+- Sign-in flows ported from pi-ai: Anthropic (Claude Pro/Max; browser callback or copied code), OpenAI Codex (browser callback or device code), Sign in with ChatGPT for `openai` (per-sign-in client registration, the installation's `deviceId`), and GitHub Copilot (device flow, enterprise domains, the account's endpoint from `proxy-ep`, model policies and the account's model list).
+- `auth.json` as pi's credential store: reads follow the file's revision, changes take a `proper-lockfile`-compatible lock and rewrite the document as pi does. Tokens expiring within five minutes refresh under the lock after a second check, so concurrent ri and pi processes refresh once.
+- `/login` and `/logout` in the TUI: pi's method menu, provider selector with pi's configuration status labels and `models.json` provider names, `/login <provider>` argument completion, login dialog, API key login, default model selection after a first login, and the Anthropic subscription notice.
+- GitHub Copilot's per-request headers on all three of its wire APIs.
+- `ri auth print-api-key`, `print-bearer-token` and `check` for external clients, with pi's resolution, refresh, JSON output and exit codes.
+
+Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Eight `/login` and `/logout` screens recorded from pi match, and 16 `ri auth` scenarios match pi's output and exit codes.
+
+Not yet done:
+
+- Sign-in for Kimi, Meta, xAI, OpenRouter and Radius. Their stored tokens are used as they are, without refresh, so a token copied from pi works until it expires.
+- API key login for Bedrock, Vertex and Cloudflare, whose pi logins ask for more than a key; ri shows pi's "configured outside" notice.
+- RPC mode has no login commands, as in pi.
+
+The remaining wire APIs are done for the slice below.
+
+- `openai-codex-responses`: ChatGPT's Codex backend with the account header, the instructions field, Codex's fixed request fields, its event mapping and usage-limit messages, over pi's SSE transport.
+- `azure-openai-responses`: Responses on an Azure resource, with the base URL, API version and deployment map from pi's environment variables.
+- `mistral-conversations`: Mistral's native chat endpoint, with pi's tool-call ids, reasoning effort or prompt mode, prompt caching and stream parser.
+
+Exit criterion. Scenarios recorded from pi match for each: Codex text, tool calls, a usage limit and a failed response; Azure text and tool calls; Mistral text with reasoning effort, thinking in prompt mode, tool calls and an HTTP error.
+
+Not yet done:
+
+- Codex's WebSocket transport and zstd request compression. pi falls back to the same SSE requests when WebSockets fail.
+- Amazon Bedrock, Google Vertex, Cloudflare and pi's `pi-messages` (Radius) wire APIs.
+
+## M5: extension host, headless
+
+Done for the slice below.
+
+- `ri-js`, a WebAssembly component with QuickJS-NG, Node shims (`fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `Intl`), pi's extension API with pi's loading errors and per-extension event semantics, and the vendored `pi-tui` and `typebox`. `cargo xtask js-runtime` builds it; CI checks the committed artifact against its inputs.
+- `ri-ext`: one actor thread per instance, a compiled-component cache, epoch-based compute limits, a memory limit, restart and replay after a trap, and grants for files, processes, network and environment.
+- The host-side module loader: Node resolution with oxc, TypeScript stripping, ES module and CommonJS interop, jiti's `require`, `__dirname` and `__filename` in ES modules, and a transpile cache.
+- Extension discovery from `-e`, a trusted project's `.ri/extensions` and the agent directory's `extensions`, with `package.json` manifests; pi's load errors, hint and exit code; extension flags on the command line, validated as pi does. As in pi, `-e` on a directory loads it as a temporary package with its skills, prompts and themes.
+- Sessions: extension tools (with prompt snippets, guidelines, updates and activation rules), commands, and the events `session_start`, `session_shutdown`, `input`, `before_agent_start` (messages and a forced system prompt), `context`, `tool_call` (blocking), `tool_result` (changes), and the agent, turn, message and tool execution events. Actions: `sendMessage` with every delivery mode, `sendUserMessage`, `appendEntry`, session names and labels, the session manager's reads, active tools, thinking level, model selection, models and credentials, `exec`, notifications and the select, confirm and input dialogs. Each new session runs the factories again, as pi does.
+- Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, pi's error lines with the stack's extension frames in the TUI. A failing command is named `command:<name>`, as in pi.
+- Packages: `ri install`, `remove` (`uninstall`), `update` and `list` with pi's arguments, messages and settings entries; npm, git and local sources; the user and project scopes; resources from `package.json` manifests (`ri` before `pi`, with globs and exclusions), conventional directories and settings filters; missing packages installed at startup unless offline; top-level `extensions` in settings; pi's extension order. npm packages install through a built-in client: registry resolution with npm's range syntax, integrity checks, hoisted dependencies, pruning on removal, no lifecycle scripts (native addons stay unbuilt and fail only when loaded) and pi's own packages skipped. `cargo xtask vendor-pi` regenerates the vendored bundles reproducibly.
+- `ri config`: pi's resource selector, globally or for the project (`-l`), which writes the same settings patterns. Package commands and `ri config` ask whether to trust the project in a terminal, as pi does.
+- Resources resolve as pi's package manager resolves them: auto-discovered directories (including `.agents/skills` up to the git root), settings entries, packages and built-ins, with `+path`, `-path` and `!glob` overrides, ignore files, project precedence and per-package `autoload` deltas. `crates/ri-core/tests/resolve.rs` compares the result with pi's on eight trees (`tests/fixtures/pi/resolve`).
+- Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with five examples in `guest/examples` (`hello`, and ports of pi's `permission-gate`, `protected-paths` and `todo`, plus `repo-status`), each tested in `crates/ri-ext/tests/native.rs`. A `.wasm` file loads wherever a pi extension file does, in its own instance. `ri list` tags packages `[npm]`, `[wasm]` or both.
 
 Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/ri-ext/tests/examples.rs`). The criterion asks for 90%.
 
@@ -265,7 +346,7 @@ Run on Linux x86_64 after M7, on the release candidate at the head of this branc
 | Workspace tests | `cargo test --workspace` | 296 tests pass, including the scenario suite against the recorded goldens. |
 | QA review | Agents drove ri and pi side by side on the same inputs and compared screens, styles, requests, files and exit codes | Seven areas: the CLI, TUI rendering, slash commands, extensions, print, JSON and RPC modes, sign-in and MCP, and the editor. Every finding is fixed, with a regression test or a scenario recorded from pi, or listed in [compat.md](../docs/compat.md). |
 | pi's example extensions | `crates/ri-ext/tests/examples.rs` | 79 of 79 register as in pi. |
-| Top 50 npm pi packages | `cargo xtask package-registrations` | 46 of 48 comparable packages register as in pi (96%); see M5. |
+| Top 500 npm pi packages | `cargo xtask package-registrations` | 443 of 475 comparable packages register as in pi (93%); see M5. |
 | Codemode sandbox | `crates/ri-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
 | Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `macos-latest` | All met on Linux. On macOS all but `--version` (4.5 to 6.7 ms against 5 ms); see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |

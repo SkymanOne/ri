@@ -1,0 +1,2502 @@
+[
+	{
+		"name": "pi-mcp-adapter",
+		"version": "5.0.0",
+		"monthlyDownloads": 1497229
+	},
+	{
+		"name": "pi-subagents",
+		"version": "0.75.0",
+		"monthlyDownloads": 577061
+	},
+	{
+		"name": "billion-context",
+		"version": "0.1.183",
+		"monthlyDownloads": 552264
+	},
+	{
+		"name": "pi-web-access",
+		"version": "0.35.0",
+		"monthlyDownloads": 546258
+	},
+	{
+		"name": "@juicesharp/rpiv-ask-user-question",
+		"version": "2.12.0",
+		"monthlyDownloads": 306562
+	},
+	{
+		"name": "@langfuse/pi-observability-plugin",
+		"version": "0.1.2",
+		"monthlyDownloads": 288856
+	},
+	{
+		"name": "@juicesharp/rpiv-todo",
+		"version": "2.12.0",
+		"monthlyDownloads": 215221
+	},
+	{
+		"name": "pi-mcp-extension",
+		"version": "1.5.0",
+		"monthlyDownloads": 183678
+	},
+	{
+		"name": "openwiki",
+		"version": "0.7.0",
+		"monthlyDownloads": 162885
+	},
+	{
+		"name": "pi-goal-x",
+		"version": "0.32.3",
+		"monthlyDownloads": 150986
+	},
+	{
+		"name": "@companion-ai/feynman",
+		"version": "0.5.24",
+		"monthlyDownloads": 141233
+	},
+	{
+		"name": "bigpowers",
+		"version": "2.88.9",
+		"monthlyDownloads": 136087
+	},
+	{
+		"name": "@plannotator/pi-extension",
+		"version": "0.27.25",
+		"monthlyDownloads": 118550
+	},
+	{
+		"name": "pi-background-tasks",
+		"version": "2.6.9",
+		"monthlyDownloads": 113464
+	},
+	{
+		"name": "pi-lens",
+		"version": "4.3.0",
+		"monthlyDownloads": 102930
+	},
+	{
+		"name": "pi-powerline-footer",
+		"version": "0.19.1",
+		"monthlyDownloads": 96901
+	},
+	{
+		"name": "context-mode",
+		"version": "1.0.169",
+		"monthlyDownloads": 88898
+	},
+	{
+		"name": "@narumitw/pi-usage",
+		"version": "0.61.2",
+		"monthlyDownloads": 79757
+	},
+	{
+		"name": "@dietrichgebert/ponytail",
+		"version": "4.10.3",
+		"monthlyDownloads": 79147
+	},
+	{
+		"name": "@langchain/langsmith-pi-extension",
+		"version": "0.2.0",
+		"monthlyDownloads": 76081
+	},
+	{
+		"name": "pi-claude-bridge",
+		"version": "0.9.1",
+		"monthlyDownloads": 70802
+	},
+	{
+		"name": "pi-cc-extensions",
+		"version": "0.9.10",
+		"monthlyDownloads": 70781
+	},
+	{
+		"name": "billion-context-pi",
+		"version": "0.1.83",
+		"monthlyDownloads": 66083
+	},
+	{
+		"name": "@schovest/pi-goal",
+		"version": "0.2.0",
+		"monthlyDownloads": 60320
+	},
+	{
+		"name": "@gotgenes/pi-permission-system",
+		"version": "39.0.3",
+		"monthlyDownloads": 54130
+	},
+	{
+		"name": "@agimon-ai/log-sink-mcp",
+		"version": "0.30.6",
+		"monthlyDownloads": 53326
+	},
+	{
+		"name": "confluence-cli",
+		"version": "2.27.2",
+		"monthlyDownloads": 52705
+	},
+	{
+		"name": "@akagilnc/pi-workflow-roles",
+		"version": "0.1.5504",
+		"monthlyDownloads": 50205
+	},
+	{
+		"name": "pi-provider-litellm",
+		"version": "4.0.1",
+		"monthlyDownloads": 44896
+	},
+	{
+		"name": "@raindrop-ai/pi-agent",
+		"version": "0.2.5",
+		"monthlyDownloads": 41980
+	},
+	{
+		"name": "agent-comms",
+		"version": "8.13.13",
+		"monthlyDownloads": 41526
+	},
+	{
+		"name": "pi-simplify",
+		"version": "0.2.3",
+		"monthlyDownloads": 40582
+	},
+	{
+		"name": "pi-advisor-flow",
+		"version": "0.11.0",
+		"monthlyDownloads": 40233
+	},
+	{
+		"name": "@moyai/pi-session-hoarder",
+		"version": "0.2.0",
+		"monthlyDownloads": 39415
+	},
+	{
+		"name": "pi-memory",
+		"version": "0.4.2",
+		"monthlyDownloads": 39259
+	},
+	{
+		"name": "@ff-labs/pi-fff",
+		"version": "0.11.0",
+		"monthlyDownloads": 38111
+	},
+	{
+		"name": "pi-web-search",
+		"version": "1.6.0",
+		"monthlyDownloads": 37884
+	},
+	{
+		"name": "cc-safety-net",
+		"version": "2.5.2",
+		"monthlyDownloads": 37682
+	},
+	{
+		"name": "pi-btw",
+		"version": "0.7.1",
+		"monthlyDownloads": 36069
+	},
+	{
+		"name": "gentle-pi",
+		"version": "4.0.0",
+		"monthlyDownloads": 34452
+	},
+	{
+		"name": "@tintinweb/pi-subagents",
+		"version": "0.19.0",
+		"monthlyDownloads": 32554
+	},
+	{
+		"name": "@narumitw/pi-btw",
+		"version": "0.61.1",
+		"monthlyDownloads": 32024
+	},
+	{
+		"name": "@quintinshaw/pi-dynamic-workflows",
+		"version": "3.13.1",
+		"monthlyDownloads": 29483
+	},
+	{
+		"name": "pi-cache-optimizer",
+		"version": "2.8.18",
+		"monthlyDownloads": 28805
+	},
+	{
+		"name": "pi-fabric",
+		"version": "0.105.0",
+		"monthlyDownloads": 28251
+	},
+	{
+		"name": "@mutmutco/pi-plugin",
+		"version": "4.5.95",
+		"monthlyDownloads": 27930
+	},
+	{
+		"name": "@goofansu/pi-stuff",
+		"version": "1.0.2",
+		"monthlyDownloads": 27108
+	},
+	{
+		"name": "@narumitw/pi-goal",
+		"version": "0.54.8",
+		"monthlyDownloads": 27008
+	},
+	{
+		"name": "@kontextmind/kxm",
+		"version": "0.7.175",
+		"monthlyDownloads": 26629
+	},
+	{
+		"name": "@braintrust/pi-extension",
+		"version": "2.1.1",
+		"monthlyDownloads": 25410
+	},
+	{
+		"name": "pi-prompt-template-model",
+		"version": "0.12.3",
+		"monthlyDownloads": 25227
+	},
+	{
+		"name": "@trim21/personal-pi-extensions",
+		"version": "0.1.692",
+		"monthlyDownloads": 24688
+	},
+	{
+		"name": "@narumitw/pi-plan-mode",
+		"version": "0.58.4",
+		"monthlyDownloads": 24565
+	},
+	{
+		"name": "pi-web-ui",
+		"version": "0.99.0",
+		"monthlyDownloads": 24376
+	},
+	{
+		"name": "@onkernel/browser-loop",
+		"version": "0.12.1",
+		"monthlyDownloads": 24319
+	},
+	{
+		"name": "pi-muse-msp",
+		"version": "0.2.4",
+		"monthlyDownloads": 23258
+	},
+	{
+		"name": "pi-hermes-memory",
+		"version": "0.9.10",
+		"monthlyDownloads": 22918
+	},
+	{
+		"name": "pi-agent-browser-native",
+		"version": "0.9.1",
+		"monthlyDownloads": 22454
+	},
+	{
+		"name": "@henryqw/pi-subagent",
+		"version": "26.0.0",
+		"monthlyDownloads": 22117
+	},
+	{
+		"name": "pi-ollama-cloud-link",
+		"version": "1.1.0",
+		"monthlyDownloads": 21776
+	},
+	{
+		"name": "latchkey",
+		"version": "3.16.2",
+		"monthlyDownloads": 21770
+	},
+	{
+		"name": "pi-intercom",
+		"version": "0.16.0",
+		"monthlyDownloads": 21499
+	},
+	{
+		"name": "@cgh567/agent",
+		"version": "2.6.44",
+		"monthlyDownloads": 21296
+	},
+	{
+		"name": "@agimon-ai/doompi-telemetry",
+		"version": "0.0.1-alpha.98",
+		"monthlyDownloads": 21163
+	},
+	{
+		"name": "betterwright",
+		"version": "2.8.8",
+		"monthlyDownloads": 21045
+	},
+	{
+		"name": "@agimon-ai/doompi-web-components",
+		"version": "0.0.1-alpha.72",
+		"monthlyDownloads": 20851
+	},
+	{
+		"name": "@juicesharp/rpiv-i18n",
+		"version": "2.12.0",
+		"monthlyDownloads": 20485
+	},
+	{
+		"name": "pi-hashline-edit-pro",
+		"version": "5.1.0",
+		"monthlyDownloads": 20481
+	},
+	{
+		"name": "gentle-engram",
+		"version": "0.2.0",
+		"monthlyDownloads": 20469
+	},
+	{
+		"name": "pi-interview",
+		"version": "0.13.0",
+		"monthlyDownloads": 20358
+	},
+	{
+		"name": "@amaster.ai/pi-memory-mem0",
+		"version": "0.1.22",
+		"monthlyDownloads": 20185
+	},
+	{
+		"name": "@agimon-ai/doompi-core",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 19379
+	},
+	{
+		"name": "@mjasnikovs/pi-task",
+		"version": "0.42.40",
+		"monthlyDownloads": 19153
+	},
+	{
+		"name": "@agimon-ai/doompi-web-security",
+		"version": "0.0.1-alpha.61",
+		"monthlyDownloads": 18988
+	},
+	{
+		"name": "@agimon-ai/doompi-ui",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 18236
+	},
+	{
+		"name": "@henryqw/pi-task-models",
+		"version": "8.0.0",
+		"monthlyDownloads": 17508
+	},
+	{
+		"name": "pi-antigravity",
+		"version": "0.9.0",
+		"monthlyDownloads": 17109
+	},
+	{
+		"name": "@agimon-ai/doompi-config",
+		"version": "0.0.1-alpha.113",
+		"monthlyDownloads": 16939
+	},
+	{
+		"name": "pi-goal-list-loop-audit",
+		"version": "0.38.113",
+		"monthlyDownloads": 16237
+	},
+	{
+		"name": "@heyhuynhgiabuu/pi-pretty",
+		"version": "0.6.30",
+		"monthlyDownloads": 16016
+	},
+	{
+		"name": "@howaboua/pi-codex-conversion",
+		"version": "3.0.45",
+		"monthlyDownloads": 15917
+	},
+	{
+		"name": "@llblab/pi-telegram",
+		"version": "0.52.1",
+		"monthlyDownloads": 15133
+	},
+	{
+		"name": "pi-code",
+		"version": "1.4.1",
+		"monthlyDownloads": 14889
+	},
+	{
+		"name": "pi-open-tui",
+		"version": "0.3.11",
+		"monthlyDownloads": 14790
+	},
+	{
+		"name": "@pi-unipi/core",
+		"version": "2.20.5",
+		"monthlyDownloads": 14681
+	},
+	{
+		"name": "rolebox",
+		"version": "1.10.0",
+		"monthlyDownloads": 13916
+	},
+	{
+		"name": "@agimon-ai/doompi-hashline",
+		"version": "0.0.1-alpha.70",
+		"monthlyDownloads": 13707
+	},
+	{
+		"name": "pi-harness-runtime",
+		"version": "1.1.146",
+		"monthlyDownloads": 13391
+	},
+	{
+		"name": "pi-until-loop",
+		"version": "0.2.9",
+		"monthlyDownloads": 13208
+	},
+	{
+		"name": "@gotgenes/pi-subagents",
+		"version": "23.0.0",
+		"monthlyDownloads": 13092
+	},
+	{
+		"name": "pi-rtk-optimizer",
+		"version": "0.9.0",
+		"monthlyDownloads": 13075
+	},
+	{
+		"name": "@relaymessenger/pi",
+		"version": "0.1.7",
+		"monthlyDownloads": 12872
+	},
+	{
+		"name": "@selesai/code",
+		"version": "0.13.39",
+		"monthlyDownloads": 12715
+	},
+	{
+		"name": "pi-zentui",
+		"version": "0.29.1",
+		"monthlyDownloads": 12581
+	},
+	{
+		"name": "@narumitw/pi-stamp",
+		"version": "0.52.0",
+		"monthlyDownloads": 12508
+	},
+	{
+		"name": "auto-model-router",
+		"version": "0.38.0",
+		"monthlyDownloads": 12305
+	},
+	{
+		"name": "@agimon-ai/doompi-minor-mode",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 12233
+	},
+	{
+		"name": "kifaru",
+		"version": "1.0.202",
+		"monthlyDownloads": 12129
+	},
+	{
+		"name": "glimpseui",
+		"version": "0.8.1",
+		"monthlyDownloads": 12103
+	},
+	{
+		"name": "pi-gauntlet",
+		"version": "7.1.0",
+		"monthlyDownloads": 12076
+	},
+	{
+		"name": "@cratis/pi",
+		"version": "7.6.5",
+		"monthlyDownloads": 12063
+	},
+	{
+		"name": "pi-markdown-preview",
+		"version": "0.19.2",
+		"monthlyDownloads": 11797
+	},
+	{
+		"name": "pi-extension-nvidia-nim",
+		"version": "1.9.0",
+		"monthlyDownloads": 11663
+	},
+	{
+		"name": "@gotgenes/pi-anthropic-auth",
+		"version": "3.4.2",
+		"monthlyDownloads": 11575
+	},
+	{
+		"name": "pi-nvidia-nim",
+		"version": "1.1.23",
+		"monthlyDownloads": 11490
+	},
+	{
+		"name": "pi-ask-user",
+		"version": "0.16.0",
+		"monthlyDownloads": 11399
+	},
+	{
+		"name": "donsetch",
+		"version": "4.4.3",
+		"monthlyDownloads": 11395
+	},
+	{
+		"name": "@agimon-ai/doompi-cache",
+		"version": "0.0.1-alpha.80",
+		"monthlyDownloads": 11387
+	},
+	{
+		"name": "@agimon-ai/doompi",
+		"version": "0.0.1-alpha.118",
+		"monthlyDownloads": 11193
+	},
+	{
+		"name": "@henryqw/pi-add-dir",
+		"version": "2.2.1",
+		"monthlyDownloads": 11160
+	},
+	{
+		"name": "agent-simple-english",
+		"version": "0.5.1",
+		"monthlyDownloads": 11103
+	},
+	{
+		"name": "@janvitos/pi-plan-build",
+		"version": "0.1.117",
+		"monthlyDownloads": 11094
+	},
+	{
+		"name": "@agimon-ai/doompi-major-mode",
+		"version": "0.0.1-alpha.92",
+		"monthlyDownloads": 11073
+	},
+	{
+		"name": "@agimon-ai/doompi-skill",
+		"version": "0.0.1-alpha.92",
+		"monthlyDownloads": 11040
+	},
+	{
+		"name": "@ollama/pi-web-search",
+		"version": "0.0.5",
+		"monthlyDownloads": 11002
+	},
+	{
+		"name": "@d3ara1n/pi-context-include",
+		"version": "3.0.0",
+		"monthlyDownloads": 10762
+	},
+	{
+		"name": "@agimon-ai/doompi-loop",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 10706
+	},
+	{
+		"name": "@chankov/agent-fleet",
+		"version": "2.0.16",
+		"monthlyDownloads": 10542
+	},
+	{
+		"name": "pi-blackhole",
+		"version": "0.5.10",
+		"monthlyDownloads": 10494
+	},
+	{
+		"name": "pi-otel",
+		"version": "0.3.0",
+		"monthlyDownloads": 10358
+	},
+	{
+		"name": "@agimon-ai/doompi-workflow",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 10288
+	},
+	{
+		"name": "@agimon-ai/doompi-voice",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 10199
+	},
+	{
+		"name": "@agimon-ai/doompi-runner",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 10185
+	},
+	{
+		"name": "@agentskit/doc-bridge",
+		"version": "1.13.0",
+		"monthlyDownloads": 10150
+	},
+	{
+		"name": "@agimon-ai/doompi-task",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 10107
+	},
+	{
+		"name": "pi-llama-cpp",
+		"version": "0.16.0",
+		"monthlyDownloads": 10107
+	},
+	{
+		"name": "@agimon-ai/doompi-log",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 10064
+	},
+	{
+		"name": "pi-typesafe",
+		"version": "0.9.1",
+		"monthlyDownloads": 10001
+	},
+	{
+		"name": "@agimon-ai/doompi-domain",
+		"version": "0.0.1-alpha.92",
+		"monthlyDownloads": 9977
+	},
+	{
+		"name": "@awebai/oats-pi",
+		"version": "0.40.2",
+		"monthlyDownloads": 9920
+	},
+	{
+		"name": "pi-bifrost",
+		"version": "0.4.5",
+		"monthlyDownloads": 9842
+	},
+	{
+		"name": "@amaster.ai/pi-image-gen",
+		"version": "0.1.22",
+		"monthlyDownloads": 9841
+	},
+	{
+		"name": "@narumitw/pi-lsp",
+		"version": "0.49.9",
+		"monthlyDownloads": 9743
+	},
+	{
+		"name": "@agimon-ai/doompi-profile",
+		"version": "0.0.1-alpha.92",
+		"monthlyDownloads": 9577
+	},
+	{
+		"name": "@agimon-ai/doompi-help",
+		"version": "0.0.1-alpha.97",
+		"monthlyDownloads": 9566
+	},
+	{
+		"name": "@agimon-ai/doompi-autostop",
+		"version": "0.0.1-alpha.91",
+		"monthlyDownloads": 9508
+	},
+	{
+		"name": "@agimon-ai/doompi-hook",
+		"version": "0.0.1-alpha.91",
+		"monthlyDownloads": 9451
+	},
+	{
+		"name": "@agimon-ai/doompi-notification",
+		"version": "0.0.1-alpha.91",
+		"monthlyDownloads": 9406
+	},
+	{
+		"name": "pi-warden",
+		"version": "1.1.1",
+		"monthlyDownloads": 9398
+	},
+	{
+		"name": "pi-pigment",
+		"version": "0.3.2",
+		"monthlyDownloads": 9334
+	},
+	{
+		"name": "@agimon-ai/doompi-edit",
+		"version": "0.0.1-alpha.86",
+		"monthlyDownloads": 9330
+	},
+	{
+		"name": "pi-lmstudio",
+		"version": "1.5.0",
+		"monthlyDownloads": 9293
+	},
+	{
+		"name": "@llblab/pi-kit",
+		"version": "0.28.0",
+		"monthlyDownloads": 9245
+	},
+	{
+		"name": "pi-cursor-sdk",
+		"version": "0.4.0",
+		"monthlyDownloads": 9054
+	},
+	{
+		"name": "@agimon-ai/doompi-extension-contracts",
+		"version": "0.0.1-alpha.68",
+		"monthlyDownloads": 9019
+	},
+	{
+		"name": "@jmfederico/pi-web",
+		"version": "1.202610.1",
+		"monthlyDownloads": 8941
+	},
+	{
+		"name": "@agimon-ai/doompi-mcp",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 8919
+	},
+	{
+		"name": "@agimon-ai/doompi-team",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 8826
+	},
+	{
+		"name": "projectops",
+		"version": "4.31.5",
+		"monthlyDownloads": 8780
+	},
+	{
+		"name": "@agimon-ai/doompi-file-edit",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 8776
+	},
+	{
+		"name": "@juicesharp/rpiv-web-tools",
+		"version": "2.12.0",
+		"monthlyDownloads": 8693
+	},
+	{
+		"name": "@agimon-ai/doompi-plan",
+		"version": "0.0.1-alpha.114",
+		"monthlyDownloads": 8682
+	},
+	{
+		"name": "pi-caveman",
+		"version": "1.0.8",
+		"monthlyDownloads": 8621
+	},
+	{
+		"name": "@bacnh85/pi-web",
+		"version": "0.17.8",
+		"monthlyDownloads": 8602
+	},
+	{
+		"name": "@agimon-ai/doompi-autocompact",
+		"version": "0.0.1-alpha.113",
+		"monthlyDownloads": 8581
+	},
+	{
+		"name": "@difflab/pi",
+		"version": "0.9.0",
+		"monthlyDownloads": 8581
+	},
+	{
+		"name": "@astrosheep/pi-context",
+		"version": "0.35.0",
+		"monthlyDownloads": 8567
+	},
+	{
+		"name": "@agimon-ai/doompi-goal",
+		"version": "0.0.1-alpha.104",
+		"monthlyDownloads": 8544
+	},
+	{
+		"name": "@henryqw/pi-pr",
+		"version": "6.2.14",
+		"monthlyDownloads": 8498
+	},
+	{
+		"name": "@pi-unipi/notify",
+		"version": "2.20.5",
+		"monthlyDownloads": 8443
+	},
+	{
+		"name": "@agimon-ai/doompi-user-feedback",
+		"version": "0.0.1-alpha.103",
+		"monthlyDownloads": 8365
+	},
+	{
+		"name": "@xynogen/pix-runtime",
+		"version": "0.12.2",
+		"monthlyDownloads": 8339
+	},
+	{
+		"name": "@realvendex/pi-token-router",
+		"version": "0.2.0",
+		"monthlyDownloads": 8317
+	},
+	{
+		"name": "@sreetej510/pi-usage",
+		"version": "0.10.13",
+		"monthlyDownloads": 8300
+	},
+	{
+		"name": "@agimon-ai/doompi-computer-use",
+		"version": "0.0.1-alpha.58",
+		"monthlyDownloads": 8269
+	},
+	{
+		"name": "pi-commandcode-provider",
+		"version": "0.7.3",
+		"monthlyDownloads": 8253
+	},
+	{
+		"name": "@llblab/pi-state-flow",
+		"version": "0.25.5",
+		"monthlyDownloads": 8192
+	},
+	{
+		"name": "@agimon-ai/doompi-session",
+		"version": "0.0.1-alpha.38",
+		"monthlyDownloads": 8184
+	},
+	{
+		"name": "@agimon-ai/doompi-read",
+		"version": "0.0.1-alpha.86",
+		"monthlyDownloads": 8120
+	},
+	{
+		"name": "pi-browser-use",
+		"version": "0.12.11",
+		"monthlyDownloads": 8106
+	},
+	{
+		"name": "@agimon-ai/doompi-grep",
+		"version": "0.0.1-alpha.86",
+		"monthlyDownloads": 8068
+	},
+	{
+		"name": "bestony-pi-preset",
+		"version": "0.0.78",
+		"monthlyDownloads": 8051
+	},
+	{
+		"name": "pi-context-view",
+		"version": "0.6.0",
+		"monthlyDownloads": 8032
+	},
+	{
+		"name": "runline",
+		"version": "0.34.0",
+		"monthlyDownloads": 8013
+	},
+	{
+		"name": "pi-cloudflare",
+		"version": "0.11.12",
+		"monthlyDownloads": 7959
+	},
+	{
+		"name": "pi-freeflow",
+		"version": "1.32.0",
+		"monthlyDownloads": 7922
+	},
+	{
+		"name": "@agimon-ai/doompi-sandbox",
+		"version": "0.0.1-alpha.113",
+		"monthlyDownloads": 7737
+	},
+	{
+		"name": "@agimon-ai/doompi-author",
+		"version": "0.0.1-alpha.52",
+		"monthlyDownloads": 7723
+	},
+	{
+		"name": "awesome-pi-themes",
+		"version": "1.2.19",
+		"monthlyDownloads": 7713
+	},
+	{
+		"name": "pi-better-harness",
+		"version": "0.18.0",
+		"monthlyDownloads": 7639
+	},
+	{
+		"name": "@amaster.ai/pi-computer-use",
+		"version": "0.1.22",
+		"monthlyDownloads": 7593
+	},
+	{
+		"name": "pi-ollama-cloud",
+		"version": "0.12.2",
+		"monthlyDownloads": 7592
+	},
+	{
+		"name": "@juicesharp/rpiv-advisor",
+		"version": "2.12.0",
+		"monthlyDownloads": 7530
+	},
+	{
+		"name": "pi-token-speed",
+		"version": "0.11.0",
+		"monthlyDownloads": 7484
+	},
+	{
+		"name": "@osolmaz/pi-workflows",
+		"version": "0.17.6",
+		"monthlyDownloads": 7454
+	},
+	{
+		"name": "pi-herdsman",
+		"version": "0.19.1",
+		"monthlyDownloads": 7447
+	},
+	{
+		"name": "@juicesharp/rpiv-btw",
+		"version": "2.12.0",
+		"monthlyDownloads": 7379
+	},
+	{
+		"name": "@estebanforge/pi-antigravity-bridge",
+		"version": "1.7.8",
+		"monthlyDownloads": 7320
+	},
+	{
+		"name": "@narumitw/pi-firecrawl",
+		"version": "0.50.5",
+		"monthlyDownloads": 7256
+	},
+	{
+		"name": "@tunnckocore/pi-gpt-fast-mode",
+		"version": "0.4.0",
+		"monthlyDownloads": 7156
+	},
+	{
+		"name": "@agimon-ai/doompi-prompt",
+		"version": "0.0.1-alpha.64",
+		"monthlyDownloads": 7129
+	},
+	{
+		"name": "openlore",
+		"version": "3.3.0",
+		"monthlyDownloads": 7079
+	},
+	{
+		"name": "jorgex-pi",
+		"version": "0.8.47",
+		"monthlyDownloads": 7046
+	},
+	{
+		"name": "specpi",
+		"version": "0.37.1",
+		"monthlyDownloads": 7018
+	},
+	{
+		"name": "pi-tokenrouter",
+		"version": "1.5.0",
+		"monthlyDownloads": 7003
+	},
+	{
+		"name": "opencode-codebase-index",
+		"version": "0.35.1",
+		"monthlyDownloads": 6995
+	},
+	{
+		"name": "pi-observational-memory",
+		"version": "3.1.4",
+		"monthlyDownloads": 6787
+	},
+	{
+		"name": "@getpipher/vision",
+		"version": "0.5.3",
+		"monthlyDownloads": 6771
+	},
+	{
+		"name": "pi-sandbox",
+		"version": "0.7.0",
+		"monthlyDownloads": 6769
+	},
+	{
+		"name": "@heretek-ai/epistemic-swarm",
+		"version": "0.7.23",
+		"monthlyDownloads": 6734
+	},
+	{
+		"name": "@agimon-ai/doompi-web-contracts",
+		"version": "0.0.1-alpha.31",
+		"monthlyDownloads": 6731
+	},
+	{
+		"name": "pi-autosuggestions",
+		"version": "0.8.24",
+		"monthlyDownloads": 6717
+	},
+	{
+		"name": "om-memory-system",
+		"version": "4.4.2",
+		"monthlyDownloads": 6706
+	},
+	{
+		"name": "@remnic/plugin-pi",
+		"version": "9.69.56",
+		"monthlyDownloads": 6681
+	},
+	{
+		"name": "@youweichen/pi-web-ui",
+		"version": "0.9.0",
+		"monthlyDownloads": 6608
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rmux-linux-x64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 6587
+	},
+	{
+		"name": "pi-cliproxyapi-provider",
+		"version": "0.15.53",
+		"monthlyDownloads": 6573
+	},
+	{
+		"name": "@datadog/pi-plugin",
+		"version": "0.7.17",
+		"monthlyDownloads": 6538
+	},
+	{
+		"name": "@alasano/pi-linear",
+		"version": "0.5.0",
+		"monthlyDownloads": 6461
+	},
+	{
+		"name": "@hypabolic/pi-hypa",
+		"version": "1.0.5",
+		"monthlyDownloads": 6417
+	},
+	{
+		"name": "pi-interactive-shell",
+		"version": "0.17.0",
+		"monthlyDownloads": 6414
+	},
+	{
+		"name": "@pi-unipi/info-screen",
+		"version": "2.20.5",
+		"monthlyDownloads": 6374
+	},
+	{
+		"name": "@agimon-ai/doompi-model-guidance",
+		"version": "0.0.1-alpha.113",
+		"monthlyDownloads": 6360
+	},
+	{
+		"name": "pi-openai-toolkit",
+		"version": "0.20.8",
+		"monthlyDownloads": 6329
+	},
+	{
+		"name": "pi-template-kit",
+		"version": "0.3.0",
+		"monthlyDownloads": 6317
+	},
+	{
+		"name": "@astrofoundry/pi-astro",
+		"version": "0.29.1",
+		"monthlyDownloads": 6283
+	},
+	{
+		"name": "@agimon-ai/doompi-git",
+		"version": "0.0.1-alpha.50",
+		"monthlyDownloads": 6277
+	},
+	{
+		"name": "@esso0428/pi-subagents",
+		"version": "0.17.31",
+		"monthlyDownloads": 6272
+	},
+	{
+		"name": "trimegisto",
+		"version": "1.6.32",
+		"monthlyDownloads": 6267
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rtk-linux-x64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 6204
+	},
+	{
+		"name": "pi-subagents-j0k3r",
+		"version": "1.6.1",
+		"monthlyDownloads": 6124
+	},
+	{
+		"name": "@luffysolution/omnischolar-pi",
+		"version": "0.6.0",
+		"monthlyDownloads": 6103
+	},
+	{
+		"name": "@sting8k/pi-vcc",
+		"version": "0.8.1",
+		"monthlyDownloads": 6090
+	},
+	{
+		"name": "dripline",
+		"version": "0.9.16",
+		"monthlyDownloads": 6087
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rmux-linux-arm64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5997
+	},
+	{
+		"name": "@pi-unipi/unipi",
+		"version": "2.20.5",
+		"monthlyDownloads": 5990
+	},
+	{
+		"name": "@krtclcdy/tersio",
+		"version": "2.25.1",
+		"monthlyDownloads": 5960
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rmux-darwin-arm64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5954
+	},
+	{
+		"name": "@agimon-ai/doompi-template-advanced",
+		"version": "0.0.1-alpha.34",
+		"monthlyDownloads": 5941
+	},
+	{
+		"name": "@agentapprove/pi",
+		"version": "0.1.13",
+		"monthlyDownloads": 5905
+	},
+	{
+		"name": "@nitra/cursor",
+		"version": "14.33.0",
+		"monthlyDownloads": 5877
+	},
+	{
+		"name": "pi-goal",
+		"version": "0.1.7",
+		"monthlyDownloads": 5877
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rmux-darwin-x64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5856
+	},
+	{
+		"name": "@aliou/pi-guardrails",
+		"version": "0.19.0",
+		"monthlyDownloads": 5831
+	},
+	{
+		"name": "@herbertgao/pi-cc-extensions",
+		"version": "0.10.0",
+		"monthlyDownloads": 5740
+	},
+	{
+		"name": "pi-docparser",
+		"version": "4.0.0",
+		"monthlyDownloads": 5670
+	},
+	{
+		"name": "open-codebase-index",
+		"version": "0.35.1",
+		"monthlyDownloads": 5668
+	},
+	{
+		"name": "@pi-unipi/mcp",
+		"version": "2.20.5",
+		"monthlyDownloads": 5666
+	},
+	{
+		"name": "@gang-of-beads/pi-web",
+		"version": "2.202609.28",
+		"monthlyDownloads": 5638
+	},
+	{
+		"name": "@pi-unipi/updater",
+		"version": "2.20.5",
+		"monthlyDownloads": 5586
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rtk-linux-arm64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5577
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rtk-darwin-arm64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5576
+	},
+	{
+		"name": "@pi-unipi/btw",
+		"version": "2.20.5",
+		"monthlyDownloads": 5567
+	},
+	{
+		"name": "@pi-unipi/compactor",
+		"version": "2.20.5",
+		"monthlyDownloads": 5567
+	},
+	{
+		"name": "@7n/rules",
+		"version": "1.118.11",
+		"monthlyDownloads": 5563
+	},
+	{
+		"name": "@pi-unipi/workflow",
+		"version": "2.20.5",
+		"monthlyDownloads": 5522
+	},
+	{
+		"name": "pi-aimail",
+		"version": "0.1.35",
+		"monthlyDownloads": 5504
+	},
+	{
+		"name": "@pi-unipi/web-api",
+		"version": "2.20.5",
+		"monthlyDownloads": 5501
+	},
+	{
+		"name": "@gtrabanco/pi-agentic-workflow",
+		"version": "0.18.5",
+		"monthlyDownloads": 5487
+	},
+	{
+		"name": "@pi-unipi/memory",
+		"version": "2.20.5",
+		"monthlyDownloads": 5486
+	},
+	{
+		"name": "@pi-unipi/utility",
+		"version": "2.20.5",
+		"monthlyDownloads": 5473
+	},
+	{
+		"name": "@pi-unipi/kanboard",
+		"version": "2.20.5",
+		"monthlyDownloads": 5465
+	},
+	{
+		"name": "pi-profile-switch",
+		"version": "0.14.0",
+		"monthlyDownloads": 5463
+	},
+	{
+		"name": "pi-compact-tools",
+		"version": "0.14.0",
+		"monthlyDownloads": 5460
+	},
+	{
+		"name": "@agimon-ai/doompi-runner-rtk-darwin-x64",
+		"version": "0.0.1-alpha.96",
+		"monthlyDownloads": 5458
+	},
+	{
+		"name": "@magiusche/pi-webview",
+		"version": "0.6.9",
+		"monthlyDownloads": 5450
+	},
+	{
+		"name": "@pi-unipi/ask-user",
+		"version": "2.20.5",
+		"monthlyDownloads": 5446
+	},
+	{
+		"name": "@pi-unipi/command-enchantment",
+		"version": "2.20.5",
+		"monthlyDownloads": 5386
+	},
+	{
+		"name": "@pi-unipi/footer",
+		"version": "2.20.5",
+		"monthlyDownloads": 5381
+	},
+	{
+		"name": "pi-free",
+		"version": "2.8.4",
+		"monthlyDownloads": 5363
+	},
+	{
+		"name": "@sreetej510/pi-shipd-checks",
+		"version": "0.10.13",
+		"monthlyDownloads": 5333
+	},
+	{
+		"name": "@xynogen/pix-pretty",
+		"version": "1.29.0",
+		"monthlyDownloads": 5320
+	},
+	{
+		"name": "@ferris1225/pi-subagents",
+		"version": "4.3.19",
+		"monthlyDownloads": 5264
+	},
+	{
+		"name": "@sreetej510/pi-prompt-manager",
+		"version": "0.10.13",
+		"monthlyDownloads": 5256
+	},
+	{
+		"name": "@pi-unipi/input-shortcuts",
+		"version": "2.20.5",
+		"monthlyDownloads": 5244
+	},
+	{
+		"name": "pi-autoresearch",
+		"version": "1.8.1",
+		"monthlyDownloads": 5230
+	},
+	{
+		"name": "@viccydev/pi-fpa",
+		"version": "2.4.2",
+		"monthlyDownloads": 5223
+	},
+	{
+		"name": "@maxiaochao/pi-toolkit",
+		"version": "0.9.4",
+		"monthlyDownloads": 5218
+	},
+	{
+		"name": "@agimon-ai/doompi-style-system",
+		"version": "0.0.1-alpha.115",
+		"monthlyDownloads": 5202
+	},
+	{
+		"name": "@tintinweb/pi-tasks",
+		"version": "0.9.0",
+		"monthlyDownloads": 5195
+	},
+	{
+		"name": "superpowers-zh",
+		"version": "1.7.14",
+		"monthlyDownloads": 5192
+	},
+	{
+		"name": "@sreetej510/pi-hpc-tools",
+		"version": "0.10.13",
+		"monthlyDownloads": 5141
+	},
+	{
+		"name": "pi-better-background-tasks",
+		"version": "0.6.4",
+		"monthlyDownloads": 5117
+	},
+	{
+		"name": "pi-pr-review",
+		"version": "1.19.0",
+		"monthlyDownloads": 5090
+	},
+	{
+		"name": "@amaster.ai/pi-browser-use",
+		"version": "0.1.22",
+		"monthlyDownloads": 5042
+	},
+	{
+		"name": "@brainervirus/workit-pi",
+		"version": "2.8.0",
+		"monthlyDownloads": 5007
+	},
+	{
+		"name": "@undefineds.co/models",
+		"version": "0.2.60",
+		"monthlyDownloads": 5005
+	},
+	{
+		"name": "pi-phoenix",
+		"version": "0.1.3",
+		"monthlyDownloads": 4998
+	},
+	{
+		"name": "ds4-context-engine",
+		"version": "0.4.13",
+		"monthlyDownloads": 4996
+	},
+	{
+		"name": "pi-fovea",
+		"version": "0.31.3",
+		"monthlyDownloads": 4979
+	},
+	{
+		"name": "@gonrocca/nodd",
+		"version": "0.8.5",
+		"monthlyDownloads": 4977
+	},
+	{
+		"name": "@zosmaai/pi-llm-wiki",
+		"version": "0.12.5",
+		"monthlyDownloads": 4947
+	},
+	{
+		"name": "@narumitw/pi-statusline",
+		"version": "0.50.2",
+		"monthlyDownloads": 4935
+	},
+	{
+		"name": "@juanibiapina/pi-extension-settings",
+		"version": "0.10.0",
+		"monthlyDownloads": 4892
+	},
+	{
+		"name": "pi-chrome",
+		"version": "0.15.57",
+		"monthlyDownloads": 4857
+	},
+	{
+		"name": "pi-extension-qwen-token-plan-cn-ex",
+		"version": "0.1.0",
+		"monthlyDownloads": 4856
+	},
+	{
+		"name": "pi-better-subagents",
+		"version": "0.13.1",
+		"monthlyDownloads": 4853
+	},
+	{
+		"name": "@pi-unipi/fusion",
+		"version": "2.20.5",
+		"monthlyDownloads": 4823
+	},
+	{
+		"name": "pi-daddy",
+		"version": "0.43.1",
+		"monthlyDownloads": 4775
+	},
+	{
+		"name": "@henryqw/pi-config-store",
+		"version": "2.0.2",
+		"monthlyDownloads": 4771
+	},
+	{
+		"name": "pi-extensible-workflows",
+		"version": "5.19.0",
+		"monthlyDownloads": 4751
+	},
+	{
+		"name": "@agwab/pi-workflow",
+		"version": "0.15.0",
+		"monthlyDownloads": 4743
+	},
+	{
+		"name": "@yandy0725/pi-memory",
+		"version": "2.5.0",
+		"monthlyDownloads": 4740
+	},
+	{
+		"name": "@tmustier/pi-usage-extension",
+		"version": "0.9.5",
+		"monthlyDownloads": 4693
+	},
+	{
+		"name": "@pify/swarm",
+		"version": "0.15.0",
+		"monthlyDownloads": 4680
+	},
+	{
+		"name": "pi-herdr-agents",
+		"version": "2.0.5",
+		"monthlyDownloads": 4673
+	},
+	{
+		"name": "@amaster.ai/pi-task-scheduler",
+		"version": "0.1.22",
+		"monthlyDownloads": 4640
+	},
+	{
+		"name": "@tangle-network/tcloud-agent",
+		"version": "0.3.3",
+		"monthlyDownloads": 4637
+	},
+	{
+		"name": "@czottmann/pi-automode",
+		"version": "1.17.0",
+		"monthlyDownloads": 4626
+	},
+	{
+		"name": "pi-zense",
+		"version": "0.35.5",
+		"monthlyDownloads": 4617
+	},
+	{
+		"name": "pi2dsh",
+		"version": "0.25.2",
+		"monthlyDownloads": 4612
+	},
+	{
+		"name": "pi-cmux",
+		"version": "0.1.24",
+		"monthlyDownloads": 4601
+	},
+	{
+		"name": "@geohar/un-bien",
+		"version": "0.20.21",
+		"monthlyDownloads": 4521
+	},
+	{
+		"name": "@devflow-tools/claude-code-plugin",
+		"version": "0.18.36",
+		"monthlyDownloads": 4505
+	},
+	{
+		"name": "pi-multi-account",
+		"version": "1.24.0",
+		"monthlyDownloads": 4502
+	},
+	{
+		"name": "@fadhilp/pylon",
+		"version": "3.3.0",
+		"monthlyDownloads": 4484
+	},
+	{
+		"name": "@amaster.ai/pi-web-access",
+		"version": "0.1.22",
+		"monthlyDownloads": 4474
+	},
+	{
+		"name": "pi-web-codex",
+		"version": "0.1.33",
+		"monthlyDownloads": 4440
+	},
+	{
+		"name": "pi-outpost",
+		"version": "0.33.0",
+		"monthlyDownloads": 4426
+	},
+	{
+		"name": "@agimon-ai/doompi-build",
+		"version": "0.0.1-alpha.30",
+		"monthlyDownloads": 4424
+	},
+	{
+		"name": "@injaneity/pi-computer-use",
+		"version": "0.5.1",
+		"monthlyDownloads": 4421
+	},
+	{
+		"name": "pi-supernova",
+		"version": "0.11.0",
+		"monthlyDownloads": 4419
+	},
+	{
+		"name": "@monotykamary/pi-better-openai",
+		"version": "0.2.12",
+		"monthlyDownloads": 4388
+	},
+	{
+		"name": "@agent-sh/computer-use-linux",
+		"version": "0.7.11",
+		"monthlyDownloads": 4378
+	},
+	{
+		"name": "@pify/subagent",
+		"version": "0.19.0",
+		"monthlyDownloads": 4367
+	},
+	{
+		"name": "@router-for-me/pi-cliproxyapi-provider",
+		"version": "1.4.21",
+		"monthlyDownloads": 4363
+	},
+	{
+		"name": "@rahularya01/pi-cursor",
+		"version": "1.4.38",
+		"monthlyDownloads": 4352
+	},
+	{
+		"name": "pi-smart-compact",
+		"version": "10.1.4",
+		"monthlyDownloads": 4335
+	},
+	{
+		"name": "bermudis-pi-goodies",
+		"version": "0.26.0",
+		"monthlyDownloads": 4332
+	},
+	{
+		"name": "pi-maestro-flow",
+		"version": "0.31.3",
+		"monthlyDownloads": 4322
+	},
+	{
+		"name": "@gtrabanco/pi-nan-provider",
+		"version": "1.0.1",
+		"monthlyDownloads": 4316
+	},
+	{
+		"name": "@amaster.ai/pi-lark",
+		"version": "0.1.22",
+		"monthlyDownloads": 4298
+	},
+	{
+		"name": "@yaag/extension",
+		"version": "0.28.2",
+		"monthlyDownloads": 4290
+	},
+	{
+		"name": "jev-use",
+		"version": "0.8.0",
+		"monthlyDownloads": 4266
+	},
+	{
+		"name": "pi-codex-goal",
+		"version": "0.6.0",
+		"monthlyDownloads": 4249
+	},
+	{
+		"name": "@patimweb/pi-sentinel",
+		"version": "3.0.0",
+		"monthlyDownloads": 4246
+	},
+	{
+		"name": "@lincoln504/pi-research",
+		"version": "1.7.8",
+		"monthlyDownloads": 4225
+	},
+	{
+		"name": "@amaster.ai/pi-telemetry",
+		"version": "0.1.22",
+		"monthlyDownloads": 4195
+	},
+	{
+		"name": "opencode-agent-skill",
+		"version": "16.5.0",
+		"monthlyDownloads": 4195
+	},
+	{
+		"name": "codecartographer-pi",
+		"version": "0.26.0",
+		"monthlyDownloads": 4168
+	},
+	{
+		"name": "@zhcsyncer/pi-extensions",
+		"version": "1.0.2",
+		"monthlyDownloads": 4143
+	},
+	{
+		"name": "@agimon-ai/doompi-template-elegant",
+		"version": "0.0.1-alpha.34",
+		"monthlyDownloads": 4141
+	},
+	{
+		"name": "pi-crew",
+		"version": "0.11.6",
+		"monthlyDownloads": 4135
+	},
+	{
+		"name": "pi-task-tracker",
+		"version": "0.2.21",
+		"monthlyDownloads": 4132
+	},
+	{
+		"name": "@prjct.app/pi-team",
+		"version": "0.9.4",
+		"monthlyDownloads": 4130
+	},
+	{
+		"name": "pi-courier",
+		"version": "0.3.8",
+		"monthlyDownloads": 4126
+	},
+	{
+		"name": "@amaster.ai/pi-video-gen",
+		"version": "0.1.22",
+		"monthlyDownloads": 4115
+	},
+	{
+		"name": "pi-router",
+		"version": "0.5.7",
+		"monthlyDownloads": 4090
+	},
+	{
+		"name": "pi-quiver",
+		"version": "6.11.0",
+		"monthlyDownloads": 4071
+	},
+	{
+		"name": "pi-workspace-history",
+		"version": "0.4.8",
+		"monthlyDownloads": 4065
+	},
+	{
+		"name": "@amaster.ai/pi-attachments",
+		"version": "0.1.22",
+		"monthlyDownloads": 4061
+	},
+	{
+		"name": "@zhushanwen/pi-subagent-workflow",
+		"version": "9.2.1",
+		"monthlyDownloads": 4059
+	},
+	{
+		"name": "design-playbook",
+		"version": "0.25.4",
+		"monthlyDownloads": 4059
+	},
+	{
+		"name": "@jameslovespancakes/pi-plus",
+		"version": "1.0.25",
+		"monthlyDownloads": 4057
+	},
+	{
+		"name": "@erichll/pi-auto-review",
+		"version": "0.24.0",
+		"monthlyDownloads": 4030
+	},
+	{
+		"name": "@a-t-h-i/bot-lobby",
+		"version": "0.6.18",
+		"monthlyDownloads": 4027
+	},
+	{
+		"name": "@pify/memory",
+		"version": "0.13.1",
+		"monthlyDownloads": 3995
+	},
+	{
+		"name": "@astrosheep/square",
+		"version": "0.3.61",
+		"monthlyDownloads": 3986
+	},
+	{
+		"name": "@amaster.ai/pi-security",
+		"version": "0.1.22",
+		"monthlyDownloads": 3974
+	},
+	{
+		"name": "@amaster.ai/pi-memory",
+		"version": "0.1.22",
+		"monthlyDownloads": 3962
+	},
+	{
+		"name": "@schuettc/pi-claude-bridge",
+		"version": "0.9.1-schuettc.3",
+		"monthlyDownloads": 3955
+	},
+	{
+		"name": "pi-note",
+		"version": "0.17.0",
+		"monthlyDownloads": 3940
+	},
+	{
+		"name": "@henryqw/pi-footer",
+		"version": "2.2.4",
+		"monthlyDownloads": 3925
+	},
+	{
+		"name": "@sidleo3/pi-wiki",
+		"version": "0.7.2",
+		"monthlyDownloads": 3912
+	},
+	{
+		"name": "@amaster.ai/pi-goal",
+		"version": "0.1.22",
+		"monthlyDownloads": 3907
+	},
+	{
+		"name": "pi-lean-ctx",
+		"version": "3.10.5",
+		"monthlyDownloads": 3907
+	},
+	{
+		"name": "@pentect/pi",
+		"version": "0.0.94",
+		"monthlyDownloads": 3905
+	},
+	{
+		"name": "@aibyzero/cm-workflow",
+		"version": "0.16.5",
+		"monthlyDownloads": 3901
+	},
+	{
+		"name": "@amaster.ai/pi-wecom",
+		"version": "0.1.22",
+		"monthlyDownloads": 3901
+	},
+	{
+		"name": "@amaster.ai/pi-channels",
+		"version": "0.1.22",
+		"monthlyDownloads": 3898
+	},
+	{
+		"name": "@benjamolina/pi-kit",
+		"version": "0.11.2",
+		"monthlyDownloads": 3898
+	},
+	{
+		"name": "@specpow/framework",
+		"version": "0.9.0",
+		"monthlyDownloads": 3866
+	},
+	{
+		"name": "pi-ccswitch-auto-switch",
+		"version": "0.3.15",
+		"monthlyDownloads": 3856
+	},
+	{
+		"name": "pi-claude-supervisor",
+		"version": "0.10.0",
+		"monthlyDownloads": 3825
+	},
+	{
+		"name": "@rmrdeveloper/sideroom-pi",
+		"version": "8.11.0",
+		"monthlyDownloads": 3814
+	},
+	{
+		"name": "@unifan/pi-review-zh",
+		"version": "1.0.27",
+		"monthlyDownloads": 3812
+	},
+	{
+		"name": "pi-orchestrator-config",
+		"version": "4.8.3",
+		"monthlyDownloads": 3812
+	},
+	{
+		"name": "pi-atelier",
+		"version": "0.15.0",
+		"monthlyDownloads": 3783
+	},
+	{
+		"name": "@bacnh85/pi-plan",
+		"version": "0.16.5",
+		"monthlyDownloads": 3775
+	},
+	{
+		"name": "@openlines/opl-pi-sht",
+		"version": "0.2.11",
+		"monthlyDownloads": 3768
+	},
+	{
+		"name": "@juicesharp/rpiv-args",
+		"version": "2.12.0",
+		"monthlyDownloads": 3765
+	},
+	{
+		"name": "@outlit/pi",
+		"version": "2.1.7",
+		"monthlyDownloads": 3756
+	},
+	{
+		"name": "infinity-harness",
+		"version": "2.8.14",
+		"monthlyDownloads": 3751
+	},
+	{
+		"name": "prime-agent-feature-factory",
+		"version": "0.10.11",
+		"monthlyDownloads": 3736
+	},
+	{
+		"name": "pi-plan-task",
+		"version": "5.0.7",
+		"monthlyDownloads": 3733
+	},
+	{
+		"name": "@amaster.ai/pi-dingtalk",
+		"version": "0.1.22",
+		"monthlyDownloads": 3723
+	},
+	{
+		"name": "@upstash/context7-pi",
+		"version": "0.1.2",
+		"monthlyDownloads": 3713
+	},
+	{
+		"name": "pi-tokenrouter-provider",
+		"version": "0.1.0",
+		"monthlyDownloads": 3711
+	},
+	{
+		"name": "pi-jev-guard",
+		"version": "0.7.2",
+		"monthlyDownloads": 3710
+	},
+	{
+		"name": "@bachi/pi-coder",
+		"version": "2.3.0",
+		"monthlyDownloads": 3709
+	},
+	{
+		"name": "pi-multiprovider",
+		"version": "0.10.2",
+		"monthlyDownloads": 3705
+	},
+	{
+		"name": "useful-pi-extensions",
+		"version": "1.11.3",
+		"monthlyDownloads": 3704
+	},
+	{
+		"name": "immune-brain",
+		"version": "4.5.0",
+		"monthlyDownloads": 3703
+	},
+	{
+		"name": "@bacnh85/pi-subagent",
+		"version": "0.23.2",
+		"monthlyDownloads": 3693
+	},
+	{
+		"name": "@tranhoangnguyen0310/pi-flow-external",
+		"version": "3.2.0-external.0",
+		"monthlyDownloads": 3687
+	},
+	{
+		"name": "@astrosheep/keiyaku",
+		"version": "4.6.2",
+		"monthlyDownloads": 3682
+	},
+	{
+		"name": "pi-bro",
+		"version": "0.20.0",
+		"monthlyDownloads": 3673
+	},
+	{
+		"name": "pi-footer",
+		"version": "0.5.1",
+		"monthlyDownloads": 3657
+	},
+	{
+		"name": "@myk-org/pi-vertex-claude",
+		"version": "4.8.3",
+		"monthlyDownloads": 3643
+	},
+	{
+		"name": "pi-langfuse",
+		"version": "1.6.1",
+		"monthlyDownloads": 3609
+	},
+	{
+		"name": "@amaster.ai/pi-teamwork",
+		"version": "0.1.22",
+		"monthlyDownloads": 3604
+	},
+	{
+		"name": "@expert-council/pi-package",
+		"version": "0.8.9",
+		"monthlyDownloads": 3599
+	},
+	{
+		"name": "pi-zvec-grep-ext",
+		"version": "0.4.0",
+		"monthlyDownloads": 3584
+	},
+	{
+		"name": "@pify/workflow",
+		"version": "0.16.0",
+		"monthlyDownloads": 3551
+	},
+	{
+		"name": "@abelxiaoxing/cadence",
+		"version": "1.8.4",
+		"monthlyDownloads": 3546
+	},
+	{
+		"name": "@henryqw/pi-prompt-creator",
+		"version": "2.0.11",
+		"monthlyDownloads": 3541
+	},
+	{
+		"name": "@pify/yolo",
+		"version": "0.15.0",
+		"monthlyDownloads": 3534
+	},
+	{
+		"name": "pi-verdict",
+		"version": "0.14.0",
+		"monthlyDownloads": 3527
+	},
+	{
+		"name": "@reedchan/statusline",
+		"version": "1.11.3",
+		"monthlyDownloads": 3522
+	},
+	{
+		"name": "kankaku",
+		"version": "1.4.1",
+		"monthlyDownloads": 3496
+	},
+	{
+		"name": "@trevonistrevon/pi-loop",
+		"version": "0.7.15",
+		"monthlyDownloads": 3493
+	},
+	{
+		"name": "pi-nvidia",
+		"version": "0.2.1",
+		"monthlyDownloads": 3488
+	},
+	{
+		"name": "@erichll/pi-sandbox",
+		"version": "0.24.0",
+		"monthlyDownloads": 3474
+	},
+	{
+		"name": "pi-control-chrome",
+		"version": "0.8.0",
+		"monthlyDownloads": 3468
+	},
+	{
+		"name": "pi-weave",
+		"version": "0.3.5",
+		"monthlyDownloads": 3446
+	},
+	{
+		"name": "@runfusion/fusion",
+		"version": "0.77.0",
+		"monthlyDownloads": 3432
+	},
+	{
+		"name": "@juanbenjumea/pi-agy",
+		"version": "0.7.6",
+		"monthlyDownloads": 3428
+	},
+	{
+		"name": "@bunshin-cc/bunshin",
+		"version": "0.6.2",
+		"monthlyDownloads": 3424
+	},
+	{
+		"name": "@alexanderfortin/pi-deepseek-usage",
+		"version": "0.4.0",
+		"monthlyDownloads": 3406
+	},
+	{
+		"name": "@henryqw/pi-multi-codex",
+		"version": "2.0.5",
+		"monthlyDownloads": 3406
+	},
+	{
+		"name": "@mrclrchtr/supi-context",
+		"version": "8.0.1",
+		"monthlyDownloads": 3394
+	},
+	{
+		"name": "@cr1ms0n/pi-subagent",
+		"version": "0.11.12",
+		"monthlyDownloads": 3367
+	},
+	{
+		"name": "pi-provider-antigravity",
+		"version": "0.20.0",
+		"monthlyDownloads": 3347
+	},
+	{
+		"name": "@herbertgao/pi-extensions",
+		"version": "2026.9.20",
+		"monthlyDownloads": 3333
+	},
+	{
+		"name": "@firstpick/pi-extension-git-footer-status",
+		"version": "0.5.5",
+		"monthlyDownloads": 3332
+	},
+	{
+		"name": "dev-loops",
+		"version": "1.0.5",
+		"monthlyDownloads": 3330
+	},
+	{
+		"name": "pi-information-protecter",
+		"version": "0.9.0",
+		"monthlyDownloads": 3313
+	},
+	{
+		"name": "@bacnh85/pi-sub",
+		"version": "0.1.53",
+		"monthlyDownloads": 3304
+	},
+	{
+		"name": "pi-tandem",
+		"version": "0.6.4",
+		"monthlyDownloads": 3286
+	},
+	{
+		"name": "@zswarm/pi",
+		"version": "0.1.26",
+		"monthlyDownloads": 3280
+	},
+	{
+		"name": "@juanibiapina/pi-powerbar",
+		"version": "0.16.0",
+		"monthlyDownloads": 3277
+	},
+	{
+		"name": "pi-queue-steer-factory",
+		"version": "0.17.8",
+		"monthlyDownloads": 3269
+	},
+	{
+		"name": "@saccolabs/pi-claude-cli",
+		"version": "0.10.0",
+		"monthlyDownloads": 3261
+	},
+	{
+		"name": "pi-tool-repair",
+		"version": "0.3.5",
+		"monthlyDownloads": 3251
+	},
+	{
+		"name": "@groeponline/pi-wishcraft",
+		"version": "1.16.0",
+		"monthlyDownloads": 3249
+	},
+	{
+		"name": "pi-spark",
+		"version": "0.28.1",
+		"monthlyDownloads": 3248
+	},
+	{
+		"name": "@patimweb/pi-teams",
+		"version": "2.0.0",
+		"monthlyDownloads": 3246
+	},
+	{
+		"name": "@each1024/pi-mini-mode",
+		"version": "2.0.3",
+		"monthlyDownloads": 3229
+	},
+	{
+		"name": "@zeerke/ascet-copilot",
+		"version": "0.1.36",
+		"monthlyDownloads": 3215
+	},
+	{
+		"name": "@pi-archimedes/core",
+		"version": "2.9.0",
+		"monthlyDownloads": 3197
+	},
+	{
+		"name": "@reddb-io/red-skills-dev",
+		"version": "4.7.3",
+		"monthlyDownloads": 3179
+	},
+	{
+		"name": "@howaboua/pi-stuff",
+		"version": "0.0.95",
+		"monthlyDownloads": 3175
+	},
+	{
+		"name": "pi-context",
+		"version": "2.2.0",
+		"monthlyDownloads": 3174
+	},
+	{
+		"name": "pi-yaml-hooks",
+		"version": "2026.9.26",
+		"monthlyDownloads": 3157
+	},
+	{
+		"name": "@pify/usage",
+		"version": "0.12.0",
+		"monthlyDownloads": 3152
+	},
+	{
+		"name": "pi-zhipu-usage",
+		"version": "0.2.0",
+		"monthlyDownloads": 3150
+	},
+	{
+		"name": "pi-sensenova",
+		"version": "1.1.2",
+		"monthlyDownloads": 3108
+	},
+	{
+		"name": "pi-messenger-swarm",
+		"version": "0.26.5",
+		"monthlyDownloads": 3105
+	},
+	{
+		"name": "@josephyoung/pi-openviking",
+		"version": "0.1.20",
+		"monthlyDownloads": 3097
+	},
+	{
+		"name": "bladebro",
+		"version": "4.0.3",
+		"monthlyDownloads": 3092
+	},
+	{
+		"name": "@juicesharp/rpiv-pi",
+		"version": "2.12.0",
+		"monthlyDownloads": 3091
+	},
+	{
+		"name": "@bacnh85/pi-serena",
+		"version": "0.9.20",
+		"monthlyDownloads": 3084
+	},
+	{
+		"name": "@xzzpig/pi-goal-x",
+		"version": "0.9.0",
+		"monthlyDownloads": 3078
+	},
+	{
+		"name": "@juicesharp/rpiv-workflow",
+		"version": "2.12.0",
+		"monthlyDownloads": 3072
+	},
+	{
+		"name": "pi-smart-router",
+		"version": "1.2.0",
+		"monthlyDownloads": 3060
+	},
+	{
+		"name": "pi-provider-kiro",
+		"version": "0.12.1",
+		"monthlyDownloads": 3043
+	},
+	{
+		"name": "pi-landstrip",
+		"version": "0.19.4",
+		"monthlyDownloads": 2992
+	},
+	{
+		"name": "@narumitw/pi-chrome-devtools",
+		"version": "0.53.4",
+		"monthlyDownloads": 2991
+	},
+	{
+		"name": "@reddb-io/red-skills-brain",
+		"version": "4.7.3",
+		"monthlyDownloads": 2989
+	},
+	{
+		"name": "@narumitw/pi-starship",
+		"version": "0.58.0",
+		"monthlyDownloads": 2988
+	},
+	{
+		"name": "pi-claude-code-provider",
+		"version": "0.6.0",
+		"monthlyDownloads": 2988
+	},
+	{
+		"name": "pi-ansicat",
+		"version": "0.3.7",
+		"monthlyDownloads": 2986
+	},
+	{
+		"name": "@juicesharp/rpiv-voice",
+		"version": "2.12.0",
+		"monthlyDownloads": 2971
+	},
+	{
+		"name": "@pi-unipi/image",
+		"version": "2.20.5",
+		"monthlyDownloads": 2968
+	},
+	{
+		"name": "open-zk-kb",
+		"version": "1.4.4",
+		"monthlyDownloads": 2966
+	},
+	{
+		"name": "@howaboua/pi-gippity-control",
+		"version": "0.0.24",
+		"monthlyDownloads": 2955
+	},
+	{
+		"name": "@aliou/pi-cohere",
+		"version": "0.1.2",
+		"monthlyDownloads": 2946
+	},
+	{
+		"name": "@henryqw/pi-herdr",
+		"version": "0.4.7",
+		"monthlyDownloads": 2943
+	},
+	{
+		"name": "pine-of-glass",
+		"version": "0.15.2",
+		"monthlyDownloads": 2933
+	},
+	{
+		"name": "pi-train-agents",
+		"version": "0.2.7",
+		"monthlyDownloads": 2930
+	},
+	{
+		"name": "pi-multimodal-proxy",
+		"version": "1.21.0",
+		"monthlyDownloads": 2928
+	},
+	{
+		"name": "tower-do",
+		"version": "0.7.0",
+		"monthlyDownloads": 2923
+	},
+	{
+		"name": "@igpauli/pi-sano-tts",
+		"version": "2.4.5",
+		"monthlyDownloads": 2918
+	},
+	{
+		"name": "pi-extensions-i18n",
+		"version": "0.8.0",
+		"monthlyDownloads": 2918
+	},
+	{
+		"name": "pi-coralbricks-provider",
+		"version": "1.0.21",
+		"monthlyDownloads": 2909
+	},
+	{
+		"name": "pi-extended-teams",
+		"version": "2.5.2",
+		"monthlyDownloads": 2907
+	},
+	{
+		"name": "@pi-unipi/ralph",
+		"version": "2.20.5",
+		"monthlyDownloads": 2892
+	},
+	{
+		"name": "pi-vision-handoff",
+		"version": "0.10.8",
+		"monthlyDownloads": 2892
+	},
+	{
+		"name": "@monotykamary/pi-retry",
+		"version": "0.10.4",
+		"monthlyDownloads": 2887
+	},
+	{
+		"name": "@henryqw/pi-memory",
+		"version": "8.0.3",
+		"monthlyDownloads": 2872
+	},
+	{
+		"name": "@reddb-io/red-skills-memory",
+		"version": "4.7.3",
+		"monthlyDownloads": 2868
+	},
+	{
+		"name": "@evoclock/pi-agentic-driver",
+		"version": "1.1.1",
+		"monthlyDownloads": 2857
+	},
+	{
+		"name": "@reddb-io/red-skills-internal",
+		"version": "4.7.3",
+		"monthlyDownloads": 2855
+	},
+	{
+		"name": "@ludi-uni/pi-console",
+		"version": "0.5.0",
+		"monthlyDownloads": 2843
+	},
+	{
+		"name": "@d3ara1n/pi-subagent",
+		"version": "3.7.0",
+		"monthlyDownloads": 2833
+	},
+	{
+		"name": "common-memory-core",
+		"version": "0.4.3",
+		"monthlyDownloads": 2824
+	},
+	{
+		"name": "pi-multikey",
+		"version": "1.18.0",
+		"monthlyDownloads": 2819
+	},
+	{
+		"name": "@spences10/pi-mcp",
+		"version": "0.0.60",
+		"monthlyDownloads": 2818
+	},
+	{
+		"name": "@henryqw/pi-auto-compact",
+		"version": "4.1.5",
+		"monthlyDownloads": 2817
+	},
+	{
+		"name": "@foolsecret/pi-usager",
+		"version": "2.6.0",
+		"monthlyDownloads": 2816
+	},
+	{
+		"name": "@howaboua/pi-shepherdr",
+		"version": "0.2.13",
+		"monthlyDownloads": 2810
+	},
+	{
+		"name": "@mrclrchtr/supi-code-intelligence",
+		"version": "8.0.1",
+		"monthlyDownloads": 2808
+	},
+	{
+		"name": "pi-tool-discipline",
+		"version": "0.2.0",
+		"monthlyDownloads": 2799
+	},
+	{
+		"name": "@d3ara1n/pi-provider-sensenova",
+		"version": "1.3.0",
+		"monthlyDownloads": 2796
+	},
+	{
+		"name": "@adia-ai/adia-ui-forge",
+		"version": "0.8.66",
+		"monthlyDownloads": 2794
+	},
+	{
+		"name": "planweft",
+		"version": "0.7.0",
+		"monthlyDownloads": 2785
+	},
+	{
+		"name": "@matthewfl/pi-contemplator",
+		"version": "0.4.0",
+		"monthlyDownloads": 2765
+	},
+	{
+		"name": "remote-pi",
+		"version": "0.7.0",
+		"monthlyDownloads": 2759
+	},
+	{
+		"name": "pi-vim",
+		"version": "0.14.2",
+		"monthlyDownloads": 2755
+	},
+	{
+		"name": "@zhushanwen/pi-extension-logger",
+		"version": "0.6.1",
+		"monthlyDownloads": 2753
+	},
+	{
+		"name": "@mrclrchtr/supi-ask-user",
+		"version": "8.0.1",
+		"monthlyDownloads": 2751
+	},
+	{
+		"name": "pi-patty-bg-tasks",
+		"version": "1.1.6",
+		"monthlyDownloads": 2750
+	},
+	{
+		"name": "@spences10/pi-redact",
+		"version": "0.0.15",
+		"monthlyDownloads": 2747
+	},
+	{
+		"name": "@pi-unipi/milestone",
+		"version": "2.20.5",
+		"monthlyDownloads": 2742
+	},
+	{
+		"name": "@shanepadgett/tau-agent",
+		"version": "0.47.0",
+		"monthlyDownloads": 2733
+	},
+	{
+		"name": "@groeponline/pi-agent-orchestrator",
+		"version": "0.19.1",
+		"monthlyDownloads": 2722
+	},
+	{
+		"name": "@howaboua/pi-extensions",
+		"version": "0.0.87",
+		"monthlyDownloads": 2719
+	},
+	{
+		"name": "pi-unsloth-webtools",
+		"version": "0.10.1",
+		"monthlyDownloads": 2714
+	},
+	{
+		"name": "pi-studio",
+		"version": "0.9.61",
+		"monthlyDownloads": 2712
+	},
+	{
+		"name": "@mrclrchtr/supi-claude-md",
+		"version": "8.0.1",
+		"monthlyDownloads": 2710
+	}
+]

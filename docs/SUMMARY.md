@@ -19,6 +19,7 @@
 
 - [Extensions](extensions.md)
 - [Native extensions in Rust](native-extensions.md)
+- [Native extension examples](native-examples.md)
 - [Packages](packages.md)
 - [MCP servers and codemode](mcp.md)
 

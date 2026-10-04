@@ -13,6 +13,13 @@ fn is_extension_file(name: &str) -> bool {
     name.ends_with(".ts") || name.ends_with(".js") || name.ends_with(".wasm")
 }
 
+/// Whether the extension entry `path` is a native extension, a WebAssembly
+/// component, rather than a pi extension that runs in ri-js.
+pub fn is_native(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "wasm")
+}
+
 /// The entry points of extension directory `dir`: what its manifest declares,
 /// else `index.ts` or `index.js`.
 pub fn entries(dir: &Path) -> Option<Vec<PathBuf>> {

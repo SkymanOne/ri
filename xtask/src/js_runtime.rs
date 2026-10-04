@@ -20,8 +20,10 @@ const INPUTS: [&str; 6] = [
 ];
 /// The JS runtime ri embeds.
 const ARTIFACT: &str = "crates/ri-ext/ri-js.wasm";
-/// The Rust SDK's example extension, a test fixture.
-const EXAMPLE: &str = "crates/ri-ext/tests/fixtures/hello.wasm";
+/// The Rust SDK's example extensions, one crate each; test fixtures.
+const EXAMPLES: &str = "guest/examples";
+/// Where each example's build lands, as `<crate>.wasm`.
+const FIXTURES: &str = "crates/ri-ext/tests/fixtures";
 const RECORD: &str = "crates/ri-ext/ri-js.wasm.inputs";
 const TARGET: &str = "wasm32-wasip2";
 
@@ -48,11 +50,11 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         let artifacts = artifacts_hash()?;
         if record != format_record(&inputs, &artifacts) {
             eprintln!(
-                "{ARTIFACT} or {EXAMPLE} is stale or was changed by hand: run `cargo xtask js-runtime` and commit the result"
+                "{ARTIFACT} or an example in {FIXTURES} is stale or was changed by hand: run `cargo xtask js-runtime` and commit the result"
             );
             return Ok(ExitCode::FAILURE);
         }
-        eprintln!("{ARTIFACT} and {EXAMPLE} match their inputs");
+        eprintln!("{ARTIFACT} and the examples in {FIXTURES} match their inputs");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -65,18 +67,21 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         fs::create_dir_all("target/guest")?;
         Path::new("target/guest").canonicalize()
     })?;
+    let examples = examples()?;
+    let mut build = vec![
+        "build",
+        "--release",
+        "--locked",
+        "--target",
+        TARGET,
+        "-p",
+        "ri-js",
+    ];
+    for example in &examples {
+        build.extend(["-p", example.as_str()]);
+    }
     let status = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .args([
-            "build",
-            "--release",
-            "--locked",
-            "--target",
-            TARGET,
-            "-p",
-            "ri-js",
-            "-p",
-            "hello",
-        ])
+        .args(build)
         .current_dir("guest")
         .env("CARGO_TARGET_DIR", &target_dir)
         .env("WASI_SDK_PATH", &sdk)
@@ -92,30 +97,54 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         bail!("building the guest failed");
     }
     fs::copy(target_dir.join(TARGET).join("release/ri_js.wasm"), ARTIFACT)?;
-    if let Some(dir) = Path::new(EXAMPLE).parent() {
-        fs::create_dir_all(dir)?;
+    fs::create_dir_all(FIXTURES)?;
+    for example in &examples {
+        let built = target_dir
+            .join(TARGET)
+            .join("release")
+            .join(format!("{}.wasm", example.replace('-', "_")));
+        let fixture = Path::new(FIXTURES).join(format!("{example}.wasm"));
+        fs::copy(&built, &fixture)?;
+        eprintln!(
+            "wrote {} ({} bytes)",
+            fixture.display(),
+            fs::metadata(&fixture)?.len()
+        );
     }
-    fs::copy(target_dir.join(TARGET).join("release/hello.wasm"), EXAMPLE)?;
     fs::write(RECORD, format_record(&inputs, &artifacts_hash()?))?;
     eprintln!(
-        "wrote {ARTIFACT} ({} bytes), {EXAMPLE} ({} bytes) and {RECORD}",
-        fs::metadata(ARTIFACT)?.len(),
-        fs::metadata(EXAMPLE)?.len()
+        "wrote {ARTIFACT} ({} bytes) and {RECORD}",
+        fs::metadata(ARTIFACT)?.len()
     );
     Ok(ExitCode::SUCCESS)
+}
+
+/// The example crates, named after their directories, in name order.
+fn examples() -> anyhow::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(EXAMPLES).with_context(|| format!("reading {EXAMPLES}"))? {
+        let entry = entry?;
+        if entry.path().join("Cargo.toml").is_file() {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 fn format_record(inputs: &str, artifacts: &str) -> String {
     format!("inputs {inputs}\nartifacts {artifacts}\n")
 }
 
-/// Both built components, hashed in order.
+/// The runtime and every example's fixture, hashed in order.
 fn artifacts_hash() -> anyhow::Result<String> {
-    Ok(format!(
-        "{} {}",
-        file_hash(Path::new(ARTIFACT))?,
-        file_hash(Path::new(EXAMPLE))?
-    ))
+    let mut hashes = vec![file_hash(Path::new(ARTIFACT))?];
+    for example in examples()? {
+        hashes.push(file_hash(
+            &Path::new(FIXTURES).join(format!("{example}.wasm")),
+        )?);
+    }
+    Ok(hashes.join(" "))
 }
 
 fn hex(digest: &[u8]) -> String {
