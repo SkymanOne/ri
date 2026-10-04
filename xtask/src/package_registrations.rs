@@ -3,8 +3,9 @@
 //! loads their extensions, and compares what they register with pi's
 //! (`registrations.json`, from `packages.mjs` in the fixture generator).
 //!
-//! Needs network access to the npm registry. Extensions run without network,
-//! process or environment access, and see only their scratch directory.
+//! Needs network access to the npm registry. Extensions run without network
+//! or process access, see only their scratch directory, and get the same five
+//! environment variables as pi's side.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -153,8 +154,21 @@ async fn load(
         filesystem: true,
         process: false,
         network: false,
-        environment: false,
+        environment: true,
     };
+    // The variables pi's side gets, and nothing from this process.
+    options.environment = Some(
+        [
+            ("PATH", std::env::var("PATH").unwrap_or_default()),
+            ("HOME", options.home_dir.to_string_lossy().into_owned()),
+            ("TMPDIR", dir.to_string_lossy().into_owned()),
+            ("PI_OFFLINE", "1".to_owned()),
+            ("PI_CODING_AGENT_DIR", agent.to_string_lossy().into_owned()),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect(),
+    );
     options.filesystem_roots = vec![dir.to_path_buf()];
     let (extensions, errors) = if sources.is_empty() {
         (Vec::new(), Vec::new())

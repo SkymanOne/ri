@@ -504,5 +504,39 @@ export default async function (pi) {
 "#;
     let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
     assert_eq!(extension.get("error"), None, "{extension}");
-    assert_eq!(extension["commands"][0]["description"], "echo 2,function,1,,");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "echo 2,function,1,,"
+    );
+}
+
+/// An instance given its own environment sees those variables only.
+#[tokio::test(flavor = "multi_thread")]
+async fn sees_only_the_given_environment() {
+    let dir = scratch("environment");
+    std::fs::write(
+        dir.join("main.ts"),
+        r#"
+export default function (pi) {
+	pi.registerCommand("probe", { description: JSON.stringify(process.env), handler: async () => {} });
+}
+"#,
+    )
+    .unwrap();
+    let mut options = Options::new(dir.clone());
+    options.environment = Some([("ONLY".to_owned(), "this".to_owned())].into());
+    let instance = Instance::start(&engine(), options, Arc::new(NoBridge))
+        .await
+        .unwrap();
+    let loaded = instance
+        .call(
+            "load",
+            &json!({"cwd": dir, "extensions": [{"id": 1, "path": dir.join("main.ts")}]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        loaded["extensions"][0]["commands"][0]["description"],
+        r#"{"ONLY":"this"}"#
+    );
 }
