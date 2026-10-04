@@ -1,9 +1,11 @@
 //! API-key credentials of the providers whose setup is more than one key in
 //! one environment variable: Amazon Bedrock, Google Vertex AI, the two
-//! Cloudflare providers, and Anthropic's workload identity federation.
+//! Cloudflare providers, llama.cpp, and Anthropic's workload identity
+//! federation.
 //!
 //! Ports of the `ApiKeyAuth` objects in `providers/amazon-bedrock.ts`,
-//! `google-vertex.ts`, `cloudflare-auth.ts` and `anthropic.ts` in pi `v1.0.0`.
+//! `google-vertex.ts`, `cloudflare-auth.ts` and `anthropic.ts` in pi-ai, and
+//! of `extensions/llama/provider.ts` in pi-coding-agent, `v1.0.0`.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +26,8 @@ pub struct Resolved {
     pub env: Option<ProviderEnv>,
     /// Where the credential came from, as pi labels it.
     pub source: String,
+    /// Replaces the model's base URL, as a llama.cpp server URL does.
+    pub base_url: Option<String>,
 }
 
 /// What resolution reads besides the stored credential.
@@ -66,7 +70,11 @@ fn file_exists(path: &str) -> bool {
 pub fn is_custom(provider: &str) -> bool {
     matches!(
         provider,
-        "amazon-bedrock" | "google-vertex" | "cloudflare-workers-ai" | "cloudflare-ai-gateway"
+        "amazon-bedrock"
+            | "google-vertex"
+            | "cloudflare-workers-ai"
+            | "cloudflare-ai-gateway"
+            | crate::llama::PROVIDER_ID
     )
 }
 
@@ -83,8 +91,39 @@ pub fn resolve(
         "google-vertex" => vertex(credential, ambient),
         "cloudflare-workers-ai" => cloudflare(false, credential, ambient),
         "cloudflare-ai-gateway" => cloudflare(true, credential, ambient),
+        crate::llama::PROVIDER_ID => llama(credential, ambient),
         _ => None,
     }
+}
+
+/// llama.cpp: the server URL from the credential, else `LLAMA_BASE_URL`;
+/// the key from the credential, else `LLAMA_API_KEY`, else `local`.
+fn llama(credential: Option<&ApiKeyCredential>, ambient: &Ambient<'_>) -> Option<Resolved> {
+    use crate::llama::{BASE_URL_ENV, inference_url, normalize_server_url};
+    let configured = stored_env(credential, BASE_URL_ENV)
+        .filter(|url| !url.trim().is_empty())
+        .or_else(|| (ambient.env)(BASE_URL_ENV))?;
+    let server = normalize_server_url(&configured).ok()?;
+    let api_key = credential
+        .and_then(|credential| credential.key.clone())
+        .or_else(|| (ambient.env)("LLAMA_API_KEY"))
+        .unwrap_or_else(|| "local".into());
+    let mut env = credential
+        .and_then(|credential| credential.env.clone())
+        .unwrap_or_default();
+    env.insert(BASE_URL_ENV.into(), server.clone());
+    Some(Resolved {
+        api_key: Some(api_key),
+        headers: IndexMap::new(),
+        env: Some(env),
+        source: if credential.is_some() {
+            "stored credential"
+        } else {
+            BASE_URL_ENV
+        }
+        .into(),
+        base_url: Some(inference_url(&server)),
+    })
 }
 
 fn stored_key(credential: Option<&ApiKeyCredential>) -> Option<&str> {
@@ -217,6 +256,7 @@ fn cloudflare(
             headers: IndexMap::new(),
             env: Some(env),
             source,
+            base_url: None,
         });
     }
     let gateway_id = value(CLOUDFLARE_GATEWAY_ID).filter(|v| !v.is_empty())?;
@@ -233,6 +273,7 @@ fn cloudflare(
         headers,
         env: Some(env),
         source,
+        base_url: None,
     })
 }
 
@@ -320,7 +361,45 @@ pub async fn login(
         "google-vertex" => vertex_login(interaction).await,
         "cloudflare-workers-ai" => cloudflare_login(false, interaction).await,
         "cloudflare-ai-gateway" => cloudflare_login(true, interaction).await,
+        crate::llama::PROVIDER_ID => llama_login(interaction).await,
         _ => return None,
+    })
+}
+
+/// pi's llama.cpp sign-in: the server URL and an optional key, checked by
+/// listing the server's models.
+async fn llama_login(interaction: &Interaction) -> Result<ApiKeyCredential, AuthError> {
+    use crate::llama::{BASE_URL_ENV, Client, DEFAULT_SERVER_URL, normalize_server_url};
+    interaction.check()?;
+    let fallback = process_env(BASE_URL_ENV).unwrap_or_else(|| DEFAULT_SERVER_URL.into());
+    let entered = interaction
+        .prompt(AuthPrompt::Text {
+            message: "llama.cpp server URL".into(),
+            placeholder: Some(fallback.clone()),
+        })
+        .await?;
+    let entered = entered.trim();
+    let server = normalize_server_url(if entered.is_empty() {
+        &fallback
+    } else {
+        entered
+    })
+    .map_err(AuthError::Failed)?;
+    interaction.check()?;
+    let key = interaction
+        .prompt(secret("API key (optional)"))
+        .await?
+        .trim()
+        .to_owned();
+    let key = (!key.is_empty()).then_some(key);
+    Client::new(&server, key.clone())
+        .map_err(AuthError::Failed)?
+        .list(false, interaction.cancel())
+        .await
+        .map_err(AuthError::Failed)?;
+    Ok(ApiKeyCredential {
+        key,
+        env: env_of(&[(BASE_URL_ENV, server)]),
     })
 }
 
@@ -526,6 +605,36 @@ mod tests {
                 file_exists: &exists,
             },
         )
+    }
+
+    #[test]
+    fn llama_reads_the_server_and_key_like_pi() {
+        assert_eq!(run("llama.cpp", None, &[], &[]), None);
+        let from_env = run(
+            "llama.cpp",
+            None,
+            &[("LLAMA_BASE_URL", "http://box:8080/v1/")],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(from_env.source, "LLAMA_BASE_URL");
+        assert_eq!(from_env.api_key.as_deref(), Some("local"));
+        assert_eq!(from_env.base_url.as_deref(), Some("http://box:8080/v1"));
+        let credential = stored(Some("k"), &[("LLAMA_BASE_URL", "http://h:1")]);
+        let stored = run(
+            "llama.cpp",
+            Some(&credential),
+            &[
+                ("LLAMA_BASE_URL", "http://other:2"),
+                ("LLAMA_API_KEY", "env"),
+            ],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(stored.source, "stored credential");
+        assert_eq!(stored.api_key.as_deref(), Some("k"));
+        assert_eq!(stored.base_url.as_deref(), Some("http://h:1/v1"));
+        assert_eq!(stored.env.unwrap()["LLAMA_BASE_URL"], "http://h:1");
     }
 
     #[test]

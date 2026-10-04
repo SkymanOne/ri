@@ -61,6 +61,9 @@ impl Auth {
         self.headers.extend(resolved.headers);
         self.env = resolved.env;
         self.source = Some(resolved.source);
+        if resolved.base_url.is_some() {
+            self.base_url = resolved.base_url;
+        }
     }
 
     /// Applies the credentials to a request: the key when there is one,
@@ -177,6 +180,9 @@ pub struct ModelRegistry {
     images: Vec<ImageModel>,
     /// Models from refreshed catalogs, by provider, over the built-in ones.
     dynamic: IndexMap<String, ProviderModels>,
+    /// Whether pi's built-in `llama.cpp` extension runs, which provides the
+    /// llama.cpp provider.
+    llama: bool,
     /// Models extension providers register, by provider.
     extension_models: IndexMap<String, Vec<Model>>,
     /// Where refreshed catalogs persist.
@@ -504,7 +510,75 @@ impl ModelRegistry {
                 sources.push((provider.clone(), Source::Radius { gateway }));
             }
         }
+        if self.llama {
+            // pi refreshes llama.cpp only for a stored server.
+            let server = match self.store.get(crate::llama::PROVIDER_ID) {
+                Some(Credential::ApiKey(credential)) => credential
+                    .env
+                    .as_ref()
+                    .and_then(|env| env.get(crate::llama::BASE_URL_ENV))
+                    .and_then(|url| crate::llama::normalize_server_url(url).ok()),
+                _ => None,
+            };
+            sources.push((
+                crate::llama::PROVIDER_ID.into(),
+                Source::Llama {
+                    server: server.unwrap_or_default(),
+                },
+            ));
+        }
         sources
+    }
+
+    /// Provides pi's llama.cpp provider, as its built-in extension does.
+    pub fn enable_llama(&mut self) {
+        if self.llama {
+            return;
+        }
+        self.llama = true;
+        if let Some(store) = &self.models_store
+            && let Some(entry) = store.read(crate::llama::PROVIDER_ID)
+        {
+            let source = Source::Llama {
+                server: String::new(),
+            };
+            self.dynamic.insert(
+                crate::llama::PROVIDER_ID.into(),
+                model_catalog::restore(crate::llama::PROVIDER_ID, &source, &entry),
+            );
+        }
+        self.rebuild();
+    }
+
+    /// Whether the llama.cpp provider is present.
+    pub fn llama_enabled(&self) -> bool {
+        self.llama
+    }
+
+    /// The llama.cpp server and its key, when the provider is configured.
+    pub async fn llama_server(&self) -> Option<(String, Option<String>)> {
+        if !self.llama {
+            return None;
+        }
+        let credential = match self.store.get(crate::llama::PROVIDER_ID) {
+            Some(Credential::ApiKey(credential)) => Some(credential),
+            _ => None,
+        };
+        let resolved = key_auth::resolve(
+            crate::llama::PROVIDER_ID,
+            credential.as_ref(),
+            &Ambient::process(),
+        )?;
+        let server = resolved
+            .env
+            .as_ref()
+            .and_then(|env| env.get(crate::llama::BASE_URL_ENV))
+            .cloned()?;
+        // A stored key, or the environment's; pi sends no "local" placeholder.
+        let key = credential
+            .and_then(|credential| credential.key)
+            .or_else(|| std::env::var("LLAMA_API_KEY").ok());
+        Some((server, key))
     }
 
     /// What a catalog refresh needs: each refreshable provider, whether it
@@ -515,8 +589,15 @@ impl ModelRegistry {
             let configured = self.has_auth(&provider);
             let token = match (&source, configured) {
                 (Source::Radius { .. }, true) => self.provider_token(&provider).await,
+                // pi sends the stored key only.
+                (Source::Llama { .. }, true) => match self.store.get(&provider) {
+                    Some(Credential::ApiKey(credential)) => credential.key,
+                    _ => None,
+                },
                 _ => None,
             };
+            let configured =
+                configured && !matches!(&source, Source::Llama { server } if server.is_empty());
             targets.push(Target {
                 provider,
                 source,
@@ -592,6 +673,9 @@ impl ModelRegistry {
             if !providers.contains(id) {
                 providers.push(id.clone());
             }
+        }
+        if self.llama && !providers.iter().any(|id| id == crate::llama::PROVIDER_ID) {
+            providers.push(crate::llama::PROVIDER_ID.into());
         }
         let mut errors = Vec::new();
         for (provider, config) in self.config.providers.clone() {

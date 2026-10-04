@@ -27,7 +27,7 @@ fn stringify(value: &Value) -> String {
     ri_types::json::to_string(value).unwrap_or_default()
 }
 
-pub(super) fn model_type(value: &Value) -> Result<&'static str, String> {
+pub(crate) fn model_type(value: &Value) -> Result<&'static str, String> {
     value
         .as_str()
         .and_then(|kind| MODEL_TYPES.iter().copied().find(|known| *known == kind))
@@ -95,7 +95,7 @@ fn to_value(model: &impl serde::Serialize) -> Value {
 }
 
 /// Every model of `kind`, optionally of one provider.
-pub(super) fn models_of_type(
+pub(crate) fn models_of_type(
     registry: &ModelRegistry,
     kind: &str,
     provider: Option<&str>,

@@ -61,6 +61,10 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
             ids.push(model.provider.clone());
         }
     }
+    let llama = ri_ai::llama::PROVIDER_ID;
+    if registry.llama_enabled() && !ids.iter().any(|id| id == llama) {
+        ids.push(llama.to_owned());
+    }
     let mut options = Vec::new();
     for id in ids {
         let name = registry.provider_name(&id);
@@ -93,6 +97,7 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
             Some(info) => info
                 .api_key
                 .map(|method| (method.name.to_owned(), method.login)),
+            None if id == llama => Some(("llama.cpp server".to_owned(), true)),
             None => Some(("API key".to_owned(), true)),
         };
         if kind.is_none_or(|kind| kind == LoginKind::ApiKey)
@@ -1126,6 +1131,16 @@ impl super::App {
             .filter(|model| model.provider == option.id)
             .collect();
         let selection = match default {
+            // pi's `llamaCppPostLoginGuidance`.
+            None if option.id == ri_ai::llama::PROVIDER_ID => Err(if models.is_empty() {
+                format!(
+                    "{label}. No llama.cpp models are loaded. Use /llama to load a model, then /model to select it."
+                )
+            } else {
+                format!(
+                    "{label}. Use /model to select a loaded llama.cpp model, or /llama to manage models."
+                )
+            }),
             None => Err(format!(
                 "{label}, but no default model is configured for provider \"{}\". Use /model to select a model.",
                 option.id

@@ -898,3 +898,29 @@ async fn radius_browser_login_checks_the_state() {
     assert!(exchange.contains(&("code".into(), "c1".into())));
     assert!(exchange.contains(&("redirect_uri".into(), redirect)));
 }
+
+#[tokio::test]
+async fn llama_sign_in_checks_the_server_and_stores_its_url() {
+    let server = mock(vec![exchange(
+        "GET",
+        "/models",
+        200,
+        &json!({"data": [{"id": "qwen", "status": {"value": "loaded"}}]}),
+    )])
+    .await;
+    let url = format!("{}/v1/", server.url());
+    let (interaction, requests) = Interaction::new(CancellationToken::new());
+    serve(requests, move |prompt, _, _| match prompt {
+        AuthPrompt::Text { message, .. } if message == "llama.cpp server URL" => Some(url.clone()),
+        AuthPrompt::Secret { message } if message == "API key (optional)" => Some("  ".into()),
+        _ => None,
+    });
+    let credential = ri_ai::key_auth::login("llama.cpp", &interaction)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(credential.key, None);
+    assert_eq!(credential.env.unwrap()["LLAMA_BASE_URL"], server.url());
+    let requests = server.finish().unwrap();
+    assert!(!requests[0].headers.contains_key("authorization"));
+}

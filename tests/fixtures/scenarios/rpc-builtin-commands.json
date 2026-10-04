@@ -1,0 +1,39 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "get_commands",
+      "success": true,
+      "data": {
+        "commands": [
+          {
+            "name": "llama",
+            "description": "Manage llama.cpp router models",
+            "source": "extension",
+            "sourceInfo": {
+              "path": "builtin:llama.cpp",
+              "source": "builtin",
+              "scope": "temporary",
+              "origin": "top-level"
+            }
+          },
+          {
+            "name": "mcp",
+            "description": "Manage MCP servers: sign in, reconnect, enable or disable, and change exposure",
+            "source": "extension",
+            "sourceInfo": {
+              "path": "builtin:mcp",
+              "source": "builtin",
+              "scope": "temporary",
+              "origin": "top-level"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

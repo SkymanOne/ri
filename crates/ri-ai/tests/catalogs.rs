@@ -246,3 +246,71 @@ async fn radius_gateway_catalog_is_fetched_with_the_token_and_restored_offline()
     assert_eq!(requests[0].headers["authorization"], REDACTED);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+async fn llama_server_models_become_chat_models_and_classifiers() {
+    let server = mock(vec![
+        get(
+            "/models",
+            200,
+            &[],
+            &json!({"data": [
+                {"id": "qwen", "status": {"value": "loaded", "args": ["--ctx-size", "16384"]},
+                 "architecture": {"input_modalities": ["text", "image"]}},
+                {"id": "preset", "status": {"value": "unloaded"}, "source": "preset"},
+                {"id": "cold", "status": {"value": "unloaded"}}
+            ]}),
+        ),
+        // The router does not autoload presets, so only `qwen` is served.
+        get("/props", 200, &[], &json!({"models_autoload": false})),
+        get(
+            "/props",
+            200,
+            &[],
+            &json!({"chat_template": "{%- if enable_thinking %}<think>{% endif %}"}),
+        ),
+    ])
+    .await;
+    let (dir, store) = store("llama");
+    let target = Target {
+        provider: "llama.cpp".into(),
+        source: Source::Llama {
+            server: format!("{}/v1/", server.url()),
+        },
+        token: Some("secret".into()),
+        configured: true,
+    };
+    let refreshed = refresh(
+        std::slice::from_ref(&target),
+        &store,
+        &RefreshOptions::default(),
+    )
+    .await;
+    assert!(refreshed.errors.is_empty(), "{:?}", refreshed.errors);
+    let models = &refreshed.models["llama.cpp"];
+    assert_eq!(ids(&models.chat), ["qwen"]);
+    let chat = &models.chat[0];
+    assert!(chat.reasoning);
+    assert!(chat.accepts_images());
+    assert_eq!(chat.context_window, 16_384);
+    assert_eq!(chat.base_url, format!("{}/v1", server.url()));
+    assert_eq!(models.classifiers.len(), 1);
+    assert_eq!(models.classifiers[0].api, "llama-cpp-classify");
+    assert_eq!(models.classifiers[0].base_url, server.url());
+
+    // Restored offline, as pi publishes the stored catalog.
+    let offline = RefreshOptions {
+        allow_network: false,
+        ..RefreshOptions::default()
+    };
+    let restored = refresh(std::slice::from_ref(&target), &store, &offline).await;
+    assert_eq!(restored.models["llama.cpp"], *models);
+
+    let requests = server.finish().unwrap();
+    assert_eq!(requests[0].headers["authorization"], REDACTED);
+    assert_eq!(
+        requests[2].query.as_deref(),
+        Some("model=qwen&autoload=false")
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -94,6 +94,11 @@ pub enum Source {
         /// The gateway origin.
         gateway: String,
     },
+    /// The models a llama.cpp server serves.
+    Llama {
+        /// The server URL.
+        server: String,
+    },
 }
 
 /// A provider's models of every type.
@@ -146,7 +151,7 @@ fn typed_models(provider: &str, models: &Value) -> ProviderModels {
 /// overlay only when it is newer than the built-in catalog.
 pub fn restore(provider: &str, source: &Source, entry: &Value) -> ProviderModels {
     match source {
-        Source::Radius { .. } => typed_models(provider, &entry["models"]),
+        Source::Radius { .. } | Source::Llama { .. } => typed_models(provider, &entry["models"]),
         Source::Remote => {
             let newer = entry["lastModified"]
                 .as_u64()
@@ -385,6 +390,49 @@ async fn refresh_remote(
     Ok(Some(restore(provider, &Source::Remote, &entry)))
 }
 
+/// pi's llama.cpp `refreshModels`: the server's loaded models, keeping the
+/// context windows learned before for models that no longer report one.
+async fn refresh_llama(
+    target: &Target,
+    server: &str,
+    stored: Option<&Value>,
+    store: &ModelsStore,
+    options: &RefreshOptions,
+) -> Result<Option<ProviderModels>, String> {
+    let client = crate::llama::Client::new(server, target.token.clone())?;
+    let cached: Map<String, Value> = stored
+        .and_then(|entry| entry["models"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|model| {
+            Some((
+                model["id"].as_str()?.to_owned(),
+                model["contextWindow"].clone(),
+            ))
+        })
+        .collect();
+    let models = crate::llama::fetch_models(&client, &cached, &options.cancel).await?;
+    if options.cancel.is_cancelled() {
+        return Ok(None);
+    }
+    let mut list: Vec<Value> = models
+        .chat
+        .iter()
+        .filter_map(|model| serde_json::to_value(model).ok())
+        .collect();
+    list.extend(
+        models
+            .classifiers
+            .iter()
+            .filter_map(|model| serde_json::to_value(model).ok()),
+    );
+    let entry = json!({ "models": list, "checkedAt": now_ms() });
+    store
+        .write(&target.provider, entry, &options.cancel)
+        .await?;
+    Ok(Some(models))
+}
+
 /// pi's `loadRadiusGatewayConfig` and `getRadiusModelsFromConfig`.
 async fn refresh_radius(
     target: &Target,
@@ -457,6 +505,7 @@ async fn refresh_one(
     let result = match &target.source {
         Source::Remote => refresh_remote(target, entry, store, options).await,
         Source::Radius { gateway } => refresh_radius(target, gateway, store, options).await,
+        Source::Llama { server } => refresh_llama(target, server, entry, store, options).await,
     };
     match result {
         Ok(Some(models)) => (Some(models), None),

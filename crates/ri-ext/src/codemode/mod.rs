@@ -10,6 +10,7 @@ mod declarations;
 mod models;
 mod run;
 
+pub(crate) use models::{model_type, models_of_type};
 pub(crate) use run::Runner;
 
 use std::collections::{HashMap, HashSet};

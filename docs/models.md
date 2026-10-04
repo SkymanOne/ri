@@ -40,13 +40,25 @@ Amazon Bedrock, Google Vertex AI and Cloudflare use their platform's credentials
 
 `/login` stores these settings in `auth.json` instead, with pi's prompts. With `ANTHROPIC_FEDERATION_RULE_ID` and the related variables set, Anthropic requests use workload identity federation instead of a key.
 
+## Local models with llama.cpp
+
+ri supports the [llama.cpp](https://github.com/ggml-org/llama.cpp) router server, as pi does. Start `llama-server` without `--model`, for example:
+
+```sh
+llama-server --models-dir ~/models --no-models-autoload --jinja --host 127.0.0.1 --port 8080
+```
+
+Then run `/login llama.cpp` and enter the server URL (default `http://127.0.0.1:8080`) and an optional API key, or set `LLAMA_BASE_URL` and `LLAMA_API_KEY`. `/llama` loads and unloads the router's models and downloads new ones from Hugging Face. Loaded models appear in `/model`, and every chat model is also listed as a classifier. pi's [llama.cpp guide](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/llama-cpp.md) covers the server options and model layout.
+
+To remove the provider and `/llama`, disable `llama.cpp` in `ri config`, or add `"-builtin:llama.cpp"` to the `extensions` setting.
+
 ## Model catalogs
 
 The catalog is built into ri. Between releases, pi publishes catalog updates for its providers. ri fetches them for the providers you have configured: in the background at startup, when the model selector opens, after `/login`, and with `ri update --models`. Fetched catalogs are kept in `~/.ri/agent/models-store.json`, so later sessions have them offline. `--offline` or `PI_OFFLINE=1` turns fetching off.
 
 ## Classifier and image models
 
-Besides chat models, the catalog lists classifiers, which answer typed questions about JSON data (TypeSafe's Jev, also through OpenCode, OpenRouter, Vercel AI Gateway and Cloudflare Workers AI), and image models on OpenRouter. They run from codemode scripts through the `models` global, with the session's credentials. See [MCP servers and codemode](mcp.md#codemode).
+Besides chat models, the catalog lists classifiers, which answer typed questions about JSON data (TypeSafe's Jev, also through OpenCode, OpenRouter, Vercel AI Gateway and Cloudflare Workers AI, and models loaded in llama.cpp), and image models on OpenRouter. They run from codemode scripts through the `models` global, and from extensions through `ctx.modelRegistry.classify()` and `generateImages()`, with the session's credentials. See [MCP servers and codemode](mcp.md#codemode).
 
 ## Choosing a model
 

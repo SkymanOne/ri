@@ -13,6 +13,7 @@ pub mod hash;
 pub mod http;
 pub mod json_parse;
 pub mod key_auth;
+pub mod llama;
 pub mod model_catalog;
 pub mod providers;
 pub mod registry;

@@ -413,6 +413,11 @@ fn build(
     ri_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
     // A `models.json` error is shown by the interactive mode, as in pi.
     let mut registry = ModelRegistry::load(&agent_dir);
+    let builtin_settings = extension_settings(&settings);
+    // pi's built-in llama.cpp extension provides its provider.
+    if builtin_enabled(ri_core::llama::NAME, args, &builtin_settings) {
+        registry.enable_llama();
+    }
     // Providers extensions register, after `models.json` as in pi.
     for host in &extensions.hosts {
         for (name, config) in host.providers() {
@@ -666,7 +671,6 @@ fn build(
 
     let codemode_cache = agent_dir.join("cache").join("wasm");
     let codemode_docs = agent_dir.join("docs").join("codemode.md");
-    let builtin_settings = extension_settings(&settings);
     let session = AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
@@ -677,18 +681,21 @@ fn build(
         model,
         thinking_level,
         tools,
-        // pi runs its built-in extensions after the loaded ones: codemode,
-        // then tool_search and MCP.
+        // pi runs its built-in extensions after the loaded ones: llama.cpp,
+        // codemode, then tool_search and MCP.
         extensions: extensions
             .hosts
             .iter()
             .flat_map(ExtensionHost::for_session)
             .chain(
-                std::iter::once(Arc::new(ri_ext::codemode::CodemodeExtension::new(
-                    Some(codemode_cache),
-                    Some(codemode_docs),
-                ))
+                std::iter::once(Arc::new(ri_core::llama::LlamaExtension)
                     as Arc<dyn ri_core::extensions::Extension>)
+                .chain(std::iter::once(
+                    Arc::new(ri_ext::codemode::CodemodeExtension::new(
+                        Some(codemode_cache),
+                        Some(codemode_docs),
+                    )) as Arc<dyn ri_core::extensions::Extension>,
+                ))
                 .chain(ri_core::extensions::builtins())
                 .filter(|extension| {
                     let source = extension.source();
@@ -710,7 +717,7 @@ fn build(
 const BUILTIN_PREFIX: &str = "builtin:";
 
 /// ri's built-in extensions, in pi's load order. pi's `llama.cpp` is absent.
-pub const BUILTINS: [&str; 3] = ["codemode", "tool-search", "mcp"];
+pub const BUILTINS: [&str; 4] = ["llama.cpp", "codemode", "tool-search", "mcp"];
 
 /// Whether built-in extension `name` runs, as in pi: `-e builtin:<name>` loads
 /// it; otherwise it runs unless `--no-extensions` or the `extensions` setting
