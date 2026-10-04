@@ -672,6 +672,8 @@ pub fn create(
             )
             .collect(),
         include_extension_tools: args.tools.is_none() && !args.no_tools,
+        allowed_tools: args.tools.clone().or_else(|| args.no_tools.then(Vec::new)),
+        excluded_tools: args.exclude_tools.clone().unwrap_or_default(),
         resources,
     });
     session.set_scoped_models(scoped);

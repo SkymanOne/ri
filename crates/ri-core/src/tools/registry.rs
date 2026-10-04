@@ -6,6 +6,10 @@
 //! replaces the tool in place, and a tool that becomes hidden is deactivated.
 //! Names restored from the transcript before their tool is registered wait as
 //! pending and activate on registration.
+//!
+//! `--tools`, `--no-tools` and `--exclude-tools` restrict which tools exist
+//! at all, as pi's `_isAllowedTool`: tools outside them are never registered
+//! or activated, whoever registers them.
 
 use indexmap::IndexMap;
 
@@ -17,6 +21,10 @@ pub struct ToolRegistry {
     tools: IndexMap<String, RegisteredTool>,
     active: Vec<String>,
     pending: Vec<String>,
+    /// The only tool names allowed, when restricted.
+    allowed: Option<Vec<String>>,
+    /// Tool names never allowed.
+    excluded: Vec<String>,
 }
 
 impl ToolRegistry {
@@ -29,9 +37,36 @@ impl ToolRegistry {
                 .collect(),
             active: Vec::new(),
             pending: Vec::new(),
+            allowed: None,
+            excluded: Vec::new(),
         };
         registry.apply(active);
         registry
+    }
+
+    /// Allows only `allowed` (every name when `None`) minus `excluded`;
+    /// registered tools outside them are removed.
+    pub fn restrict(&mut self, allowed: Option<Vec<String>>, excluded: Vec<String>) {
+        self.allowed = allowed;
+        self.excluded = excluded;
+        let removed: Vec<String> = self
+            .tools
+            .keys()
+            .filter(|name| !self.is_allowed(name))
+            .cloned()
+            .collect();
+        for name in removed {
+            self.tools.shift_remove(&name);
+        }
+        self.apply(self.active.clone());
+    }
+
+    /// pi's `_isAllowedTool`.
+    pub fn is_allowed(&self, name: &str) -> bool {
+        self.allowed
+            .as_ref()
+            .is_none_or(|allowed| allowed.iter().any(|allowed| allowed == name))
+            && !self.excluded.iter().any(|excluded| excluded == name)
     }
 
     fn activated_on_registration(tool: &RegisteredTool) -> bool {
@@ -57,11 +92,17 @@ impl ToolRegistry {
     /// Registers or replaces a tool, then updates the active set.
     pub fn register(&mut self, tool: RegisteredTool) {
         let name = tool.name().to_owned();
+        if !self.is_allowed(&name) {
+            return;
+        }
         let was_activated = self
             .tools
             .get(&name)
             .is_some_and(Self::activated_on_registration);
-        let activate = !was_activated && Self::activated_on_registration(&tool);
+        // Naming a tool in `--tools` activates it even when it is not active
+        // by default, as in pi.
+        let named = self.allowed.is_some() && tool.exposure.declarable();
+        let activate = !was_activated && (named || Self::activated_on_registration(&tool));
         self.tools.insert(name.clone(), tool);
         let mut next = self.active.clone();
         if activate {
@@ -191,6 +232,36 @@ mod tests {
         assert_eq!(registry.active(), ["read", "mcp__b"]);
         registry.register(tool("mcp__a", Exposure::Direct));
         assert_eq!(registry.active(), ["read", "mcp__b", "mcp__a"]);
+    }
+
+    #[test]
+    fn tool_flags_restrict_every_registration() {
+        let mut registry = ToolRegistry::new(
+            vec![
+                tool("read", Exposure::Direct),
+                tool("bash", Exposure::Direct),
+            ],
+            vec!["read".into(), "bash".into()],
+        );
+        // `--tools read,mcp__named`: nothing else exists, and a named tool
+        // activates on registration.
+        registry.restrict(Some(vec!["read".into(), "mcp__named".into()]), Vec::new());
+        assert_eq!(registry.active(), ["read"]);
+        registry.register(tool("codemode", Exposure::Direct));
+        registry.register(tool("mcp__other", Exposure::Direct));
+        registry.register(tool("mcp__named", Exposure::Deferred));
+        assert!(registry.get("codemode").is_none());
+        assert!(registry.get("mcp__other").is_none());
+        registry.set_active(vec!["read".into(), "codemode".into()]);
+        assert_eq!(registry.active(), ["read"]);
+        // `--no-tools` allows none; `--exclude-tools` removes names.
+        registry.restrict(Some(Vec::new()), Vec::new());
+        registry.register(tool("mcp__a", Exposure::Direct));
+        assert!(registry.active().is_empty());
+        registry.restrict(None, vec!["bash".into()]);
+        registry.register(tool("bash", Exposure::Direct));
+        registry.register(tool("mcp__a", Exposure::Direct));
+        assert_eq!(registry.active(), ["mcp__a"]);
     }
 
     #[test]

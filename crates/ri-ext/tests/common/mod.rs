@@ -81,6 +81,8 @@ pub fn session(faux: &Faux, dir: &Path, extensions: Vec<Arc<dyn Extension>>) -> 
         tools: vec!["read".into()],
         extensions,
         include_extension_tools: true,
+        allowed_tools: None,
+        excluded_tools: Vec::new(),
         resources: Resources::default(),
     })
 }

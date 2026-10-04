@@ -46,6 +46,8 @@ fn session(faux: &Faux) -> AgentSession {
         tools: Vec::new(),
         extensions: Vec::new(),
         include_extension_tools: false,
+        allowed_tools: None,
+        excluded_tools: Vec::new(),
         resources: Resources::default(),
     })
 }

@@ -100,6 +100,11 @@ pub struct SessionConfig {
     /// Activate the tools extensions register as they load, unless they opt
     /// out; pi does unless `--tools` names the tools.
     pub include_extension_tools: bool,
+    /// The only tools that may exist, from `--tools` (none for `--no-tools`);
+    /// every tool when `None`.
+    pub allowed_tools: Option<Vec<String>>,
+    /// Tools that may never exist, from `--exclude-tools`.
+    pub excluded_tools: Vec<String>,
     /// Prompt resources.
     pub resources: Resources,
 }
@@ -309,6 +314,8 @@ impl AgentSession {
             tools,
             extensions,
             include_extension_tools,
+            allowed_tools,
+            excluded_tools,
             resources,
         } = config;
         let runtime = Arc::new(RwLock::new(Runtime::default()));
@@ -321,7 +328,9 @@ impl AgentSession {
             .iter()
             .filter_map(|name| builtin(name, &env))
             .collect();
-        let tool_registry = Tools::new(ToolRegistry::new(available, Vec::new()));
+        let mut tool_set = ToolRegistry::new(available, Vec::new());
+        tool_set.restrict(allowed_tools, excluded_tools);
+        let tool_registry = Tools::new(tool_set);
         for extension in &extensions {
             extension.load(&tool_registry);
         }
