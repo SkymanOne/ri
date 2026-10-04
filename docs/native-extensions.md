@@ -128,7 +128,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. ri installs
 | `request` | Call any host action by name with a JSON payload |
 | `Context` | The mode, the working folder and the rest of pi's `ctx` |
 
-The repository has a complete example in [`guest/examples/hello`](https://github.com/SkymanOne/ri/tree/main/guest/examples/hello), with a tool, a command, a flag and two event handlers.
+[Native extension examples](native-examples.md) walks through five complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter and a minimal starting point.
 
 ## Limits
 

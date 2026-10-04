@@ -10,7 +10,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use rquickjs::function::{Rest, This};
-use rquickjs::{CatchResultExt, CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value};
+use rquickjs::{
+    CatchResultExt, CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value,
+};
 
 use crate::ri::extension::host;
 use crate::ri::extension::types::Outcome;
@@ -238,7 +240,9 @@ pub fn resolve(op: u64, value: &Result<String, String>) -> Option<Vec<Outcome>> 
                     let payload = wrapper["json"].as_str().map(str::to_owned);
                     settle.call::<_, ()>((This(api), id as f64, true, payload))
                 }
-                Err(message) => settle.call::<_, ()>((This(api), id as f64, false, message.clone())),
+                Err(message) => {
+                    settle.call::<_, ()>((This(api), id as f64, false, message.clone()))
+                }
             }
         })();
         if let Err(error) = result.catch(&ctx) {

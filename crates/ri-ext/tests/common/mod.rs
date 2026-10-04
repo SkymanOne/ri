@@ -63,6 +63,16 @@ pub fn cli_source(path: &Path) -> SourceInfo {
 }
 
 pub fn session(faux: &Faux, dir: &Path, extensions: Vec<Arc<dyn Extension>>) -> AgentSession {
+    session_with_tools(faux, dir, extensions, &["read"])
+}
+
+/// [`session`] with these built-in tools active.
+pub fn session_with_tools(
+    faux: &Faux,
+    dir: &Path,
+    extensions: Vec<Arc<dyn Extension>>,
+    tools: &[&str],
+) -> AgentSession {
     let model = faux_model();
     let mut registry = ModelRegistry::builtin();
     registry.register_provider("faux", vec![model.clone()]);
@@ -78,7 +88,7 @@ pub fn session(faux: &Faux, dir: &Path, extensions: Vec<Arc<dyn Extension>>) -> 
         session: SessionManager::in_memory(dir),
         model: Some(model),
         thinking_level: ThinkingLevel::Off,
-        tools: vec!["read".into()],
+        tools: tools.iter().map(|tool| (*tool).to_owned()).collect(),
         extensions,
         include_extension_tools: true,
         allowed_tools: None,

@@ -84,7 +84,7 @@ cargo build --release --target wasm32-wasip2
 ri install ./target/wasm32-wasip2/release/shout.wasm
 ```
 
-To share it, put the `.wasm` file in an `extensions` folder of a git repository or npm package. Others then install it like any pi package, with `ri install git:github.com/you/shout` or `ri install npm:shout`. See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide.
+To share it, put the `.wasm` file in an `extensions` folder of a git repository or npm package. Others then install it like any pi package, with `ri install git:github.com/you/shout` or `ri install npm:shout`. See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.
 
 ## Performance
 

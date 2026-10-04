@@ -1,0 +1,13 @@
+[package]
+name = "protected-paths"
+description = "An example native ri extension. Blocks writes and edits to protected paths such as .env and .git/."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ri-extension-api = { path = "../../ri-extension-api" }

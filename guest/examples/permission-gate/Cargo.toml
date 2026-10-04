@@ -1,0 +1,13 @@
+[package]
+name = "permission-gate"
+description = "An example native ri extension. Blocks dangerous bash commands unless ri runs with --allow-dangerous."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ri-extension-api = { path = "../../ri-extension-api" }
