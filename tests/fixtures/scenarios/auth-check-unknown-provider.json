@@ -1,0 +1,12 @@
+{
+  "exitCode": 1,
+  "stdout": [
+    {
+      "status": "not_ready",
+      "provider": "nosuch",
+      "reason": "provider_not_found"
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

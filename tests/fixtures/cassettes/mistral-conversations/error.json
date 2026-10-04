@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"object\": \"error\", \"message\": \"Unauthorized\", \"type\": \"invalid_request_error\", \"param\": null, \"code\": null}"
+        ]
+      }
+    }
+  ]
+}

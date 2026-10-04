@@ -1,0 +1,23 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "Project Local Resources                        tab switch mode · space cycle inherit/+/- · esc close",
+    ".pi/settings.json · inherited global resources are dimmed",
+    "",
+    "> fix",
+    "",
+    "  ./pkg (user) · inherited global",
+    "    Prompts",
+    ">     [+] fixup.md  project load",
+    "  User (~/agent/) · inherited global",
+    "    Prompts",
+    "      [x] fix.md  inherited global",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────"
+  ]
+}

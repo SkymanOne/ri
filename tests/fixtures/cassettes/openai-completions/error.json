@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/chat/completions"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\": {\"message\": \"The model `nope` does not exist\", \"type\": \"invalid_request_error\", \"code\": \"model_not_found\"}}"
+        ]
+      }
+    }
+  ]
+}

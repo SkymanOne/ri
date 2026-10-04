@@ -1,0 +1,8 @@
+{
+  "packages": [
+    "./local-extension"
+  ],
+  "skills": [
+    "skills"
+  ]
+}

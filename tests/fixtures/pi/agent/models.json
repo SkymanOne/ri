@@ -1,0 +1,86 @@
+{
+  "providers": {
+    "local-llm": {
+      "name": "Local LLM",
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "$LOCAL_LLM_KEY",
+      "headers": {
+        "X-Client": "!echo ri"
+      },
+      "compat": {
+        "supportsDeveloperRole": false,
+        "maxTokensField": "max_tokens"
+      },
+      "authHeader": true,
+      "models": [
+        {
+          "id": "qwen3-coder",
+          "name": "Qwen3 Coder",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "low": "low",
+            "high": "high"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "inputLimits": {
+            "maxRequestBytes": 10485760,
+            "images": {
+              "resize": {
+                "maxWidth": 1568,
+                "maxHeight": 1568,
+                "maxBytes": 5242880,
+                "jpegQuality": 85
+              },
+              "maxPerMessage": 4
+            }
+          },
+          "cost": {
+            "input": 0.15,
+            "output": 0.6,
+            "cacheRead": 0.015,
+            "cacheWrite": 0,
+            "tiers": [
+              {
+                "inputTokensAbove": 200000,
+                "input": 0.3,
+                "output": 1.2,
+                "cacheRead": 0.03,
+                "cacheWrite": 0
+              }
+            ]
+          },
+          "promptCache": {
+            "short": 300,
+            "long": 3600
+          },
+          "contextWindow": 262144,
+          "maxTokens": 32768,
+          "samplingParams": {
+            "temperature": 0.7,
+            "top_p": 0.8
+          },
+          "headers": {
+            "X-Model": "qwen"
+          }
+        }
+      ]
+    },
+    "anthropic": {
+      "modelOverrides": {
+        "claude-sonnet-4-5": {
+          "name": "Sonnet (proxy)",
+          "contextWindow": 1000000,
+          "cost": {
+            "input": 3
+          }
+        }
+      },
+      "baseUrl": "https://proxy.example.com/anthropic"
+    }
+  }
+}

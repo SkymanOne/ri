@@ -1,0 +1,23 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    " Select authentication method for Anthropic:",
+    "",
+    " → Sign in with an account",
+    "   Sign in with an API key",
+    "",
+    " ↑↓ navigate  enter select  escape/ctrl+c cancel",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

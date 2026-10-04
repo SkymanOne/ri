@@ -1,0 +1,19 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "/login anth",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "→ anthropic                       Anthropic · subscription/API key",
+    "  openai                          OpenAI · subscription/API key",
+    "  openai-codex                    OpenAI Codex (legacy) · subscription",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

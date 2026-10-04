@@ -1,0 +1,64 @@
+name: Bench
+
+# The performance budgets of AGENTS.md on both tier-1 platforms, next to pi on
+# the same runner. Runs on demand: by hand, or for a pushed commit whose
+# message contains [bench].
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bench]')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - name: Install pi for comparison
+        working-directory: tests/fixtures/pi/generator
+        run: npm ci
+      - name: Build
+        run: cargo build --release --locked -p ri
+      - name: Linked libraries
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            otool -L target/release/ri
+          else
+            ldd target/release/ri
+          fi
+      - name: Measure
+        run: cargo xtask bench --pi tests/fixtures/pi/generator/node_modules/.bin/pi --runs 20 | tee bench.txt
+      - name: Stripped binary size
+        shell: bash
+        run: |
+          cp target/release/ri ri-stripped
+          strip ri-stripped
+          bytes=$(wc -c < ri-stripped | tr -d ' ')
+          echo "stripped binary: $bytes bytes" | tee -a bench.txt
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "### ${{ matrix.os }}"
+            echo '```'
+            cat bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

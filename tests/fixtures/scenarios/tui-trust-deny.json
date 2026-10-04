@@ -1,0 +1,16 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    " This project is not trusted. Project .pi resources and packages are ignored. Use /trust to save a",
+    " trust decision, then restart pi.",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

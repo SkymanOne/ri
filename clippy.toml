@@ -1,0 +1,12 @@
+allow-print-in-tests = true
+allow-unwrap-in-tests = true
+
+# pi JSON must match JSON.stringify byte for byte; see ri_types::json.
+disallowed-methods = [
+    { path = "serde_json::to_string", reason = "use ri_types::json::to_string" },
+    { path = "serde_json::to_string_pretty", reason = "use ri_types::json::to_string_pretty" },
+    { path = "serde_json::to_vec", reason = "use ri_types::json::to_string" },
+    { path = "serde_json::to_vec_pretty", reason = "use ri_types::json::to_string_pretty" },
+    { path = "serde_json::to_writer", reason = "use ri_types::json::to_string" },
+    { path = "serde_json::to_writer_pretty", reason = "use ri_types::json::to_string_pretty" },
+]

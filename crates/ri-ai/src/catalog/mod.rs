@@ -1,0 +1,70 @@
+//! The built-in model catalog, generated from pi-ai's data by `cargo xtask models`.
+
+mod data;
+
+use ri_types::model::Model;
+
+/// Built-in provider ids, in catalog order.
+pub fn builtin_providers() -> impl Iterator<Item = &'static str> {
+    data::PROVIDERS.iter().map(|(id, _)| *id)
+}
+
+/// The built-in chat models of a provider, in catalog order; empty for an unknown
+/// provider. Each call parses that provider's data.
+pub fn builtin_models(provider: &str) -> Vec<Model> {
+    data::PROVIDERS
+        .iter()
+        .find(|(id, _)| *id == provider)
+        .map(|(_, json)| parse(json))
+        .unwrap_or_default()
+}
+
+/// Every built-in chat model, in catalog order.
+pub fn all_builtin_models() -> Vec<Model> {
+    data::PROVIDERS
+        .iter()
+        .flat_map(|(_, json)| parse(json))
+        .collect()
+}
+
+fn parse(json: &str) -> Vec<Model> {
+    // The data is generated and checked by the catalog test below.
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_provider_parses() {
+        for (provider, json) in data::PROVIDERS {
+            let models: Vec<Model> = serde_json::from_str(json)
+                .unwrap_or_else(|err| panic!("catalog data for {provider}: {err}"));
+            assert!(!models.is_empty(), "{provider} has no models");
+            assert!(models.iter().all(|model| model.provider == *provider));
+        }
+    }
+
+    #[test]
+    fn finds_known_models() {
+        let anthropic = builtin_models("anthropic");
+        assert!(
+            anthropic
+                .iter()
+                .any(|model| model.id == "claude-sonnet-4-5")
+        );
+        let go = builtin_models("opencode-go");
+        let apis: std::collections::BTreeSet<_> =
+            go.iter().map(|model| model.api.as_str()).collect();
+        assert_eq!(
+            apis.into_iter().collect::<Vec<_>>(),
+            [
+                "anthropic-messages",
+                "openai-completions",
+                "openai-responses"
+            ]
+        );
+        assert!(builtin_models("nope").is_empty());
+    }
+}

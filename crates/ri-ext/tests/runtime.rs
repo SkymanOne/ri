@@ -1,0 +1,175 @@
+//! The runtime loads pi extensions written in TypeScript and runs their
+//! tools, commands and handlers.
+#![allow(
+    clippy::unwrap_used,
+    reason = "test helpers; a panic is a test failure"
+)]
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use ri_ext::{Engine, Instance, NoBridge, Options};
+use serde_json::{Value, json};
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("runtime-{name}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn engine() -> Engine {
+    Engine::new(Some(
+        &Path::new(env!("CARGO_TARGET_TMPDIR")).join("wasm-cache"),
+    ))
+    .unwrap()
+}
+
+async fn load(dir: &Path, files: &[(&str, &str)]) -> (Instance, Value) {
+    for (name, text) in files {
+        let path = dir.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let instance = Instance::start(
+        &engine(),
+        Options::new(dir.to_path_buf()),
+        Arc::new(NoBridge),
+    )
+    .await
+    .unwrap();
+    let path = dir.join(files[0].0);
+    let loaded = instance
+        .call(
+            "load",
+            &json!({"cwd": dir, "extensions": [{"id": 1, "path": path}]}),
+        )
+        .await
+        .unwrap();
+    (instance, loaded["extensions"][0].clone())
+}
+
+const HELLO: &str = r#"
+import { Type } from "typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { greeting } from "./greeting.js";
+
+export default function (pi: ExtensionAPI) {
+	pi.registerTool({
+		name: "hello",
+		label: "Hello",
+		description: "Says hello",
+		parameters: Type.Object({ name: Type.String(), tone: StringEnum(["warm", "dry"] as const) }),
+		async execute(_id, params: { name: string; tone: string }) {
+			return { content: [{ type: "text", text: greeting(params.name, params.tone) }], details: {} };
+		},
+	});
+	pi.registerCommand("greet", { description: "Greets", handler: async () => {} });
+	pi.registerFlag("loud", { type: "boolean", default: false, description: "Shout" });
+	pi.on("session_start", async () => {});
+}
+"#;
+
+const GREETING: &str = r#"
+export function greeting(name: string, tone: string): string {
+	return tone === "warm" ? `Hello, ${name}!` : `Hello ${name}.`;
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn registers_and_runs_a_typescript_extension() {
+    let dir = scratch("hello");
+    let (instance, extension) = load(&dir, &[("hello.ts", HELLO), ("greeting.ts", GREETING)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(extension["tools"][0]["name"], "hello");
+    assert_eq!(
+        extension["tools"][0]["parameters"]["properties"]["tone"],
+        json!({"type": "string", "enum": ["warm", "dry"]})
+    );
+    assert_eq!(extension["commands"][0]["name"], "greet");
+    assert_eq!(extension["flags"][0]["name"], "loud");
+    assert_eq!(extension["events"], json!(["session_start"]));
+
+    instance.call("bind", &Value::Null).await.unwrap();
+    let result = instance
+        .call(
+            "tool",
+            &json!({"extension": 1, "name": "hello", "toolCallId": "t1",
+                    "params": {"name": "ri", "tone": "warm"}, "ctx": {}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["content"][0]["text"], "Hello, ri!");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_load_errors_as_pi_does() {
+    let dir = scratch("errors");
+    let (_instance, extension) = load(&dir, &[("bad.ts", "export const notAFactory = 1;\n")]).await;
+    let error = extension["error"].as_str().unwrap();
+    assert!(
+        error.starts_with("Extension does not export a valid factory function"),
+        "{error}"
+    );
+
+    let dir = scratch("missing");
+    let (_instance, extension) = load(
+        &dir,
+        &[(
+            "missing.ts",
+            "import x from \"not-installed\";\nexport default () => x;\n",
+        )],
+    )
+    .await;
+    let error = extension["error"].as_str().unwrap();
+    assert!(
+        error.starts_with("Failed to load extension: Cannot find module 'not-installed'"),
+        "{error}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn runs_node_apis_and_common_js_packages() {
+    let dir = scratch("node");
+    let main = r#"
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "child_process";
+import lib from "cjs-lib";
+import { twice } from "cjs-lib";
+export default function (pi) {
+	pi.registerCommand("probe", {
+		description: [
+			fs.readFileSync(path.join(__dirname, "data.txt"), "utf8").trim(),
+			String(lib.twice(2)),
+			String(twice(3)),
+			execSync("echo hi", { encoding: "utf8" }).trim(),
+			typeof setTimeout,
+		].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(
+        &dir,
+        &[
+            ("main.ts", main),
+            ("data.txt", "from disk\n"),
+            (
+                "node_modules/cjs-lib/package.json",
+                r#"{"name":"cjs-lib","main":"index.js"}"#,
+            ),
+            (
+                "node_modules/cjs-lib/index.js",
+                "exports.twice = (n) => n * 2;\n",
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "from disk,4,6,hi,function"
+    );
+}

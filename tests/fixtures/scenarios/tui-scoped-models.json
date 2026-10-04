@@ -1,0 +1,27 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "Model Configuration",
+    "Session-only. Ctrl+S to save to settings.",
+    "",
+    "> sonnet-4-5",
+    "",
+    "→ ✓ claude-sonnet-4-5-20250929 [anthropic]",
+    "  ✓ claude-sonnet-4-5 [opencode]",
+    "    claude-sonnet-4-5 [anthropic]",
+    "",
+    "  Model Name: Claude Sonnet 4.5",
+    "",
+    "  Model catalogs refreshed.",
+    "  Enter toggle · Ctrl+A all · Ctrl+X clear · Ctrl+P provider · Alt+Up/Alt+Down reorder · Ctrl+S save",
+    "· 196/197 enabled (unsaved)",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

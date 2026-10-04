@@ -1,0 +1,21 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"**Greeting**\\n\\nThe user wants a hello.\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"mock-response-1\"}\r\n\r\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello! \"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"mock-response-1\"}\r\n\r\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"How can I help?\",\"thoughtSignature\":\"c2lnbmF0dXJlLTE=\"}],\"role\":\"model\"},\"index\":0,\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1500,\"candidatesTokenCount\":8,\"totalTokenCount\":1540,\"thoughtsTokenCount\":32,\"cachedContentTokenCount\":1024},\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"mock-response-1\"}\r\n\r\n"
+        ]
+      }
+    }
+  ]
+}

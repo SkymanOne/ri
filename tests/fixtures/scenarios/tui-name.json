@@ -1,0 +1,22 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    " Warning: Usage: /name <name>",
+    "",
+    " Session name set: my work",
+    "",
+    " Session name: my work",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project • my work",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "--header only applies to HTTP servers (--url).\n",
+  "requests": []
+}

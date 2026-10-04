@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "Added global MCP server \"fs\" in <agent>/mcp.json.\nCheck it with: pi mcp list\n",
+  "stderr": "",
+  "requests": []
+}

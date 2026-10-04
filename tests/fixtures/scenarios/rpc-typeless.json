@@ -1,0 +1,29 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "response",
+      "success": false,
+      "error": "Unknown command: undefined"
+    },
+    {
+      "type": "response",
+      "success": false,
+      "error": "Unknown command: undefined"
+    },
+    {
+      "type": "response",
+      "success": false,
+      "error": "Unknown command: undefined"
+    },
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "bogus",
+      "success": false,
+      "error": "Unknown command: bogus"
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

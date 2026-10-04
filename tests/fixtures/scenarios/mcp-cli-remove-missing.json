@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "No project MCP server named \"web\" in <cwd>/.pi/mcp.json. It is defined in <agent>/mcp.json; omit --local.\n",
+  "requests": []
+}

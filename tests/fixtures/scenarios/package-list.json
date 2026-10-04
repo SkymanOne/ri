@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "User packages:\n  npm:@scope/tool\n  git:github.com/user/repo (filtered)\n",
+  "stderr": "",
+  "requests": []
+}

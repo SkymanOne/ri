@@ -1,0 +1,63 @@
+// CommonJS for npm packages: `require` resolves through the host and runs
+// module sources synchronously. ES modules that import a CommonJS file get a
+// host-generated wrapper that calls `__ri_cjs`.
+(() => {
+	"use strict";
+	const ri = globalThis.__ri;
+	const builtins = globalThis.__ri_builtins;
+	const cache = new Map();
+
+	const builtinName = (specifier) => {
+		const name = String(specifier).replace(/^node:/, "");
+		return Object.hasOwn(builtins, name) ? name : undefined;
+	};
+	const dirname = (path) => builtins.path.dirname(path);
+
+	function requireFor(referrer) {
+		const require = (specifier) => {
+			const builtin = builtinName(specifier);
+			if (builtin) return builtins[builtin];
+			return load(ri.request("module.resolve", { specifier, referrer, kind: "require" }));
+		};
+		require.resolve = (specifier) => {
+			const builtin = builtinName(specifier);
+			if (builtin) return builtin;
+			return ri.request("module.resolve", { specifier, referrer, kind: "require" });
+		};
+		require.cache = Object.create(null);
+		require.main = undefined;
+		return require;
+	}
+
+	function load(path) {
+		const cached = cache.get(path);
+		if (cached) return cached.exports;
+		const { source, kind } = ri.request("module.source", { path });
+		const module = { id: path, filename: path, path: dirname(path), exports: {}, loaded: false, children: [], paths: [], parent: null };
+		module.require = requireFor(path);
+		cache.set(path, module);
+		try {
+			if (kind === "json") module.exports = JSON.parse(source);
+			else {
+				// Node's wrapper, on the first line so positions hold.
+				const run = globalThis.__ri_native.compile(`(function (exports, require, module, __filename, __dirname) {${source}\n})`, path);
+				run.call(module.exports, module.exports, module.require, module, path, dirname(path));
+			}
+		} catch (error) {
+			cache.delete(path);
+			throw error;
+		}
+		module.loaded = true;
+		return module.exports;
+	}
+
+	globalThis.__ri_cjs = load;
+	globalThis.__ri_require_for = requireFor;
+})();
+
+// The names an ES module wrapper of CommonJS module `path` exports; loads it.
+globalThis.__ri.cjsExports = (path) => {
+	const exports = globalThis.__ri_cjs(path);
+	if (exports === null || (typeof exports !== "object" && typeof exports !== "function")) return [];
+	return Object.keys(exports).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
+};

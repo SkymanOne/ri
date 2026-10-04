@@ -1,0 +1,12 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "status": "ready",
+      "provider": "anthropic",
+      "authType": "api_key"
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

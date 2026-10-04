@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: --provider requires --model (for example: --provider anthropic --model <pattern>)\n",
+  "requests": []
+}

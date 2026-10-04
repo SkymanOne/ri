@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "files": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    "docs": {
+      "url": "https://example.com/mcp",
+      "headers": {
+        "X-Team": "ri"
+      },
+      "exposure": "direct"
+    }
+  }
+}

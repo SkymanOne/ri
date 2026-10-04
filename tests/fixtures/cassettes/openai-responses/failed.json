@@ -1,0 +1,21 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_failed\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":0}\n\n",
+          "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_mock_failed\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":1}\n\n",
+          "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_mock_failed\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"failed\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[],\"error\":{\"code\":\"server_error\",\"message\":\"The server had an error processing your request.\"}},\"sequence_number\":2}\n\n"
+        ]
+      }
+    }
+  ]
+}

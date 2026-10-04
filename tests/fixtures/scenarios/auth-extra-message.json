@@ -1,0 +1,6 @@
+{
+  "exitCode": 2,
+  "stdout": "",
+  "stderr": "Error: Auth commands only accept --provider and --model\n",
+  "requests": []
+}

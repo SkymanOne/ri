@@ -1,0 +1,957 @@
+// The extension host inside the guest: loads pi extensions, gives each its
+// `pi` API object, and runs its handlers, tools, commands and shortcuts when
+// the host dispatches them. Port of `core/extensions/loader.ts` and the
+// per-extension part of `runner.ts` in pi `v1.0.0`; the host chains results
+// across extensions.
+(() => {
+	"use strict";
+	const ri = globalThis.__ri;
+	const native = globalThis.__ri_native;
+	const EventEmitter = ri.EventEmitter;
+
+	const extensions = new Map();
+	const flagValues = new Map();
+	const busEmitter = new EventEmitter();
+	let bound = false;
+
+	const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
+	const errorInfo = (error) => ({ error: errorMessage(error), stack: error instanceof Error ? error.stack : undefined });
+	const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+	const orUndefined = (value) => value ?? undefined;
+
+	// ----- the shared event bus ------------------------------------------------
+	const eventBus = {
+		emit: (channel, data) => {
+			busEmitter.emit(channel, data);
+		},
+		on: (channel, handler) => {
+			const safe = async (data) => {
+				try {
+					await handler(data);
+				} catch (error) {
+					console.error(`Event handler error (${channel}):`, error);
+				}
+			};
+			busEmitter.on(channel, safe);
+			return () => busEmitter.off(channel, safe);
+		},
+	};
+
+	// ----- runtime actions -----------------------------------------------------------
+	const notInitialized = () => {
+		throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading.");
+	};
+	const action = (kind) => (payload) => (bound ? ri.request(kind, payload) : notInitialized());
+
+	// ----- the pi API ------------------------------------------------------------------------
+	function createApi(extension) {
+		const pendingFlagValues = new Map();
+		let state = "loading";
+		const assertActive = () => {
+			if (state === "failed") throw new Error(`Extension "${extension.path}" failed to load and its API is no longer active.`);
+		};
+		const api = {
+			on(event, handler) {
+				assertActive();
+				const registered = (...args) => handler(...args);
+				const list = extension.handlers.get(event) ?? [];
+				list.push(registered);
+				extension.handlers.set(event, list);
+				return () => {
+					const handlers = extension.handlers.get(event);
+					if (!handlers) return;
+					const index = handlers.indexOf(registered);
+					if (index !== -1) handlers.splice(index, 1);
+					if (handlers.length === 0) extension.handlers.delete(event);
+				};
+			},
+			registerTool(tool) {
+				assertActive();
+				if (typeof tool.parameters !== "object" || tool.parameters === null || Array.isArray(tool.parameters)) {
+					throw new Error(`Tool "${tool.name}" registered by extension "${extension.path}" must define an object parameter schema.`);
+				}
+				extension.tools.set(tool.name, tool);
+				if (bound) ri.request("tools.refresh", { extension: extension.id, tools: [describeTool(tool)] });
+			},
+			registerCommand(name, options) {
+				assertActive();
+				if (typeof name !== "string" || name.length === 0) {
+					throw new Error(`Command registered by extension "${extension.path}" must have a non-empty string name. Use pi.registerCommand("name", { description, handler }).`);
+				}
+				if (typeof options?.handler !== "function") {
+					throw new Error(`Command "/${name}" registered by extension "${extension.path}" must define handler().`);
+				}
+				extension.commands.set(name, { name, ...options });
+			},
+			registerShortcut(shortcut, options) {
+				assertActive();
+				extension.shortcuts.set(shortcut, { shortcut, ...options });
+			},
+			registerFlag(name, options) {
+				assertActive();
+				if (options.default !== undefined && typeof options.default !== options.type) {
+					throw new Error(`Invalid default for flag "${name}": expected ${options.type}, got ${typeof options.default}`);
+				}
+				extension.flags.set(name, { name, ...options });
+				if (options.default !== undefined && !flagValues.has(name)) {
+					if (state === "loading") {
+						if (!pendingFlagValues.has(name)) pendingFlagValues.set(name, options.default);
+					} else flagValues.set(name, options.default);
+				}
+			},
+			registerMessageRenderer(customType, renderer) {
+				assertActive();
+				extension.messageRenderers.set(customType, renderer);
+			},
+			registerMarkdownTransformer(transformer) {
+				assertActive();
+				extension.markdownTransformer = transformer;
+			},
+			registerEntryRenderer(customType, renderer) {
+				assertActive();
+				extension.entryRenderers.set(customType, renderer);
+			},
+			getFlag(name) {
+				assertActive();
+				if (!extension.flags.has(name)) return undefined;
+				return flagValues.has(name) ? flagValues.get(name) : pendingFlagValues.get(name);
+			},
+			sendMessage(message, options) {
+				assertActive();
+				action("session.sendMessage")({ message: plain(message), options: plain(options) });
+			},
+			sendUserMessage(content, options) {
+				assertActive();
+				action("session.sendUserMessage")({ content: plain(content), options: plain(options) });
+			},
+			appendEntry(customType, data) {
+				assertActive();
+				action("session.appendEntry")({ customType, data: plain(data) });
+			},
+			setSessionName(name) {
+				assertActive();
+				action("session.setName")({ name });
+			},
+			getSessionName() {
+				assertActive();
+				return action("session.getName")({}) ?? undefined;
+			},
+			setLabel(entryId, label) {
+				assertActive();
+				action("session.setLabel")({ entryId, label });
+			},
+			exec(command, args, options) {
+				assertActive();
+				return execCommand(command, args, options?.cwd ?? ri.cwd, options);
+			},
+			getActiveTools() {
+				assertActive();
+				return action("tools.getActive")({});
+			},
+			getAllTools() {
+				assertActive();
+				return action("tools.getAll")({});
+			},
+			getSettings() {
+				assertActive();
+				return action("settings.get")({});
+			},
+			setActiveTools(names) {
+				assertActive();
+				action("tools.setActive")({ names });
+			},
+			getCommands() {
+				assertActive();
+				return action("commands.list")({});
+			},
+			setModel(model) {
+				assertActive();
+				if (!bound) return Promise.reject(new Error("Extension runtime not initialized"));
+				return ri.op("model.set", { provider: model.provider, id: model.id });
+			},
+			getThinkingLevel() {
+				assertActive();
+				return action("thinking.get")({});
+			},
+			setThinkingLevel(level) {
+				assertActive();
+				action("thinking.set")({ level });
+			},
+			registerProvider(nameOrProvider, config) {
+				assertActive();
+				if (typeof nameOrProvider === "string") {
+					if (!config) throw new Error("Provider config is required when registering by name");
+					extension.providers.push({ name: nameOrProvider, config: describeProvider(config) });
+				} else extension.providers.push({ name: nameOrProvider.id, native: true });
+			},
+			unregisterProvider(name) {
+				assertActive();
+				extension.providers = extension.providers.filter((provider) => provider.name !== name);
+			},
+			registerMcpServer(name, config) {
+				assertActive();
+				extension.mcpServers.set(name, plain(config));
+			},
+			unregisterMcpServer(name) {
+				assertActive();
+				extension.mcpServers.delete(name);
+			},
+			getMcpServers() {
+				assertActive();
+				return [...extension.mcpServers].map(([name, config]) => ({ name, config, extensionPath: extension.path }));
+			},
+			registerVirtualModel(model) {
+				assertActive();
+				extension.virtualModels.push(model);
+			},
+			unregisterVirtualModel(provider, id) {
+				assertActive();
+				extension.virtualModels = extension.virtualModels.filter((model) => model.provider !== provider || model.id !== id);
+			},
+			events: {
+				emit(channel, data) {
+					assertActive();
+					eventBus.emit(channel, data);
+				},
+				on(channel, handler) {
+					assertActive();
+					return eventBus.on(channel, handler);
+				},
+			},
+		};
+		return {
+			api,
+			commit() {
+				for (const [name, value] of pendingFlagValues) if (!flagValues.has(name)) flagValues.set(name, value);
+				state = "active";
+			},
+			discard() {
+				state = "failed";
+			},
+		};
+	}
+
+	async function execCommand(command, args, cwd, options = {}) {
+		// As pi's execCommand: a process that cannot start reports code 1.
+		const result = await ri
+			.op("exec", { command, args: args ?? [], cwd, timeout: options.timeout, env: options.env, input: options.input })
+			.catch(() => ({ stdout: "", stderr: "", code: 1, killed: false }));
+		return { stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0, killed: !!result.killed };
+	}
+
+	// ----- descriptions sent to the host -----------------------------------------------
+	function describeTool(tool) {
+		return {
+			name: tool.name,
+			label: tool.label ?? null,
+			description: tool.description,
+			promptSnippet: tool.promptSnippet,
+			promptGuidelines: tool.promptGuidelines,
+			parameters: plain(tool.parameters),
+			outputSchema: plain(tool.outputSchema),
+			constrainedSampling: tool.constrainedSampling,
+			renderShell: tool.renderShell,
+			exposure: tool.exposure,
+			namespace: tool.namespace,
+			annotations: tool.annotations,
+			defaultActive: tool.defaultActive,
+			executionMode: tool.executionMode,
+			hasRenderCall: typeof tool.renderCall === "function",
+			hasRenderResult: typeof tool.renderResult === "function",
+		};
+	}
+	function describeProvider(config) {
+		const out = {};
+		for (const [key, value] of Object.entries(config)) {
+			if (typeof value === "function") continue;
+			if (key === "oauth" && value) out.oauth = { name: value.name, isSubscription: value.isSubscription };
+			else out[key] = plain(value);
+		}
+		out.hasStreamSimple = typeof config.streamSimple === "function";
+		return out;
+	}
+	function describe(extension) {
+		return {
+			id: extension.id,
+			path: extension.path,
+			tools: [...extension.tools.values()].map(describeTool),
+			commands: [...extension.commands.values()].map((command) => ({
+				name: command.name,
+				description: command.description ?? null,
+				hasCompletions: typeof command.getArgumentCompletions === "function",
+			})),
+			flags: [...extension.flags.values()].map((flag) => ({
+				name: flag.name,
+				type: flag.type,
+				default: flag.default ?? null,
+				description: flag.description ?? null,
+			})),
+			shortcuts: [...extension.shortcuts.values()].map((shortcut) => ({ shortcut: shortcut.shortcut, description: shortcut.description ?? null })),
+			events: [...extension.handlers.keys()].sort(),
+			messageRenderers: [...extension.messageRenderers.keys()],
+			entryRenderers: [...extension.entryRenderers.keys()],
+			markdownTransformer: typeof extension.markdownTransformer === "function",
+			providers: extension.providers,
+			mcpServers: [...extension.mcpServers].map(([name, config]) => ({ name, config })),
+		};
+	}
+
+	// ----- loading --------------------------------------------------------------------------------
+	async function loadOne({ id, path }) {
+		let module;
+		try {
+			module = await import(path);
+		} catch (error) {
+			return { id, path, error: `Failed to load extension: ${errorMessage(error)}` };
+		}
+		const factory = module?.default;
+		if (typeof factory !== "function") return { id, path, error: `Extension does not export a valid factory function: ${path}` };
+		return instantiate(id, path, factory);
+	}
+
+	/** Runs `factory` with a fresh API: pi does this for every session. */
+	async function instantiate(id, path, factory) {
+		const extension = {
+			factory,
+			id,
+			path,
+			handlers: new Map(),
+			tools: new Map(),
+			commands: new Map(),
+			flags: new Map(),
+			shortcuts: new Map(),
+			messageRenderers: new Map(),
+			entryRenderers: new Map(),
+			markdownTransformer: undefined,
+			providers: [],
+			mcpServers: new Map(),
+			virtualModels: [],
+		};
+		const load = createApi(extension);
+		try {
+			await factory(load.api);
+			load.commit();
+		} catch (error) {
+			load.discard();
+			return { id, path, error: `Failed to load extension: ${errorMessage(error)}` };
+		}
+		extensions.set(id, extension);
+		return describe(extension);
+	}
+
+	// ----- theme ------------------------------------------------------------------------------------------
+	const THINKING_TOKENS = { minimal: "thinkingMinimal", low: "thinkingLow", medium: "thinkingMedium", high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax" };
+	/**
+	 * pi's `Theme` over the escape sequences the host reports for each token
+	 * (ri: `load`). Without them text stays plain.
+	 */
+	class Theme {
+		#fg = {};
+		#bg = {};
+		#dim = new Set();
+		#styled = false;
+		#mode = "truecolor";
+		constructor(spec) {
+			this.load(spec);
+		}
+		/** Takes the host's `{ name, mode, fg, bg, dim }`, or `null` for plain text. */
+		load(spec) {
+			this.#styled = !!spec;
+			this.#fg = spec?.fg ?? {};
+			this.#bg = spec?.bg ?? {};
+			this.#dim = new Set(spec?.dim ?? []);
+			this.#mode = spec?.mode ?? "truecolor";
+			this.name = spec?.name;
+		}
+		#sequence(map, token) {
+			const sequence = map[token];
+			if (sequence === undefined) throw new Error(`Unknown theme color: ${token}`);
+			return sequence;
+		}
+		fg(token, text) {
+			if (!this.#styled) return text;
+			const sequence = this.#sequence(this.#fg, token);
+			return this.#dim.has(token) ? `${sequence}\x1b[2m${text}\x1b[22;39m` : `${sequence}${text}\x1b[39m`;
+		}
+		bg(token, text) {
+			return this.#styled ? `${this.#sequence(this.#bg, token)}${text}\x1b[49m` : text;
+		}
+		#wrap(open, close, text) {
+			return this.#styled ? `\x1b[${open}m${text}\x1b[${close}m` : text;
+		}
+		bold(text) {
+			return this.#wrap(1, 22, text);
+		}
+		italic(text) {
+			return this.#wrap(3, 23, text);
+		}
+		underline(text) {
+			return this.#wrap(4, 24, text);
+		}
+		strikethrough(text) {
+			return this.#wrap(9, 29, text);
+		}
+		inverse(text) {
+			return this.#wrap(7, 27, text);
+		}
+		getFgAnsi(token) {
+			if (!this.#styled) return "";
+			const sequence = this.#sequence(this.#fg, token);
+			return this.#dim.has(token) ? `${sequence}\x1b[2m` : sequence;
+		}
+		getBgAnsi(token) {
+			return this.#styled ? this.#sequence(this.#bg, token) : "";
+		}
+		getColorMode() {
+			return this.#mode;
+		}
+		getThinkingBorderColor(level) {
+			const token = THINKING_TOKENS[level] ?? "thinkingOff";
+			return (text) => this.fg(token, text);
+		}
+		getBashModeBorderColor() {
+			return (text) => this.fg("bashMode", text);
+		}
+	}
+	ri.Theme = Theme;
+	const theme = new Theme(null);
+	globalThis.__ri_theme = theme;
+
+	// ----- contexts --------------------------------------------------------------------------------------
+	// ----- components ---------------------------------------------------------------------------------------
+	// Components live here, by handle; the host renders them through
+	// `ri.render` and delivers keys through `ri.input`.
+	const components = new Map();
+	let nextHandle = 1;
+	const widgetHandles = new Map();
+	const slots = { footer: undefined, header: undefined };
+	// Components of transcript items, by tool call or message.
+	const transcriptViews = new Map();
+	function mount(component) {
+		const handle = nextHandle++;
+		components.set(handle, component);
+		return handle;
+	}
+	function unmount(handle) {
+		const component = components.get(handle);
+		components.delete(handle);
+		try {
+			component?.dispose?.();
+		} catch (error) {
+			console.error("Component dispose error:", error);
+		}
+	}
+	const tui = {
+		requestRender: () => {
+			if (bound) ri.request("ui.requestRender", {});
+		},
+		terminal: { columns: 80, rows: 24, write() {}, setTitle: (title) => bound && ri.request("ui.setTitle", { title }) },
+		setFocus() {},
+		showOverlay() {
+			return overlayHandle(undefined);
+		},
+		hideOverlay() {},
+		start() {},
+		stop() {},
+	};
+	function overlayHandle(handle) {
+		let hidden = false;
+		return {
+			hide: () => handle !== undefined && ri.request("ui.close", { handle }),
+			setHidden: (value) => void (hidden = value),
+			isHidden: () => hidden,
+			focus() {},
+			unfocus() {},
+			isFocused: () => !hidden,
+		};
+	}
+	let tuiModule;
+	const keybindings = async () => {
+		tuiModule ??= await import("@earendil-works/pi-tui");
+		return tuiModule.getKeybindings();
+	};
+	ri.render = (handle, width) => {
+		const component = components.get(handle);
+		if (!component) return [];
+		try {
+			return component.render(width).map(String);
+		} catch (error) {
+			return [`Render error: ${errorMessage(error)}`];
+		}
+	};
+	ri.input = (handle, data) => {
+		try {
+			components.get(handle)?.handleInput?.(data);
+		} catch (error) {
+			console.error("Component input error:", error);
+		}
+	};
+
+	function createUi(data) {
+		const request = (kind, payload) => ri.request(`ui.${kind}`, payload);
+		const shown = !!(data.hasUI && data.components);
+		const replaceSlot = (slot, factory, ...args) => {
+			if (slots[slot] !== undefined) unmount(slots[slot]);
+			slots[slot] = undefined;
+			if (typeof factory === "function" && shown) slots[slot] = mount(factory(tui, theme, ...args));
+			if (shown) request(slot === "footer" ? "setFooter" : "setHeader", { handle: slots[slot] });
+		};
+		const footerData = {
+			getGitBranch: () => request("footerData", {})?.gitBranch ?? null,
+			getExtensionStatuses: () => new Map(request("footerData", {})?.statuses ?? []),
+			getAvailableProviderCount: () => request("footerData", {})?.providers ?? 0,
+			onBranchChange: () => () => {},
+		};
+		return {
+			// A cancelled dialog resolves to `undefined`, as in pi.
+			select: (title, options, opts) => (data.hasUI ? ri.op("ui.select", { title, options, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
+			confirm: (title, message, opts) => (data.hasUI ? ri.op("ui.confirm", { title, message, timeout: opts?.timeout }) : Promise.resolve(false)),
+			input: (title, placeholder, opts) => (data.hasUI ? ri.op("ui.input", { title, placeholder, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
+			editor: (title, prefill) => (data.hasUI ? ri.op("ui.editor", { title, prefill }).then(orUndefined) : Promise.resolve(undefined)),
+			notify: (message, type) => request("notify", type === undefined ? { message } : { message, type }),
+			onTerminalInput: () => () => {},
+			setStatus: (key, text) => request("setStatus", { key, text }),
+			setWorkingMessage: (message) => request("setWorkingMessage", { message }),
+			setWorkingVisible: (visible) => request("setWorkingVisible", { visible }),
+			setWorkingIndicator: (options) => request("setWorkingIndicator", { options: plain(options) }),
+			setHiddenThinkingLabel: (label) => request("setHiddenThinkingLabel", { label }),
+			setWidget(key, content, options) {
+				const previous = widgetHandles.get(key);
+				widgetHandles.delete(key);
+				if (typeof content === "function") {
+					// Modes without components show no component widgets.
+					if (!shown) return;
+					const handle = mount(content(tui, theme));
+					widgetHandles.set(key, handle);
+					request("setWidget", { key, handle, options: plain(options) });
+				} else {
+					request("setWidget", { key, lines: Array.isArray(content) ? content.map(String) : undefined, options: plain(options) });
+				}
+				if (previous !== undefined) unmount(previous);
+			},
+			setFooter: (factory) => replaceSlot("footer", factory, footerData),
+			setHeader: (factory) => replaceSlot("header", factory),
+			setTitle: (title) => request("setTitle", { title }),
+			custom(factory, options) {
+				if (!shown) return Promise.resolve(undefined);
+				return new Promise((resolve, reject) => {
+					let handle;
+					let finished = false;
+					const done = (result) => {
+						if (finished) return;
+						finished = true;
+						if (handle !== undefined) {
+							request("close", { handle });
+							unmount(handle);
+						}
+						resolve(result);
+					};
+					keybindings()
+						.then((manager) => factory(tui, theme, manager, done))
+						.then((component) => {
+							if (finished) {
+								component?.dispose?.();
+								return;
+							}
+							handle = mount(component);
+							// pi-tui focuses the component it shows.
+							if (component && "focused" in component) component.focused = true;
+							// Without options an overlay takes the component's `width`, as in pi.
+							const overlayOptions = options?.overlayOptions
+								? typeof options.overlayOptions === "function"
+									? options.overlayOptions()
+									: options.overlayOptions
+								: component?.width
+									? { width: component.width }
+									: undefined;
+							request("custom", { handle, overlay: !!options?.overlay, overlayOptions: plain(overlayOptions) });
+							options?.onHandle?.(overlayHandle(handle));
+						})
+						.catch(reject);
+				});
+			},
+			pasteToEditor: (text) => request("pasteToEditor", { text }),
+			setEditorText: (text) => request("setEditorText", { text }),
+			getEditorText: () => request("getEditorText", {}) ?? "",
+			addAutocompleteProvider() {},
+			setEditorComponent() {},
+			getEditorComponent: () => undefined,
+			theme,
+			getAllThemes: () => request("getAllThemes", {}) ?? [],
+			getTheme: () => undefined,
+			setTheme: () => ({ success: false, error: "Themes cannot be changed from ri extensions yet" }),
+			getToolsExpanded: () => !!request("getToolsExpanded", {}),
+			setToolsExpanded: (expanded) => request("setToolsExpanded", { expanded }),
+		};
+	}
+
+	const sessionMethods = [
+		"getCwd",
+		"getSessionDir",
+		"getSessionId",
+		"getSessionFile",
+		"getLeafId",
+		"getLeafEntry",
+		"getEntry",
+		"getLabel",
+		"getBranch",
+		"getHeader",
+		"getEntries",
+		"getTree",
+		"getSessionName",
+		"getContext",
+		"buildSessionContext",
+		"isPersisted",
+		"getChildren",
+	];
+	function createSessionManager() {
+		const manager = {};
+		for (const method of sessionMethods) manager[method] = (...args) => ri.request("session.read", { method, args: plain(args) });
+		return manager;
+	}
+	function createModelRegistry() {
+		return {
+			find: (provider, id) => ri.request("models.find", { provider, id }) ?? undefined,
+			getAll: () => ri.request("models.all", {}),
+			getAvailable: () => ri.request("models.available", {}),
+			getApiKey: (model) => ri.op("models.apiKey", { provider: model.provider, id: model.id }),
+			getApiKeyForProvider: (provider) => ri.op("models.apiKey", { provider }),
+			getProviderAuth: (provider) => ri.op("models.auth", { provider }),
+			isUsingOAuth: (model) => !!ri.request("models.usingOAuth", { provider: model.provider }),
+			hasConfiguredAuth: (model) => !!ri.request("models.hasAuth", { provider: model.provider }),
+			refresh: () => Promise.resolve({ aborted: false, errors: new Map() }),
+		};
+	}
+	function createContext(data = {}, extra = {}) {
+		const controller = new AbortController();
+		const context = {
+			ui: createUi(data),
+			mode: data.mode ?? "print",
+			hasUI: !!data.hasUI,
+			cwd: data.cwd ?? ri.cwd,
+			sessionManager: createSessionManager(),
+			modelRegistry: createModelRegistry(),
+			model: data.model ?? undefined,
+			scopedModels: data.scopedModels ?? [],
+			thinkingLevel: data.thinkingLevel,
+			signal: data.aborted ? AbortSignal.abort() : controller.signal,
+			isIdle: () => !!ri.request("agent.isIdle", {}),
+			isProjectTrusted: () => !!data.projectTrusted,
+			abort: () => ri.request("agent.abort", {}),
+			hasPendingMessages: () => !!ri.request("agent.hasPendingMessages", {}),
+			shutdown: () => ri.request("agent.shutdown", {}),
+			getContextUsage: () => ri.request("agent.contextUsage", {}) ?? undefined,
+			compact: (options) => {
+				ri.op("agent.compact", { customInstructions: options?.customInstructions }).then(
+					(result) => options?.onComplete?.(result),
+					(error) => options?.onError?.(error),
+				);
+			},
+			getSystemPrompt: () => ri.request("agent.systemPrompt", {}) ?? "",
+			...extra,
+		};
+		return context;
+	}
+	function createCommandContext(data) {
+		return createContext(data, {
+			getSystemPromptOptions: () => ri.request("agent.systemPromptOptions", {}) ?? {},
+			waitForIdle: () => ri.op("agent.waitForIdle", {}),
+			newSession: (options) => ri.op("session.new", { parentSession: options?.parentSession }),
+			fork: (entryId, options) => ri.op("session.fork", { entryId, position: options?.position }),
+			navigateTree: (targetId, options) => ri.op("session.navigateTree", { targetId, ...plain(options) }),
+			switchSession: (sessionPath) => ri.op("session.switch", { sessionPath }),
+			reload: () => ri.op("session.reload", {}),
+		});
+	}
+
+	// ----- emitting to one extension -----------------------------------------------------------
+	/** Runs `extension`'s handlers for `event` as pi's runner does for each handler. */
+	async function emit(extension, event, ctx) {
+		const handlers = [...(extension.handlers.get(event.type) ?? [])];
+		const errors = [];
+		const guard = async (run) => {
+			try {
+				return await run();
+			} catch (error) {
+				errors.push(errorInfo(error));
+				return undefined;
+			}
+		};
+		let result;
+		switch (event.type) {
+			case "tool_call": {
+				// Errors propagate: a failing guard blocks the call.
+				for (const handler of handlers) {
+					const handlerResult = await handler(event, ctx);
+					if (handlerResult) {
+						result = handlerResult;
+						if (result.block) break;
+					}
+				}
+				break;
+			}
+			case "tool_result": {
+				const current = { ...event };
+				let modified = false;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler(current, ctx));
+					if (!handlerResult) continue;
+					for (const key of ["content", "details", "structuredContent", "isError", "usage"]) {
+						if (handlerResult[key] !== undefined) {
+							current[key] = handlerResult[key];
+							modified = true;
+						}
+					}
+					if (handlerResult.content !== undefined && handlerResult.structuredContent === undefined) delete current.structuredContent;
+				}
+				if (modified) result = { content: current.content, details: current.details, structuredContent: current.structuredContent, isError: current.isError, usage: current.usage };
+				break;
+			}
+			case "message_end": {
+				let message = event.message;
+				let modified = false;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler({ ...event, message }, ctx));
+					if (!handlerResult?.message) continue;
+					if (handlerResult.message.role !== message.role) {
+						errors.push({ error: "message_end handlers must return a message with the same role" });
+						continue;
+					}
+					message = handlerResult.message;
+					modified = true;
+				}
+				if (modified) result = { message };
+				break;
+			}
+			case "input": {
+				let text = event.text;
+				let images = event.images;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler({ ...event, text, images }, ctx));
+					if (handlerResult?.action === "handled") {
+						result = handlerResult;
+						break;
+					}
+					if (handlerResult?.action === "transform") {
+						text = handlerResult.text;
+						images = handlerResult.images ?? images;
+					}
+				}
+				result ??= text !== event.text || images !== event.images ? { action: "transform", text, images } : { action: "continue" };
+				break;
+			}
+			case "before_agent_start": {
+				const messages = [];
+				let systemPrompt;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler(event, ctx));
+					if (handlerResult?.message) messages.push(handlerResult.message);
+					if (handlerResult?.systemPrompt !== undefined) systemPrompt = handlerResult.systemPrompt;
+				}
+				result = { messages, systemPrompt };
+				break;
+			}
+			case "context":
+			case "context_with_system": {
+				let messages = event.messages;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler({ ...event, messages }, ctx));
+					if (handlerResult?.messages) messages = handlerResult.messages;
+				}
+				if (messages !== event.messages) result = { messages };
+				break;
+			}
+			case "before_provider_request": {
+				let payload = event.payload;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler({ ...event, payload }, ctx));
+					if (handlerResult !== undefined) payload = handlerResult;
+				}
+				result = { payload };
+				break;
+			}
+			case "user_bash": {
+				for (const handler of handlers) {
+					const handlerResult = await handler(event, ctx);
+					if (handlerResult !== undefined) {
+						result = handlerResult;
+						break;
+					}
+				}
+				break;
+			}
+			case "resources_discover": {
+				const collected = { skillPaths: [], promptPaths: [], themePaths: [] };
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler(event, ctx));
+					for (const key of Object.keys(collected)) if (handlerResult?.[key]?.length) collected[key].push(...handlerResult[key]);
+				}
+				result = collected;
+				break;
+			}
+			case "cache_warming_decision": {
+				let actionValue = event.action;
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler(event, ctx));
+					if (handlerResult?.action !== undefined) actionValue = handlerResult.action;
+				}
+				result = { action: actionValue };
+				break;
+			}
+			default: {
+				const cancellable = event.type.startsWith("session_before_");
+				for (const handler of handlers) {
+					const handlerResult = await guard(() => handler(event, ctx));
+					if (cancellable && handlerResult) {
+						result = handlerResult;
+						if (result.cancel) break;
+					}
+				}
+			}
+		}
+		return { result: plain(result), errors };
+	}
+
+	// ----- dispatch -------------------------------------------------------------------------------
+	const extensionOf = (id) => {
+		const extension = extensions.get(id);
+		if (!extension) throw new Error(`Unknown extension ${id}`);
+		return extension;
+	};
+	const kinds = {
+		async load(payload) {
+			ri.cwd = payload.cwd;
+			for (const [name, value] of Object.entries(payload.flags ?? {})) flagValues.set(name, value);
+			const results = [];
+			for (const entry of payload.extensions) results.push(await loadOne(entry));
+			return { extensions: results };
+		},
+		bind() {
+			bound = true;
+			let spec = null;
+			try {
+				spec = ri.request("ui.theme", {}) ?? null;
+			} catch {
+				// Hosts without a UI leave text plain.
+			}
+			theme.load(spec);
+			return null;
+		},
+		async reload() {
+			bound = false;
+			for (const handle of [...components.keys()]) unmount(handle);
+			widgetHandles.clear();
+			transcriptViews.clear();
+			slots.footer = slots.header = undefined;
+			const results = [];
+			for (const [id, extension] of [...extensions]) {
+				extensions.delete(id);
+				results.push(await instantiate(id, extension.path, extension.factory));
+			}
+			return { extensions: results };
+		},
+		flags(payload) {
+			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);
+			return null;
+		},
+		emit(payload) {
+			return emit(extensionOf(payload.extension), payload.event, createContext(payload.ctx));
+		},
+		async tool(payload) {
+			const extension = extensionOf(payload.extension);
+			const tool = extension.tools.get(payload.name);
+			if (!tool) throw new Error(`Tool ${payload.name} is not registered by ${extension.path}`);
+			const ctx = createContext(payload.ctx, {
+				tools: payload.tools ?? [],
+				executeTool: (name, args) => ri.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
+			});
+			const onUpdate = (partial) => ri.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
+			let params = payload.params;
+			if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+			const result = await tool.execute(payload.toolCallId, params, ctx.signal, onUpdate, ctx);
+			return plain(result) ?? { content: [] };
+		},
+		async command(payload) {
+			const command = extensionOf(payload.extension).commands.get(payload.name);
+			if (!command) throw new Error(`Command /${payload.name} is not registered`);
+			await command.handler(payload.args ?? "", createCommandContext(payload.ctx));
+			return null;
+		},
+		async complete(payload) {
+			const command = extensionOf(payload.extension).commands.get(payload.name);
+			if (typeof command?.getArgumentCompletions !== "function") return null;
+			return plain(await command.getArgumentCompletions(payload.prefix ?? "")) ?? null;
+		},
+		async shortcut(payload) {
+			const shortcut = extensionOf(payload.extension).shortcuts.get(payload.shortcut);
+			if (!shortcut) throw new Error(`Shortcut ${payload.shortcut} is not registered`);
+			await shortcut.handler(createContext(payload.ctx));
+			return null;
+		},
+		/**
+		 * Builds the component a tool's `renderCall`/`renderResult` or a
+		 * message renderer returns; `{ handle }`, or `null` for the built-in
+		 * rendering. A renderer that returns its last component keeps its
+		 * handle.
+		 */
+		component(payload) {
+			const extension = extensionOf(payload.extension);
+			const key = payload.kind === "message" ? `message:${payload.key}` : `tool:${payload.toolCallId}`;
+			const views = transcriptViews.get(key) ?? { state: {}, call: undefined, result: undefined, message: undefined };
+			transcriptViews.set(key, views);
+			const slot = payload.kind === "toolCall" ? "call" : payload.kind === "toolResult" ? "result" : "message";
+			const previous = views[slot];
+			let component;
+			try {
+				if (slot === "message") {
+					const renderer = extension.messageRenderers.get(payload.message?.customType);
+					component = renderer?.(payload.message, plain(payload.options ?? {}), theme);
+				} else {
+					const tool = extension.tools.get(payload.name);
+					const context = {
+						...(payload.context ?? {}),
+						args: payload.args,
+						toolCallId: payload.toolCallId,
+						invalidate: () => tui.requestRender(),
+						lastComponent: previous?.component,
+						state: views.state,
+					};
+					component =
+						slot === "call"
+							? tool?.renderCall?.(payload.args, theme, context)
+							: tool?.renderResult?.(payload.result, plain(payload.options ?? {}), theme, context);
+				}
+			} catch {
+				// pi falls back to the default rendering without a word.
+				component = undefined;
+			}
+			if (!component) {
+				if (previous) unmount(previous.handle);
+				views[slot] = undefined;
+				return null;
+			}
+			if (previous?.component === component) return { handle: previous.handle };
+			if (previous) unmount(previous.handle);
+			const handle = mount(component);
+			views[slot] = { handle, component };
+			return { handle };
+		},
+		async eval(payload) {
+			return plain(await (0, eval)(payload.source));
+		},
+	};
+
+	ri.dispatch = (id, kind, payloadText) => {
+		const handler = kinds[kind];
+		Promise.resolve()
+			.then(() => {
+				if (!handler) throw new Error(`Unknown dispatch kind: ${kind}`);
+				return handler(JSON.parse(payloadText));
+			})
+			.then(
+				(value) => native.done(id, JSON.stringify(value ?? null) ?? "null"),
+				(error) => native.fail(id, errorMessage(error)),
+			);
+	};
+	ri.extensions = extensions;
+})();

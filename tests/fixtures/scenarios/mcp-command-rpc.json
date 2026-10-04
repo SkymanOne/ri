@@ -1,0 +1,94 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "notify",
+      "message": "MCP servers need attention:\n  config: <agent>/mcp.json: server \"bad\": url must be an http or https URL\n  broken: failed: spawn ri-no-such-command ENOENT\nRun /mcp to fix.",
+      "notifyType": "warning"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-2>",
+      "method": "notify",
+      "message": "demo: connected, 9 tools (direct)\noff: disabled (direct)\nbroken: failed (direct)\n    spawn ri-no-such-command ENOENT\nconfig error: <agent>/mcp.json: server \"bad\": url must be an http or https URL",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-3>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-4>",
+      "method": "notify",
+      "message": "Usage: /mcp, /mcp login [server], /mcp logout [server], /mcp reconnect [server]",
+      "notifyType": "warning"
+    },
+    {
+      "id": "<id-5>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-6>",
+      "method": "notify",
+      "message": "Reconnected to MCP server \"demo\" (connected · 9 tools · 1 resource).",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-7>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-8>",
+      "method": "notify",
+      "message": "No MCP server named \"nope\".",
+      "notifyType": "error"
+    },
+    {
+      "id": "<id-9>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-10>",
+      "method": "notify",
+      "message": "No enabled MCP server uses OAuth. Only HTTP servers without an Authorization header do.",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-11>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

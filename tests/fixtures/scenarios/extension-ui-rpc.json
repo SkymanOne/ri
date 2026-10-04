@@ -1,0 +1,146 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "setWidget",
+      "widgetKey": "widget-above",
+      "widgetLines": [
+        "Above editor widget"
+      ]
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-2>",
+      "method": "setWidget",
+      "widgetKey": "widget-below",
+      "widgetLines": [
+        "Below editor widget"
+      ],
+      "widgetPlacement": "belowEditor"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-3>",
+      "method": "setStatus",
+      "statusKey": "status-demo",
+      "statusText": "\u001b[39m\u001b[2mReady\u001b[22;39m"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-4>",
+      "method": "setStatus",
+      "statusKey": "build",
+      "statusText": "passing"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-5>",
+      "method": "setStatus",
+      "statusKey": "build"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-6>",
+      "method": "setWidget",
+      "widgetKey": "todo",
+      "widgetLines": [
+        "one",
+        "two"
+      ],
+      "widgetPlacement": "belowEditor"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-7>",
+      "method": "setWidget",
+      "widgetKey": "todo"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-8>",
+      "method": "setTitle",
+      "title": "ri test"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-9>",
+      "method": "set_editor_text",
+      "text": "draft"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-10>",
+      "method": "set_editor_text",
+      "text": "pasted"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-11>",
+      "method": "notify",
+      "message": "custom: undefined, editor: \"\", expanded: false",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-12>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "id": "<id-13>",
+      "type": "response",
+      "command": "get_state",
+      "success": true,
+      "data": {
+        "model": {
+          "id": "<id-14>",
+          "name": "GPT OSS 120B",
+          "api": "openai-completions",
+          "provider": "groq",
+          "baseUrl": "<mock>",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0.15,
+            "output": 0.6,
+            "cacheRead": 0.075,
+            "cacheWrite": 0
+          },
+          "contextWindow": 131072,
+          "maxTokens": 65536,
+          "compat": {
+            "supportsStrictMode": true
+          },
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "type": "chat"
+        },
+        "thinkingLevel": "medium",
+        "isStreaming": false,
+        "isCompacting": false,
+        "steeringMode": "one-at-a-time",
+        "followUpMode": "one-at-a-time",
+        "sessionId": "<id-15>",
+        "autoCompactionEnabled": true,
+        "messageCount": 0,
+        "pendingMessageCount": 0
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

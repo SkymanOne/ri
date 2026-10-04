@@ -1,0 +1,2192 @@
+{
+	"auto-commit-on-exit.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown"
+				]
+			}
+		],
+		"errors": []
+	},
+	"bash-spawn-hook.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"bookmark.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "bookmark",
+						"description": "Bookmark last message (usage: /bookmark [label])"
+					},
+					{
+						"name": "unbookmark",
+						"description": "Remove bookmark from last labeled entry"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"border-status-editor.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"built-in-tool-renderer.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read",
+						"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					},
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					},
+					{
+						"name": "edit",
+						"label": "edit",
+						"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"edits"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to edit (relative or absolute)"
+								},
+								"edits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"oldText",
+											"newText"
+										],
+										"properties": {
+											"oldText": {
+												"type": "string",
+												"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+											},
+											"newText": {
+												"type": "string",
+												"description": "Replacement text for this targeted edit."
+											}
+										}
+									},
+									"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+								}
+							}
+						}
+					},
+					{
+						"name": "write",
+						"label": "write",
+						"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"content"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to write (relative or absolute)"
+								},
+								"content": {
+									"type": "string",
+									"description": "Content to write to the file"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"claude-rules.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"commands.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "commands",
+						"description": "List available slash commands"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"confirm-destructive.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_before_fork",
+					"session_before_switch"
+				]
+			}
+		],
+		"errors": []
+	},
+	"custom-compaction.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_before_compact"
+				]
+			}
+		],
+		"errors": []
+	},
+	"custom-footer.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "footer",
+						"description": "Toggle custom footer"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"custom-header.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "builtin-header",
+						"description": "Restore built-in header with keybinding hints"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"custom-provider-anthropic": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"custom-provider-gitlab-duo": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"debug-provider.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "debug-provider",
+						"description": "Toggle capture of raw provider stream events"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"message_end",
+					"provider_stream_event",
+					"turn_end",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"dirty-repo-guard.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_before_fork",
+					"session_before_switch"
+				]
+			}
+		],
+		"errors": []
+	},
+	"doom-overlay": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "doom-overlay",
+						"description": "Play DOOM as an overlay. Q to pause and exit."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"dynamic-resources": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"resources_discover"
+				]
+			}
+		],
+		"errors": []
+	},
+	"dynamic-tools.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "add-echo-tool",
+						"description": "Register a new echo tool dynamically: /add-echo-tool <tool_name>"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"entry-renderer.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "status-card",
+						"description": "Render a durable status card that is not sent to the LLM"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"event-bus.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "emit",
+						"description": "Emit my:notification event (usage: /emit message)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"file-trigger.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"git-checkpoint.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"session_before_fork",
+					"tool_result",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"git-merge-and-resolve.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_end"
+				]
+			}
+		],
+		"errors": []
+	},
+	"github-issue-autocomplete.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"gondolin": {
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot find module '@earendil-works/gondolin'"
+		]
+	},
+	"handoff.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "handoff",
+						"description": "Transfer context to a new focused session"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"hello.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "hello",
+						"label": "Hello",
+						"description": "A simple greeting tool",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"name"
+							],
+							"properties": {
+								"name": {
+									"type": "string",
+									"description": "Name to greet"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"hidden-thinking-label.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "thinking-label",
+						"description": "Set the hidden thinking label. Use without args to reset."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"inline-bash.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"input"
+				]
+			}
+		],
+		"errors": []
+	},
+	"input-transform-streaming.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"input"
+				]
+			}
+		],
+		"errors": []
+	},
+	"input-transform.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"input"
+				]
+			}
+		],
+		"errors": []
+	},
+	"interactive-shell.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"user_bash"
+				]
+			}
+		],
+		"errors": []
+	},
+	"jev-router.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"mac-system-theme.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"message-renderer.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "status",
+						"description": "Send a status message (usage: /status [warn|error] message)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"minimal-mode.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read",
+						"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					},
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					},
+					{
+						"name": "write",
+						"label": "write",
+						"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"content"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to write (relative or absolute)"
+								},
+								"content": {
+									"type": "string",
+									"description": "Content to write to the file"
+								}
+							}
+						}
+					},
+					{
+						"name": "edit",
+						"label": "edit",
+						"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"edits"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to edit (relative or absolute)"
+								},
+								"edits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"oldText",
+											"newText"
+										],
+										"properties": {
+											"oldText": {
+												"type": "string",
+												"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+											},
+											"newText": {
+												"type": "string",
+												"description": "Replacement text for this targeted edit."
+											}
+										}
+									},
+									"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+								}
+							}
+						}
+					},
+					{
+						"name": "find",
+						"label": "find",
+						"description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+								},
+								"path": {
+									"type": "string",
+									"description": "Directory to search in (default: current directory)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of results (default: 1000)"
+								}
+							}
+						}
+					},
+					{
+						"name": "grep",
+						"label": "grep",
+						"description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "Search pattern (regex or literal string)"
+								},
+								"path": {
+									"type": "string",
+									"description": "Directory or file to search (default: current directory)"
+								},
+								"glob": {
+									"type": "string",
+									"description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+								},
+								"ignoreCase": {
+									"type": "boolean",
+									"description": "Case-insensitive search (default: false)"
+								},
+								"literal": {
+									"type": "boolean",
+									"description": "Treat pattern as literal string instead of regex (default: false)"
+								},
+								"context": {
+									"type": "number",
+									"description": "Number of lines to show before and after each match (default: 0)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of matches to return (default: 100)"
+								}
+							}
+						}
+					},
+					{
+						"name": "ls",
+						"label": "ls",
+						"description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Directory to list (default: current directory)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of entries to return (default: 500)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"modal-editor.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"model-status.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"model_select"
+				]
+			}
+		],
+		"errors": []
+	},
+	"notify.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled"
+				]
+			}
+		],
+		"errors": []
+	},
+	"overlay-qa-tests.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "overlay-animation",
+						"description": "Test real-time animation in overlay (~30 FPS)"
+					},
+					{
+						"name": "overlay-anchors",
+						"description": "Cycle through all anchor positions"
+					},
+					{
+						"name": "overlay-margins",
+						"description": "Test margin and offset options"
+					},
+					{
+						"name": "overlay-stack",
+						"description": "Test stacked overlays"
+					},
+					{
+						"name": "overlay-overflow",
+						"description": "Test width overflow with streaming process output"
+					},
+					{
+						"name": "overlay-edge",
+						"description": "Test overlay positioned at terminal edge"
+					},
+					{
+						"name": "overlay-percent",
+						"description": "Test percentage-based positioning"
+					},
+					{
+						"name": "overlay-maxheight",
+						"description": "Test maxHeight truncation"
+					},
+					{
+						"name": "overlay-sidepanel",
+						"description": "Test responsive sidepanel (hides when terminal < 100 cols)"
+					},
+					{
+						"name": "overlay-toggle",
+						"description": "Test overlay toggle (press 't' to toggle visibility)"
+					},
+					{
+						"name": "overlay-passive",
+						"description": "Test non-capturing overlay (passive info panel alongside active overlay)"
+					},
+					{
+						"name": "overlay-focus",
+						"description": "Test focus cycling, input routing, dismissal, and rendering order with overlays"
+					},
+					{
+						"name": "overlay-streaming",
+						"description": "Multiple input panels with simulated streaming (Tab to cycle focus)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"overlay-test.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "overlay-test",
+						"description": "Test overlay rendering with edge cases"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"permission-gate.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"tool_call"
+				]
+			}
+		],
+		"errors": []
+	},
+	"pirate.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "pirate",
+						"description": "Toggle pirate mode (agent speaks like a pirate)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"plan-mode": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "plan",
+						"description": "Toggle plan mode (read-only exploration)"
+					},
+					{
+						"name": "todos",
+						"description": "Show current plan todo list"
+					}
+				],
+				"flags": [
+					{
+						"name": "plan",
+						"type": "boolean",
+						"default": false,
+						"description": "Start in plan mode (read-only exploration)"
+					}
+				],
+				"shortcuts": [
+					{
+						"shortcut": "ctrl+alt+p",
+						"description": "Toggle plan mode"
+					}
+				],
+				"events": [
+					"agent_end",
+					"before_agent_start",
+					"context",
+					"session_start",
+					"tool_call",
+					"turn_end"
+				]
+			}
+		],
+		"errors": []
+	},
+	"preset.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "preset",
+						"description": "Switch preset configuration"
+					}
+				],
+				"flags": [
+					{
+						"name": "preset",
+						"type": "string",
+						"default": null,
+						"description": "Preset configuration to use"
+					}
+				],
+				"shortcuts": [
+					{
+						"shortcut": "ctrl+shift+u",
+						"description": "Cycle presets"
+					}
+				],
+				"events": [
+					"before_agent_start",
+					"session_start",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"project-trust.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"project_trust",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"prompt-customizer.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"protected-paths.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"tool_call"
+				]
+			}
+		],
+		"errors": []
+	},
+	"provider-payload.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"after_provider_response",
+					"before_provider_request"
+				]
+			}
+		],
+		"errors": []
+	},
+	"qna.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "qna",
+						"description": "Extract questions from last assistant message into editor"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"question.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "question",
+						"label": "Question",
+						"description": "Ask the user a question and let them pick from options. Use when you need user input to proceed.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"question",
+								"options"
+							],
+							"properties": {
+								"question": {
+									"type": "string",
+									"description": "The question to ask the user"
+								},
+								"options": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"label"
+										],
+										"properties": {
+											"label": {
+												"type": "string",
+												"description": "Display label for the option"
+											},
+											"description": {
+												"type": "string",
+												"description": "Optional description shown below label"
+											}
+										}
+									},
+									"description": "Options for the user to choose from"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"questionnaire.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "questionnaire",
+						"label": "Questionnaire",
+						"description": "Ask the user one or more questions. Use for clarifying requirements, getting preferences, or confirming decisions. For single questions, shows a simple option list. For multiple questions, shows a tab-based interface.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"questions"
+							],
+							"properties": {
+								"questions": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"id",
+											"prompt",
+											"options"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Unique identifier for this question"
+											},
+											"label": {
+												"type": "string",
+												"description": "Short contextual label for tab bar, e.g. 'Scope', 'Priority' (defaults to Q1, Q2)"
+											},
+											"prompt": {
+												"type": "string",
+												"description": "The full question text to display"
+											},
+											"options": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"required": [
+														"value",
+														"label"
+													],
+													"properties": {
+														"value": {
+															"type": "string",
+															"description": "The value returned when selected"
+														},
+														"label": {
+															"type": "string",
+															"description": "Display label for the option"
+														},
+														"description": {
+															"type": "string",
+															"description": "Optional description shown below label"
+														}
+													}
+												},
+												"description": "Available options to choose from"
+											},
+											"allowOther": {
+												"type": "boolean",
+												"description": "Allow 'Type something' option (default: true)"
+											}
+										}
+									},
+									"description": "Questions to ask the user"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"rainbow-editor.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"reload-runtime.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "reload_runtime",
+						"label": "Reload Runtime",
+						"description": "Reload extensions, skills, prompts, themes, and context files",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "reload-runtime",
+						"description": "Reload extensions, skills, prompts, themes, and context files"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"rpc-demo.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "rpc-input",
+						"description": "Prompt for text input (demonstrates ctx.ui.input in RPC)"
+					},
+					{
+						"name": "rpc-editor",
+						"description": "Open multi-line editor (demonstrates ctx.ui.editor in RPC)"
+					},
+					{
+						"name": "rpc-prefill",
+						"description": "Prefill the input editor (demonstrates ctx.ui.setEditorText in RPC)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_before_switch",
+					"session_start",
+					"tool_call",
+					"turn_end",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"sandbox": {
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot find module '@anthropic-ai/sandbox-runtime'"
+		]
+	},
+	"send-user-message.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "ask",
+						"description": "Send a user message to the agent"
+					},
+					{
+						"name": "steer",
+						"description": "Send a steering message (interrupts current processing)"
+					},
+					{
+						"name": "followup",
+						"description": "Queue a follow-up message (waits for current processing)"
+					},
+					{
+						"name": "askwith",
+						"description": "Send a user message with structured content"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"session-name.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "session-name",
+						"description": "Set or show session name (usage: /session-name [new name])"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"shutdown-command.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "finish_and_exit",
+						"label": "Finish and Exit",
+						"description": "Complete a task and exit pi",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "deploy_and_exit",
+						"label": "Deploy and Exit",
+						"description": "Deploy the application and exit pi",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"environment"
+							],
+							"properties": {
+								"environment": {
+									"type": "string",
+									"description": "Target environment (e.g., production, staging)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "quit",
+						"description": "Exit pi cleanly"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"snake.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "snake",
+						"description": "Play Snake!"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"space-invaders.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "invaders",
+						"description": "Play Space Invaders!"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"ssh.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read",
+						"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					},
+					{
+						"name": "write",
+						"label": "write",
+						"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"content"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to write (relative or absolute)"
+								},
+								"content": {
+									"type": "string",
+									"description": "Content to write to the file"
+								}
+							}
+						}
+					},
+					{
+						"name": "edit",
+						"label": "edit",
+						"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"edits"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to edit (relative or absolute)"
+								},
+								"edits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"oldText",
+											"newText"
+										],
+										"properties": {
+											"oldText": {
+												"type": "string",
+												"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+											},
+											"newText": {
+												"type": "string",
+												"description": "Replacement text for this targeted edit."
+											}
+										}
+									},
+									"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+								}
+							}
+						}
+					},
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [
+					{
+						"name": "ssh",
+						"type": "string",
+						"default": null,
+						"description": "SSH remote: user@host or user@host:/path"
+					}
+				],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"session_start",
+					"user_bash"
+				]
+			}
+		],
+		"errors": []
+	},
+	"status-line.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start",
+					"turn_end",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"structured-output.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "structured_output",
+						"label": "Structured Output",
+						"description": "Return a final structured answer. Use this as your last action when the user asks for structured output or a machine-readable summary.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"headline",
+								"summary",
+								"actionItems"
+							],
+							"properties": {
+								"headline": {
+									"type": "string",
+									"description": "Short title for the result"
+								},
+								"summary": {
+									"type": "string",
+									"description": "One-paragraph summary"
+								},
+								"actionItems": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Concrete next steps or key bullets"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"subagent": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "subagent",
+						"label": "Subagent",
+						"description": "Delegate tasks to specialized subagents with isolated context. Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder). Default agent scope is \"user\" (from <agent>/agents). To enable project-local agents in .pi/agents, set agentScope: \"both\" (or \"project\").",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"agent": {
+									"type": "string",
+									"description": "Name of the agent to invoke (for single mode)"
+								},
+								"task": {
+									"type": "string",
+									"description": "Task to delegate (for single mode)"
+								},
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"agent",
+											"task"
+										],
+										"properties": {
+											"agent": {
+												"type": "string",
+												"description": "Name of the agent to invoke"
+											},
+											"task": {
+												"type": "string",
+												"description": "Task to delegate to the agent"
+											},
+											"cwd": {
+												"type": "string",
+												"description": "Working directory for the agent process"
+											}
+										}
+									},
+									"description": "Array of {agent, task} for parallel execution"
+								},
+								"chain": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"agent",
+											"task"
+										],
+										"properties": {
+											"agent": {
+												"type": "string",
+												"description": "Name of the agent to invoke"
+											},
+											"task": {
+												"type": "string",
+												"description": "Task with optional {previous} placeholder for prior output"
+											},
+											"cwd": {
+												"type": "string",
+												"description": "Working directory for the agent process"
+											}
+										}
+									},
+									"description": "Array of {agent, task} for sequential execution"
+								},
+								"agentScope": {
+									"type": "string",
+									"enum": [
+										"user",
+										"project",
+										"both"
+									],
+									"description": "Which agent directories to use. Default: \"user\". Use \"both\" to include project-local agents.",
+									"default": "user"
+								},
+								"confirmProjectAgents": {
+									"type": "boolean",
+									"description": "Prompt before running project-local agents. Default: true.",
+									"default": true
+								},
+								"cwd": {
+									"type": "string",
+									"description": "Working directory for the agent process (single mode)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"summarize.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "summarize",
+						"description": "Summarize the current conversation in a custom UI"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"system-prompt-header.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_start",
+					"session_shutdown"
+				]
+			}
+		],
+		"errors": []
+	},
+	"tic-tac-toe.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "tic_tac_toe",
+						"label": "Tic-Tac-Toe",
+						"description": "Execute ONE tic-tac-toe action as Player O. `action` is exactly one of: move_up, move_down, move_left, move_right (move YOUR cursor one cell, clamped at edges), or play (place O under YOUR cursor; errors if the cell is not empty). There is no batched form. To play at (r, c) from your current cursor (r0, c0), emit the required move_down/move_up and move_right/move_left calls, then play, all as separate tool_use blocks in the SAME assistant response. Do not split the sequence across responses and do not wait for a result before emitting the next call. Your cursor position persists between turns and is reset to (0,0) only after a successful play.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"move_up",
+										"move_down",
+										"move_left",
+										"move_right",
+										"play"
+									],
+									"description": "The single action to perform this call. Emit multiple tic_tac_toe calls in one response to string actions together."
+								}
+							}
+						}
+					},
+					{
+						"name": "tic_tac_toe_see_board",
+						"label": "See Board",
+						"description": "Return the current tic-tac-toe board state and YOUR cursor position (Player O). Takes no arguments. Use this if you need the current state restated mid-turn (for example after a failed play). The user's cursor is never exposed.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "tic-tac-toe",
+						"description": "Play tic-tac-toe against the agent"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
+	},
+	"timed-confirm.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "timed",
+						"description": "Show a timed confirmation dialog (auto-cancels in 5s with countdown)"
+					},
+					{
+						"name": "timed-select",
+						"description": "Show a timed select dialog (auto-cancels in 10s with countdown)"
+					},
+					{
+						"name": "timed-signal",
+						"description": "Show a timed confirm using AbortSignal (manual approach)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"titlebar-spinner.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"session_shutdown"
+				]
+			}
+		],
+		"errors": []
+	},
+	"todo.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "todo",
+						"label": "Todo",
+						"description": "Manage a todo list. Actions: list, add (text), toggle (id), clear",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"list",
+										"add",
+										"toggle",
+										"clear"
+									]
+								},
+								"text": {
+									"type": "string",
+									"description": "Todo text (for add)"
+								},
+								"id": {
+									"type": "number",
+									"description": "Todo ID (for toggle)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "todos",
+						"description": "Show all todos on the current branch"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
+	},
+	"tool-override.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read (audited)",
+						"description": "Read the contents of a file with access logging. Some sensitive paths (.env, secrets, credentials) are blocked.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "read-log",
+						"description": "View the file access log"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"tools.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "tools",
+						"description": "Enable/disable tools"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
+	},
+	"trigger-compact.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "trigger-compact",
+						"description": "Trigger compaction immediately"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"turn_end"
+				]
+			}
+		],
+		"errors": []
+	},
+	"truncated-tool.ts": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "rg",
+						"label": "ripgrep",
+						"description": "Search file contents using ripgrep. Output is truncated to 2000 lines or 50.0KB (whichever is hit first). If truncated, full output is saved to a temp file.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "Search pattern (regex)"
+								},
+								"path": {
+									"type": "string",
+									"description": "Directory to search (default: current directory)"
+								},
+								"glob": {
+									"type": "string",
+									"description": "File glob pattern, e.g. '*.ts'"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"widget-placement.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"with-deps": {
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "parse_duration",
+						"label": "Parse Duration",
+						"description": "Parse a human-readable duration string (e.g., '2 days', '1h', '5m') to milliseconds",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"duration"
+							],
+							"properties": {
+								"duration": {
+									"type": "string",
+									"description": "Duration string like '2 days', '1h', '5m'"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"working-indicator.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "working-indicator",
+						"description": "Set the streaming working indicator: dot, pulse, none, spinner, or reset."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"working-message-test.ts": {
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	}
+}

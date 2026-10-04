@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: File not found: <cwd>/missing.md\n",
+  "requests": []
+}

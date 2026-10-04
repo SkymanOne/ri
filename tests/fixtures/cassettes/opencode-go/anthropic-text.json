@@ -1,0 +1,44 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "cf-placement": "remote-ORD",
+          "x-opencode-endpoint-id": "minimax.an",
+          "x-opencode-log-id": "fc50a03c-c657-4d8c-a6e4-13e8d8a19be4",
+          "x-opencode-upstream-model-id": "MiniMax-M3",
+          "x-zen-model": "minimax-m3"
+        },
+        "chunks": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"071012de9ea1ba5abd23db77af81f0b1\",\"type\":\"message\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"model\":\"minimax-m3\",\"content\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":1719}}}\n\nevent: ping\ndata: {\"type\":",
+          "\"ping\"}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"The user is\"}}\n\n",
+          "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\"",
+          ":{\"type\":\"thinking_delta\",\"thinking\":\" asking a simple math question. 2+2=4.\"}}\n\n",
+          "event: content_block_delt",
+          "a\ndata: {\"type\":\"content_bl",
+          "ock_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"f508be5c362537246672f4b97b696292871086d9a2baa642f6bb781e44a55a1b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start",
+          "\ndata: {\"type\":\"content_bl",
+          "ock_start\",\"index\":1,\"cont",
+          "ent_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta",
+          "\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delt",
+          "a\":{\"type\":\"text_delta\",\"text\":\"Four\"}}\n\n",
+          "event: content_block_stop\ndata: {\"type\":\"content_block",
+          "_stop\",\"index\":1}\n\n",
+          "e",
+          "vent: message_delta\ndata:",
+          " {\"type\":\"message_delta\",\"",
+          "delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":1249,\"output_tokens\":19,\"cache_read_input_tokens\":470,\"output_tokens_details\":{\"thinking_tokens\":18}}}\n\n",
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "chunkDelayMs": 0
+      }
+    }
+  ]
+}

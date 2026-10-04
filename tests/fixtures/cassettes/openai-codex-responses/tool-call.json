@@ -1,0 +1,62 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/codex/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_tool_1\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":0}\n\n",
+          "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_mock_tool_1\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":1}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"rs_mock_2\",\"type\":\"reasoning\",\"summary\":[]},\"sequence_number\":2}\n\n",
+          "event: response.reasoning_summary_part.added\ndata: {\"type\":\"response.reasoning_summary_part.added\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"\"},\"sequence_number\":3}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":0,\"delta\":\"**Reading \",\"sequence_number\":4}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":0,\"delta\":\"the file**\",\"sequence_number\":5}\n\n",
+          "event: response.reasoning_summary_text.done\ndata: {\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":0,\"text\":\"**Reading the file**\",\"sequence_number\":6}\n\n",
+          "event: response.reasoning_summary_part.done\ndata: {\"type\":\"response.reasoning_summary_part.done\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"**Reading the file**\"},\"sequence_number\":7}\n\n",
+          "event: response.reasoning_summary_part.added\ndata: {\"type\":\"response.reasoning_summary_part.added\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":1,\"part\":{\"type\":\"summary_text\",\"text\":\"\"},\"sequence_number\":8}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":1,\"delta\":\"I'll use th\",\"sequence_number\":9}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":1,\"delta\":\"e read tool.\",\"sequence_number\":10}\n\n",
+          "event: response.reasoning_summary_text.done\ndata: {\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":1,\"text\":\"I'll use the read tool.\",\"sequence_number\":11}\n\n",
+          "event: response.reasoning_summary_part.done\ndata: {\"type\":\"response.reasoning_summary_part.done\",\"item_id\":\"rs_mock_2\",\"output_index\":0,\"summary_index\":1,\"part\":{\"type\":\"summary_text\",\"text\":\"I'll use the read tool.\"},\"sequence_number\":12}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"rs_mock_2\",\"type\":\"reasoning\",\"encrypted_content\":\"gAAAAA-encrypted-2\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Reading the file**\"},{\"type\":\"summary_text\",\"text\":\"I'll use the read tool.\"}]},\"sequence_number\":13}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_mock_1\",\"name\":\"read\"},\"sequence_number\":14}\n\n",
+          "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_mock_1\",\"output_index\":1,\"delta\":\"{\\\"path\\\":\\\"hel\",\"sequence_number\":15}\n\n",
+          "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_mock_1\",\"output_index\":1,\"delta\":\"lo.txt\\\",\\\"offset\\\":null,\\\"limit\\\":null}\",\"sequence_number\":16}\n\n",
+          "event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"fc_mock_1\",\"output_index\":1,\"arguments\":\"{\\\"path\\\":\\\"hello.txt\\\",\\\"offset\\\":null,\\\"limit\\\":null}\",\"sequence_number\":17}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":1,\"item\":{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"status\":\"completed\",\"arguments\":\"{\\\"path\\\":\\\"hello.txt\\\",\\\"offset\\\":null,\\\"limit\\\":null}\",\"call_id\":\"call_mock_1\",\"name\":\"read\"},\"sequence_number\":18}\n\n",
+          "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_tool_1\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"completed\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[{\"id\":\"rs_mock_2\",\"type\":\"reasoning\",\"encrypted_content\":\"gAAAAA-encrypted-2\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Reading the file**\"},{\"type\":\"summary_text\",\"text\":\"I'll use the read tool.\"}]},{\"id\":\"fc_mock_1\",\"type\":\"function_call\",\"status\":\"completed\",\"arguments\":\"{\\\"path\\\":\\\"hello.txt\\\",\\\"offset\\\":null,\\\"limit\\\":null}\",\"call_id\":\"call_mock_1\",\"name\":\"read\"}],\"usage\":{\"input_tokens\":1200,\"input_tokens_details\":{\"cached_tokens\":1024},\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":16},\"total_tokens\":1240},\"service_tier\":\"default\"},\"sequence_number\":19}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/codex/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_tool_2\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":0}\n\n",
+          "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_mock_tool_2\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":1}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"msg_mock_2\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\",\"phase\":\"final_answer\"},\"sequence_number\":2}\n\n",
+          "event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"item_id\":\"msg_mock_2\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":3}\n\n",
+          "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_mock_2\",\"output_index\":0,\"content_index\":0,\"delta\":\"The file says: \",\"logprobs\":[],\"sequence_number\":4}\n\n",
+          "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_mock_2\",\"output_index\":0,\"content_index\":0,\"delta\":\"hi\",\"logprobs\":[],\"sequence_number\":5}\n\n",
+          "event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"item_id\":\"msg_mock_2\",\"output_index\":0,\"content_index\":0,\"text\":\"The file says: hi\",\"logprobs\":[],\"sequence_number\":6}\n\n",
+          "event: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"item_id\":\"msg_mock_2\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The file says: hi\"},\"sequence_number\":7}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"msg_mock_2\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The file says: hi\"}],\"role\":\"assistant\",\"phase\":\"final_answer\"},\"sequence_number\":8}\n\n",
+          "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_tool_2\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"completed\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[{\"id\":\"msg_mock_2\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The file says: hi\"}],\"role\":\"assistant\",\"phase\":\"final_answer\"}],\"usage\":{\"input_tokens\":1500,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":1508},\"service_tier\":\"default\"},\"sequence_number\":9}\n\n"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Unexpected argument extra.\nUsage: pi config [-l] [--approve|--no-approve]\n",
+  "requests": []
+}

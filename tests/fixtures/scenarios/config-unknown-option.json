@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Unknown option --bogus for \"config\".\nUse \"pi --help\" or \"pi config [-l] [--approve|--no-approve]\".\n",
+  "requests": []
+}

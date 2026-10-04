@@ -1,0 +1,22 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    " Select provider to configure:",
+    "",
+    "> Renamed",
+    "",
+    " → OpenAI Renamed • not configured",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

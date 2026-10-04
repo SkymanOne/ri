@@ -1,0 +1,2077 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "session",
+      "version": 3
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- grep: Search file contents for patterns (respects .gitignore)\n- find: Find files by glob pattern (respects .gitignore)\n- ls: List directory contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "grep",
+            "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "pattern"
+              ],
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Search pattern (regex or literal string)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory or file to search (default: current directory)"
+                },
+                "glob": {
+                  "type": "string",
+                  "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                },
+                "ignoreCase": {
+                  "type": "boolean",
+                  "description": "Case-insensitive search (default: false)"
+                },
+                "literal": {
+                  "type": "boolean",
+                  "description": "Treat pattern as literal string instead of regex (default: false)"
+                },
+                "context": {
+                  "type": "number",
+                  "description": "Number of lines to show before and after each match (default: 0)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of matches to return (default: 100)"
+                }
+              }
+            }
+          },
+          {
+            "name": "find",
+            "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "pattern"
+              ],
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory to search in (default: current directory)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of results (default: 1000)"
+                }
+              }
+            }
+          },
+          {
+            "name": "ls",
+            "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Directory to list (default: current directory)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of entries to return (default: 500)"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- grep: Search file contents for patterns (respects .gitignore)\n- find: Find files by glob pattern (respects .gitignore)\n- ls: List directory contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "grep",
+            "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "pattern"
+              ],
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Search pattern (regex or literal string)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory or file to search (default: current directory)"
+                },
+                "glob": {
+                  "type": "string",
+                  "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                },
+                "ignoreCase": {
+                  "type": "boolean",
+                  "description": "Case-insensitive search (default: false)"
+                },
+                "literal": {
+                  "type": "boolean",
+                  "description": "Treat pattern as literal string instead of regex (default: false)"
+                },
+                "context": {
+                  "type": "number",
+                  "description": "Number of lines to show before and after each match (default: 0)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of matches to return (default: 100)"
+                }
+              }
+            }
+          },
+          {
+            "name": "find",
+            "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "pattern"
+              ],
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory to search in (default: current directory)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of results (default: 1000)"
+                }
+              }
+            }
+          },
+          {
+            "name": "ls",
+            "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Directory to list (default: current directory)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of entries to return (default: 500)"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Look around"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Look around"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 0,
+        "id": "<id-1>",
+        "toolName": "ls"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 0,
+        "delta": "{}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "id": "<id-2>",
+        "toolName": "ls"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"path\": \"sub\", \"limit\": 1}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 2,
+        "id": "<id-3>",
+        "toolName": "grep"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 2,
+        "delta": "{\"pattern\": \"second\", \"context\": 1}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 3,
+        "id": "<id-4>",
+        "toolName": "grep"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 3,
+        "delta": "{\"pattern\": \"absent-text\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 4,
+        "id": "<id-5>",
+        "toolName": "find"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 4,
+        "delta": "{\"pattern\": \"deep.txt\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 5,
+        "id": "<id-6>",
+        "toolName": "find"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 5,
+        "delta": "{\"pattern\": \"src/**/*.rs\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 6,
+        "id": "<id-7>",
+        "toolName": "ls"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 6,
+        "delta": "{\"path\": \"missing\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 0,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-1>",
+          "name": "ls",
+          "arguments": {}
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-2>",
+          "name": "ls",
+          "arguments": {
+            "path": "sub",
+            "limit": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 2,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-3>",
+          "name": "grep",
+          "arguments": {
+            "pattern": "second",
+            "context": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 3,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-4>",
+          "name": "grep",
+          "arguments": {
+            "pattern": "absent-text"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 4,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-5>",
+          "name": "find",
+          "arguments": {
+            "pattern": "deep.txt"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 5,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-6>",
+          "name": "find",
+          "arguments": {
+            "pattern": "src/**/*.rs"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 6,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-7>",
+          "name": "ls",
+          "arguments": {
+            "path": "missing"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-1>",
+            "name": "ls",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-2>",
+            "name": "ls",
+            "arguments": {
+              "path": "sub",
+              "limit": 1
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-3>",
+            "name": "grep",
+            "arguments": {
+              "pattern": "second",
+              "context": 1
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-4>",
+            "name": "grep",
+            "arguments": {
+              "pattern": "absent-text"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-5>",
+            "name": "find",
+            "arguments": {
+              "pattern": "deep.txt"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-6>",
+            "name": "find",
+            "arguments": {
+              "pattern": "src/**/*.rs"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-7>",
+            "name": "ls",
+            "arguments": {
+              "path": "missing"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "usage": {
+          "input": 300,
+          "output": 40,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 340,
+          "cost": {
+            "input": 0.000044999999999999996,
+            "output": 0.000024,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000069
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-8>",
+        "rawStopReason": "tool_calls",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-1>",
+      "toolName": "ls",
+      "args": {}
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-2>",
+      "toolName": "ls",
+      "args": {
+        "path": "sub",
+        "limit": 1
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-3>",
+      "toolName": "grep",
+      "args": {
+        "pattern": "second",
+        "context": 1
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-4>",
+      "toolName": "grep",
+      "args": {
+        "pattern": "absent-text"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-5>",
+      "toolName": "find",
+      "args": {
+        "pattern": "deep.txt"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-6>",
+      "toolName": "find",
+      "args": {
+        "pattern": "src/**/*.rs"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-7>",
+      "toolName": "ls",
+      "args": {
+        "path": "missing"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-1>",
+      "toolName": "ls",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-2>",
+      "toolName": "ls",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]"
+          }
+        ],
+        "details": {
+          "entryLimitReached": 1
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-3>",
+      "toolName": "grep",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-4>",
+      "toolName": "grep",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "No matches found"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-5>",
+      "toolName": "find",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "sub/dir/deep.txt"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-6>",
+      "toolName": "find",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "src/main.rs"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-7>",
+      "toolName": "ls",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Path not found: <cwd>/missing"
+          }
+        ],
+        "details": {}
+      },
+      "isError": true
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-1>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-1>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-2>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]"
+          }
+        ],
+        "details": {
+          "entryLimitReached": 1
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-2>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]"
+          }
+        ],
+        "details": {
+          "entryLimitReached": 1
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-3>",
+        "toolName": "grep",
+        "content": [
+          {
+            "type": "text",
+            "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-3>",
+        "toolName": "grep",
+        "content": [
+          {
+            "type": "text",
+            "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-4>",
+        "toolName": "grep",
+        "content": [
+          {
+            "type": "text",
+            "text": "No matches found"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-4>",
+        "toolName": "grep",
+        "content": [
+          {
+            "type": "text",
+            "text": "No matches found"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-5>",
+        "toolName": "find",
+        "content": [
+          {
+            "type": "text",
+            "text": "sub/dir/deep.txt"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-5>",
+        "toolName": "find",
+        "content": [
+          {
+            "type": "text",
+            "text": "sub/dir/deep.txt"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-6>",
+        "toolName": "find",
+        "content": [
+          {
+            "type": "text",
+            "text": "src/main.rs"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-6>",
+        "toolName": "find",
+        "content": [
+          {
+            "type": "text",
+            "text": "src/main.rs"
+          }
+        ],
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-7>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": "Path not found: <cwd>/missing"
+          }
+        ],
+        "details": {},
+        "isError": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-7>",
+        "toolName": "ls",
+        "content": [
+          {
+            "type": "text",
+            "text": "Path not found: <cwd>/missing"
+          }
+        ],
+        "details": {},
+        "isError": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-1>",
+            "name": "ls",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-2>",
+            "name": "ls",
+            "arguments": {
+              "path": "sub",
+              "limit": 1
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-3>",
+            "name": "grep",
+            "arguments": {
+              "pattern": "second",
+              "context": 1
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-4>",
+            "name": "grep",
+            "arguments": {
+              "pattern": "absent-text"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-5>",
+            "name": "find",
+            "arguments": {
+              "pattern": "deep.txt"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-6>",
+            "name": "find",
+            "arguments": {
+              "pattern": "src/**/*.rs"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-7>",
+            "name": "ls",
+            "arguments": {
+              "path": "missing"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "usage": {
+          "input": 300,
+          "output": 40,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 340,
+          "cost": {
+            "input": 0.000044999999999999996,
+            "output": 0.000024,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000069
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-8>",
+        "rawStopReason": "tool_calls",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-1>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-2>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]"
+            }
+          ],
+          "details": {
+            "entryLimitReached": 1
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-3>",
+          "toolName": "grep",
+          "content": [
+            {
+              "type": "text",
+              "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-4>",
+          "toolName": "grep",
+          "content": [
+            {
+              "type": "text",
+              "text": "No matches found"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-5>",
+          "toolName": "find",
+          "content": [
+            {
+              "type": "text",
+              "text": "sub/dir/deep.txt"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-6>",
+          "toolName": "find",
+          "content": [
+            {
+              "type": "text",
+              "text": "src/main.rs"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-7>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": "Path not found: <cwd>/missing"
+            }
+          ],
+          "details": {},
+          "isError": true,
+          "timestamp": "<timestamp>"
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Done searching."
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Done searching."
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done searching."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "usage": {
+          "input": 300,
+          "output": 40,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 340,
+          "cost": {
+            "input": 0.000044999999999999996,
+            "output": 0.000024,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000069
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-9>",
+        "rawStopReason": "stop",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done searching."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "usage": {
+          "input": 300,
+          "output": 40,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 0,
+          "totalTokens": 340,
+          "cost": {
+            "input": 0.000044999999999999996,
+            "output": 0.000024,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.000069
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-9>",
+        "rawStopReason": "stop",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": []
+    },
+    {
+      "type": "agent_end",
+      "messages": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+            "tools": "<tools>\n- read: Read file contents\n- grep: Search file contents for patterns (respects .gitignore)\n- find: Find files by glob pattern (respects .gitignore)\n- ls: List directory contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+            "rules": "<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+            "cwd": "<cwd>\n<cwd>\n</cwd>"
+          },
+          "timestamp": "<timestamp>",
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read (relative or absolute)"
+                  },
+                  "offset": {
+                    "type": "number",
+                    "description": "Line number to start reading from (1-indexed)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of lines to read"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "grep",
+              "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Search pattern (regex or literal string)"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory or file to search (default: current directory)"
+                  },
+                  "glob": {
+                    "type": "string",
+                    "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                  },
+                  "ignoreCase": {
+                    "type": "boolean",
+                    "description": "Case-insensitive search (default: false)"
+                  },
+                  "literal": {
+                    "type": "boolean",
+                    "description": "Treat pattern as literal string instead of regex (default: false)"
+                  },
+                  "context": {
+                    "type": "number",
+                    "description": "Number of lines to show before and after each match (default: 0)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of matches to return (default: 100)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "find",
+              "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to search in (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of results (default: 1000)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "ls",
+              "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to list (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of entries to return (default: 500)"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Look around"
+            }
+          ],
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "<id-1>",
+              "name": "ls",
+              "arguments": {}
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-2>",
+              "name": "ls",
+              "arguments": {
+                "path": "sub",
+                "limit": 1
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-3>",
+              "name": "grep",
+              "arguments": {
+                "pattern": "second",
+                "context": 1
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-4>",
+              "name": "grep",
+              "arguments": {
+                "pattern": "absent-text"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-5>",
+              "name": "find",
+              "arguments": {
+                "pattern": "deep.txt"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-6>",
+              "name": "find",
+              "arguments": {
+                "pattern": "src/**/*.rs"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-7>",
+              "name": "ls",
+              "arguments": {
+                "path": "missing"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "usage": {
+            "input": 300,
+            "output": 40,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 340,
+            "cost": {
+              "input": 0.000044999999999999996,
+              "output": 0.000024,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.000069
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-8>",
+          "rawStopReason": "tool_calls",
+          "thinkingLevel": "medium"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-1>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-2>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]"
+            }
+          ],
+          "details": {
+            "entryLimitReached": 1
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-3>",
+          "toolName": "grep",
+          "content": [
+            {
+              "type": "text",
+              "text": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-4>",
+          "toolName": "grep",
+          "content": [
+            {
+              "type": "text",
+              "text": "No matches found"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-5>",
+          "toolName": "find",
+          "content": [
+            {
+              "type": "text",
+              "text": "sub/dir/deep.txt"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-6>",
+          "toolName": "find",
+          "content": [
+            {
+              "type": "text",
+              "text": "src/main.rs"
+            }
+          ],
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-7>",
+          "toolName": "ls",
+          "content": [
+            {
+              "type": "text",
+              "text": "Path not found: <cwd>/missing"
+            }
+          ],
+          "details": {},
+          "isError": true,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done searching."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b",
+          "usage": {
+            "input": 300,
+            "output": 40,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 340,
+            "cost": {
+              "input": 0.000044999999999999996,
+              "output": 0.000024,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.000069
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-9>",
+          "rawStopReason": "stop",
+          "thinkingLevel": "medium"
+        }
+      ],
+      "willRetry": false
+    },
+    {
+      "type": "agent_settled"
+    }
+  ],
+  "stderr": "",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "query": null,
+      "body": {
+        "model": "openai/gpt-oss-120b",
+        "messages": [
+          {
+            "role": "developer",
+            "content": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- grep: Search file contents for patterns (respects .gitignore)\n- find: Find files by glob pattern (respects .gitignore)\n- ls: List directory contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Look around"
+              }
+            ]
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "store": false,
+        "max_completion_tokens": 65536,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "offset",
+                  "limit"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read (relative or absolute)"
+                  },
+                  "offset": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "strict": true
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "grep",
+              "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Search pattern (regex or literal string)"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory or file to search (default: current directory)"
+                  },
+                  "glob": {
+                    "type": "string",
+                    "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                  },
+                  "ignoreCase": {
+                    "type": "boolean",
+                    "description": "Case-insensitive search (default: false)"
+                  },
+                  "literal": {
+                    "type": "boolean",
+                    "description": "Treat pattern as literal string instead of regex (default: false)"
+                  },
+                  "context": {
+                    "type": "number",
+                    "description": "Number of lines to show before and after each match (default: 0)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of matches to return (default: 100)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "find",
+              "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to search in (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of results (default: 1000)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "ls",
+              "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to list (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of entries to return (default: 500)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          }
+        ],
+        "reasoning_effort": "medium"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "query": null,
+      "body": {
+        "model": "openai/gpt-oss-120b",
+        "messages": [
+          {
+            "role": "developer",
+            "content": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- grep: Search file contents for patterns (respects .gitignore)\n- find: Find files by glob pattern (respects .gitignore)\n- ls: List directory contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Look around"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "type": "function",
+                "function": {
+                  "name": "ls",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "id": "<id-2>",
+                "type": "function",
+                "function": {
+                  "name": "ls",
+                  "arguments": "{\"path\":\"sub\",\"limit\":1}"
+                }
+              },
+              {
+                "id": "<id-3>",
+                "type": "function",
+                "function": {
+                  "name": "grep",
+                  "arguments": "{\"pattern\":\"second\",\"context\":1}"
+                }
+              },
+              {
+                "id": "<id-4>",
+                "type": "function",
+                "function": {
+                  "name": "grep",
+                  "arguments": "{\"pattern\":\"absent-text\"}"
+                }
+              },
+              {
+                "id": "<id-5>",
+                "type": "function",
+                "function": {
+                  "name": "find",
+                  "arguments": "{\"pattern\":\"deep.txt\"}"
+                }
+              },
+              {
+                "id": "<id-6>",
+                "type": "function",
+                "function": {
+                  "name": "find",
+                  "arguments": "{\"pattern\":\"src/**/*.rs\"}"
+                }
+              },
+              {
+                "id": "<id-7>",
+                "type": "function",
+                "function": {
+                  "name": "ls",
+                  "arguments": "{\"path\":\"missing\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": ".hidden\nhello.txt\nsrc/\nsub/\nSub2/",
+            "tool_call_id": "call_ls"
+          },
+          {
+            "role": "tool",
+            "content": "b.txt\n\n[1 entries limit reached. Use limit=2 for more]",
+            "tool_call_id": "call_ls_sub"
+          },
+          {
+            "role": "tool",
+            "content": "hello.txt-1- hello world\nhello.txt:2: second line\nhello.txt-3- third line",
+            "tool_call_id": "call_grep"
+          },
+          {
+            "role": "tool",
+            "content": "No matches found",
+            "tool_call_id": "call_grep_none"
+          },
+          {
+            "role": "tool",
+            "content": "sub/dir/deep.txt",
+            "tool_call_id": "call_find"
+          },
+          {
+            "role": "tool",
+            "content": "src/main.rs",
+            "tool_call_id": "call_find_path"
+          },
+          {
+            "role": "tool",
+            "content": "Path not found: <cwd>/missing",
+            "tool_call_id": "call_ls_missing"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "store": false,
+        "max_completion_tokens": 65536,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "offset",
+                  "limit"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read (relative or absolute)"
+                  },
+                  "offset": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "strict": true
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "grep",
+              "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Search pattern (regex or literal string)"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory or file to search (default: current directory)"
+                  },
+                  "glob": {
+                    "type": "string",
+                    "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                  },
+                  "ignoreCase": {
+                    "type": "boolean",
+                    "description": "Case-insensitive search (default: false)"
+                  },
+                  "literal": {
+                    "type": "boolean",
+                    "description": "Treat pattern as literal string instead of regex (default: false)"
+                  },
+                  "context": {
+                    "type": "number",
+                    "description": "Number of lines to show before and after each match (default: 0)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of matches to return (default: 100)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "find",
+              "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "pattern"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to search in (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of results (default: 1000)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "ls",
+              "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Directory to list (default: current directory)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of entries to return (default: 500)"
+                  }
+                }
+              },
+              "strict": false
+            }
+          }
+        ],
+        "reasoning_effort": "medium"
+      }
+    }
+  ]
+}

@@ -1,0 +1,545 @@
+{
+  "auto-overrides": {
+    "files": {
+      "agent/extensions/a.ts": "",
+      "agent/extensions/b.ts": "",
+      "agent/extensions/tool/index.ts": "",
+      "agent/extensions/tool/helper.ts": "",
+      "agent/extensions/notes.txt": "",
+      "agent/skills/review/SKILL.md": "",
+      "agent/skills/top.md": "",
+      "agent/skills/nested/deep/SKILL.md": "",
+      "agent/skills/nested/loose.md": "",
+      "agent/prompts/fix.md": "",
+      "agent/prompts/.hidden.md": "",
+      "agent/prompts/sub/inner.md": "",
+      "agent/themes/night.json": "{}",
+      "agent/settings.json": "{\"extensions\":[\"-extensions/a.ts\"],\"skills\":[\"!review\"],\"prompts\":[\"+prompts/fix.md\",\"-prompts/fix.md\"]}"
+    },
+    "trusted": false,
+    "extensions": [
+      {
+        "path": "<root>/agent/extensions/a.ts",
+        "enabled": false,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "<root>/agent/extensions/b.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "<root>/agent/extensions/tool/index.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/skills/nested/deep/SKILL.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "<root>/agent/skills/review/SKILL.md",
+        "enabled": false,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "<root>/agent/skills/top.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      }
+    ],
+    "prompts": [
+      {
+        "path": "<root>/agent/prompts/fix.md",
+        "enabled": false,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      }
+    ],
+    "themes": [
+      {
+        "path": "<root>/agent/themes/night.json",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      }
+    ]
+  },
+  "package-filters": {
+    "files": {
+      "agent/pkg/extensions/x.ts": "",
+      "agent/pkg/extensions/y.ts": "",
+      "agent/pkg/skills/k/SKILL.md": "",
+      "agent/pkg/prompts/p.md": "",
+      "agent/pkg/themes/t.json": "{}",
+      "agent/other/extensions/z.ts": "",
+      "agent/other/prompts/q.md": "",
+      "agent/settings.json": "{\"packages\":[{\"source\":\"./pkg\",\"extensions\":[\"-extensions/x.ts\"],\"skills\":[],\"prompts\":[\"prompts/*.md\"]},{\"source\":\"./other\",\"prompts\":[\"!prompts/q.md\"]}]}"
+    },
+    "trusted": false,
+    "extensions": [
+      {
+        "path": "<root>/agent/pkg/extensions/x.ts",
+        "enabled": false,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/pkg/extensions/y.ts",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/other/extensions/z.ts",
+        "enabled": true,
+        "source": "./other",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/other"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/pkg/skills/k/SKILL.md",
+        "enabled": false,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      }
+    ],
+    "prompts": [
+      {
+        "path": "<root>/agent/pkg/prompts/p.md",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/other/prompts/q.md",
+        "enabled": false,
+        "source": "./other",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/other"
+      }
+    ],
+    "themes": [
+      {
+        "path": "<root>/agent/pkg/themes/t.json",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      }
+    ]
+  },
+  "package-manifest": {
+    "files": {
+      "agent/pkg/package.json": "{\"name\":\"pkg\",\"pi\":{\"extensions\":[\"./src/*.ts\",\"!./src/skip.ts\"],\"skills\":[\"./skills\"],\"themes\":[]}}",
+      "agent/pkg/src/one.ts": "",
+      "agent/pkg/src/skip.ts": "",
+      "agent/pkg/src/.dot.ts": "",
+      "agent/pkg/skills/s/SKILL.md": "",
+      "agent/pkg/prompts/ignored-by-manifest.md": "",
+      "agent/pkg/themes/t.json": "{}",
+      "agent/single.ts": "",
+      "agent/settings.json": "{\"packages\":[\"./pkg\",\"./single.ts\"]}"
+    },
+    "trusted": false,
+    "extensions": [
+      {
+        "path": "<root>/agent/pkg/src/one.ts",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/pkg/src/skip.ts",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/single.ts",
+        "enabled": true,
+        "source": "./single.ts",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/pkg/skills/s/SKILL.md",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      }
+    ],
+    "prompts": [],
+    "themes": []
+  },
+  "autoload-delta": {
+    "files": {
+      "agent/pkg/extensions/x.ts": "",
+      "agent/pkg/extensions/y.ts": "",
+      "agent/pkg/skills/k/SKILL.md": "",
+      "agent/settings.json": "{\"packages\":[\"./pkg\"]}",
+      "project/.pi/settings.json": "{\"packages\":[{\"source\":\"../../agent/pkg\",\"autoload\":false,\"extensions\":[\"-extensions/x.ts\"]}]}"
+    },
+    "trusted": true,
+    "extensions": [
+      {
+        "path": "<root>/agent/pkg/extensions/x.ts",
+        "enabled": false,
+        "source": "../../agent/pkg",
+        "scope": "project",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "<root>/agent/pkg/extensions/y.ts",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/pkg/skills/k/SKILL.md",
+        "enabled": true,
+        "source": "./pkg",
+        "scope": "user",
+        "origin": "package",
+        "baseDir": "<root>/agent/pkg"
+      }
+    ],
+    "prompts": [],
+    "themes": []
+  },
+  "top-level-entries": {
+    "files": {
+      "agent/more-skills/a/SKILL.md": "",
+      "agent/more-skills/draft/b/SKILL.md": "",
+      "agent/more-skills/c.md": "",
+      "agent/tools/one.ts": "",
+      "agent/tools/two.ts": "",
+      "agent/settings.json": "{\"skills\":[\"./more-skills\",\"!**/draft/**\"],\"extensions\":[\"./tools/one.ts\",\"./tools\",\"-tools/two.ts\",\"-builtin:mcp\"]}",
+      "project/.pi/settings.json": "{\"extensions\":[\"+builtin:mcp\"],\"prompts\":[\"./local-prompts\"]}",
+      "project/.pi/local-prompts/lp.md": ""
+    },
+    "trusted": true,
+    "extensions": [
+      {
+        "path": "<root>/agent/tools/one.ts",
+        "enabled": true,
+        "source": "local",
+        "scope": "user",
+        "origin": "top-level"
+      },
+      {
+        "path": "<root>/agent/tools/two.ts",
+        "enabled": false,
+        "source": "local",
+        "scope": "user",
+        "origin": "top-level"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "project",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/more-skills/a/SKILL.md",
+        "enabled": true,
+        "source": "local",
+        "scope": "user",
+        "origin": "top-level"
+      },
+      {
+        "path": "<root>/agent/more-skills/c.md",
+        "enabled": true,
+        "source": "local",
+        "scope": "user",
+        "origin": "top-level"
+      },
+      {
+        "path": "<root>/agent/more-skills/draft/b/SKILL.md",
+        "enabled": false,
+        "source": "local",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "prompts": [
+      {
+        "path": "<root>/project/.pi/local-prompts/lp.md",
+        "enabled": true,
+        "source": "local",
+        "scope": "project",
+        "origin": "top-level"
+      }
+    ],
+    "themes": []
+  },
+  "ignore-files": {
+    "files": {
+      "agent/skills/.gitignore": "ignored/\n*.draft.md\n",
+      "agent/skills/ignored/SKILL.md": "",
+      "agent/skills/kept/SKILL.md": "",
+      "agent/skills/notes.draft.md": "",
+      "agent/skills/notes.md": "",
+      "agent/extensions/.ignore": "skip.ts\n",
+      "agent/extensions/skip.ts": "",
+      "agent/extensions/keep.ts": "",
+      "agent/prompts/.fdignore": "# comment\nold.md\n",
+      "agent/prompts/old.md": "",
+      "agent/prompts/new.md": ""
+    },
+    "trusted": false,
+    "extensions": [
+      {
+        "path": "<root>/agent/extensions/keep.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/agent/skills/kept/SKILL.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "<root>/agent/skills/notes.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      }
+    ],
+    "prompts": [
+      {
+        "path": "<root>/agent/prompts/new.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      }
+    ],
+    "themes": []
+  },
+  "project-and-agents": {
+    "files": {
+      "project/.git/HEAD": "",
+      "project/.pi/extensions/p.ts": "",
+      "project/.pi/skills/ps/SKILL.md": "",
+      "project/.pi/prompts/pp.md": "",
+      "project/.pi/themes/pt.json": "{}",
+      "project/.agents/skills/as/SKILL.md": "",
+      "project/.agents/skills/top.md": "",
+      "project/.agents/skills/group/inner.md": "",
+      "home/.agents/skills/hs/SKILL.md": "",
+      "agent/extensions/u.ts": "",
+      "project/.pi/settings.json": "{\"skills\":[\"-../.agents/skills/as\"]}"
+    },
+    "trusted": true,
+    "extensions": [
+      {
+        "path": "<root>/project/.pi/extensions/p.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.pi"
+      },
+      {
+        "path": "<root>/agent/extensions/u.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [
+      {
+        "path": "<root>/project/.pi/skills/ps/SKILL.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.pi"
+      },
+      {
+        "path": "<root>/project/.agents/skills/as/SKILL.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.agents"
+      },
+      {
+        "path": "<root>/project/.agents/skills/group/inner.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.agents"
+      },
+      {
+        "path": "<root>/home/.agents/skills/hs/SKILL.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/home/.agents"
+      }
+    ],
+    "prompts": [
+      {
+        "path": "<root>/project/.pi/prompts/pp.md",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.pi"
+      }
+    ],
+    "themes": [
+      {
+        "path": "<root>/project/.pi/themes/pt.json",
+        "enabled": true,
+        "source": "auto",
+        "scope": "project",
+        "origin": "top-level",
+        "baseDir": "<root>/project/.pi"
+      }
+    ]
+  },
+  "untrusted-project": {
+    "files": {
+      "project/.pi/extensions/p.ts": "",
+      "project/.pi/settings.json": "{\"extensions\":[\"./x.ts\"]}",
+      "project/.pi/x.ts": "",
+      "agent/extensions/u.ts": ""
+    },
+    "trusted": false,
+    "extensions": [
+      {
+        "path": "<root>/agent/extensions/u.ts",
+        "enabled": true,
+        "source": "auto",
+        "scope": "user",
+        "origin": "top-level",
+        "baseDir": "<root>/agent"
+      },
+      {
+        "path": "builtin:mcp",
+        "enabled": true,
+        "source": "builtin",
+        "scope": "user",
+        "origin": "top-level"
+      }
+    ],
+    "skills": [],
+    "prompts": [],
+    "themes": []
+  }
+}

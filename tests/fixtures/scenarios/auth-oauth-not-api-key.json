@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Provider \"anthropic\" is configured with OAuth, not an API key\n",
+  "requests": []
+}

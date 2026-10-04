@@ -1,0 +1,47 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_ls\",\"type\":\"function\",\"function\":{\"name\":\"ls\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_ls_sub\",\"type\":\"function\",\"function\":{\"name\":\"ls\",\"arguments\":\"{\\\"path\\\": \\\"sub\\\", \\\"limit\\\": 1}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":2,\"id\":\"call_grep\",\"type\":\"function\",\"function\":{\"name\":\"grep\",\"arguments\":\"{\\\"pattern\\\": \\\"second\\\", \\\"context\\\": 1}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":3,\"id\":\"call_grep_none\",\"type\":\"function\",\"function\":{\"name\":\"grep\",\"arguments\":\"{\\\"pattern\\\": \\\"absent-text\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":4,\"id\":\"call_find\",\"type\":\"function\",\"function\":{\"name\":\"find\",\"arguments\":\"{\\\"pattern\\\": \\\"deep.txt\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":5,\"id\":\"call_find_path\",\"type\":\"function\",\"function\":{\"name\":\"find\",\"arguments\":\"{\\\"pattern\\\": \\\"src/**/*.rs\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":6,\"id\":\"call_ls_missing\",\"type\":\"function\",\"function\":{\"name\":\"ls\",\"arguments\":\"{\\\"path\\\": \\\"missing\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[],\"usage\":{\"prompt_tokens\":300,\"completion_tokens\":40,\"total_tokens\":340}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmpl-mock-tools-2\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Done searching.\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools-2\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-tools-2\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[],\"usage\":{\"prompt_tokens\":300,\"completion_tokens\":40,\"total_tokens\":340}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

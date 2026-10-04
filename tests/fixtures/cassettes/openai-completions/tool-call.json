@@ -1,0 +1,44 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning\":\"Need to read\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\" the file.\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_mock_1\",\"type\":\"function\",\"function\":{\"name\":\"read\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"hello.txt\\\",\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"offset\\\":null,\\\"limit\\\":null}\"}}]},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":20,\"total_tokens\":140,\"prompt_tokens_details\":{\"cached_tokens\":64},\"completion_tokens_details\":{\"reasoning_tokens\":5}}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/chat/completions"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"The file says: hi\"},\"finish_reason\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\",\"object\":\"chat.completion.chunk\",\"created\":1790000000,\"model\":\"openai/gpt-oss-120b\",\"choices\":[],\"usage\":{\"prompt_tokens\":180,\"completion_tokens\":7,\"total_tokens\":187,\"prompt_tokens_details\":{\"cached_tokens\":120},\"completion_tokens_details\":{\"reasoning_tokens\":0}}}\n\n",
+          "data: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,654 @@
+// `@earendil-works/pi-ai` and its subpaths for extensions in ri. Helpers are
+// ports of pi-ai 1.0.0 (MIT, Copyright (c) Mario Zechner); completions run on
+// ri's providers through the host. Stubs cover the rest of pi-ai's exports so
+// every import links; a stub throws when called.
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+
+const ri = globalThis.__ri;
+
+function unavailable(name) {
+	const error = new Error(`${name} from @earendil-works/pi-ai is not available in ri extensions`);
+	error.code = "ERR_NOT_SUPPORTED";
+	throw error;
+}
+
+export { Type };
+
+export function StringEnum(values, options) {
+	return Type.Unsafe({
+		type: "string",
+		enum: values,
+		...(options?.description && { description: options.description }),
+		...(options?.default && { default: options.default }),
+	});
+}
+
+// ----- ids ---------------------------------------------------------------------------
+const MAX_UUID_V7_TIMESTAMP = 0xffffffffffff;
+const MAX_SEQUENCE = (1n << 41n) - 1n;
+let lastOrdinaryTimestamp = -1;
+let sequence;
+
+export function uuidv7(timestampMs) {
+	const requestedTimestamp = timestampMs ?? Date.now();
+	if (!Number.isInteger(requestedTimestamp) || requestedTimestamp < 0 || requestedTimestamp > MAX_UUID_V7_TIMESTAMP) {
+		throw new RangeError(`UUIDv7 timestamp must be an integer between 0 and ${MAX_UUID_V7_TIMESTAMP}`);
+	}
+	const effectiveTimestamp = timestampMs === undefined ? Math.max(requestedTimestamp, lastOrdinaryTimestamp) : timestampMs;
+	if (timestampMs === undefined) lastOrdinaryTimestamp = effectiveTimestamp;
+	const bytes = new Uint8Array(16);
+	globalThis.crypto.getRandomValues(bytes);
+	if (sequence === undefined) {
+		sequence = (BigInt(bytes[1]) << 32n) | (BigInt(bytes[2]) << 24n) | (BigInt(bytes[3]) << 16n) | (BigInt(bytes[4]) << 8n) | BigInt(bytes[5]);
+	} else {
+		if (sequence === MAX_SEQUENCE) throw new RangeError("UUIDv7 generator sequence exhausted");
+		sequence++;
+	}
+	const timestamp = BigInt(effectiveTimestamp);
+	for (let index = 5; index >= 0; index--) bytes[index] = Number(timestamp >> BigInt((5 - index) * 8)) & 0xff;
+	bytes[6] = 0x70 | Number((sequence >> 37n) & 0x0fn);
+	bytes[7] = Number((sequence >> 29n) & 0xffn);
+	bytes[8] = 0x80 | Number((sequence >> 23n) & 0x3fn);
+	bytes[9] = Number((sequence >> 15n) & 0xffn);
+	bytes[10] = Number((sequence >> 7n) & 0xffn);
+	bytes[11] = Number((sequence & 0x7fn) << 1n) | (bytes[11] & 0x01);
+	const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+	return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+// ----- event streams -------------------------------------------------------------------------
+export class EventStream {
+	#queue = [];
+	#waiting = [];
+	#done = false;
+	#resolveFinal;
+	#final;
+	constructor(isComplete, extractResult) {
+		this.isComplete = isComplete;
+		this.extractResult = extractResult;
+		this.#final = new Promise((resolve) => {
+			this.#resolveFinal = resolve;
+		});
+	}
+	push(event) {
+		if (this.#done) return;
+		if (this.isComplete(event)) {
+			this.#done = true;
+			this.#resolveFinal(this.extractResult(event));
+		}
+		const waiter = this.#waiting.shift();
+		if (waiter) waiter({ value: event, done: false });
+		else this.#queue.push(event);
+	}
+	end(result) {
+		this.#done = true;
+		if (result !== undefined) this.#resolveFinal(result);
+		while (this.#waiting.length > 0) this.#waiting.shift()({ value: undefined, done: true });
+	}
+	async *[Symbol.asyncIterator]() {
+		while (true) {
+			if (this.#queue.length > 0) yield this.#queue.shift();
+			else if (this.#done) return;
+			else {
+				const result = await new Promise((resolve) => this.#waiting.push(resolve));
+				if (result.done) return;
+				yield result.value;
+			}
+		}
+	}
+	result() {
+		return this.#final;
+	}
+}
+
+export class AssistantMessageEventStream extends EventStream {
+	constructor() {
+		super(
+			(event) => event.type === "done" || event.type === "error",
+			(event) => {
+				if (event.type === "done") return event.message;
+				if (event.type === "error") return event.error;
+				throw new Error("Unexpected event type for final result");
+			},
+		);
+	}
+}
+
+export function createAssistantMessageEventStream() {
+	return new AssistantMessageEventStream();
+}
+
+// ----- completions on ri's providers --------------------------------------------------------------
+export function streamSimple(model, context, options) {
+	const stream = new AssistantMessageEventStream();
+	const { signal, onPayload, ...rest } = options ?? {};
+	ri.op("ai.complete", { model, context, options: rest }).then(
+		(message) => {
+			stream.push({ type: "start", partial: message });
+			stream.push(message.stopReason === "error" || message.stopReason === "aborted" ? { type: "error", reason: message.stopReason, error: message } : { type: "done", reason: message.stopReason, message });
+		},
+		(error) => stream.push({ type: "error", reason: "error", error: { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: "error", errorMessage: error.message, timestamp: Date.now() } }),
+	);
+	return stream;
+}
+export const stream = streamSimple;
+/** Every wire API runs on ri's provider for the model's `api`. */
+const hostApi = { stream: streamSimple, streamSimple };
+export const complete = (model, context, options) => streamSimple(model, context, options).result();
+export const completeSimple = complete;
+
+const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
+
+// ----- models ------------------------------------------------------------------------------------
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+export function calculateCost(model, usage) {
+	const inputTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+	let rates = model.cost;
+	let matchedThreshold = -1;
+	for (const tier of model.cost.tiers ?? []) {
+		if (inputTokens > tier.inputTokensAbove && tier.inputTokensAbove > matchedThreshold) {
+			rates = tier;
+			matchedThreshold = tier.inputTokensAbove;
+		}
+	}
+	const longWrite = usage.cacheWrite1h ?? 0;
+	const shortWrite = usage.cacheWrite - longWrite;
+	usage.cost.input = (rates.input / 1000000) * usage.input;
+	usage.cost.output = (rates.output / 1000000) * usage.output;
+	usage.cost.cacheRead = (rates.cacheRead / 1000000) * usage.cacheRead;
+	usage.cost.cacheWrite = (rates.cacheWrite * shortWrite + rates.input * 2 * longWrite) / 1000000;
+	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+	return usage.cost;
+}
+
+export function getSupportedThinkingLevels(model) {
+	if (!model.reasoning) return ["off"];
+	return THINKING_LEVELS.filter((level) => {
+		const mapped = model.thinkingLevelMap?.[level];
+		if (mapped === null) return false;
+		if (level === "xhigh" || level === "max") return mapped !== undefined;
+		return true;
+	});
+}
+
+export function clampThinkingLevel(model, level) {
+	const available = getSupportedThinkingLevels(model);
+	if (available.includes(level)) return level;
+	const requested = THINKING_LEVELS.indexOf(level);
+	if (requested === -1) return available[0] ?? "off";
+	for (let i = requested; i < THINKING_LEVELS.length; i++) if (available.includes(THINKING_LEVELS[i])) return THINKING_LEVELS[i];
+	for (let i = requested - 1; i >= 0; i--) if (available.includes(THINKING_LEVELS[i])) return THINKING_LEVELS[i];
+	return available[0] ?? "off";
+}
+
+export const getModelType = (model) => model.type ?? "chat";
+export const isModelType = (model, type) => getModelType(model) === type;
+export function modelsAreEqual(a, b) {
+	if (!a || !b) return false;
+	return getModelType(a) === getModelType(b) && a.id === b.id && a.provider === b.provider;
+}
+export const getModel = (provider, id) => ri.request("models.builtin", { provider, id }) ?? undefined;
+export const getModels = (provider) => ri.request("models.list", { provider });
+export const getProviders = () => ri.request("models.providers");
+export const getEnvApiKey = (provider) => ri.request("models.envApiKey", { provider }) ?? undefined;
+
+// ----- text and JSON -------------------------------------------------------------------------------
+export function contentText(content, separator = "\n") {
+	if (typeof content === "string") return content;
+	return content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text)
+		.join(separator);
+}
+
+export function formatThrownValue(value) {
+	if (value instanceof Error) return value.message;
+	if (typeof value === "string") return value;
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return String(value);
+	}
+}
+
+export const repairJson = (json) => ri.request("json.repair", { text: json });
+export const parseJsonWithRepair = (json) => ri.request("json.parseWithRepair", { text: json });
+export const parseStreamingJson = (partial) => ri.request("json.partial", { text: partial ?? "" });
+
+// ----- tool validation ------------------------------------------------------------------------------
+export function validateToolArguments(tool, toolCall) {
+	const args = structuredClone(toolCall.arguments ?? {});
+	Value.Convert(tool.parameters, args);
+	if (Value.Check(tool.parameters, args)) return args;
+	const errors = [...Value.Errors(tool.parameters, args)].map((error) => `  - ${error.instancePath || "root"}: ${error.message}`).join("\n");
+	throw new Error(`Validation failed for tool "${toolCall.name}":\n${errors}\n\nReceived arguments:\n${JSON.stringify(toolCall.arguments, null, 2)}`);
+}
+export function validateToolCall(tools, toolCall) {
+	const tool = tools.find((candidate) => candidate.name === toolCall.name);
+	if (!tool) throw new Error(`Tool "${toolCall.name}" not found`);
+	return validateToolArguments(tool, toolCall);
+}
+
+export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
+
+// ----- not available in ri ---------------------------------------------------------------------------
+export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
+export const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
+export const ANTHROPIC_FEDERATION_RULE_ID_ENV = "ANTHROPIC_FEDERATION_RULE_ID";
+export const ANTHROPIC_IDENTITY_TOKEN_FILE_ENV = "ANTHROPIC_IDENTITY_TOKEN_FILE";
+export const ANTHROPIC_OAUTH_TOKEN_ENV = "ANTHROPIC_OAUTH_TOKEN";
+export const ANTHROPIC_ORGANIZATION_ID_ENV = "ANTHROPIC_ORGANIZATION_ID";
+export const ANTHROPIC_SERVICE_ACCOUNT_ID_ENV = "ANTHROPIC_SERVICE_ACCOUNT_ID";
+export const ANTHROPIC_WORKSPACE_ID_ENV = "ANTHROPIC_WORKSPACE_ID";
+export class AssistantMessageFrameEncoder {
+	constructor() {
+		unavailable("AssistantMessageFrameEncoder");
+	}
+}
+export class InMemoryCredentialStore {
+	constructor() {
+		unavailable("InMemoryCredentialStore");
+	}
+}
+export class InMemoryModelsStore {
+	constructor() {
+		unavailable("InMemoryModelsStore");
+	}
+}
+export class ModelsError extends Error {
+	constructor(kind, message, options) {
+		super(message, options);
+		this.name = "ModelsError";
+		this.kind = kind;
+	}
+}
+export function anthropicMessagesApi() {
+	return hostApi;
+}
+export function appendAssistantMessageDiagnostic() {
+	return unavailable("appendAssistantMessageDiagnostic");
+}
+export function azureOpenAIResponsesApi() {
+	return hostApi;
+}
+export function bedrockConverseStreamApi() {
+	return hostApi;
+}
+export function cleanupSessionResources() {
+	return unavailable("cleanupSessionResources");
+}
+export function collapseSystemMessages() {
+	return unavailable("collapseSystemMessages");
+}
+export function createAssistantMessageDiagnostic() {
+	return unavailable("createAssistantMessageDiagnostic");
+}
+export function createFauxCore() {
+	return unavailable("createFauxCore");
+}
+export function createInitialSystemMessage() {
+	return unavailable("createInitialSystemMessage");
+}
+export function createModels() {
+	return unavailable("createModels");
+}
+const KNOWN_MODEL_TYPES = ["chat", "image", "classifier"];
+export function createProvider(input) {
+	const single = input.api && typeof input.api.stream === "function" ? input.api : undefined;
+	const byApi = single || !input.api ? undefined : input.api;
+	const images = input.images;
+	const classifiers = input.classifiers;
+	const streams = single ? [single] : Object.values(byApi ?? {}).filter((entry) => entry !== undefined);
+	const imageImplementations = Object.values(images ?? {}).filter((entry) => entry !== undefined);
+	const classifierImplementations = Object.values(classifiers ?? {}).filter((entry) => entry !== undefined);
+	if (streams.length === 0 && imageImplementations.length === 0 && classifierImplementations.length === 0) {
+		throw new Error(`Provider ${input.id}: at least one of "api", "images", or "classifiers" is required.`);
+	}
+	const baselineModels = input.models;
+	let dynamicModels = [];
+	const fetchModels = input.fetchModels;
+	const currentModels = () => {
+		const merged = [...baselineModels];
+		for (const model of dynamicModels) {
+			const index = merged.findIndex((entry) => getModelType(entry) === getModelType(model) && entry.id === model.id);
+			if (index >= 0) merged[index] = model;
+			else merged.push(model);
+		}
+		return merged;
+	};
+	const apiFor = (model) => single ?? byApi?.[model.api];
+	const dispatch = (model, run) => {
+		const implementation = apiFor(model);
+		if (!implementation) {
+			return lazyStream(model, async () => {
+				throw new ModelsError("stream", `Provider ${input.id} has no API implementation for "${model.api}"`);
+			});
+		}
+		return run(implementation);
+	};
+	const provider = {
+		id: input.id,
+		name: input.name ?? input.id,
+		baseUrl: input.baseUrl,
+		headers: input.headers,
+		auth: input.auth,
+		getModels: () => currentModels().filter((model) => isModelType(model, "chat")),
+		getAllModels: currentModels,
+		refreshModels: fetchModels
+			? async (context) => {
+					if (context.stored) {
+						const restored = context.stored.models.filter((model) => model.provider === input.id);
+						if (!(await context.publish({ update: () => void (dynamicModels = restored) }))) return;
+					}
+					if (!context.allowNetwork || context.signal.aborted) return;
+					const fetched = await fetchModels(context);
+					if (context.signal.aborted) return;
+					const refreshed = fetched.filter((model) => KNOWN_MODEL_TYPES.includes(getModelType(model)));
+					await context.publish({ persist: { models: refreshed, checkedAt: Date.now() }, update: () => void (dynamicModels = refreshed) });
+				}
+			: undefined,
+		filterModels: input.filterModels,
+		filterAllModels: input.filterAllModels,
+		stream: (model, context, options) => dispatch(model, (implementation) => implementation.stream(model, context, options)),
+		streamSimple: (model, context, options) => dispatch(model, (implementation) => implementation.streamSimple(model, context, options)),
+	};
+	if (streams.some((entry) => entry.fetchDeferred !== undefined)) {
+		provider.fetchDeferred = (model, handle, options) =>
+			lazyStream(model, async () => {
+				const implementation = apiFor(model);
+				if (!implementation?.fetchDeferred) throw new ModelsError("provider", `Provider ${input.id} does not support deferred responses for "${model.api}"`);
+				return implementation.fetchDeferred(model, handle, options);
+			});
+	}
+	if (streams.some((entry) => entry.cancelDeferred !== undefined)) {
+		provider.cancelDeferred = async (model, handle, options) => {
+			const implementation = apiFor(model);
+			if (!implementation?.cancelDeferred) throw new ModelsError("provider", `Provider ${input.id} cannot cancel deferred responses for "${model.api}"`);
+			await implementation.cancelDeferred(model, handle, options);
+		};
+	}
+	if (images && imageImplementations.length > 0) {
+		provider.generateImages = async (model, context, options) => {
+			const implementation = images[model.api];
+			if (!implementation) throw new ModelsError("provider", `Provider ${input.id} has no image generation implementation for "${model.api}"`);
+			return implementation.generateImages(model, context, options);
+		};
+	}
+	if (classifiers && classifierImplementations.length > 0) {
+		provider.classify = async (model, context, options) => {
+			const implementation = classifiers[model.api];
+			if (!implementation) throw new ModelsError("provider", `Provider ${input.id} has no classifier implementation for "${model.api}"`);
+			return implementation.classify(model, context, options);
+		};
+	}
+	return provider;
+}
+export function declarationsEqual() {
+	return unavailable("declarationsEqual");
+}
+export function defaultProviderAuthContext() {
+	return unavailable("defaultProviderAuthContext");
+}
+export function envApiKeyAuth(name, envVars) {
+	return {
+		name,
+		login: async (interaction) => {
+			interaction.signal.throwIfAborted();
+			const key = await interaction.prompt({ type: "secret", message: `Enter ${name}` });
+			interaction.signal.throwIfAborted();
+			return { type: "api_key", key };
+		},
+		resolve: async ({ ctx, credential, signal }) => {
+			signal.throwIfAborted();
+			if (credential?.key) return { auth: { apiKey: credential.key }, env: credential.env, source: "stored credential" };
+			for (const envVar of envVars) {
+				const value = await ctx.env(envVar);
+				signal.throwIfAborted();
+				if (value) return { auth: { apiKey: value }, source: envVar };
+			}
+			return undefined;
+		},
+	};
+}
+export function extractDiagnosticError() {
+	return unavailable("extractDiagnosticError");
+}
+export function fauxAssistantMessage() {
+	return unavailable("fauxAssistantMessage");
+}
+export function fauxProvider() {
+	return unavailable("fauxProvider");
+}
+export function fauxText() {
+	return unavailable("fauxText");
+}
+export function fauxThinking() {
+	return unavailable("fauxThinking");
+}
+export function fauxToolCall() {
+	return unavailable("fauxToolCall");
+}
+export function findEnvKeys() {
+	return unavailable("findEnvKeys");
+}
+export function generateImages() {
+	return unavailable("generateImages");
+}
+export function generateImagesOpenRouter() {
+	return unavailable("generateImagesOpenRouter");
+}
+export function getApiProvider() {
+	return unavailable("getApiProvider");
+}
+export function getApiProviders() {
+	return unavailable("getApiProviders");
+}
+export function getCurrentSystemMessage() {
+	return unavailable("getCurrentSystemMessage");
+}
+export function getCurrentSystemPrompt() {
+	return unavailable("getCurrentSystemPrompt");
+}
+export function getCurrentTools() {
+	return unavailable("getCurrentTools");
+}
+export function getDeclaredTools() {
+	return unavailable("getDeclaredTools");
+}
+export function getImageModel() {
+	return unavailable("getImageModel");
+}
+export function getImageModels() {
+	return unavailable("getImageModels");
+}
+export function getImageProviders() {
+	return unavailable("getImageProviders");
+}
+export function getImagesApiProvider() {
+	return unavailable("getImagesApiProvider");
+}
+export function getInitialSystemMessage() {
+	return unavailable("getInitialSystemMessage");
+}
+export function getOverflowPatterns() {
+	return unavailable("getOverflowPatterns");
+}
+export function getSystemMessageText() {
+	return unavailable("getSystemMessageText");
+}
+export function getToolStateChanges() {
+	return unavailable("getToolStateChanges");
+}
+export function googleGenerativeAIApi() {
+	return hostApi;
+}
+export function googleVertexApi() {
+	return hostApi;
+}
+const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses", "azure-openai-responses", "openai-codex-responses", "google-generative-ai", "mistral-conversations"];
+export function hasApi(api) {
+	return HOST_APIS.includes(api);
+}
+export function hasNonAdditiveToolChanges() {
+	return unavailable("hasNonAdditiveToolChanges");
+}
+export function hasToolRedefinitions() {
+	return unavailable("hasToolRedefinitions");
+}
+export function isContextOverflow() {
+	return unavailable("isContextOverflow");
+}
+export function isRecoverableLength() {
+	return unavailable("isRecoverableLength");
+}
+export function isRetryableAssistantError() {
+	return unavailable("isRetryableAssistantError");
+}
+function setupErrorMessage(model, error) {
+	return {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "error",
+		errorMessage: error instanceof Error ? error.message : String(error),
+		timestamp: Date.now(),
+	};
+}
+export function lazyStream(model, setup) {
+	const outer = new AssistantMessageEventStream();
+	setup()
+		.then(async (inner) => {
+			for await (const event of inner) outer.push(event);
+			outer.end(typeof inner.result === "function" ? await inner.result() : undefined);
+		})
+		.catch((error) => {
+			const message = setupErrorMessage(model, error);
+			outer.push({ type: "error", reason: "error", error: message });
+			outer.end(message);
+		});
+	return outer;
+}
+export function lazyApi(load, capabilities) {
+	const api = {
+		stream: (model, context, options) => lazyStream(model, async () => (await load()).stream(model, context, options)),
+		streamSimple: (model, context, options) => lazyStream(model, async () => (await load()).streamSimple(model, context, options)),
+	};
+	if (capabilities?.fetchDeferred) {
+		api.fetchDeferred = (model, handle, options) =>
+			lazyStream(model, async () => {
+				const implementation = await load();
+				if (!implementation.fetchDeferred) throw new Error("API does not support deferred responses");
+				return implementation.fetchDeferred(model, handle, options);
+			});
+	}
+	if (capabilities?.cancelDeferred) {
+		api.cancelDeferred = async (model, handle, options) => {
+			const implementation = await load();
+			if (!implementation.cancelDeferred) throw new Error("API cannot cancel deferred responses");
+			await implementation.cancelDeferred(model, handle, options);
+		};
+	}
+	return api;
+}
+export function lazyOAuth(input) {
+	let promise;
+	const loaded = () => (promise ??= input.load());
+	return {
+		name: input.name,
+		isSubscription: input.isSubscription,
+		loginLabel: input.loginLabel,
+		login: async (interaction, options) => (await loaded()).login(interaction, options),
+		refresh: async (credential, signal) => (await loaded()).refresh(credential, signal),
+		toAuth: async (credential) => (await loaded()).toAuth(credential),
+	};
+}
+export function mistralConversationsApi() {
+	return hostApi;
+}
+export function normalizeContext() {
+	return unavailable("normalizeContext");
+}
+export function openAICodexResponsesApi() {
+	return hostApi;
+}
+export function openAICompletionsApi() {
+	return hostApi;
+}
+export function openAIResponsesApi() {
+	return hostApi;
+}
+export function piMessagesApi() {
+	return hostApi;
+}
+export function reduceAssistantMessageFrames() {
+	return unavailable("reduceAssistantMessageFrames");
+}
+export function registerApiProvider() {
+	return unavailable("registerApiProvider");
+}
+export function registerBuiltInApiProviders() {
+	return unavailable("registerBuiltInApiProviders");
+}
+export function registerBuiltInImagesApiProviders() {
+	return unavailable("registerBuiltInImagesApiProviders");
+}
+export function registerFauxProvider() {
+	return unavailable("registerFauxProvider");
+}
+export function registerImagesApiProvider() {
+	return unavailable("registerImagesApiProvider");
+}
+export function registerSessionResourceCleanup() {
+	return unavailable("registerSessionResourceCleanup");
+}
+export function renderSystemMessageUpdate() {
+	return unavailable("renderSystemMessageUpdate");
+}
+export function resetApiProviders() {
+	return unavailable("resetApiProviders");
+}
+export function resolveTranscript() {
+	return unavailable("resolveTranscript");
+}
+export function resolveTranscriptTools() {
+	return unavailable("resolveTranscriptTools");
+}
+export function retryAssistantCall() {
+	return unavailable("retryAssistantCall");
+}
+export function retryDelayMs() {
+	return unavailable("retryDelayMs");
+}
+export function setBedrockProviderModule() {
+	return unavailable("setBedrockProviderModule");
+}
+export const streamAnthropic = streamSimple;
+export const streamAzureOpenAIResponses = streamSimple;
+export const streamGoogle = streamSimple;
+export const streamGoogleVertex = streamSimple;
+export const streamMistral = streamSimple;
+export const streamOpenAICodexResponses = streamSimple;
+export const streamOpenAICompletions = streamSimple;
+export const streamOpenAIResponses = streamSimple;
+export const streamSimpleAnthropic = streamSimple;
+export const streamSimpleAzureOpenAIResponses = streamSimple;
+export const streamSimpleGoogle = streamSimple;
+export const streamSimpleGoogleVertex = streamSimple;
+export const streamSimpleMistral = streamSimple;
+export const streamSimpleOpenAICodexResponses = streamSimple;
+export const streamSimpleOpenAICompletions = streamSimple;
+export const streamSimpleOpenAIResponses = streamSimple;
+export function toToolDeclaration() {
+	return unavailable("toToolDeclaration");
+}
+export function unregisterApiProviders() {
+	return unavailable("unregisterApiProviders");
+}
+export function withoutInitialSystemMessage() {
+	return unavailable("withoutInitialSystemMessage");
+}

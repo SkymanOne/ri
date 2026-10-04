@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Once upon a\"}],\"role\":\"model\"},\"index\":0,\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":1500,\"candidatesTokenCount\":4,\"totalTokenCount\":1504},\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"mock-response-1\"}\r\n\r\n"
+        ]
+      }
+    }
+  ]
+}

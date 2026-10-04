@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "No MCP server named \"nope\". Configured: demo, off, broken.\n",
+  "requests": []
+}

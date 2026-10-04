@@ -1,0 +1,11 @@
+[package]
+name = "ri-extension-api"
+description = "Write native ri extensions in Rust: tools, commands, flags and event handlers, built as WebAssembly components."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1"
+wit-bindgen = "0.62"

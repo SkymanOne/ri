@@ -1,0 +1,81 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "bash_execution_update",
+      "id": "<id-1>",
+      "delta": "hi\n"
+    },
+    {
+      "type": "bash_execution_update",
+      "id": "<id-1>",
+      "delta": "err\n"
+    },
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "bash",
+      "success": true,
+      "data": {
+        "output": "hi\nerr\n",
+        "exitCode": 0,
+        "cancelled": false,
+        "truncated": false
+      }
+    },
+    {
+      "type": "bash_execution_update",
+      "id": "<id-2>",
+      "delta": "x"
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "bash",
+      "success": true,
+      "data": {
+        "output": "x",
+        "exitCode": 3,
+        "cancelled": false,
+        "truncated": false
+      }
+    },
+    {
+      "id": "<id-3>",
+      "type": "response",
+      "command": "abort_bash",
+      "success": true
+    },
+    {
+      "id": "<id-4>",
+      "type": "response",
+      "command": "get_messages",
+      "success": true,
+      "data": {
+        "messages": [
+          {
+            "role": "bashExecution",
+            "command": "echo hi; echo err >&2",
+            "output": "hi\nerr\n",
+            "exitCode": 0,
+            "cancelled": false,
+            "truncated": false,
+            "timestamp": "<timestamp>"
+          },
+          {
+            "role": "bashExecution",
+            "command": "printf x; exit 3",
+            "output": "x",
+            "exitCode": 3,
+            "cancelled": false,
+            "truncated": false,
+            "timestamp": "<timestamp>",
+            "excludeFromContext": true
+          }
+        ]
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

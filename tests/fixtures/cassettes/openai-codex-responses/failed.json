@@ -1,0 +1,20 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/codex/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_fail\",\"status\":\"in_progress\",\"output\":[]}}\n\n",
+          "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_mock_fail\",\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"The model failed to respond\"}}}\n\n"
+        ]
+      }
+    }
+  ]
+}

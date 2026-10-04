@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "server \"fs\": exposure must be one of \"codemode\", \"deferred\", \"direct\", \"hidden\"\n",
+  "requests": []
+}

@@ -1,0 +1,35 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/codex/responses"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_mock_text\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":0}\n\n",
+          "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_mock_text\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"in_progress\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[]},\"sequence_number\":1}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"rs_mock_1\",\"type\":\"reasoning\",\"summary\":[]},\"sequence_number\":2}\n\n",
+          "event: response.reasoning_summary_part.added\ndata: {\"type\":\"response.reasoning_summary_part.added\",\"item_id\":\"rs_mock_1\",\"output_index\":0,\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"\"},\"sequence_number\":3}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_1\",\"output_index\":0,\"summary_index\":0,\"delta\":\"**Greeting the user**\\n\\n\",\"sequence_number\":4}\n\n",
+          "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_mock_1\",\"output_index\":0,\"summary_index\":0,\"delta\":\"The user wants a hello.\",\"sequence_number\":5}\n\n",
+          "event: response.reasoning_summary_text.done\ndata: {\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_mock_1\",\"output_index\":0,\"summary_index\":0,\"text\":\"**Greeting the user**\\n\\nThe user wants a hello.\",\"sequence_number\":6}\n\n",
+          "event: response.reasoning_summary_part.done\ndata: {\"type\":\"response.reasoning_summary_part.done\",\"item_id\":\"rs_mock_1\",\"output_index\":0,\"summary_index\":0,\"part\":{\"type\":\"summary_text\",\"text\":\"**Greeting the user**\\n\\nThe user wants a hello.\"},\"sequence_number\":7}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"rs_mock_1\",\"type\":\"reasoning\",\"encrypted_content\":\"gAAAAA-encrypted-1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Greeting the user**\\n\\nThe user wants a hello.\"}]},\"sequence_number\":8}\n\n",
+          "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"id\":\"msg_mock_1\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"},\"sequence_number\":9}\n\n",
+          "event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"item_id\":\"msg_mock_1\",\"output_index\":1,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":10}\n\n",
+          "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_mock_1\",\"output_index\":1,\"content_index\":0,\"delta\":\"Hello\",\"logprobs\":[],\"sequence_number\":11}\n\n",
+          "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_mock_1\",\"output_index\":1,\"content_index\":0,\"delta\":\"! How can I help?\",\"logprobs\":[],\"sequence_number\":12}\n\n",
+          "event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"item_id\":\"msg_mock_1\",\"output_index\":1,\"content_index\":0,\"text\":\"Hello! How can I help?\",\"logprobs\":[],\"sequence_number\":13}\n\n",
+          "event: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"item_id\":\"msg_mock_1\",\"output_index\":1,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Hello! How can I help?\"},\"sequence_number\":14}\n\n",
+          "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":1,\"item\":{\"id\":\"msg_mock_1\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Hello! How can I help?\"}],\"role\":\"assistant\"},\"sequence_number\":15}\n\n",
+          "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_mock_text\",\"object\":\"response\",\"created_at\":1790000000,\"status\":\"completed\",\"model\":\"gpt-5.1-2025-11-13\",\"output\":[{\"id\":\"rs_mock_1\",\"type\":\"reasoning\",\"encrypted_content\":\"gAAAAA-encrypted-1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Greeting the user**\\n\\nThe user wants a hello.\"}]},{\"id\":\"msg_mock_1\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Hello! How can I help?\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":1200,\"input_tokens_details\":{\"cached_tokens\":1024},\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":16},\"total_tokens\":1240},\"service_tier\":\"default\"},\"sequence_number\":16}\n\n"
+        ]
+      }
+    }
+  ]
+}
