@@ -447,7 +447,10 @@ impl PackageManager {
                         .flatten();
                     let extensions = installed_path
                         .as_deref()
-                        .map(|root| package_resources(root, filters.as_ref()).extensions)
+                        .map(|root| {
+                            package_resources(root, filters.as_ref(), source::is_local(&source))
+                                .extensions
+                        })
                         .unwrap_or_default();
                     Some(Configured {
                         installed_path,
@@ -575,7 +578,11 @@ impl PackageManager {
                     .then(|| serde_json::from_value(entry.clone()).ok())
                     .flatten();
                 resolved.push(ResolvedPackage {
-                    resources: package_resources(&root, filters.as_ref()),
+                    resources: package_resources(
+                        &root,
+                        filters.as_ref(),
+                        matches!(parsed, Source::Local { .. }),
+                    ),
                     source: configured,
                     scope,
                     root,

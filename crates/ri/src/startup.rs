@@ -818,7 +818,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     // and a directory brings its manifest's or conventional resources.
     let mut sources: Vec<SourceInfo> = Vec::new();
     for path in &requested {
-        let found = ri_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None);
+        let found = ri_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None, true);
         let cli = |path: &PathBuf| source(path.clone(), "cli", "temporary");
         sources.extend(found.extensions.iter().map(cli));
         skills.extend(found.skills.iter().map(cli));

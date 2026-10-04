@@ -992,27 +992,69 @@ fn precedence(info: &SourceInfo) -> u8 {
     scope + u8::from(info.source != "local")
 }
 
+/// One package's resources, installed at `root`: a file is one extension,
+/// and a folder gives what its manifest or resource folders list. pi takes a
+/// folder with neither as one extension only when it is a `local` path.
+fn collect_package(
+    acc: &mut Accumulator,
+    root: &Path,
+    filter: Option<&FilteredPackage>,
+    local: bool,
+    mut meta: SourceInfo,
+) {
+    if root.is_file() {
+        meta.base_dir = root.parent().map(|dir| dir.to_string_lossy().into_owned());
+        acc.add(ResourceType::Extensions, root, &meta, true);
+        return;
+    }
+    if !root.is_dir() {
+        return;
+    }
+    meta.base_dir = Some(root.to_string_lossy().into_owned());
+    if !collect_package_resources(root, acc, filter, &meta) && local {
+        for entry in resolve_extension_entries(root).unwrap_or_default() {
+            acc.add(ResourceType::Extensions, &entry, &meta, true);
+        }
+    }
+}
+
+/// The resources of the package installed at `root`, as [`resolve`] finds
+/// them for a settings entry with `filter`, each enabled or not. `local`
+/// says whether its source is a local path.
+pub fn package_resources(
+    root: &Path,
+    filter: Option<&FilteredPackage>,
+    local: bool,
+) -> ResolvedPaths {
+    let mut acc = Accumulator::default();
+    collect_package(
+        &mut acc,
+        root,
+        filter,
+        local,
+        metadata("local", "user", "package", None),
+    );
+    let [extensions, skills, prompts, themes] = acc.lists;
+    ResolvedPaths {
+        extensions,
+        skills,
+        prompts,
+        themes,
+    }
+}
+
 /// pi's `resolve`: packages, then settings entries, then discovered files,
 /// then built-in extensions; ordered by precedence without repeats.
 pub fn resolve(input: &ResolveInput<'_>) -> ResolvedPaths {
     let mut acc = Accumulator::default();
     for package in &input.packages {
-        let mut meta = metadata(&package.source, &package.scope, "package", None);
-        let root = &package.root;
-        if root.is_file() {
-            meta.base_dir = root.parent().map(|dir| dir.to_string_lossy().into_owned());
-            acc.add(ResourceType::Extensions, root, &meta, true);
-            continue;
-        }
-        if !root.is_dir() {
-            continue;
-        }
-        meta.base_dir = Some(root.to_string_lossy().into_owned());
-        if !collect_package_resources(root, &mut acc, package.filter.as_ref(), &meta) {
-            for entry in resolve_extension_entries(root).unwrap_or_default() {
-                acc.add(ResourceType::Extensions, &entry, &meta, true);
-            }
-        }
+        collect_package(
+            &mut acc,
+            &package.root,
+            package.filter.as_ref(),
+            super::source::is_local(&package.source),
+            metadata(&package.source, &package.scope, "package", None),
+        );
     }
     for (index, kind) in ResourceType::ALL.into_iter().enumerate() {
         let project_meta = metadata("local", "project", "top-level", None);
