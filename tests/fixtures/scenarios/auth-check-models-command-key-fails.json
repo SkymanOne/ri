@@ -1,0 +1,12 @@
+{
+  "exitCode": 2,
+  "stdout": [
+    {
+      "status": "invalid",
+      "provider": "anthropic",
+      "reason": "invalid_state"
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

@@ -112,3 +112,126 @@ fn metadata_goes_to_stderr_in_print_and_modes() {
     assert!(stdout.contains("claude-sonnet-4-5"));
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// pi's RPC mode starts without any model, reporting pi-agent-core's
+/// placeholder, and exits with 143 on SIGTERM even while its input stays
+/// open.
+#[cfg(unix)]
+#[test]
+fn rpc_starts_without_models_and_exits_on_sigterm() {
+    use std::io::{BufRead, Write};
+    let home = std::env::temp_dir().join(format!("ri-rpc-signal-{}", std::process::id()));
+    std::fs::create_dir_all(&home).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ri"))
+        .args(["--mode", "rpc"])
+        .env_clear()
+        .env("HOME", &home)
+        .env("RI_CODING_AGENT_DIR", home.join("agent"))
+        .env("PI_OFFLINE", "1")
+        .current_dir(&home)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    writeln!(stdin, r#"{{"id":"s","type":"get_state"}}"#).unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert!(
+        line.contains(r#""model":{"id":"unknown","name":"unknown","api":"unknown""#),
+        "{line}"
+    );
+    assert!(line.contains(r#""thinkingLevel":"off""#), "{line}");
+    let killed = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "still running with stdin open"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(143));
+    drop(stdin);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// On SIGTERM, print mode kills the commands its `bash` tool is running, as
+/// pi does, instead of leaving them behind.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn print_mode_kills_running_commands_on_sigterm() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+    let cassette =
+        ri_mock::Cassette::load(&fixtures.join("cassettes/anthropic-messages/sleep-tool.json"))
+            .unwrap();
+    let server = ri_mock::MockServer::start("127.0.0.1:0".parse().unwrap(), cassette)
+        .await
+        .unwrap();
+    let home = std::env::temp_dir().join(format!("ri-print-signal-{}", std::process::id()));
+    std::fs::create_dir_all(home.join("agent")).unwrap();
+    std::fs::write(
+        home.join("agent/models.json"),
+        format!(
+            r#"{{"providers":{{"anthropic":{{"baseUrl":"{}"}}}}}}"#,
+            server.url()
+        ),
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ri"))
+        .args([
+            "-p",
+            "--no-session",
+            "--model",
+            "anthropic/claude-sonnet-4-5",
+            "go",
+        ])
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", &home)
+        .env("RI_CODING_AGENT_DIR", home.join("agent"))
+        .env("ANTHROPIC_API_KEY", "mock")
+        .env("PI_OFFLINE", "1")
+        .current_dir(&home)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let running = || {
+        Command::new("pgrep")
+            .args(["-f", r"^sleep 31\.7$"])
+            .output()
+            .is_ok_and(|output| !output.stdout.is_empty())
+    };
+    let started = std::time::Instant::now();
+    while !running() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    let status = child.wait().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let left = running();
+    if left {
+        let _ = Command::new("pkill")
+            .args(["-f", r"^sleep 31\.7$"])
+            .status();
+    }
+    let _ = std::fs::remove_dir_all(&home);
+    assert_eq!(status.code(), Some(143));
+    assert!(!left, "the command outlived ri");
+}

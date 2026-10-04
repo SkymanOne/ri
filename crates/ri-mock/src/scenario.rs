@@ -220,7 +220,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         std::fs::write(&path, content).map_err(io(&path))?;
         seeded.push(path);
     }
-    let models = json!({"providers": {
+    let mut models = json!({"providers": {
         "anthropic": {"baseUrl": url},
         "groq": {"baseUrl": url},
         "openai": {"baseUrl": format!("{url}/v1")},
@@ -231,6 +231,23 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         "opencode-go": {"baseUrl": url},
     }});
     let models_path = agent_dir.join("models.json");
+    // A scenario's own `models.json` keeps its settings; providers it leaves
+    // without a base URL still point at the mock.
+    if let Some(Value::Object(seeded)) = std::fs::read_to_string(&models_path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|mut value| value.get_mut("providers").map(Value::take))
+        && let Some(Value::Object(defaults)) = models.get_mut("providers")
+    {
+        for (provider, config) in seeded {
+            let entry = defaults.entry(provider).or_insert_with(|| json!({}));
+            if let (Value::Object(entry), Value::Object(config)) = (entry, config) {
+                for (key, value) in config {
+                    entry.insert(key, value);
+                }
+            }
+        }
+    }
     std::fs::write(&models_path, models.to_string()).map_err(io(&models_path))?;
 
     let (executable, dir_var) = match program {
@@ -563,7 +580,25 @@ impl Normalizer<'_> {
             .replace(".ri/mcp.json", ".pi/mcp.json")
             .replace(".ri/settings.json", ".pi/settings.json")
             .replace("~/.ri/agent", "~/.pi/agent")
-            .replace("start ri in the project", "start pi in the project");
+            .replace("start ri in the project", "start pi in the project")
+            // The sign-in help points at ri's README; pi's into its install.
+            .replace(
+                "  https://github.com/SkymanOne/ri#models-and-sign-in",
+                "  <sign-in help>",
+            );
+        const PROVIDERS_DOC: &str = "/pi-coding-agent/docs/providers.md\n";
+        const MODELS_DOC: &str = "/pi-coding-agent/docs/models.md";
+        while let Some(found) = text.find(PROVIDERS_DOC) {
+            let start = text[..found].rfind('\n').map_or(0, |line| line + 1);
+            let after = found + PROVIDERS_DOC.len();
+            let Some(end) = text[after..]
+                .find(MODELS_DOC)
+                .filter(|offset| !text[after..after + offset].contains('\n'))
+            else {
+                break;
+            };
+            text.replace_range(start..after + end + MODELS_DOC.len(), "  <sign-in help>");
+        }
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }

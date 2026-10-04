@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "API key auth failed for provider anthropic: Failed to resolve API key for provider \"anthropic\" from shell command: exit 3\n",
+  "requests": []
+}

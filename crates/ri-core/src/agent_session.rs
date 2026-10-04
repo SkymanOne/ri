@@ -1414,12 +1414,20 @@ impl AgentSession {
             .model
             .clone()
             .ok_or_else(|| crate::auth_guidance::no_api_key_found("unknown"))?;
-        let has_auth = self
-            .inner
-            .registry
-            .read()
-            .map(|registry| registry.has_auth(&model.provider))
-            .unwrap_or(false);
+        let registry = self.registry();
+        if let Some(error) = registry.store_error(&model.provider) {
+            return Err(error);
+        }
+        let mut has_auth = registry.has_auth(&model.provider);
+        // pi checks a key a command supplies by running it: a command that
+        // fails or prints nothing leaves the provider without a key.
+        if has_auth && registry.uses_command_key(&model.provider) {
+            let auth = registry.auth(&model).await;
+            if let Some(error) = auth.error {
+                return Err(error);
+            }
+            has_auth = auth.source.is_some();
+        }
         if !has_auth {
             return Err(crate::auth_guidance::no_api_key_found(&model.provider));
         }

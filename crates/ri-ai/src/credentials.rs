@@ -106,6 +106,30 @@ pub fn env_var_names(config: &str) -> Vec<String> {
     names
 }
 
+/// The variables the value reads that are not set.
+pub fn missing_env_vars(config: &str, env: Option<&ProviderEnv>) -> Vec<String> {
+    env_var_names(config)
+        .into_iter()
+        .filter(|name| env_value(name, env).is_none())
+        .collect()
+}
+
+/// pi's `resolveConfigValueOrThrow` message for a value that did not
+/// resolve, describing it as `description`.
+pub fn unresolved_message(config: &str, description: &str, env: Option<&ProviderEnv>) -> String {
+    if let Some(command) = config.strip_prefix('!') {
+        return format!("Failed to resolve {description} from shell command: {command}");
+    }
+    match missing_env_vars(config, env).as_slice() {
+        [] => format!("Failed to resolve {description}"),
+        [name] => format!("Failed to resolve {description} from environment variable: {name}"),
+        names => format!(
+            "Failed to resolve {description} from environment variables: {}",
+            names.join(", ")
+        ),
+    }
+}
+
 /// Whether every variable the value reads is set.
 pub fn is_configured(config: &str, env: Option<&ProviderEnv>) -> bool {
     env_var_names(config)

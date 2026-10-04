@@ -134,7 +134,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    ExitCode::from(runtime.block_on(run(&mut parsed)))
+    let code = runtime.block_on(run(&mut parsed));
+    // A stdin read still in progress (RPC mode after a signal) runs on a
+    // blocking thread that only returns at end of input; exit without it.
+    runtime.shutdown_background();
+    ExitCode::from(code)
 }
 
 /// The message of a panic in the interactive session, kept until the
@@ -338,10 +342,8 @@ async fn run(parsed: &mut args::Args) -> u8 {
         for error in startup.session.settings_errors() {
             eprintln!("Warning: {error}");
         }
-        if startup.session.model().is_none() {
-            eprintln!("{}", ri_core::auth_guidance::no_models_available());
-            return 1;
-        }
+        // pi's RPC mode starts without a model, on a placeholder; prompts
+        // then fail with the missing-key message.
         let args = parsed.clone();
         return modes::rpc::run(
             startup.session,
@@ -361,9 +363,12 @@ async fn run(parsed: &mut args::Args) -> u8 {
         eprintln!("Warning: {error}");
     }
     // pi's print mode kills running commands and exits with the signal's
-    // code on SIGTERM and SIGHUP.
+    // code on SIGTERM and SIGHUP. The run stays alive until they are killed:
+    // dropping it would stop tracking its commands without killing them.
+    let print = modes::print::run(startup, parsed.mode == Some(Mode::Json));
+    tokio::pin!(print);
     tokio::select! {
-        code = modes::print::run(startup, parsed.mode == Some(Mode::Json)) => code,
+        code = &mut print => code,
         code = modes::rpc::termination() => {
             ri_core::tools::bash::kill_tracked_children();
             code

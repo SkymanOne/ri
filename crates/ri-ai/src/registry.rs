@@ -473,6 +473,39 @@ impl ModelRegistry {
         self.auth_source(provider).is_some()
     }
 
+    /// pi's failure for `provider` while `auth.json` cannot be read: requests
+    /// that would consult it fail instead of using other credentials.
+    pub fn store_error(&self, provider: &str) -> Option<String> {
+        if self.runtime_keys.contains_key(provider) {
+            return None;
+        }
+        self.store
+            .read_error()
+            .map(|error| format!("Credential store read failed for {provider}: {error}"))
+    }
+
+    /// Whether `provider`'s credential comes from a `!command`, whose output
+    /// decides whether there is a key at all.
+    pub fn uses_command_key(&self, provider: &str) -> bool {
+        if self.runtime_keys.contains_key(provider) {
+            return false;
+        }
+        let stored = match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) => credential.key,
+            Some(Credential::OAuth(_)) => return false,
+            None => None,
+        };
+        let configured = self
+            .config
+            .providers
+            .get(provider)
+            .and_then(|config| config.api_key.clone());
+        [stored, configured]
+            .iter()
+            .flatten()
+            .any(|key| credentials::is_command(key))
+    }
+
     /// Where `provider`'s credential comes from, as pi labels it in `/login`:
     /// `stored credential`, `OAuth`, `configured API key` or an environment
     /// variable. `None` when it has none. Commands are not run.
@@ -482,7 +515,8 @@ impl ModelRegistry {
         }
         match self.credential(provider) {
             Some(Credential::ApiKey(credential)) => {
-                if let Some(key) = &credential.key
+                // An empty stored key counts as none, as in pi.
+                if let Some(key) = credential.key.as_ref().filter(|key| !key.is_empty())
                     && (credentials::is_command(key)
                         || credentials::is_configured(key, credential.env.as_ref()))
                 {
@@ -492,16 +526,22 @@ impl ModelRegistry {
             Some(Credential::OAuth(_)) => return Some("OAuth".into()),
             None => {}
         }
-        if let Some(key) = self
-            .config
-            .providers
-            .get(provider)
-            .and_then(|c| c.api_key.as_ref())
-            && (credentials::is_command(key) || credentials::is_configured(key, None))
-        {
-            return Some("configured API key".into());
+        // A `models.json` key replaces the provider's own resolution, so the
+        // environment is not consulted when it cannot be resolved.
+        if let Some(key) = self.configured_key(provider) {
+            return (credentials::is_command(key) || credentials::is_configured(key, None))
+                .then(|| "configured API key".into());
         }
         credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+    }
+
+    /// The `apiKey` that `models.json` configures for `provider`, if any.
+    fn configured_key(&self, provider: &str) -> Option<&String> {
+        self.config
+            .providers
+            .get(provider)
+            .and_then(|config| config.api_key.as_ref())
+            .filter(|key| !key.is_empty())
     }
 
     /// Whether `provider` authenticates with a stored OAuth credential.
@@ -557,12 +597,18 @@ impl ModelRegistry {
             auth.source = Some("--api-key".into());
             return auth;
         }
+        if let Some(error) = self.store_error(provider) {
+            auth.error = Some(error);
+            return auth;
+        }
         let mut env: Option<ProviderEnv> = None;
         match self.credential(provider) {
             Some(Credential::ApiKey(credential)) => {
                 env = credential.env.clone();
                 if let Some(key) = &credential.key
-                    && let Some(value) = credentials::resolve(key, env.as_ref(), true).await
+                    && let Some(value) = credentials::resolve(key, env.as_ref(), true)
+                        .await
+                        .filter(|value| !value.is_empty())
                 {
                     auth.api_key = Some(value);
                     auth.source = Some("stored credential".into());
@@ -583,15 +629,22 @@ impl ModelRegistry {
             }
             None => {}
         }
-        if let Some(key) = self
-            .config
-            .providers
-            .get(provider)
-            .and_then(|c| c.api_key.as_ref())
-            && let Some(value) = credentials::resolve(key, None, false).await
-        {
-            auth.api_key = Some(value);
-            auth.source = Some("models.json".into());
+        if let Some(key) = self.configured_key(provider) {
+            match credentials::resolve(key, None, false).await {
+                Some(value) if !value.is_empty() => {
+                    auth.api_key = Some(value);
+                    auth.source = Some("models.json".into());
+                }
+                // pi resolves the configured key or fails, without falling
+                // back to the environment.
+                _ => {
+                    let description = format!("API key for provider \"{provider}\"");
+                    auth.error = Some(format!(
+                        "API key auth failed for provider {provider}: {}",
+                        credentials::unresolved_message(key, &description, None)
+                    ));
+                }
+            }
             return auth;
         }
         if let Some((name, value)) = credentials::env_api_key(provider, env.as_ref()) {

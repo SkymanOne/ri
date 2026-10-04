@@ -690,6 +690,22 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
     }
 }
 
+/// pi-agent-core's `DEFAULT_MODEL`, which a session without models reports.
+fn placeholder_model() -> Value {
+    json!({
+        "id": "unknown",
+        "name": "unknown",
+        "api": "unknown",
+        "provider": "unknown",
+        "baseUrl": "",
+        "reasoning": false,
+        "input": [],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+        "contextWindow": 0,
+        "maxTokens": 0,
+    })
+}
+
 fn state(session: &AgentSession) -> SessionState {
     let (file, id, name) = session.with_session(|manager| {
         (
@@ -699,9 +715,10 @@ fn state(session: &AgentSession) -> SessionState {
         )
     });
     SessionState {
-        model: session
-            .model()
-            .and_then(|model| serde_json::to_value(model).ok()),
+        // pi's agent starts from a placeholder model when none is available.
+        model: Some(session.model().map_or_else(placeholder_model, |model| {
+            serde_json::to_value(model).unwrap_or_default()
+        })),
         thinking_level: session.thinking_level(),
         is_streaming: session.is_streaming(),
         is_compacting: session.is_compacting(),

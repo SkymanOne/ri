@@ -125,7 +125,9 @@ fn try_match<'a>(pattern: &str, models: &'a [Model]) -> Option<&'a Model> {
     let (mut aliases, mut dated): (Vec<&Model>, Vec<&Model>) =
         matches.into_iter().partition(|model| is_alias(&model.id));
     let pick = |list: &mut Vec<&'a Model>| {
-        list.sort_by(|a, b| b.id.cmp(&a.id));
+        // pi sorts with `localeCompare`, which orders punctuation such as
+        // OpenRouter's `~` before letters.
+        list.sort_by(|a, b| ri_types::collate::locale_compare(&b.id, &a.id));
         list.first().copied()
     };
     if aliases.is_empty() {
@@ -521,6 +523,27 @@ mod tests {
         );
         assert!(is_alias("claude-sonnet-4-5"));
         assert!(!is_alias("claude-sonnet-4-5-20250929"));
+    }
+
+    #[test]
+    fn fuzzy_matches_prefer_ids_in_locale_order() {
+        let base = ModelRegistry::builtin().models()[0].clone();
+        let model = |provider: &str, id: &str| Model {
+            provider: provider.into(),
+            id: id.into(),
+            name: id.into(),
+            ..base.clone()
+        };
+        // pi's `localeCompare` puts punctuation such as `~` before letters,
+        // so the descending sort prefers `us.` over `~`.
+        let models = [
+            model("openrouter", "~anthropic/claude-sonnet-latest"),
+            model("amazon-bedrock", "us.anthropic.claude-sonnet-5"),
+        ];
+        assert_eq!(
+            try_match("sonnet", &models).map(|model| model.provider.as_str()),
+            Some("amazon-bedrock")
+        );
     }
 
     #[test]

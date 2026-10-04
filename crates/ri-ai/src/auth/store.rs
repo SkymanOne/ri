@@ -26,6 +26,8 @@ type Revision = (Option<SystemTime>, u64);
 struct State {
     document: Document,
     revision: Option<Revision>,
+    /// Why the file at this revision could not be read, if it could not.
+    error: Option<String>,
 }
 
 /// The credential store: `auth.json` in the agent directory, or memory.
@@ -91,6 +93,7 @@ impl CredentialStore {
             state: Mutex::new(State {
                 document,
                 revision: None,
+                error: None,
             }),
         }
     }
@@ -110,18 +113,27 @@ impl CredentialStore {
         if let Some(path) = &self.path {
             let current = revision(path);
             if current.is_none() || current != state.revision {
+                state.error = None;
                 match std::fs::read_to_string(path) {
-                    Ok(text) => {
-                        if let Ok(document) = parse(&text) {
-                            state.document = document;
-                        }
+                    Ok(text) => match parse(&text) {
+                        Ok(document) => state.document = document,
+                        Err(error) => state.error = Some(error),
+                    },
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        state.document = Document::new();
                     }
-                    Err(_) => state.document = Document::new(),
+                    Err(error) => state.error = Some(error.to_string()),
                 }
                 state.revision = current;
             }
         }
         state
+    }
+
+    /// Why the file cannot be read now, as pi's store reports it; reads
+    /// meanwhile see the last document that could be.
+    pub fn read_error(&self) -> Option<String> {
+        self.state().error.clone()
     }
 
     /// The stored credential for `provider`, if it is a valid one.
@@ -293,6 +305,26 @@ mod tests {
             key: Some(value.into()),
             env: None,
         })
+    }
+
+    #[test]
+    fn reports_a_file_that_does_not_parse() {
+        let path = temp("corrupt");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{bad").unwrap();
+        let store = CredentialStore::open(&path);
+        assert!(store.read_error().is_some());
+        assert_eq!(store.get("anthropic"), None);
+        std::fs::write(
+            &path,
+            "{\"anthropic\": {\"type\": \"api_key\", \"key\": \"k\"}}",
+        )
+        .unwrap();
+        // A rewrite of the same length may share the old modification time.
+        let store = CredentialStore::open(&path);
+        assert_eq!(store.read_error(), None);
+        assert_eq!(store.get("anthropic"), Some(key("k")));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
     }
 
     #[tokio::test]

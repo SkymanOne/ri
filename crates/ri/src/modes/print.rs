@@ -44,7 +44,8 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
     }
 
     let mut prompts = Vec::new();
-    if let Some(message) = initial_message {
+    // pi skips an empty first message, images included.
+    if let Some(message) = initial_message.filter(|message| !message.is_empty()) {
         prompts.push((message, initial_images));
     }
     prompts.extend(messages.into_iter().map(|message| (message, Vec::new())));

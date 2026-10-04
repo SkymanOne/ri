@@ -248,45 +248,46 @@ async fn check(
         _ => requested,
     };
     let mut credential = None;
-    let (status, reason, auth_type) = if unresolved || registry.error().is_some() {
-        ("invalid", Some("invalid_state"), None)
-    } else if let Some(model) = provider_model(registry, &provider) {
-        if !registry.has_auth(&provider) {
-            ("not_ready", Some("credentials_not_configured"), None)
-        } else {
-            let oauth = registry.is_using_oauth(&provider);
-            let auth_type = Some(if oauth { "oauth" } else { "api_key" });
-            let auth = if command.no_refresh {
-                None
-            } else {
-                Some(registry.auth(model).await)
-            };
-            // A failed OAuth refresh is an invalid state, as pi's thrown error.
-            if auth.as_ref().is_some_and(|auth| auth.error.is_some()) {
-                ("invalid", Some("invalid_state"), None)
-            } else if auth
-                .as_ref()
-                .is_some_and(|auth| credential_of(auth).is_none())
-            {
+    let (status, reason, auth_type) =
+        if unresolved || registry.error().is_some() || registry.store_error(&provider).is_some() {
+            ("invalid", Some("invalid_state"), None)
+        } else if let Some(model) = provider_model(registry, &provider) {
+            if !registry.has_auth(&provider) {
                 ("not_ready", Some("credentials_not_configured"), None)
-            } else if command.credentials {
-                // Without refreshing, a stored OAuth token is printed as stored.
-                credential = match (&auth, registry.store().get(&provider)) {
-                    (None, Some(Credential::OAuth(stored))) => Some(stored.access),
-                    (Some(auth), _) => credential_of(auth),
-                    (None, _) => credential_of(&registry.auth(model).await),
-                };
-                match credential {
-                    Some(_) => ("ready", None, auth_type),
-                    None => ("not_ready", Some("credential_not_available"), None),
-                }
             } else {
-                ("ready", None, auth_type)
+                let oauth = registry.is_using_oauth(&provider);
+                let auth_type = Some(if oauth { "oauth" } else { "api_key" });
+                let auth = if command.no_refresh {
+                    None
+                } else {
+                    Some(registry.auth(model).await)
+                };
+                // A failed OAuth refresh is an invalid state, as pi's thrown error.
+                if auth.as_ref().is_some_and(|auth| auth.error.is_some()) {
+                    ("invalid", Some("invalid_state"), None)
+                } else if auth
+                    .as_ref()
+                    .is_some_and(|auth| credential_of(auth).is_none())
+                {
+                    ("not_ready", Some("credentials_not_configured"), None)
+                } else if command.credentials {
+                    // Without refreshing, a stored OAuth token is printed as stored.
+                    credential = match (&auth, registry.store().get(&provider)) {
+                        (None, Some(Credential::OAuth(stored))) => Some(stored.access),
+                        (Some(auth), _) => credential_of(auth),
+                        (None, _) => credential_of(&registry.auth(model).await),
+                    };
+                    match credential {
+                        Some(_) => ("ready", None, auth_type),
+                        None => ("not_ready", Some("credential_not_available"), None),
+                    }
+                } else {
+                    ("ready", None, auth_type)
+                }
             }
-        }
-    } else {
-        ("not_ready", Some("provider_not_found"), None)
-    };
+        } else {
+            ("not_ready", Some("provider_not_found"), None)
+        };
     let output = if command.json {
         let mut object = serde_json::Map::new();
         object.insert("status".into(), status.into());
@@ -395,6 +396,10 @@ async fn credential_for_print(
         } else {
             registry.auth(model).await
         };
+        // Credentials that fail to resolve are an error in pi, not an absence.
+        if auth.error.is_some() {
+            return Err("Failed to resolve credential".into());
+        }
         if let Some(value) = credential_of(&auth) {
             found.push((id.clone(), value));
         }
