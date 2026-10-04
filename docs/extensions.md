@@ -30,7 +30,7 @@ ri does not need Node.js. TypeScript and JavaScript extensions run in `ri-js`, a
 
 - ri resolves modules as Node does and strips TypeScript types on the host, with a cache keyed by file content.
 - `@earendil-works/pi-coding-agent`, `pi-ai`, `pi-agent-core`, `pi-tui` and `typebox` resolve to copies bundled with ri.
-- Shims provide Node's `fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch` and `Intl`.
+- Shims provide Node's `fs` with file descriptors and file streams, `path`, `os`, `child_process`, `events`, `stream`, `util`, `crypto` hashes, `buffer`, timers, `fetch` and `Intl`.
 - Custom TUI components render inside the runtime. ri paints their last frame, so a slow extension never blocks the interface.
 
 Some Node features have no counterpart in the runtime. Native addons, `net` and `tls` servers and `worker_threads` fail when used, and the rest of the extension keeps working. [Differences from pi](compat.md) lists the details.

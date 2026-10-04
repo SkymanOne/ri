@@ -265,3 +265,62 @@ export default function (pi) {
         "true,true,true,0,set,16384,anthropicProvider from @earendil-works/pi-ai is not available in ri extensions"
     );
 }
+
+/// File descriptors, file streams and `fs.promises.open`, which loggers use.
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_and_writes_through_file_descriptors() {
+    let dir = scratch("descriptors");
+    let main = r#"
+import fs from "node:fs";
+import path from "node:path";
+export default async function (pi) {
+	const file = path.join(import.meta.dirname, "log.txt");
+	const fd = fs.openSync(file, "w");
+	fs.writeSync(fd, "hello ");
+	fs.writeSync(fd, Buffer.from("world"));
+	fs.closeSync(fd);
+	const appended = fs.openSync(file, "a");
+	fs.writeSync(appended, "!");
+	fs.closeSync(appended);
+	const read = fs.openSync(file, "r");
+	const buffer = Buffer.alloc(5);
+	fs.readSync(read, buffer, 0, 5, 6);
+	const at = buffer.toString();
+	fs.readSync(read, buffer, 0, 5, null);
+	const current = buffer.toString();
+	fs.closeSync(read);
+	let closed;
+	try {
+		fs.closeSync(read);
+	} catch (error) {
+		closed = error.code;
+	}
+	let missing;
+	try {
+		fs.openSync(path.join(import.meta.dirname, "missing.txt"), "r");
+	} catch (error) {
+		missing = error.code;
+	}
+	const target = path.join(import.meta.dirname, "stream.txt");
+	const stream = fs.createWriteStream(target);
+	stream.write("a");
+	stream.end("b");
+	await new Promise((resolve) => stream.on("finish", resolve));
+	const chunks = [];
+	for await (const chunk of fs.createReadStream(target, "utf8")) chunks.push(chunk);
+	const handle = await fs.promises.open(file, "r");
+	const { bytesRead } = await handle.read(Buffer.alloc(3), 0, 3, 0);
+	await handle.close();
+	pi.registerCommand("probe", {
+		description: [fs.readFileSync(file, "utf8"), at, current, closed, missing, chunks.join(""), bytesRead].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "hello world!,world,hello,EBADF,ENOENT,ab,3"
+    );
+}

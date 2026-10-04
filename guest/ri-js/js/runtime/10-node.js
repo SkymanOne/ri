@@ -232,6 +232,245 @@
 		}
 		return options?.withFileTypes ? entries.map((entry) => new Dirent(entry.name, entry.type, dir)) : entries.map((entry) => entry.name);
 	};
+	// ----- file descriptors -------------------------------------------------------------
+	// The host works on paths, so a descriptor is an open path and a position,
+	// and each read or write goes through the path.
+	const descriptors = new Map();
+	let nextDescriptor = 3;
+	const errno = (code, number, message, syscall, path) => {
+		const error = new Error(`${code}: ${message}, ${syscall}${path === undefined ? "" : ` '${path}'`}`);
+		Object.assign(error, { code, errno: number, syscall }, path === undefined ? {} : { path });
+		return error;
+	};
+	const descriptor = (fd, syscall) => {
+		const entry = descriptors.get(fd);
+		if (!entry) throw errno("EBADF", -9, "bad file descriptor", syscall);
+		return entry;
+	};
+	function openSync(p, flags = "r") {
+		const target = absolute(p);
+		const mode =
+			typeof flags === "number"
+				? { create: (flags & 64) !== 0, exclusive: (flags & 128) !== 0, truncate: (flags & 512) !== 0, append: (flags & 1024) !== 0 }
+				: { create: /[wa]/.test(flags), exclusive: flags.includes("x"), truncate: flags.includes("w"), append: flags.includes("a") };
+		const exists = fsSync.existsSync(target);
+		if (exists && mode.exclusive) throw errno("EEXIST", -17, "file already exists", "open", target);
+		if (!exists && !mode.create) call("stat", { path: target });
+		if (!exists || mode.truncate) call("writeFile", { path: target, text: "", append: !mode.truncate });
+		const fd = nextDescriptor++;
+		descriptors.set(fd, { path: target, position: 0, append: mode.append });
+		return fd;
+	}
+	// A position that is not a number from 0 up means the current one.
+	const explicit = (position) => (typeof position === "number" && position >= 0) || typeof position === "bigint";
+	function readSync(fd, buffer, offset, length, position) {
+		if (offset !== null && typeof offset === "object") ({ offset = 0, length = buffer.byteLength - offset, position = null } = offset);
+		offset ??= 0;
+		length ??= buffer.byteLength - offset;
+		const entry = descriptor(fd, "read");
+		const start = explicit(position) ? Number(position) : entry.position;
+		const chunk = fsSync.readFileSync(entry.path).subarray(start, start + length);
+		new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(chunk, offset);
+		if (!explicit(position)) entry.position += chunk.length;
+		return chunk.length;
+	}
+	function writeSync(fd, data, a, b, c) {
+		if (fd === 1 || fd === 2) {
+			const text = typeof data === "string" ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString();
+			process[fd === 1 ? "stdout" : "stderr"].write(text);
+			return Buffer.byteLength(text);
+		}
+		const entry = descriptor(fd, "write");
+		let bytes;
+		let position;
+		if (typeof data === "string") {
+			bytes = Buffer.from(data, typeof b === "string" ? b : "utf8");
+			position = a;
+		} else {
+			const offset = a ?? 0;
+			bytes = Buffer.from(data.buffer, data.byteOffset + offset, b ?? data.byteLength - offset);
+			position = c;
+		}
+		const size = fsSync.statSync(entry.path).size;
+		const at = entry.append ? size : explicit(position) ? Number(position) : entry.position;
+		if (at === size) fsSync.appendFileSync(entry.path, bytes);
+		else {
+			const next = Buffer.alloc(Math.max(size, at + bytes.length));
+			next.set(fsSync.readFileSync(entry.path));
+			next.set(bytes, at);
+			fsSync.writeFileSync(entry.path, next);
+		}
+		if (!explicit(position)) entry.position = at + bytes.length;
+		return bytes.length;
+	}
+	function closeSync(fd) {
+		descriptor(fd, "close");
+		descriptors.delete(fd);
+	}
+	function truncateSync(p, length = 0) {
+		const target = typeof p === "number" ? descriptor(p, "ftruncate").path : absolute(p);
+		const current = fsSync.readFileSync(target);
+		const next = Buffer.alloc(length);
+		next.set(current.subarray(0, length));
+		fsSync.writeFileSync(target, next);
+	}
+	class FileHandle {
+		constructor(fd) {
+			this.fd = fd;
+		}
+		async read(buffer, offset, length, position) {
+			if (buffer === undefined || !ArrayBuffer.isView(buffer)) {
+				const options = buffer ?? {};
+				buffer = options.buffer ?? Buffer.alloc(16384);
+				({ offset, length, position } = options);
+			}
+			return { bytesRead: readSync(this.fd, buffer, offset, length, position), buffer };
+		}
+		async write(data, ...rest) {
+			return { bytesWritten: writeSync(this.fd, data, ...rest), buffer: data };
+		}
+		async readFile(options) {
+			return fsSync.readFileSync(descriptor(this.fd, "read").path, options);
+		}
+		async writeFile(data, options) {
+			const entry = descriptor(this.fd, "write");
+			fsSync.writeFileSync(entry.path, data, options);
+			entry.position = fsSync.statSync(entry.path).size;
+		}
+		async appendFile(data, options) {
+			fsSync.appendFileSync(descriptor(this.fd, "write").path, data, options);
+		}
+		async stat() {
+			return fsSync.statSync(descriptor(this.fd, "fstat").path);
+		}
+		async truncate(length) {
+			truncateSync(this.fd, length);
+		}
+		async sync() {}
+		async datasync() {}
+		async close() {
+			if (descriptors.has(this.fd)) closeSync(this.fd);
+		}
+	}
+	if (Symbol.asyncDispose) FileHandle.prototype[Symbol.asyncDispose] = FileHandle.prototype.close;
+	// Streams over a descriptor. Their classes extend the stream module's,
+	// which is defined further down, so they are made on first use.
+	let WriteStream;
+	function createWriteStream(p, options) {
+		const { Writable } = builtins.stream;
+		WriteStream ??= class extends Writable {
+			constructor(file, settings) {
+				super();
+				settings = typeof settings === "string" ? { encoding: settings } : (settings ?? {});
+				this.path = absolute(file);
+				this.bytesWritten = 0;
+				this.pending = false;
+				this.fd = settings.fd ?? openSync(this.path, settings.flags ?? "w");
+				this.defaultEncoding = settings.encoding ?? "utf8";
+				queueMicrotask(() => {
+					this.emit("open", this.fd);
+					this.emit("ready");
+				});
+			}
+			write(chunk, encoding, callback) {
+				if (typeof encoding === "function") [callback, encoding] = [encoding, undefined];
+				try {
+					this.bytesWritten += writeSync(this.fd, typeof chunk === "string" ? Buffer.from(chunk, encoding ?? this.defaultEncoding) : chunk);
+				} catch (error) {
+					queueMicrotask(() => {
+						callback?.(error);
+						this.emit("error", error);
+					});
+					return false;
+				}
+				if (callback) queueMicrotask(() => callback(null));
+				return true;
+			}
+			end(chunk, encoding, callback) {
+				if (typeof chunk === "function") [callback, chunk] = [chunk, undefined];
+				else if (typeof encoding === "function") [callback, encoding] = [encoding, undefined];
+				if (chunk !== undefined && chunk !== null) this.write(chunk, encoding);
+				if (callback) this.once("finish", callback);
+				queueMicrotask(() => {
+					this.close();
+					this.emit("finish");
+					this.emit("close");
+				});
+				return this;
+			}
+			close(callback) {
+				if (descriptors.has(this.fd)) closeSync(this.fd);
+				if (callback) queueMicrotask(() => callback(null));
+			}
+			destroy() {
+				this.close();
+				return this;
+			}
+		};
+		return new WriteStream(p, options);
+	}
+	let ReadStream;
+	function createReadStream(p, options) {
+		const { Readable } = builtins.stream;
+		ReadStream ??= class extends Readable {
+			constructor(file, settings) {
+				super();
+				settings = typeof settings === "string" ? { encoding: settings } : (settings ?? {});
+				this.path = absolute(file);
+				this.bytesRead = 0;
+				this.pending = false;
+				this.encoding = settings.encoding ?? null;
+				this.range = [settings.start ?? 0, settings.end === undefined ? undefined : settings.end + 1];
+				this.started = false;
+				queueMicrotask(() => {
+					this.emit("open");
+					this.emit("ready");
+				});
+			}
+			setEncoding(encoding) {
+				this.encoding = encoding;
+				return this;
+			}
+			/** The whole requested range, read once. */
+			content() {
+				const bytes = fsSync.readFileSync(this.path).subarray(...this.range);
+				this.bytesRead = bytes.length;
+				return this.encoding ? bytes.toString(this.encoding) : bytes;
+			}
+			start() {
+				if (this.started) return;
+				this.started = true;
+				queueMicrotask(() => {
+					let content;
+					try {
+						content = this.content();
+					} catch (error) {
+						this.emit("error", error);
+						return;
+					}
+					if (content.length > 0) this.emit("data", content);
+					this.emit("end");
+					this.emit("close");
+				});
+			}
+			on(event, listener) {
+				super.on(event, listener);
+				if (event === "data") this.start();
+				return this;
+			}
+			pipe(destination) {
+				this.on("data", (chunk) => destination.write(chunk));
+				this.once("end", () => destination.end?.());
+				return destination;
+			}
+			async *[Symbol.asyncIterator]() {
+				this.started = true;
+				const content = this.content();
+				if (content.length > 0) yield content;
+			}
+		};
+		return new ReadStream(p, options);
+	}
 	const fsSync = {
 		existsSync: (p) => {
 			try {
@@ -317,20 +556,21 @@
 			call("mkdir", { path: target, recursive: false });
 			return target;
 		},
-		openSync: notSupported("fs.openSync"),
-		closeSync() {},
-		readSync: notSupported("fs.readSync"),
-		writeSync: (fd, data) => {
-			if (fd === 1 || fd === 2) process[fd === 1 ? "stdout" : "stderr"].write(String(data));
-			else notSupported("fs.writeSync")();
-		},
+		openSync,
+		closeSync,
+		readSync,
+		writeSync,
+		fstatSync: (fd) => fsSync.statSync(descriptor(fd, "fstat").path),
+		truncateSync,
+		ftruncateSync: (fd, length) => truncateSync(fd, length),
+		fdatasyncSync() {},
 		watch: () => ({ close() {}, on() {
 			return this;
 		} }),
 		watchFile() {},
 		unwatchFile() {},
-		createReadStream: notSupported("fs.createReadStream"),
-		createWriteStream: notSupported("fs.createWriteStream"),
+		createReadStream,
+		createWriteStream,
 		constants: { F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1, O_RDONLY: 0, O_WRONLY: 1, O_RDWR: 2, COPYFILE_EXCL: 1 },
 		Stats,
 		Dirent,
@@ -348,7 +588,7 @@
 		if (name.endsWith("Sync") && typeof fn === "function") fsPromises[name.slice(0, -4)] = promisified(fn);
 	}
 	fsPromises.constants = fsSync.constants;
-	fsPromises.open = notSupported("fs.promises.open");
+	fsPromises.open = async (p, flags) => new FileHandle(openSync(p, flags));
 	fsPromises.default = fsPromises;
 	const fs = { ...fsSync, promises: fsPromises };
 	for (const [name, fn] of Object.entries(fsSync)) {
@@ -368,6 +608,23 @@
 				failure = error;
 			}
 			if (callback) queueMicrotask(() => callback(failure, result));
+		};
+	}
+	// Node passes reads and writes the byte count and the buffer.
+	for (const [name, fn] of [
+		["read", readSync],
+		["write", writeSync],
+	]) {
+		fs[name] = (fd, data, ...rest) => {
+			const callback = rest.pop();
+			let count;
+			let failure = null;
+			try {
+				count = fn(fd, data, ...rest);
+			} catch (error) {
+				failure = error;
+			}
+			queueMicrotask(() => callback(failure, count, data));
 		};
 	}
 	fs.default = fs;
