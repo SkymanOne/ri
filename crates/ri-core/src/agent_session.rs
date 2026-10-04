@@ -21,7 +21,7 @@ use ri_ai::errors::{is_context_overflow, is_recoverable_length, is_retryable_ass
 use ri_ai::registry::{Auth, ModelRegistry};
 use ri_ai::stream::{StreamOptions, ThinkingBudgets};
 use ri_types::event::{AgentEvent, ToolResult};
-use ri_types::event::{CompactionReason, CompactionResult};
+use ri_types::event::{CompactionReason, CompactionResult, SummarySource};
 use ri_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
     TextContent, ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
@@ -34,7 +34,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::compaction::{
-    BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer,
+    BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer, SummaryRetry,
     calculate_context_tokens, combine_usage, estimate_context_tokens,
     estimate_projected_context_tokens, estimate_tokens, prepare_compaction, should_compact,
 };
@@ -1095,6 +1095,21 @@ impl AgentSession {
         trigger_turn: Option<bool>,
         deliver_as: Option<&str>,
     ) {
+        if let Some(message) = self.deliver_custom_message(message, trigger_turn, deliver_as) {
+            self.run_triggered(message).await;
+        }
+    }
+
+    /// The part of [`AgentSession::send_custom_message`] that happens at
+    /// once, as in pi: the message is queued, held or recorded and reported
+    /// before this returns. A message that starts a turn is returned for
+    /// [`AgentSession::run_triggered`].
+    pub fn deliver_custom_message(
+        &self,
+        message: ri_types::message::CustomMessage,
+        trigger_turn: Option<bool>,
+        deliver_as: Option<&str>,
+    ) -> Option<Message> {
         let message = Message::Custom(message);
         if deliver_as == Some("nextTurn") {
             lock(&self.inner.next_turn).push(message);
@@ -1106,12 +1121,18 @@ impl AgentSession {
             };
             lock(queue).push_back(message);
         } else if trigger_turn == Some(true) {
-            self.run(vec![message]).await;
+            return Some(message);
         } else if self.is_streaming() {
             lock(&self.inner.pending_custom).push(message);
         } else {
             self.append_custom_message(&message);
         }
+        None
+    }
+
+    /// Runs the turn an extension message triggers.
+    pub async fn run_triggered(&self, message: Message) {
+        self.run(vec![message]).await;
     }
 
     /// Records an extension message and reports it as pi's `_appendCustomMessage` does.
@@ -1851,9 +1872,12 @@ impl AgentSession {
         model: &Model,
         preparation: &Preparation,
         custom_instructions: Option<&str>,
+        reason: CompactionReason,
         cancel: &CancellationToken,
     ) -> Result<CompactionResult, String> {
         let auth = self.registry().auth(model).await;
+        let on_retry =
+            |retry| self.emit_summary_retry(retry, SummarySource::Compaction, Some(reason));
         let summarizer = Summarizer {
             model,
             apis: &self.inner.apis,
@@ -1862,8 +1886,35 @@ impl AgentSession {
             session_id: None,
             retry: self.retry_policy(),
             cancel: cancel.clone(),
+            on_retry: Some(&on_retry),
         };
         summarizer.compact(preparation, custom_instructions).await
+    }
+
+    /// pi's `summarization_retry_*` events for a summary request's retries.
+    fn emit_summary_retry(
+        &self,
+        retry: SummaryRetry,
+        source: SummarySource,
+        reason: Option<CompactionReason>,
+    ) {
+        self.emit(&match retry {
+            SummaryRetry::Scheduled {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message,
+            } => AgentEvent::SummarizationRetryScheduled {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message,
+            },
+            SummaryRetry::AttemptStart => {
+                AgentEvent::SummarizationRetryAttemptStart { source, reason }
+            }
+            SummaryRetry::Finished => AgentEvent::SummarizationRetryFinished,
+        });
     }
 
     /// Records a compaction result and fills in the estimate after it.
@@ -1906,7 +1957,9 @@ impl AgentSession {
         };
         self.emit(&AgentEvent::CompactionStart { reason });
         let compacting = Compacting::start(&self.inner.compacting);
-        let outcome = self.summarize(&model, &preparation, None, cancel).await;
+        let outcome = self
+            .summarize(&model, &preparation, None, reason, cancel)
+            .await;
         drop(compacting);
         match outcome {
             Ok(result) if !cancel.is_cancelled() => {
@@ -1975,7 +2028,13 @@ impl AgentSession {
                 }
             })?;
             let result = self
-                .summarize(&model, &preparation, custom_instructions, &cancel)
+                .summarize(
+                    &model,
+                    &preparation,
+                    custom_instructions,
+                    CompactionReason::Manual,
+                    &cancel,
+                )
                 .await?;
             Ok(self.record_compaction(result))
         }
@@ -2066,6 +2125,8 @@ impl AgentSession {
                 .as_ref()
                 .and_then(|settings| settings.reserve_tokens)
                 .unwrap_or(16384);
+            let on_retry =
+                |retry| self.emit_summary_retry(retry, SummarySource::BranchSummary, None);
             let summarizer = Summarizer {
                 model,
                 apis: &self.inner.apis,
@@ -2074,6 +2135,7 @@ impl AgentSession {
                 session_id: None,
                 retry: self.retry_policy(),
                 cancel,
+                on_retry: Some(&on_retry),
             };
             let result = summarizer
                 .branch_summary(
@@ -2723,6 +2785,55 @@ impl AgentSession {
     }
 }
 
+/// A skill invocation as `/skill:<name>` expands it; pi's `ParsedSkillBlock`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkillBlock {
+    /// The skill's name.
+    pub name: String,
+    /// Where its file is.
+    pub location: String,
+    /// The text between the tags.
+    pub content: String,
+    /// What the user wrote after the command, if anything.
+    pub user_message: Option<String>,
+}
+
+/// pi's `parseSkillBlock`: the skill invocation `text` holds, when it is one.
+pub fn parse_skill_block(text: &str) -> Option<SkillBlock> {
+    let rest = text.strip_prefix("<skill name=\"")?;
+    let (name, rest) = rest.split_once('"')?;
+    let rest = rest.strip_prefix(" location=\"")?;
+    let (location, rest) = rest.split_once('"')?;
+    let body = rest.strip_prefix(">\n")?;
+    if name.is_empty() || location.is_empty() {
+        return None;
+    }
+    // The content ends at the first closing tag that leaves nothing or a
+    // blank line and a message after it.
+    let mut from = 0;
+    while let Some(found) = body[from..].find("\n</skill>") {
+        let end = from + found;
+        let after = &body[end + "\n</skill>".len()..];
+        let user_message = match after {
+            "" => Some(None),
+            _ => after
+                .strip_prefix("\n\n")
+                .filter(|message| !message.is_empty())
+                .map(|message| Some(message.trim()).filter(|message| !message.is_empty())),
+        };
+        if let Some(user_message) = user_message {
+            return Some(SkillBlock {
+                name: name.to_owned(),
+                location: location.to_owned(),
+                content: body[..end].to_owned(),
+                user_message: user_message.map(str::to_owned),
+            });
+        }
+        from = end + 1;
+    }
+    None
+}
+
 /// Text of an assistant message's text blocks, as print mode prints it.
 pub fn assistant_text(message: &ri_types::message::AssistantMessage) -> String {
     ri_types::message::blocks_text(&message.content, "")
@@ -3095,5 +3206,31 @@ impl AgentHooks for Hooks {
     fn follow_up_messages(&self) -> BoxFuture<'_, Vec<Message>> {
         let messages = drain(&self.session.inner.follow_up, self.follow_up_mode);
         Box::pin(async move { messages })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_skill_blocks_as_pi() {
+        let block = parse_skill_block(
+            "<skill name=\"demo\" location=\"/s/SKILL.md\">\nbody\n</skill>\n\n  go now ",
+        )
+        .expect("a skill block");
+        assert_eq!(block.name, "demo");
+        assert_eq!(block.location, "/s/SKILL.md");
+        assert_eq!(block.content, "body");
+        assert_eq!(block.user_message.as_deref(), Some("go now"));
+        let block =
+            parse_skill_block("<skill name=\"a\" location=\"b\">\nx\n</skill>\ny\n</skill>")
+                .expect("the later closing tag");
+        assert_eq!(block.content, "x\n</skill>\ny");
+        assert_eq!(block.user_message, None);
+        assert!(
+            parse_skill_block("<skill name=\"a\" location=\"b\">\nx\n</skill> trailing").is_none()
+        );
+        assert!(parse_skill_block("hello").is_none());
     }
 }

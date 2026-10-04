@@ -13,8 +13,9 @@ use futures_util::future::BoxFuture;
 use ri_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use ri_core::agent_session::{AgentSession, WeakSession};
 use ri_core::extensions::{
-    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
-    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+    Command, Completion, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode,
+    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+    WorkingIndicator,
 };
 use ri_core::tools::{Exposure, Namespace, RegisteredTool};
 use ri_types::event::ToolResult;
@@ -147,6 +148,28 @@ impl ExtensionHost {
         lock(&self.loaded).clone()
     }
 
+    /// The providers the loaded extensions registered with
+    /// `pi.registerProvider(name, config)`, as names and configurations in
+    /// `models.json`'s shape. Providers with their own `streamSimple` are
+    /// left out: ri cannot stream through them.
+    pub fn providers(&self) -> Vec<(String, Value)> {
+        lock(&self.loaded)
+            .iter()
+            .flat_map(|extension| list(&extension["providers"]))
+            .filter_map(|provider| {
+                let mut config = provider["config"].as_object()?.clone();
+                if config.remove("hasStreamSimple") == Some(Value::Bool(true)) {
+                    return None;
+                }
+                // Sign-in and image or classifier implementations are code.
+                for key in ["oauth", "images", "classifiers"] {
+                    config.remove(key);
+                }
+                Some((text(&provider["name"]), Value::Object(config)))
+            })
+            .collect()
+    }
+
     /// The flags the loaded extensions registered.
     pub fn flags(&self) -> Vec<Flag> {
         lock(&self.loaded)
@@ -187,6 +210,7 @@ impl ExtensionHost {
                     id: description["id"].as_u64().unwrap_or_default(),
                     path: PathBuf::from(text(&description["path"])),
                     description: description.clone(),
+                    completions: Arc::default(),
                 }) as Arc<dyn Extension>
             })
             .collect()
@@ -207,14 +231,15 @@ impl ExtensionHost {
         if generation > 0 {
             match self.instance.call("reload", &Value::Null).await {
                 Ok(result) => *lock(&self.loaded) = split(&result).0,
-                Err(err) => ctx
-                    .ui
-                    .extension_error("ri-js", "session_start", &err.to_string()),
+                Err(err) => {
+                    ctx.ui
+                        .extension_error("ri-js", "session_start", &err.to_string(), None)
+                }
             }
         }
         if let Err(err) = self.instance.call("bind", &Value::Null).await {
             ctx.ui
-                .extension_error("ri-js", "session_start", &err.to_string());
+                .extension_error("ri-js", "session_start", &err.to_string(), None);
         }
         *bound = generation + 1;
         true
@@ -290,7 +315,18 @@ struct JsExtension {
     id: u64,
     path: PathBuf,
     description: Value,
+    /// Argument completions by command and prefix, as fetched.
+    completions: Arc<Mutex<HashMap<(String, String), Fetched>>>,
 }
+
+/// An argument completion request: under way, or answered at a time.
+enum Fetched {
+    Pending,
+    Ready(std::time::Instant, Option<Vec<Completion>>),
+}
+
+/// How long fetched completions are reused before being asked for again.
+const COMPLETIONS_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl JsExtension {
     async fn call(
@@ -329,6 +365,63 @@ impl Extension for JsExtension {
         for tool in list(&self.description["tools"]) {
             tools.register(js_tool(&self.shared, self.id, &tool));
         }
+    }
+
+    /// pi awaits `getArgumentCompletions`; the editor asks synchronously, so
+    /// a request the guest has not answered yet starts it in the background,
+    /// offers nothing, and has the editor ask again once it is answered.
+    fn complete(&self, command: &str, prefix: &str) -> Option<Vec<Completion>> {
+        let completes = list(&self.description["commands"])
+            .iter()
+            .any(|entry| entry["name"] == command && entry["hasCompletions"] == true);
+        if !completes {
+            return None;
+        }
+        let key = (command.to_owned(), prefix.to_owned());
+        {
+            let mut cache = lock(&self.completions);
+            cache.retain(|_, fetched| match fetched {
+                Fetched::Pending => true,
+                Fetched::Ready(at, _) => at.elapsed() < COMPLETIONS_TTL,
+            });
+            match cache.get(&key) {
+                Some(Fetched::Ready(_, items)) => return items.clone(),
+                Some(Fetched::Pending) => return None,
+                None => {
+                    cache.insert(key.clone(), Fetched::Pending);
+                }
+            }
+        }
+        let (host, cache) = (Arc::clone(&self.shared), Arc::clone(&self.completions));
+        let payload = json!({"extension": self.id, "name": command, "prefix": prefix});
+        self.shared.bridge.runtime.spawn(async move {
+            let items = host
+                .instance
+                .call("complete", &payload)
+                .await
+                .ok()
+                .and_then(|value| {
+                    value.as_array().map(|items| {
+                        items
+                            .iter()
+                            .map(|item| Completion {
+                                value: text(&item["value"]),
+                                label: item["label"]
+                                    .as_str()
+                                    .map_or_else(|| text(&item["value"]), str::to_owned),
+                                description: item["description"].as_str().map(str::to_owned),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .filter(|items| !items.is_empty());
+            let found = items.is_some();
+            lock(&cache).insert(key, Fetched::Ready(std::time::Instant::now(), items));
+            if found && let Some(session) = host.bridge.session() {
+                session.extension_binding().0.refresh_completions();
+            }
+        });
+        None
     }
 
     fn commands(&self) -> Vec<Command> {
@@ -373,11 +466,13 @@ impl Extension for JsExtension {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let payload = json!({"extension": self.id, "name": command, "args": args, "ctx": context_data(ctx)});
+            // pi names the command in place of the extension.
             if let Some(Err(err)) = self.call(ctx, "command", payload).await {
                 ctx.ui.extension_error(
-                    &self.path_text(),
                     &format!("command:{command}"),
+                    "command",
                     &err.to_string(),
+                    None,
                 );
             }
         })
@@ -441,8 +536,12 @@ impl Extension for JsExtension {
             match self.call(ctx, "emit", payload).await? {
                 Ok(outcome) => {
                     for error in list(&outcome["errors"]) {
-                        ctx.ui
-                            .extension_error(&self.path_text(), kind, &text(&error["error"]));
+                        ctx.ui.extension_error(
+                            &self.path_text(),
+                            kind,
+                            &text(&error["error"]),
+                            error["stack"].as_str(),
+                        );
                     }
                     Some(outcome["result"].clone()).filter(|result| !result.is_null())
                 }
@@ -452,7 +551,7 @@ impl Extension for JsExtension {
                 }
                 Err(err) => {
                     ctx.ui
-                        .extension_error(&self.path_text(), kind, &err.to_string());
+                        .extension_error(&self.path_text(), kind, &err.to_string(), None);
                     None
                 }
             }
@@ -694,6 +793,21 @@ impl SessionBridge {
             "ui.setHeader" => ui.set_header(self.component(&payload["handle"])),
             "ui.setTitle" => ui.set_title(&text(&payload["title"])),
             "ui.setWorkingMessage" => ui.set_working_message(optional("message")),
+            "ui.setWorkingVisible" => ui.set_working_visible(payload["visible"] != false),
+            "ui.setWorkingIndicator" => {
+                let options = &payload["options"];
+                ui.set_working_indicator(options.is_object().then(|| {
+                    WorkingIndicator {
+                        frames: options["frames"]
+                            .as_array()
+                            .map(|frames| frames.iter().map(text).collect()),
+                        interval_ms: options["intervalMs"]
+                            .as_f64()
+                            .filter(|ms| *ms > 0.0)
+                            .map(|ms| ms.ceil() as u64),
+                    }
+                }));
+            }
             "ui.setHiddenThinkingLabel" => ui.set_hidden_thinking_label(optional("label")),
             "ui.setEditorText" => ui.set_editor_text(&text(&payload["text"])),
             "ui.pasteToEditor" => ui.paste_to_editor(&text(&payload["text"])),
@@ -815,12 +929,12 @@ impl Bridge for SessionBridge {
                 let message = custom_message(&payload["message"]);
                 let options = &payload["options"];
                 let trigger = options["triggerTurn"].as_bool();
-                let deliver_as = options["deliverAs"].as_str().map(str::to_owned);
-                self.spawn(async move {
-                    session
-                        .send_custom_message(message, trigger, deliver_as.as_deref())
-                        .await;
-                });
+                let deliver_as = options["deliverAs"].as_str();
+                // pi records and reports the message before the call returns.
+                if let Some(message) = session.deliver_custom_message(message, trigger, deliver_as)
+                {
+                    self.spawn(async move { session.run_triggered(message).await });
+                }
                 Ok(Value::Null)
             }
             "session.sendUserMessage" => {

@@ -36,10 +36,16 @@ pub struct RenderContext<'a> {
     pub thinking_label: &'a str,
 }
 
+/// Draws an item's rows for a width.
+pub type Renderer = Box<dyn Fn(usize, &RenderContext<'_>) -> Vec<StyledLine> + Send>;
+
 /// One transcript item.
 pub enum Item {
     /// A user prompt.
     User(String),
+    /// A `/skill:<name>` invocation: pi's `SkillInvocationMessageComponent`,
+    /// then the user's own text when there is any.
+    Skill(Box<ri_core::agent_session::SkillBlock>),
     /// A model response, possibly still streaming.
     Assistant(Box<AssistantMessage>),
     /// A tool call and its result.
@@ -63,6 +69,9 @@ pub enum Item {
     Error(String),
     /// Lines rendered elsewhere, with their own spacing.
     Lines(Vec<StyledLine>),
+    /// Rows drawn for the current width, as pi re-wraps its text components
+    /// when the terminal is resized.
+    Render(Renderer),
     /// A custom message an extension shows.
     Custom(Box<CustomView>),
 }
@@ -136,6 +145,31 @@ pub fn group_thousands(value: u64) -> String {
     out
 }
 
+/// pi's `UserMessageComponent`.
+fn user_message(text: &str, width: usize, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
+    markdown::render(
+        text,
+        width,
+        ctx.output_pad,
+        1,
+        ctx.markdown,
+        MarkdownOptions {
+            text: Some(ctx.theme.fg("userMessageText")),
+            background: Some(ctx.theme.bg("userMessageBg")),
+            preserve_list_markers: true,
+            preserve_backslash_escapes: true,
+        },
+    )
+}
+
+/// The transcript item for a user prompt: a skill invocation or plain text.
+pub fn user_item(text: String) -> Item {
+    match ri_core::agent_session::parse_skill_block(&text) {
+        Some(block) => Item::Skill(Box::new(block)),
+        None => Item::User(text),
+    }
+}
+
 fn padded_text(text: StyledLine, width: usize, px: usize) -> Vec<StyledLine> {
     lines::text(&[text], width, px, 0, None)
 }
@@ -147,19 +181,49 @@ impl Item {
         match self {
             Item::User(text) => {
                 let mut out = if first { Vec::new() } else { lines::spacer(1) };
-                out.extend(markdown::render(
-                    text,
-                    width,
-                    ctx.output_pad,
-                    1,
-                    ctx.markdown,
-                    MarkdownOptions {
-                        text: Some(theme.fg("userMessageText")),
-                        background: Some(theme.bg("userMessageBg")),
-                        preserve_list_markers: true,
-                        preserve_backslash_escapes: true,
-                    },
-                ));
+                out.extend(user_message(text, width, ctx));
+                out
+            }
+            Item::Skill(block) => {
+                let mut out = if first { Vec::new() } else { lines::spacer(1) };
+                let label = theme.fg("customMessageLabel");
+                let inner = box_content_width(width, 1);
+                let body = if ctx.expanded {
+                    let mut body = vec![Line::from(Span::styled(
+                        "[skill]",
+                        label.add_modifier(Modifier::BOLD),
+                    ))];
+                    body.extend(markdown::render(
+                        &format!("**{}**\n\n{}", block.name, block.content),
+                        inner,
+                        0,
+                        0,
+                        ctx.markdown,
+                        MarkdownOptions {
+                            text: Some(theme.fg("customMessageText")),
+                            ..MarkdownOptions::default()
+                        },
+                    ));
+                    body
+                } else {
+                    lines::wrap(
+                        &Line::from(vec![
+                            Span::styled("[skill]", label.add_modifier(Modifier::BOLD)),
+                            Span::styled(" ", label),
+                            Span::styled(block.name.clone(), theme.fg("customMessageText")),
+                            Span::styled(
+                                format!(" ({} to expand)", ctx.expand_key),
+                                theme.fg("dim"),
+                            ),
+                        ]),
+                        inner,
+                    )
+                };
+                out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
+                if let Some(message) = &block.user_message {
+                    out.extend(lines::spacer(1));
+                    out.extend(user_message(message, width, ctx));
+                }
                 out
             }
             Item::Assistant(message) => render_assistant(message, width, ctx),
@@ -263,6 +327,7 @@ impl Item {
                 out
             }
             Item::Lines(lines) => lines.clone(),
+            Item::Render(render) => render(width, ctx),
         }
     }
 }

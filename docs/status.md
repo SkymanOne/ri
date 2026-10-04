@@ -44,7 +44,7 @@ Done for the slice below.
 - System prompt sections, context files, skills, prompt templates, settings with project trust.
 - Session manager: JSONL v3 tree, migration, branching, fork, clone, context edits, projection.
 - Session selection: `--continue`, `--session` by path or id prefix, `--fork`, `--session-id`, custom session directories.
-- Post-run recovery as in pi: auto-retry with backoff, omission of failed and truncated attempts, overflow recovery, threshold compaction with split-turn summaries, manual compaction.
+- Post-run recovery as in pi: auto-retry with backoff, omission of failed and truncated attempts, overflow recovery, threshold compaction with split-turn summaries, manual compaction. Summary requests retry under the same policy and report it with pi's `summarization_retry_*` events.
 - Tree navigation with branch summaries and labels.
 
 Differential scenarios compare stdout, stderr, requests and the session files each program writes. Covered: new, continued, opened, forked and id-addressed sessions; retry exhausted and recovered; length stop; threshold compaction; parallel `ls`, `grep` and `find`; `@file` arguments.
@@ -61,7 +61,10 @@ Not yet done:
 Done for the slice below.
 
 - Fullscreen and regular renderers, raw input decoding, Kitty keyboard negotiation, terminal color queries and the system theme.
-- Transcript components: header, resources, messages with markdown and thinking, tool boxes with previews and diffs, `!` command output, summaries, status, warning and error lines, queued messages, editor and footer.
+- Transcript components: header, resources, messages with markdown and thinking, skill invocations, tool boxes with previews and diffs, `!` command output, summaries, status, warning and error lines, queued messages, editor and footer.
+- Fullscreen layout as pi's flex stack: a dock taller than the screen leaves the transcript one row and shrinks its parts in proportion, each keeping its top rows or its cursor.
+- The fullscreen scrollbar (`fullscreenScrollbar`: `auto` while scrolling, `always`, `hidden`), the jump-to-latest label over the last row, and the line, half-page and prompt-to-prompt scroll keys.
+- Built-in `edit` calls preview their diff, or why they cannot apply, inside the tool box while they run.
 - Editor with autocomplete for commands, arguments, paths and `@` files.
 - Selectors: model, thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
 - Commands: `/model`, `/thinking`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
@@ -71,6 +74,8 @@ Done for the slice below.
 - Project trust: the startup prompt before anything project-local loads, with session-only choices, `/trust` and the untrusted-project notice.
 - HTML export through `/export`, `--export` and RPC `export_html`: pi's viewer template, unchanged, with the session, prompt, tools and theme colors filled in as pi does; `--export` output is byte-identical to pi's.
 - A settings file that fails to parse is reported as a warning and left untouched; ri runs without it, as pi does.
+- A session whose recorded directory no longer exists opens only after pi's prompt to continue in the current directory; print, JSON and RPC modes refuse it with pi's message.
+- Notices and command output (`/session`, `/hotkeys`, `/changelog`) re-wrap when the terminal is resized, as pi's text components do.
 - On SIGTERM or SIGHUP every mode kills the commands it started, whose process groups would otherwise outlive it.
 - Model scope from `--models` or `enabledModels`, with pi's glob and `:level` patterns: the startup model, the "Model scope" line, cycling, `/model` completion and the footer's provider count.
 - `/reload` keeps the model and thinking level; a resumed session keeps its thinking level whatever chose the model; an aborted response reads "Operation aborted" or "Aborted after N retry attempts", as pi writes it.
@@ -113,6 +118,7 @@ MCP is done for the slice below.
 - `mcp.json` from the agent directory and trusted projects, validated with pi's messages.
 - `ri mcp add`, `remove` and `list` (with `--json`), which edit `mcp.json` with its own indentation and check servers outside a session, as `pi mcp` does.
 - The built-in extension: tools as `mcp__<server>__<tool>` with `direct`, `deferred` and `hidden` exposure and `toolExposure` overrides, the resource tools, the `mcp_servers` system prompt section, the startup wait for direct servers, problem reports, server logs in `mcp.log`, and `/mcp` status, `reconnect`, `login` and `logout` routing.
+- pi's tool renderers: the `server/tool` label, output colored by outcome and collapsed to five wrapped rows with the path of output saved for the model. A server that cannot be reached reports `fetch failed`, as Node's `fetch` does.
 - The extension runner it needs: the `Extension` trait, a tool registry with pi's activation rules, `tool_search` with pi's BM25 ranking, extension commands from prompts, and notifications in every mode.
 
 Exit criterion. MCP scenarios recorded from pi match: direct tools with text, structured, error, progress, image and resource-link results and the resource tools; deferred tools found and loaded by `tool_search`; and `/mcp` in RPC mode with configuration errors, a failed and a disabled server, reconnect and the subcommand errors. 16 `ri mcp` scenarios match pi's output and exit codes, and the `mcp.json` both write is byte-identical. Client tests cover both transports against the test server.
@@ -161,9 +167,9 @@ Done for the slice below.
 - `ri-js`, a WebAssembly component with QuickJS-NG, Node shims (`fs`, `path`, `os`, `child_process`, `events`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `Intl`), pi's extension API with pi's loading errors and per-extension event semantics, and the vendored `pi-tui` and `typebox`. `cargo xtask js-runtime` builds it; CI checks the committed artifact against its inputs.
 - `ri-ext`: one actor thread per instance, a compiled-component cache, epoch-based compute limits, a memory limit, restart and replay after a trap, and grants for files, processes, network and environment.
 - The host-side module loader: Node resolution with oxc, TypeScript stripping, ES module and CommonJS interop, jiti's `require`, `__dirname` and `__filename` in ES modules, and a transpile cache.
-- Extension discovery from `-e`, a trusted project's `.ri/extensions` and the agent directory's `extensions`, with `package.json` manifests; pi's load errors, hint and exit code; extension flags on the command line, validated as pi does.
+- Extension discovery from `-e`, a trusted project's `.ri/extensions` and the agent directory's `extensions`, with `package.json` manifests; pi's load errors, hint and exit code; extension flags on the command line, validated as pi does. As in pi, `-e` on a directory loads it as a temporary package with its skills, prompts and themes.
 - Sessions: extension tools (with prompt snippets, guidelines, updates and activation rules), commands, and the events `session_start`, `session_shutdown`, `input`, `before_agent_start` (messages and a forced system prompt), `context`, `tool_call` (blocking), `tool_result` (changes), and the agent, turn, message and tool execution events. Actions: `sendMessage` with every delivery mode, `sendUserMessage`, `appendEntry`, session names and labels, the session manager's reads, active tools, thinking level, model selection, models and credentials, `exec`, notifications and the select, confirm and input dialogs. Each new session runs the factories again, as pi does.
-- Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, error lines in the TUI.
+- Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, pi's error lines with the stack's extension frames in the TUI. A failing command is named `command:<name>`, as in pi.
 - Packages: `ri install`, `remove` (`uninstall`), `update` and `list` with pi's arguments, messages and settings entries; npm, git and local sources; the user and project scopes; resources from `package.json` manifests (`ri` before `pi`, with globs and exclusions), conventional directories and settings filters; missing packages installed at startup unless offline; top-level `extensions` in settings; pi's extension order. npm packages install through a built-in client: registry resolution with npm's range syntax, integrity checks, hoisted dependencies, pruning on removal, no lifecycle scripts (native addons stay unbuilt and fail only when loaded) and pi's own packages skipped. `cargo xtask vendor-pi` regenerates the vendored bundles reproducibly.
 - Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with an example (`guest/examples/hello`). A `.wasm` file loads wherever a pi extension file does, in its own instance.
 
@@ -180,7 +186,9 @@ Not yet done:
 
 - `message_end` replacements, `tool_call` handlers that change the call's input, and the `before_provider_request`, `user_bash`, `model_select`, `resources_discover` and `session_before_*` events.
 - Command context actions that replace the session (`newSession`, `fork`, `navigateTree`, `switchSession`, `reload`), and completions through pi-ai from extensions.
+- `registerProvider` with a custom `streamSimple`, an OAuth sign-in or `refreshModels`; providers configured like `models.json` entries work.
 - `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
+- Boundary events: `turn_end` handlers cannot stage entries or continue the run, and `agent_before_settle` is not sent; `turn_end` carries only `turnIndex`, `message` and `toolResults`.
 - Package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
 - Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
 
@@ -188,11 +196,12 @@ Not yet done:
 
 Done for the slice below.
 
-- `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets above and below the editor, a replaced footer and header, the terminal title, the working message, the hidden thinking label, the editor's text, pasting, tool expansion and the theme.
+- `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets above and below the editor, a replaced footer and header, the terminal title, the working message, indicator and visibility, the hidden thinking label, the editor's text, pasting, tool expansion and the theme.
 - Remote components: pi-tui components stay in the extension runtime by handle. The TUI paints the lines of their last render and asks for a new render when they are stale, so a frame never waits for JS. Keys go to the focused component; `tui.requestRender()` marks components stale.
 - `ctx.ui.custom` in the editor's place or as an overlay (pi-tui's layout and compositing), component widgets, `setFooter` and `setHeader` factories, tool `renderCall` and `renderResult` (with `lastComponent`, shared state and `renderShell: "self"`) and message renderers. Custom messages with `display: true` show in the transcript.
 - The theme reaches extensions as escape sequences per token, so `theme.fg`, `theme.bg` and the facade's list, editor, settings and markdown themes produce pi's output.
-- The startup listing names loaded extensions as pi does, compactly or by scope.
+- Extension commands' argument completions (`getArgumentCompletions`) in the editor; the guest answers in the background and the list opens when it does.
+- The startup listing names loaded extensions, skills and prompts as pi does, compactly or grouped by scope with paths; resources keep the source and scope of the settings entry, package or flag that named them, which also sets their autocomplete tags.
 - RPC mode sends `extension_ui_request` lines for statuses, widgets (lines only), the title, the editor text and the editor dialog, and passes dialog timeouts.
 
 Exit criterion. 24 TUI scenarios recorded from pi match row for row at 80×24 and 120×40: widgets and footer statuses during a turn, pi's timed confirm and select examples, select, confirm, input and editor dialogs open and answered, a custom component open and answered, custom messages with and without pi's message renderer example, the editor text, pi's `question.ts` tool driven by the model, with its custom component and its call and result renderers, and pi's `overlay-test.ts` overlay with wide characters, emoji and inline input. An RPC scenario matches pi's `extension_ui_request` lines, themed status text included.
@@ -200,7 +209,7 @@ Exit criterion. 24 TUI scenarios recorded from pi match row for row at 80×24 an
 Not yet done:
 
 - Overlays: `nonCapturing` and `visible` options, and `OverlayHandle` focus and visibility changes.
-- `onTerminalInput`, `setEditorComponent`, `addAutocompleteProvider`, `setWorkingVisible`, `setWorkingIndicator` and `setTheme`; dialog `signal` options.
+- `onTerminalInput`, `setEditorComponent`, `addAutocompleteProvider` and `setTheme`; dialog `signal` options.
 - Entry renderers (`registerEntryRenderer`); extension keybindings inside components use pi-tui's defaults, not `keybindings.json`.
 - A theme change reaches extensions when their session next starts.
 - The `/mcp` manager.

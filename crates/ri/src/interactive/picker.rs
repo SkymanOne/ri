@@ -48,8 +48,7 @@ pub fn ask_project_trust(
     let options = ri_core::trust::trust_options(cwd, true);
     let labels: Vec<&str> = options.iter().map(|option| option.label.as_str()).collect();
     let title = ri_core::trust::prompt_title(cwd);
-    let dialog = Selector::Choice(ChoiceDialog::new(&title, &labels));
-    let Some(Action::Choice(index)) = run_selector(agent_dir, theme_setting, dialog, true)? else {
+    let Some(index) = ask_choice(agent_dir, theme_setting, &title, &labels)? else {
         return Ok(None);
     };
     let Some(option) = options.get(index) else {
@@ -59,6 +58,23 @@ pub fn ask_project_trust(
         ri_core::trust::TrustStore::new(agent_dir).set_many(&option.updates)?;
     }
     Ok(Some(option.trusted))
+}
+
+/// pi's `showStartupSelector`: `title` over `labels` before the interactive
+/// mode starts; the chosen index, or `None` when cancelled.
+pub fn ask_choice(
+    agent_dir: &Path,
+    theme_setting: Option<&str>,
+    title: &str,
+    labels: &[&str],
+) -> std::io::Result<Option<usize>> {
+    let dialog = Selector::Choice(ChoiceDialog::new(title, labels));
+    Ok(
+        match run_selector(agent_dir, theme_setting, dialog, true)? {
+            Some(Action::Choice(index)) => Some(index),
+            _ => None,
+        },
+    )
 }
 
 /// Runs `selector` on the main screen until it finishes; its action, or

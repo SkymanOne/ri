@@ -82,6 +82,10 @@ enum Event {
     TreeDone(u64, String, Box<Result<TreeOutcome, String>>),
     Fd(Option<PathBuf>),
     Notify(u64, String, NotifyKind),
+    /// An extension error line and the error's stack.
+    ExtensionError(u64, String, Option<String>),
+    /// Extension completions arrived; the editor asks again.
+    RefreshCompletions(u64),
     /// A request from the sign-in with this id.
     Auth(u64, ri_ai::auth::AuthRequest),
     /// The sign-in with this id finished.
@@ -430,7 +434,8 @@ fn load_theme(
     }
     let path = registered.unwrap_or_else(|| agent_dir.join("themes").join(format!("{name}.json")));
     match std::fs::read_to_string(&path) {
-        Ok(text) => match Theme::from_json(&path.display().to_string(), &text, mode) {
+        // pi names the theme in its errors when it loads the active one.
+        Ok(text) => match Theme::from_json(&name, &text, mode) {
             Ok(theme) => (theme, None),
             Err(error) => (
                 system(),
@@ -506,17 +511,55 @@ impl App {
         self.push(Item::Warning(text.into()));
     }
 
-    /// A dim line with its own spacer, as pi's `ThemedText` notices.
+    /// A line with its own spacer in theme color `style`, as pi's
+    /// `ThemedText` notices: re-wrapped and recolored when drawn.
     fn note(&mut self, text: impl Into<String>, style: &str) {
-        let mut out = lines::spacer(1);
-        out.extend(lines::text(
-            &[lines::styled(text.into(), self.theme.fg(style))],
-            self.size.0,
-            1,
-            0,
-            None,
-        ));
-        self.push(Item::Lines(out));
+        let (text, style) = (text.into(), style.to_owned());
+        self.push(Item::Render(Box::new(move |width, ctx| {
+            let mut out = lines::spacer(1);
+            out.extend(lines::text(
+                &[lines::styled(text.clone(), ctx.theme.fg(&style))],
+                width,
+                1,
+                0,
+                None,
+            ));
+            out
+        })));
+    }
+
+    /// pi's `showExtensionError`: the message in the error color without a
+    /// spacer, then the stack's frames dim and indented.
+    fn extension_error(&mut self, message: String, stack: Option<&str>) {
+        let line = lines::styled(message, self.theme.fg("error"));
+        self.text_item(vec![line], false, (1, 0));
+        // V8 stacks start with the message, which pi skips; QuickJS's start
+        // with the first frame. The runtime's own frames are left out.
+        let frames: Vec<String> = stack
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("at ") && !line.contains("(eval_script:"))
+            .map(|line| format!("  {line}"))
+            .collect();
+        if !frames.is_empty() {
+            let dim = self.theme.fg("dim");
+            let frames = frames
+                .into_iter()
+                .map(|frame| lines::styled(frame, dim))
+                .collect();
+            self.text_item(frames, false, (1, 0));
+        }
+    }
+
+    /// Text that wraps at the current width, as pi's `Text` components: a
+    /// spacer when `spacer`, then `content` with padding.
+    fn text_item(&mut self, content: Vec<StyledLine>, spacer: bool, padding: (usize, usize)) {
+        self.push(Item::Render(Box::new(move |width, _| {
+            let mut out = if spacer { lines::spacer(1) } else { Vec::new() };
+            out.extend(lines::text(&content, width, padding.0, padding.1, None));
+            out
+        })));
     }
 
     fn clear_chat(&mut self) {
@@ -534,12 +577,7 @@ impl App {
     }
 
     fn install_autocomplete(&mut self) {
-        let provider = commands::autocomplete(
-            &self.session,
-            &self.agent_dir,
-            self.fd.clone(),
-            self.home.clone(),
-        );
+        let provider = commands::autocomplete(&self.session, self.fd.clone(), self.home.clone());
         self.editor.set_autocomplete(Box::new(provider));
         self.install_shortcuts();
     }
@@ -608,7 +646,7 @@ impl App {
                     let text = user_text(&user.content);
                     history.push(text.clone());
                     if !text.trim().is_empty() {
-                        self.push(Item::User(text));
+                        self.push(chat::user_item(text));
                     }
                 }
                 Message::Assistant(assistant) => {
@@ -659,25 +697,15 @@ impl App {
             self.editor.add_to_history(&text);
         }
         if !self.session.project_trusted() && ri_core::trust::requires_trust(&self.cwd) {
-            let mut out = if self.chat.is_empty() {
-                Vec::new()
-            } else {
-                lines::spacer(1)
-            };
-            out.extend(lines::text(
-                &[lines::styled(
-                    format!(
-                        "This project is not trusted. Project {} resources and packages are ignored. Use /trust to save a trust decision, then restart ri.",
-                        ri_core::config::PROJECT_DIR
-                    ),
-                    self.theme.fg("warning"),
-                )],
-                self.size.0,
-                1,
-                0,
-                None,
-            ));
-            self.push(Item::Lines(out));
+            let spacer = !self.chat.is_empty();
+            let notice = lines::styled(
+                format!(
+                    "This project is not trusted. Project {} resources and packages are ignored. Use /trust to save a trust decision, then restart ri.",
+                    ri_core::config::PROJECT_DIR
+                ),
+                self.theme.fg("warning"),
+            );
+            self.text_item(vec![notice], spacer, (1, 0));
         }
         let compactions = self.session.with_session(|session| {
             session
@@ -704,11 +732,30 @@ impl App {
         }
     }
 
-    fn indicator_spans(&self, border: ratatui_core::style::Style) -> Option<Vec<Span<'static>>> {
+    /// The status for the editor's top border, as pi's `renderInBorder` and
+    /// `renderSpinnerInBorder` draw it: the frame and message, and the frame
+    /// alone. An extension's custom frames are drawn as given.
+    fn status_lines(&self, border: ratatui_core::style::Style) -> Option<(StyledLine, StyledLine)> {
         let (indicator, started) = self.indicator.as_ref()?;
-        let frame = SPINNER[(started.elapsed().as_millis() / SPINNER_INTERVAL.as_millis())
-            as usize
-            % SPINNER.len()];
+        let custom = match indicator {
+            Indicator::Working => self.ext.working_indicator.as_ref(),
+            _ => None,
+        };
+        let frames: Vec<&str> = match custom.and_then(|custom| custom.frames.as_ref()) {
+            Some(frames) => frames.iter().map(String::as_str).collect(),
+            None => SPINNER.to_vec(),
+        };
+        let interval = custom
+            .and_then(|custom| custom.interval_ms)
+            .map_or(SPINNER_INTERVAL, Duration::from_millis);
+        let frame = match frames.len() {
+            0 => "",
+            1 => frames[0],
+            count => {
+                frames
+                    [(started.elapsed().as_millis() / interval.as_millis().max(1)) as usize % count]
+            }
+        };
         let (spinner, text, message) = match indicator {
             Indicator::Working => (
                 border,
@@ -739,11 +786,23 @@ impl App {
                 label.clone(),
             ),
         };
-        Some(vec![
-            Span::styled(frame.to_owned(), spinner),
-            Span::raw(" "),
-            Span::styled(message, text),
-        ])
+        // Text with escape sequences, drawn over `base` as pi's color
+        // functions wrap it.
+        let styled = |text: &str, base: ratatui_core::style::Style| {
+            ri_tui::ansi::parse_line(&format!("{}{text}", ri_tui::ansi::sgr(base))).0
+        };
+        let frame = if custom.is_some() {
+            styled(frame, ratatui_core::style::Style::default())
+        } else {
+            Line::from(Span::styled(frame.to_owned(), spinner))
+        };
+        let mut status = frame.clone();
+        if lines::width(&frame) > 0 {
+            status.spans.push(Span::raw(" "));
+        }
+        let first_line = message.lines().next().unwrap_or_default();
+        status.spans.extend(styled(first_line, text).spans);
+        Some((status, frame))
     }
 
     /// Brings the flattened transcript (header, resources and chat) up to date
@@ -853,8 +912,33 @@ impl App {
         self.flat.clone()
     }
 
-    /// The dock rows and the cursor within them.
+    /// The dock rows and the cursor within them. In fullscreen mode, pi's
+    /// flex layout: each part is at least its minimum height, a dock taller
+    /// than the screen leaves the transcript one row, its parts shrink, and
+    /// each part keeps its top rows. Regular mode stacks the parts as drawn.
     fn dock(&mut self, width: usize) -> (Vec<StyledLine>, Option<(usize, usize)>) {
+        let (mut parts, cursor) = self.dock_parts(width);
+        let available = if self.fullscreen {
+            self.size.1.saturating_sub(1).max(1)
+        } else {
+            for (_, min) in &mut parts {
+                *min = 0;
+            }
+            usize::MAX
+        };
+        ri_tui::screen::fit_stack(parts, cursor, available)
+    }
+
+    /// pi's dock stack: pending messages, status, widgets above, the editor
+    /// (minimum three rows), widgets below and the footer, each with its
+    /// rows and minimum height, and the cursor as part, row and column.
+    fn dock_parts(
+        &mut self,
+        width: usize,
+    ) -> (
+        Vec<ri_tui::screen::StackPart>,
+        Option<(usize, usize, usize)>,
+    ) {
         let mut out = Vec::new();
         for view in &self.pending_bash {
             out.extend(view.render(width, &self.ctx()));
@@ -907,11 +991,13 @@ impl App {
                 1,
             ));
         }
+        let mut parts = vec![(std::mem::take(&mut out), 0), (Vec::new(), 0)];
         // pi's widget container above the editor: a spacer, then the widgets.
         out.extend(lines::spacer(1));
         for (_, widget) in &mut self.ext.above {
             out.extend(widget.render(width, &self.theme));
         }
+        parts.push((std::mem::take(&mut out), 0));
         let cursor;
         // An overlay draws over the screen; the editor stays below it.
         let overlaid = self.overlay.is_some() && matches!(self.selector, Some(Selector::Remote(_)));
@@ -926,17 +1012,11 @@ impl App {
             self.editor.set_terminal_rows(self.size.1);
             self.editor.focused = !overlaid;
             let mut editor = self.editor.render(width);
-            if let Some(spans) = self.indicator_spans(border) {
-                let status = Line::from(spans);
-                let status = lines::truncate(&status, width.saturating_sub(5), "");
-                let status_width = lines::width(&status);
-                let mut row = vec![Span::styled("── ", border)];
-                row.extend(status.spans);
-                row.push(Span::styled(
-                    format!(" {}", "─".repeat(width.saturating_sub(status_width + 4))),
-                    border,
-                ));
-                editor[0] = Line::from(row);
+            if let Some((status, spinner)) = self.status_lines(border) {
+                let hidden = self.editor.hidden_above();
+                if let Some(top) = status_border(status, spinner, hidden, width, border) {
+                    editor[0] = top;
+                }
             }
             // The focused overlay has the cursor.
             cursor = self
@@ -946,9 +1026,11 @@ impl App {
                 .map(|(row, col)| (out.len() + row, col));
             out.extend(editor);
         }
+        parts.push((std::mem::take(&mut out), 3));
         for (_, widget) in &mut self.ext.below {
             out.extend(widget.render(width, &self.theme));
         }
+        parts.push((std::mem::take(&mut out), 0));
         if !matches!(&self.footer_cache, Some((cached, _)) if *cached == width) {
             let lines = self.footer(width);
             self.footer_cache = Some((width, lines));
@@ -956,7 +1038,8 @@ impl App {
         if let Some((_, footer)) = &self.footer_cache {
             out.extend(footer.iter().cloned());
         }
-        (out, cursor)
+        parts.push((out, 0));
+        (parts, cursor.map(|(row, col)| (3, row, col)))
     }
 
     /// The footer: an extension's, or pi's with extension statuses below.
@@ -1034,7 +1117,13 @@ impl App {
         }
         let (width, height) = self.size;
         let (dock, cursor) = self.dock(width);
-        self.refresh_transcript(width);
+        // An `always` scrollbar keeps the transcript off the last column.
+        let transcript_width = if self.fullscreen {
+            self.alt.content_width(width)
+        } else {
+            width
+        };
+        self.refresh_transcript(transcript_width);
         let frame = if self.fullscreen {
             self.alt.frame(&self.flat, &dock, cursor, width, height)
         } else {
@@ -1051,9 +1140,77 @@ impl App {
         emit(&frame);
     }
 
+    /// pi's `setWorkingVisible`: hides the working indicator, or shows it
+    /// again while the agent runs.
+    fn set_working_visible(&mut self, visible: bool) {
+        self.ext.working_hidden = !visible;
+        if !visible {
+            if matches!(self.indicator, Some((Indicator::Working, _))) {
+                self.indicator = None;
+            }
+        } else if self.running && !matches!(self.indicator, Some((Indicator::Working, _))) {
+            self.indicator = Some((Indicator::Working, Instant::now()));
+        }
+    }
+
+    /// How often animations advance: the spinner's interval, or a faster
+    /// custom working indicator's.
+    fn animation_interval(&self) -> Duration {
+        match (&self.indicator, &self.ext.working_indicator) {
+            (Some((Indicator::Working, _)), Some(custom)) => custom
+                .interval_ms
+                .map_or(SPINNER_INTERVAL, Duration::from_millis)
+                .min(SPINNER_INTERVAL),
+            _ => SPINNER_INTERVAL,
+        }
+    }
+
+    /// pi's `scrollToPrompt`: shows the nearest message start above or below
+    /// the top row. pi marks the first row of user messages and of
+    /// assistant messages without tool calls.
+    fn scroll_to_prompt(&mut self, forward: bool) {
+        let mut anchors = Vec::new();
+        for (index, offset) in self.flat_offsets.iter().enumerate() {
+            match self.chat.get(index) {
+                Some(Item::User(_)) => anchors.push(offset + usize::from(index > 0)),
+                Some(Item::Assistant(message))
+                    if !message
+                        .content
+                        .iter()
+                        .any(|block| matches!(block, ContentBlock::ToolCall(_))) =>
+                {
+                    anchors.push(*offset);
+                }
+                _ => {}
+            }
+        }
+        let top = self.alt.scroll_position();
+        let target = if forward {
+            anchors.into_iter().filter(|row| *row > top).min()
+        } else {
+            anchors.into_iter().filter(|row| *row < top).max()
+        };
+        if let Some(row) = target {
+            self.alt.scroll_to(row);
+        }
+    }
+
+    /// The fullscreen renderer's theme colors and scrollbar setting.
+    fn style_alt_screen(&mut self) {
+        self.alt.jump_label_style = self.theme.bg("selectedBg").patch(self.theme.fg("text"));
+        self.alt.scrollbar = self
+            .session
+            .settings()
+            .fullscreen_scrollbar
+            .unwrap_or_default();
+        self.alt.scrollbar_track = self.theme.fg("scrollbarTrack");
+        self.alt.scrollbar_thumb = self.theme.fg("scrollbarThumb");
+    }
+
     /// Whether something on screen animates.
     fn animating(&self) -> bool {
-        self.indicator.is_some()
+        (self.fullscreen && self.alt.scrollbar_deadline().is_some())
+            || self.indicator.is_some()
             || self.chat.iter().any(|item| match item {
                 Item::Tool(view) => view.result.is_none() && view.started.is_some(),
                 Item::Bash(view) => view.running(),
@@ -1183,11 +1340,16 @@ impl App {
             self.tool_items.insert(id, index);
             self.draw_tool(index);
         }
+        let cwd = self.cwd.clone();
         if let Some(call) = finished_tool
             && let Some(&index) = self.tool_items.get(&call.id)
             && let Some(view) = self.tool_view(index)
         {
             view.args = Value::Object(call.arguments);
+            // pi previews a built-in edit once its arguments are complete.
+            if view.name == "edit" && view.draw.is_none() {
+                view.edit_preview = tools::edit_preview(&view.args, &cwd);
+            }
             self.draw_tool(index);
         }
     }
@@ -1197,7 +1359,9 @@ impl App {
             AgentEvent::AgentStart => self.running = true,
             // pi replaces any other indicator, such as a retry countdown.
             AgentEvent::TurnStart => {
-                if !matches!(self.indicator, Some((Indicator::Working, _))) {
+                if self.ext.working_hidden {
+                    self.indicator = None;
+                } else if !matches!(self.indicator, Some((Indicator::Working, _))) {
                     self.indicator = Some((Indicator::Working, Instant::now()));
                 }
             }
@@ -1205,7 +1369,7 @@ impl App {
                 Message::User(user) => {
                     let text = user_text(&user.content);
                     if !text.trim().is_empty() {
-                        self.push(Item::User(text));
+                        self.push(chat::user_item(text));
                     }
                 }
                 Message::Assistant(assistant) => {
@@ -1334,15 +1498,43 @@ impl App {
                 follow_up,
             } => self.pending = (steering, follow_up),
             AgentEvent::CompactionStart { reason } => {
-                let label = match reason {
-                    CompactionReason::Manual => "Compacting context... (escape to cancel)",
-                    CompactionReason::Overflow => {
-                        "Context overflow detected, Auto-compacting... (escape to cancel)"
-                    }
-                    _ => "Auto-compacting... (escape to cancel)",
-                };
                 self.manual_compaction = reason == CompactionReason::Manual;
-                self.indicator = Some((Indicator::Task(label.to_owned()), Instant::now()));
+                self.indicator = Some((Indicator::Task(compaction_label(reason)), Instant::now()));
+            }
+            // pi shows a failed summary request's error and a countdown, then
+            // the summary's own indicator again when the retry starts.
+            AgentEvent::SummarizationRetryScheduled {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message,
+            } => {
+                self.error(error_message);
+                self.indicator = Some((
+                    Indicator::Retry {
+                        attempt,
+                        max: max_attempts,
+                        until: Instant::now() + Duration::from_millis(delay_ms),
+                    },
+                    Instant::now(),
+                ));
+            }
+            AgentEvent::SummarizationRetryAttemptStart { source, reason } => {
+                let label = match source {
+                    ri_types::event::SummarySource::BranchSummary => format!(
+                        "Summarizing branch... ({} to cancel)",
+                        keybindings::keys_text(&self.keys, "app.interrupt")
+                    ),
+                    ri_types::event::SummarySource::Compaction => {
+                        compaction_label(reason.unwrap_or(CompactionReason::Manual))
+                    }
+                };
+                self.indicator = Some((Indicator::Task(label), Instant::now()));
+            }
+            AgentEvent::SummarizationRetryFinished => {
+                if matches!(self.indicator, Some((Indicator::Retry { .. }, _))) {
+                    self.indicator = None;
+                }
             }
             AgentEvent::CompactionEnd {
                 reason,
@@ -1547,20 +1739,17 @@ impl App {
         });
     }
 
-    /// The tool view at `index`, marked for re-rendering.
     /// A view for a call to `name`, which knows whether the session has
     /// such a tool.
     fn new_tool_view(&self, name: &str, args: Value) -> ToolView {
         let mut view = ToolView::new(name, args);
-        view.known = self
-            .session
-            .tools()
-            .all()
-            .iter()
-            .any(|tool| tool.name == name);
+        let tools = self.session.tools();
+        view.known = tools.all().iter().any(|tool| tool.name == name);
+        view.mcp_label = ri_core::mcp::tools::server_tool_label(tools, name);
         view
     }
 
+    /// The tool view at `index`, marked for re-rendering.
     fn tool_view(&mut self, index: usize) -> Option<&mut ToolView> {
         self.touch(index);
         match self.chat.get_mut(index) {
@@ -1612,7 +1801,11 @@ impl App {
             self.restore_queue(true);
             return;
         }
-        if matches!(self.indicator, Some((Indicator::Task(_), _))) {
+        // A summary, or the countdown before retrying one, is cancelled.
+        if matches!(
+            self.indicator,
+            Some((Indicator::Task(_) | Indicator::Retry { .. }, _))
+        ) {
             self.session.abort();
             return;
         }
@@ -1879,6 +2072,18 @@ impl App {
             self.alt.page(-1);
         } else if keys.matches(data, "tui.altScreen.pageDown") {
             self.alt.page(1);
+        } else if keys.matches(data, "tui.altScreen.halfPageUp") {
+            self.alt.half_page(-1);
+        } else if keys.matches(data, "tui.altScreen.halfPageDown") {
+            self.alt.half_page(1);
+        } else if keys.matches(data, "tui.altScreen.lineUp") {
+            self.alt.scroll_by(-1);
+        } else if keys.matches(data, "tui.altScreen.lineDown") {
+            self.alt.scroll_by(1);
+        } else if keys.matches(data, "tui.altScreen.previousPrompt") {
+            self.scroll_to_prompt(false);
+        } else if keys.matches(data, "tui.altScreen.nextPrompt") {
+            self.scroll_to_prompt(true);
         } else if keys.matches(data, "tui.altScreen.top") {
             self.alt.top();
         } else if keys.matches(data, "tui.altScreen.bottom") {
@@ -2266,18 +2471,8 @@ impl App {
             .and_then(|manager| self.replace_session(manager));
         match result {
             Ok(()) => {
-                let mut out = lines::spacer(1);
-                out.extend(lines::text(
-                    &[lines::styled(
-                        "✓ New session started",
-                        self.theme.fg("accent"),
-                    )],
-                    self.size.0,
-                    1,
-                    1,
-                    None,
-                ));
-                self.push(Item::Lines(out));
+                let notice = lines::styled("✓ New session started", self.theme.fg("accent"));
+                self.text_item(vec![notice], true, (1, 1));
             }
             Err(error) => self.fatal("Failed to create session", &error),
         }
@@ -2433,6 +2628,101 @@ impl App {
             self.editor.set_text(&text);
         }
     }
+}
+
+/// pi's `CompactionStatusIndicator` label for `reason`.
+fn compaction_label(reason: CompactionReason) -> String {
+    match reason {
+        CompactionReason::Manual => "Compacting context... (escape to cancel)",
+        CompactionReason::Overflow => {
+            "Context overflow detected, Auto-compacting... (escape to cancel)"
+        }
+        CompactionReason::Threshold => "Auto-compacting... (escape to cancel)",
+    }
+    .to_owned()
+}
+
+/// pi's `CustomEditor.renderTopBorder` with a status: the editor's top border
+/// with `status` embedded, keeping the `↑ N more` label of `hidden` scrolled
+/// lines where it fits, or showing only `spinner` where the status does not
+/// fit. `None` keeps the plain border.
+fn status_border(
+    status: StyledLine,
+    spinner: StyledLine,
+    hidden: usize,
+    width: usize,
+    border: ratatui_core::style::Style,
+) -> Option<StyledLine> {
+    if width == 0 {
+        return None;
+    }
+    // pi wraps the status to the room left and keeps the first line.
+    let room = width.saturating_sub(5).max(1);
+    let mut status = lines::wrap(&status, room)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    while let Some(last) = status.spans.last_mut() {
+        let kept = last.content.trim_end().len();
+        if kept == 0 {
+            status.spans.pop();
+            continue;
+        }
+        if kept < last.content.len() {
+            last.content = last.content[..kept].to_owned().into();
+        }
+        break;
+    }
+    let mut status = lines::truncate(&status, room, "");
+    let mut status_width = lines::width(&status);
+    if status_width == 0 {
+        return None;
+    }
+    let label = (hidden > 0).then(|| format!(" ↑ {hidden} more "));
+    let label_width = label.as_deref().map_or(0, ri_tui::text::visible_width);
+    let overflow_start = (width as i64 - label_width as i64).div_euclid(2);
+    let fits = |status_width: usize| {
+        label.is_some()
+            && label_width + 2 <= width
+            && overflow_start - (3 + status_width as i64 + 1) >= 1
+    };
+    if label.is_some() && !fits(status_width) {
+        status = lines::truncate(&spinner, width, "");
+        status_width = lines::width(&status);
+    }
+    let rule = |count: usize| "─".repeat(count);
+    let mut row = Vec::new();
+    if let Some(label) = label.as_deref().filter(|_| fits(status_width)) {
+        let left = overflow_start as usize - (3 + status_width + 1);
+        row.push(Span::styled("── ", border));
+        row.extend(status.spans);
+        row.push(Span::styled(
+            format!(
+                " {}{label}{}",
+                rule(left),
+                rule(width - overflow_start as usize - label_width)
+            ),
+            border,
+        ));
+    } else if width >= status_width + 5 {
+        row.push(Span::styled("── ", border));
+        row.extend(status.spans);
+        row.push(Span::styled(
+            format!(" {}", rule(width - status_width - 4)),
+            border,
+        ));
+    } else {
+        let status = lines::truncate(&spinner, width, "");
+        let status_width = lines::width(&status);
+        let prefix = 3.min(width.saturating_sub(status_width));
+        row.push(Span::styled(rule(prefix), border));
+        row.extend(status.spans);
+        row.push(Span::styled(
+            rule(width.saturating_sub(prefix + status_width)),
+            border,
+        ));
+    }
+    Some(Line::from(row))
 }
 
 fn assistant_error(message: &AssistantMessage) -> String {
@@ -2697,7 +2987,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         shutdown_requested: false,
         extension_issues: Vec::new(),
     };
-    app.alt.jump_label_style = app.theme.bg("selectedBg").patch(app.theme.fg("text"));
+    app.style_alt_screen();
     app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
     app.main.show_hardware_cursor = settings.show_hardware_cursor.unwrap_or(false);
     app.alt.show_hardware_cursor = app.main.show_hardware_cursor;
@@ -2766,7 +3056,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     let mut dirty = false;
     while !app.quit {
         let tick = if app.animating() {
-            SPINNER_INTERVAL
+            app.animation_interval()
         } else {
             Duration::from_secs(3600)
         };
@@ -3012,6 +3302,12 @@ impl App {
                 NotifyKind::Warning => self.warning(message),
                 NotifyKind::Info => self.status(message),
             },
+            Event::RefreshCompletions(epoch) if epoch == self.epoch => {
+                self.editor.refresh_autocomplete();
+            }
+            Event::ExtensionError(epoch, message, stack) if epoch == self.epoch => {
+                self.extension_error(message, stack.as_deref());
+            }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
             Event::Bound => {
                 // Items shown before the extensions started get their components.
@@ -3032,5 +3328,47 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(line: &StyledLine) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    fn border(status: &str, hidden: usize, width: usize) -> String {
+        let style = ratatui_core::style::Style::default();
+        let status = ri_tui::ansi::parse_line(status).0;
+        let spinner = Line::from("●");
+        text(&status_border(status, spinner, hidden, width, style).expect("a status"))
+    }
+
+    #[test]
+    fn status_border_matches_pi_layouts() {
+        assert_eq!(border("● Working", 0, 20), "── ● Working ───────");
+        // ANSI in the status takes no columns.
+        assert_eq!(
+            border("● \x1b[38;2;1;2;3mWorking\x1b[39m  ", 0, 20),
+            "── ● Working ───────"
+        );
+        // The scroll label sits centered when the status leaves room.
+        assert_eq!(
+            border("● Working", 3, 40),
+            "── ● Working ── ↑ 3 more ───────────────"
+        );
+        // Otherwise only the spinner keeps the label company.
+        assert_eq!(
+            border("● Working hard", 3, 26),
+            "── ● ─── ↑ 3 more ────────"
+        );
+        // The status wraps to the room left, keeping its first line.
+        assert_eq!(border("● Working", 0, 8), "── ● ───");
+        assert_eq!(border("● Working", 0, 4), "───●");
     }
 }

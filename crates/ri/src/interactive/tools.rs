@@ -37,6 +37,35 @@ pub struct ToolView {
     /// Whether the session has a tool of this name. pi shows a call to any
     /// other tool, which the model made up, as plain text.
     pub known: bool,
+    /// For a built-in `edit` call: the diff its edits would make, or why
+    /// they cannot apply, worked out once its arguments are complete.
+    pub edit_preview: Option<Result<String, String>>,
+    /// For an MCP server's tool: its `server/tool` label, which pi's MCP
+    /// renderers show in place of the name.
+    pub mcp_label: Option<String>,
+}
+
+/// Wrapped rows of MCP output that pi shows collapsed.
+const MCP_PREVIEW_LINES: usize = 5;
+
+/// pi's edit preview (`computeEditsDiff`) for a call's arguments; `None`
+/// when they name no file or no complete edits.
+pub fn edit_preview(args: &Value, cwd: &std::path::Path) -> Option<Result<String, String>> {
+    use ri_core::tools::{Replacement, preview_edits};
+    let path = args["path"]
+        .as_str()
+        .or_else(|| args["file_path"].as_str())?;
+    let replacement = |edit: &Value| {
+        Some(Replacement {
+            old_text: edit["oldText"].as_str()?.to_owned(),
+            new_text: edit["newText"].as_str()?.to_owned(),
+        })
+    };
+    let edits: Vec<Replacement> = match args["edits"].as_array() {
+        Some(edits) if !edits.is_empty() => edits.iter().map(replacement).collect::<Option<_>>()?,
+        _ => vec![replacement(args)?],
+    };
+    Some(preview_edits(path, &edits, cwd))
 }
 
 /// How an extension draws a tool (pi's `renderCall` and `renderResult`) and
@@ -92,6 +121,86 @@ pub fn sanitize(text: &str) -> String {
     out
 }
 
+/// pi-tui's `getImageDimensions` with the `Image` component's default: the
+/// pixel size in a PNG, JPEG, GIF or WebP header, else 800×600.
+pub fn image_dimensions(data: &str, mime_type: &str) -> (u32, u32) {
+    use base64::Engine;
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data.trim()) else {
+        return (800, 600);
+    };
+    let u16_be = |at: usize| {
+        Some(u32::from(u16::from_be_bytes([
+            *bytes.get(at)?,
+            *bytes.get(at + 1)?,
+        ])))
+    };
+    let u16_le = |at: usize| {
+        Some(u32::from(u16::from_le_bytes([
+            *bytes.get(at)?,
+            *bytes.get(at + 1)?,
+        ])))
+    };
+    let u32_at = |at: usize, big: bool| {
+        let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(raw)
+        } else {
+            u32::from_le_bytes(raw)
+        })
+    };
+    let found = match mime_type {
+        "image/png" if bytes.len() >= 24 && bytes.starts_with(&[0x89, b'P', b'N', b'G']) => {
+            u32_at(16, true).zip(u32_at(20, true))
+        }
+        "image/jpeg" if bytes.starts_with(&[0xff, 0xd8]) => {
+            let mut offset = 2;
+            let mut size = None;
+            while offset + 9 < bytes.len() {
+                if bytes[offset] != 0xff {
+                    offset += 1;
+                    continue;
+                }
+                let marker = bytes[offset + 1];
+                if (0xc0..=0xc2).contains(&marker) {
+                    size = u16_be(offset + 7).zip(u16_be(offset + 5));
+                    break;
+                }
+                match u16_be(offset + 2) {
+                    Some(length) if length >= 2 => offset += 2 + length as usize,
+                    _ => break,
+                }
+            }
+            size
+        }
+        "image/gif" if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") => {
+            u16_le(6).zip(u16_le(8))
+        }
+        "image/webp"
+            if bytes.len() >= 30 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" =>
+        {
+            match &bytes[12..16] {
+                b"VP8 " => u16_le(26)
+                    .zip(u16_le(28))
+                    .map(|(w, h)| (w & 0x3fff, h & 0x3fff)),
+                b"VP8L" => {
+                    u32_at(21, false).map(|bits| ((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1))
+                }
+                b"VP8X" => {
+                    let triple = |at: usize| {
+                        u32::from(bytes[at])
+                            | u32::from(bytes[at + 1]) << 8
+                            | u32::from(bytes[at + 2]) << 16
+                    };
+                    Some((triple(24) + 1, triple(27) + 1))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    found.unwrap_or((800, 600))
+}
+
 /// pi's `getTextOutput`: text blocks joined by newlines, images as notes.
 pub fn text_output(result: &ToolResult) -> String {
     let text: Vec<String> = result
@@ -107,7 +216,10 @@ pub fn text_output(result: &ToolResult) -> String {
         .content
         .iter()
         .filter_map(|block| match block {
-            ContentBlock::Image(image) => Some(format!("[Image: [{}]]", image.mime_type)),
+            ContentBlock::Image(image) => {
+                let (width, height) = image_dimensions(&image.data, &image.mime_type);
+                Some(format!("[Image: [{}] {width}x{height}]", image.mime_type))
+            }
             _ => None,
         })
         .collect();
@@ -341,6 +453,8 @@ impl ToolView {
             finished: None,
             draw: None,
             known: true,
+            edit_preview: None,
+            mcp_label: None,
         }
     }
 
@@ -448,6 +562,9 @@ impl ToolView {
         let theme = ctx.theme;
         let home = ctx.home;
         let args = &self.args;
+        if let Some(label) = &self.mcp_label {
+            return generic_call(label, args, theme, ctx.expanded);
+        }
         match self.name.as_str() {
             "read" => {
                 let mut spans = vec![title(theme, "read"), Span::raw(" ")];
@@ -707,6 +824,9 @@ impl ToolView {
         let Some(result) = self.shown_result() else {
             return Vec::new();
         };
+        if self.mcp_label.is_some() {
+            return self.mcp_result(result, ctx, width);
+        }
         let output_style = theme.fg("toolOutput");
         let details = result.details.as_ref();
         match self.name.as_str() {
@@ -857,6 +977,52 @@ impl ToolView {
         }
     }
 
+    /// pi's MCP `renderResult`: a blank row and the output colored by
+    /// outcome; collapsed, its first wrapped rows, how many more, and the
+    /// file holding output that was cut for the model.
+    fn mcp_result(
+        &self,
+        result: &ToolResult,
+        ctx: &RenderContext<'_>,
+        width: usize,
+    ) -> Vec<StyledLine> {
+        let theme = ctx.theme;
+        let output = text_output(result);
+        let output = output.trim();
+        if output.is_empty() {
+            return Vec::new();
+        }
+        let color = theme.fg(if self.is_error { "error" } else { "toolOutput" });
+        let text: Vec<StyledLine> = replace_tabs(output)
+            .split('\n')
+            .map(|line| lines::styled(line.to_owned(), color))
+            .collect();
+        let rows = lines::wrap_all(&text, width);
+        let mut out = vec![Line::default()];
+        if ctx.expanded {
+            out.extend(rows);
+            return out;
+        }
+        let hidden = rows.len().saturating_sub(MCP_PREVIEW_LINES);
+        out.extend(rows.into_iter().take(MCP_PREVIEW_LINES));
+        if hidden > 0 {
+            let hint = more_lines_hint(theme, ctx, format!("... ({hidden} more lines,"));
+            out.push(lines::truncate(&hint, width, "..."));
+        }
+        let path = result
+            .details
+            .as_ref()
+            .and_then(|details| details.get("fullOutputPath"))
+            .and_then(Value::as_str);
+        if let Some(path) = path.filter(|path| !path.is_empty()) {
+            out.extend(lines::wrap(
+                &lines::styled(format!("Full output: {path}"), theme.fg("muted")),
+                width,
+            ));
+        }
+        out
+    }
+
     fn bash_result(
         &self,
         result: &ToolResult,
@@ -950,28 +1116,47 @@ impl ToolView {
             ),
         ]);
         let mut body = lines::wrap(&header, inner);
-        let diff = self
+        // pi's edit renderer: a successful result's diff replaces the
+        // preview, which shows in the box, and colors its background.
+        let result_diff = self
             .result
             .as_ref()
+            .filter(|_| !self.is_error)
             .and_then(|result| result.details.as_ref())
             .and_then(|details| details["diff"].as_str());
-        if let Some(diff) = diff.filter(|_| !self.is_error) {
-            body.push(Line::default());
-            body.extend(lines::wrap_all(&render_diff(diff, theme), inner));
+        let preview = match result_diff {
+            Some(diff) => Some(Ok(diff.to_owned())),
+            None => self.edit_preview.clone(),
+        };
+        match &preview {
+            Some(Ok(diff)) => {
+                body.push(Line::default());
+                body.extend(lines::wrap_all(&render_diff(diff, theme), inner));
+            }
+            Some(Err(error)) => {
+                body.push(Line::default());
+                body.extend(lines::wrap(
+                    &lines::styled(error.clone(), theme.fg("error")),
+                    inner,
+                ));
+            }
+            None => {}
         }
-        let bg = match &self.result {
-            Some(_) if self.is_error => theme.bg("toolErrorBg"),
-            Some(_) if diff.is_some() => theme.bg("toolSuccessBg"),
-            Some(_) => theme.bg("toolSuccessBg"),
+        let bg = match &preview {
+            Some(Ok(_)) => theme.bg("toolSuccessBg"),
+            Some(Err(_)) => theme.bg("toolErrorBg"),
+            None if self.result.is_some() && self.is_error => theme.bg("toolErrorBg"),
             None => theme.bg("toolPendingBg"),
         };
         let mut out = vec![Line::default()];
         out.extend(boxed(body, width, 1, 1, Some(bg)));
+        // The result's error shows below, unless the preview showed it.
         if self.is_error
             && let Some(result) = &self.result
         {
             let text = text_output(result);
-            if !text.is_empty() {
+            let previewed = matches!(&preview, Some(Err(error)) if *error == text);
+            if !text.is_empty() && !previewed {
                 out.extend(lines::spacer(1));
                 out.extend(lines::text(
                     &[lines::styled(text, theme.fg("error"))],
@@ -1236,6 +1421,17 @@ pub fn render_diff(diff: &str, theme: &Theme) -> Vec<StyledLine> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_image_sizes_as_pi_tui() {
+        // A 1×1 PNG and a 3×2 GIF.
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        assert_eq!(image_dimensions(png, "image/png"), (1, 1));
+        let gif = "R0lGODlhAwACAIAAAP///wAAACwAAAAAAwACAAACAoQRADs=";
+        assert_eq!(image_dimensions(gif, "image/gif"), (3, 2));
+        assert_eq!(image_dimensions("not base64!", "image/png"), (800, 600));
+        assert_eq!(image_dimensions(png, "image/bmp"), (800, 600));
+    }
+
     use super::*;
 
     #[test]
@@ -1244,6 +1440,73 @@ mod tests {
         assert_eq!(format_duration(125_000), "2m 5s");
         assert_eq!(format_duration(3_725_000), "1h 2m 5s");
         assert_eq!(sanitize("a\x1b[31mb\x1b[0m\r\nc\x07"), "ab\nc");
+    }
+
+    #[test]
+    fn previews_mcp_output_as_pi() {
+        let theme = Theme::builtin("dark", ri_tui::color::ColorMode::TrueColor).unwrap();
+        let markdown = ri_tui::markdown::MarkdownTheme::default();
+        let mut ctx = RenderContext {
+            theme: &theme,
+            markdown: &markdown,
+            expanded: false,
+            hide_thinking: false,
+            output_pad: 1,
+            expand_key: "ctrl+o",
+            cancel_key: "esc",
+            home: None,
+            thinking_label: "Thinking...",
+        };
+        let mut view = ToolView::new("mcp__demo__big", Value::Null);
+        view.mcp_label = Some("demo/big".to_owned());
+        let rows = |view: &ToolView, ctx: &RenderContext<'_>| -> Vec<String> {
+            view.result_lines(ctx, 20)
+                .iter()
+                .map(|line| lines::plain(line).trim_end().to_owned())
+                .collect()
+        };
+        let result = |text: &str, details: Value| -> Option<ToolResult> {
+            let content = serde_json::json!([{"type": "text", "text": text}]);
+            serde_json::from_value(serde_json::json!({"content": content, "details": details})).ok()
+        };
+        view.result = result(
+            "  one two three four five six seven eight\nnine  \n",
+            serde_json::json!({"fullOutputPath": "/tmp/out.txt"}),
+        );
+        assert_eq!(
+            rows(&view, &ctx),
+            [
+                "",
+                "one two three four",
+                "five six seven eight",
+                "nine",
+                "Full output:",
+                "/tmp/out.txt"
+            ]
+        );
+        let rows8: Vec<String> = (1..=8).map(|n| format!("row {n}")).collect();
+        view.result = result(&rows8.join("\n"), Value::Null);
+        assert_eq!(
+            rows(&view, &ctx),
+            [
+                "",
+                "row 1",
+                "row 2",
+                "row 3",
+                "row 4",
+                "row 5",
+                "... (3 more lines..."
+            ]
+        );
+        ctx.expanded = true;
+        assert_eq!(rows(&view, &ctx).len(), 9);
+        view.result = result(" \n ", Value::Null);
+        assert!(rows(&view, &ctx).is_empty());
+        assert_eq!(
+            lines::plain(&view.call_lines(&ctx, 80)[0]),
+            "demo/big",
+            "the call shows the server/tool label"
+        );
     }
 
     #[test]

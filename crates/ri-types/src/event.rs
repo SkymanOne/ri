@@ -136,6 +136,16 @@ pub struct ToolResult {
     pub terminate: Option<bool>,
 }
 
+/// What a summary request summarizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SummarySource {
+    /// The context, for a compaction.
+    Compaction,
+    /// An abandoned branch, for tree navigation.
+    BranchSummary,
+}
+
 /// Why a compaction ran.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -252,6 +262,22 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         final_error: Option<String>,
     },
+    /// A compaction or branch summary request failed and is retried after
+    /// a delay.
+    SummarizationRetryScheduled {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        error_message: String,
+    },
+    /// The retried summary request starts.
+    SummarizationRetryAttemptStart {
+        source: SummarySource,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<CompactionReason>,
+    },
+    /// Retrying a summary request ended.
+    SummarizationRetryFinished,
     BashExecutionUpdate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,

@@ -134,6 +134,17 @@ pub enum ThemeError {
         /// The parser's message.
         message: String,
     },
+    /// Required color tokens are missing; pi's schema message.
+    #[error(
+        "Invalid theme \"{label}\":\n\nMissing required color tokens:\n{}\n\nPlease add these colors to your theme's \"colors\" object.\nSee the built-in themes (dark.json, light.json) for reference values.",
+        tokens.iter().map(|token| format!("  - {token}")).collect::<Vec<_>>().join("\n")
+    )]
+    MissingColors {
+        /// File path or theme name.
+        label: String,
+        /// The missing tokens, sorted.
+        tokens: Vec<String>,
+    },
     /// The document's shape is wrong.
     #[error("Invalid theme \"{label}\": {message}")]
     Invalid {
@@ -300,8 +311,29 @@ impl Theme {
         }
     }
 
-    /// Parses a theme document. `label` names it in errors.
+    /// Parses and validates a theme document as pi loads the active theme:
+    /// missing color tokens are reported before anything else. `label`
+    /// names it in errors.
     pub fn from_json(label: &str, text: &str, mode: ColorMode) -> Result<Theme, ThemeError> {
+        Theme::parse(label, text, mode, true)
+    }
+
+    /// Parses a theme document as pi registers theme files: colors are
+    /// resolved before missing tokens are reported.
+    pub fn from_json_lenient(
+        label: &str,
+        text: &str,
+        mode: ColorMode,
+    ) -> Result<Theme, ThemeError> {
+        Theme::parse(label, text, mode, false)
+    }
+
+    fn parse(
+        label: &str,
+        text: &str,
+        mode: ColorMode,
+        tokens_first: bool,
+    ) -> Result<Theme, ThemeError> {
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let json: Value = serde_json::from_str(text).map_err(|error| ThemeError::Parse {
             label: label.to_owned(),
@@ -315,13 +347,24 @@ impl Theme {
             .get("colors")
             .and_then(Value::as_object)
             .ok_or_else(|| invalid("expected an object with a \"colors\" map.".into()))?;
-        let missing: Vec<&str> = REQUIRED_TOKENS
-            .iter()
-            .copied()
-            .filter(|token| !colors.contains_key(*token))
-            .collect();
-        if !missing.is_empty() {
-            return Err(invalid(format!("missing colors: {}", missing.join(", "))));
+        let check_tokens = || {
+            let mut missing: Vec<String> = REQUIRED_TOKENS
+                .iter()
+                .filter(|token| !colors.contains_key(**token))
+                .map(|token| (*token).to_owned())
+                .collect();
+            missing.sort();
+            if missing.is_empty() {
+                Ok(())
+            } else {
+                Err(ThemeError::MissingColors {
+                    label: label.to_owned(),
+                    tokens: missing,
+                })
+            }
+        };
+        if tokens_first {
+            check_tokens()?;
         }
         let empty = Map::new();
         let vars = json
@@ -335,6 +378,7 @@ impl Theme {
             paints.insert(token.clone(), paint_of(&resolved)?);
             order.push(token.clone());
         }
+        check_tokens()?;
         for (token, fallback) in OPTIONAL_TOKENS {
             if !paints.contains_key(token) {
                 let paint = paints.get(fallback).copied().unwrap_or(Paint::Default);
@@ -1502,12 +1546,21 @@ mod tests {
 
     #[test]
     fn rejects_bad_documents() {
-        let error = Theme::from_json("x", r#"{"colors":{}}"#, ColorMode::TrueColor).unwrap_err();
+        let error = Theme::from_json("x", r#"{"colors":{"accent":"nope"}}"#, ColorMode::TrueColor)
+            .unwrap_err()
+            .to_string();
         assert!(
-            error
-                .to_string()
-                .starts_with("Invalid theme \"x\": missing colors: accent")
+            error.starts_with(
+                "Invalid theme \"x\":\n\nMissing required color tokens:\n  - bashMode\n  - border\n"
+            ),
+            "{error}"
         );
+        assert!(error.ends_with("for reference values."), "{error}");
+        // Registration resolves colors first, as pi's resource loader does.
+        let error =
+            Theme::from_json_lenient("x", r#"{"colors":{"accent":"nope"}}"#, ColorMode::TrueColor)
+                .unwrap_err();
+        assert_eq!(error.to_string(), "Variable reference not found: nope");
         let mut colors: Map<String, Value> = REQUIRED_TOKENS
             .iter()
             .map(|token| ((*token).to_owned(), Value::from("a")))

@@ -67,6 +67,12 @@ fn network(error: reqwest::Error) -> McpError {
     McpError::Network(message)
 }
 
+/// A request that got no response, with the message of Node's `fetch`,
+/// which pi shows.
+fn fetch_failed(_error: reqwest::Error) -> McpError {
+    McpError::Network("fetch failed".to_owned())
+}
+
 fn content_type(response: &reqwest::Response) -> Option<String> {
     response
         .headers()
@@ -378,7 +384,7 @@ impl HttpTransport {
         }
         tokio::select! {
             () = self.inner.cancel.cancelled() => Err(McpError::closed()),
-            response = request.send() => response.map_err(network),
+            response = request.send() => response.map_err(fetch_failed),
         }
     }
 

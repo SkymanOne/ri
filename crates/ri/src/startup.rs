@@ -13,12 +13,11 @@ use ri_core::config::{SESSION_DIR_ENV, agent_dir, default_session_dir};
 use ri_core::model_resolver::{
     DEFAULT_THINKING_LEVEL, initial_model, resolve_cli_model, resolve_model_scope,
 };
-use ri_core::packages::PackageResources;
 use ri_core::resources::{context_files, prompt_templates, skills, system_prompt_file};
 use ri_core::session::{self, SessionManager};
 use ri_core::settings::Scope;
 use ri_core::settings::SettingsManager;
-use ri_core::tools::path::{expand, resolve_to_cwd};
+use ri_core::tools::path::resolve_to_cwd;
 use ri_core::trust::{TrustStore, resolve_trusted};
 use ri_ext::ExtensionHost;
 use ri_types::message::{ImageContent, ThinkingLevel};
@@ -289,17 +288,66 @@ pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, 
     Ok((cwd, custom, settings.settings().theme.clone()))
 }
 
-/// Builds the session for a run. Errors are user-facing messages.
+/// The user cancelled a startup prompt; the run ends without an error.
+#[derive(Debug)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl std::error::Error for Cancelled {}
+
+/// Builds the session for a run. Errors are user-facing messages; a
+/// [`Cancelled`] error ends the run quietly. `interactive` allows prompts.
 pub fn start(
     args: &mut Args,
     stdin: Option<String>,
     extensions: &Extensions,
+    interactive: bool,
 ) -> anyhow::Result<Startup> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     let agent_dir = agent_dir();
     let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
     let mut session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
+    // pi's missing-cwd check: the interactive mode offers to continue in the
+    // current directory; the other modes refuse the session.
+    if let Some(file) = session.file().map(Path::to_path_buf)
+        && !session.cwd().as_os_str().is_empty()
+        && !session.cwd().exists()
+    {
+        let session_cwd = session.cwd().to_path_buf();
+        if !interactive {
+            bail!(
+                "{}",
+                crate::runtime::SwitchError::MissingCwd {
+                    file,
+                    session_cwd,
+                    fallback: cwd,
+                }
+            );
+        }
+        let title = format!(
+            "cwd from session file does not exist\n{}\n\ncontinue in current cwd\n{}",
+            session_cwd.display(),
+            cwd.display()
+        );
+        let theme = args.use_theme.clone().or(settings.settings().theme.clone());
+        let choice = crate::interactive::picker::ask_choice(
+            &agent_dir,
+            theme.as_deref(),
+            &title,
+            &["Continue", "Cancel"],
+        )?;
+        if choice != Some(0) {
+            return Err(Cancelled.into());
+        }
+        session = SessionManager::open(&file, custom_dir.as_deref(), Some(&cwd))
+            .map_err(|err| anyhow::anyhow!("Error: {err}"))?;
+    }
     // pi names the session before anything else is recorded in it.
     if let Some(name) = &args.name {
         let name = name.trim();
@@ -349,6 +397,18 @@ pub fn create(
     let mut registry = ModelRegistry::load(&agent_dir);
     if warn && let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
+    }
+    // Providers extensions register, after `models.json` as in pi.
+    for host in &extensions.hosts {
+        for (name, config) in host.providers() {
+            match serde_json::from_value(config) {
+                Ok(config) => registry.register_config(&name, config),
+                Err(error) if warn => {
+                    eprintln!("Warning: provider \"{name}\" from an extension is invalid: {error}");
+                }
+                Err(_) => {}
+            }
+        }
     }
 
     // Model: --model, then the session's last model, then defaults.
@@ -479,23 +539,27 @@ pub fn create(
             .map(|path| resolve_to_cwd(path, &cwd))
             .collect()
     };
-    // Command-line paths are relative to the working directory.
-    let extra_skills: Vec<PathBuf> = settings_view
-        .skills
-        .iter()
-        .flatten()
-        .map(|path| PathBuf::from(expand(path)))
-        .chain(cli_paths(&args.skills))
-        .chain(extensions.resources.skills.iter().cloned())
-        .collect();
-    let extra_templates: Vec<PathBuf> = settings_view
-        .prompts
-        .iter()
-        .flatten()
-        .map(|path| PathBuf::from(expand(path)))
-        .chain(cli_paths(&args.prompt_templates))
-        .chain(extensions.resources.prompts.iter().cloned())
-        .collect();
+    // pi's sources: settings entries are `local`, resolved against their
+    // settings file's directory; command-line paths are `cli`, relative to
+    // the working directory; package resources carry their package.
+    let cli_sources = |paths: &[String]| -> Vec<SourceInfo> {
+        cli_paths(paths)
+            .iter()
+            .map(|path| ri_core::resources::cli_source(path))
+            .collect()
+    };
+    let extra_skills: Vec<SourceInfo> =
+        ri_core::resources::settings_paths(&cwd, &agent_dir, &settings, "skills", "md")
+            .into_iter()
+            .chain(cli_sources(&args.skills))
+            .chain(extensions.skills.iter().cloned())
+            .collect();
+    let extra_templates: Vec<SourceInfo> =
+        ri_core::resources::settings_paths(&cwd, &agent_dir, &settings, "prompts", "md")
+            .into_iter()
+            .chain(cli_sources(&args.prompt_templates))
+            .chain(extensions.prompts.iter().cloned())
+            .collect();
     // pi's order: package themes, settings entries and directories, then
     // `--theme` paths. `--no-themes` keeps only the latter.
     let mut themes = Vec::new();
@@ -696,12 +760,20 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         Scope::Global => "user",
         Scope::Project => "project",
     };
-    let mut sources: Vec<SourceInfo> = discovery::configured(&requested, &cwd)
-        .into_iter()
-        .map(|path| source(path, "cli", "temporary"))
-        .collect();
-    let mut resources = PackageResources::default();
     let mut themes = Vec::new();
+    let mut skills = Vec::new();
+    let mut prompts = Vec::new();
+    // pi resolves `-e` entries as temporary packages: a file is an extension,
+    // and a directory brings its manifest's or conventional resources.
+    let mut sources: Vec<SourceInfo> = Vec::new();
+    for path in &requested {
+        let found = ri_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None);
+        let cli = |path: &PathBuf| source(path.clone(), "cli", "temporary");
+        sources.extend(found.extensions.iter().map(cli));
+        skills.extend(found.skills.iter().map(cli));
+        prompts.extend(found.prompts.iter().map(cli));
+        themes.extend(found.themes.iter().map(cli));
+    }
     let mut packages = ri_core::packages::PackageManager::new(
         cwd.clone(),
         agent_dir.clone(),
@@ -743,18 +815,16 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
                 });
             }
         }
-        for path in &package.resources.themes {
-            themes.push(SourceInfo {
-                path: path.to_string_lossy().into_owned(),
-                source: package.source.clone(),
-                scope: scope_name(package.scope).into(),
-                origin: "package".into(),
-                base_dir: Some(package.root.to_string_lossy().into_owned()),
-            });
-        }
-        resources.skills.extend(package.resources.skills);
-        resources.prompts.extend(package.resources.prompts);
-        resources.themes.extend(package.resources.themes);
+        let of_package = |path: &PathBuf| SourceInfo {
+            path: path.to_string_lossy().into_owned(),
+            source: package.source.clone(),
+            scope: scope_name(package.scope).into(),
+            origin: "package".into(),
+            base_dir: Some(package.root.to_string_lossy().into_owned()),
+        };
+        themes.extend(package.resources.themes.iter().map(of_package));
+        skills.extend(package.resources.skills.iter().map(of_package));
+        prompts.extend(package.resources.prompts.iter().map(of_package));
     }
     let mut seen = std::collections::HashSet::new();
     sources.retain(|source| seen.insert(source.path.clone()));
@@ -838,7 +908,8 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     }
     Ok(Extensions {
         hosts,
-        resources,
+        skills,
+        prompts,
         themes,
     })
 }
@@ -849,8 +920,10 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
 pub struct Extensions {
     /// Instances with loaded extensions.
     pub hosts: Vec<Arc<ExtensionHost>>,
-    /// Package resources besides extensions.
-    pub resources: PackageResources,
+    /// Package skills with their packages as sources.
+    pub skills: Vec<SourceInfo>,
+    /// Package prompt templates with their packages as sources.
+    pub prompts: Vec<SourceInfo>,
     /// Package themes with their packages as sources.
     pub themes: Vec<SourceInfo>,
 }

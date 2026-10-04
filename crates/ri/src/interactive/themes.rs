@@ -95,7 +95,7 @@ impl ThemeFiles {
         let parsed = std::fs::read_to_string(&path)
             .map_err(|error| error.to_string())
             .and_then(|text| {
-                Theme::from_json(&path.display().to_string(), &text, ColorMode::TrueColor)
+                Theme::from_json_lenient(&path.display().to_string(), &text, ColorMode::TrueColor)
                     .map_err(|error| error.to_string())
             });
         let theme = match parsed {

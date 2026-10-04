@@ -616,6 +616,11 @@ impl Editor {
         out
     }
 
+    /// How many layout lines the last render scrolled out above the view.
+    pub fn hidden_above(&self) -> usize {
+        self.scroll_offset
+    }
+
     /// The editor's rows for `width` columns: a border, the visible text, a
     /// border, then the autocomplete list when open.
     pub fn render(&mut self, width: usize) -> Vec<Line<'static>> {
@@ -1730,6 +1735,17 @@ impl Editor {
         self.autocomplete_mode = None;
         self.autocomplete_list = None;
         self.autocomplete_prefix.clear();
+    }
+
+    /// Asks the provider for suggestions again, as after typing: the open
+    /// list is updated, and a slash command's list opens if it has
+    /// suggestions now. For providers whose answers arrive later.
+    pub fn refresh_autocomplete(&mut self) {
+        if self.autocomplete_mode.is_some() {
+            self.update_autocomplete();
+        } else if self.in_slash_command(self.before_cursor()) {
+            self.request_autocomplete(false, false);
+        }
     }
 
     fn update_autocomplete(&mut self) {

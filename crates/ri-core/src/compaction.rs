@@ -718,6 +718,28 @@ pub struct Summarizer<'a> {
     pub retry: RetryPolicy,
     /// Cancels the requests.
     pub cancel: CancellationToken,
+    /// Hears about retries.
+    pub on_retry: Option<&'a (dyn Fn(SummaryRetry) + Sync)>,
+}
+
+/// What a summarizer reports while it retries; pi-ai's `RetryCallbacks`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SummaryRetry {
+    /// A failed request is retried after `delay_ms`.
+    Scheduled {
+        /// The retry's number, from 1.
+        attempt: u32,
+        /// How many retries the policy allows.
+        max_attempts: u32,
+        /// The wait before it.
+        delay_ms: u64,
+        /// Why the request failed.
+        error_message: String,
+    },
+    /// The retried request starts.
+    AttemptStart,
+    /// Retrying ended, in success or not.
+    Finished,
 }
 
 /// A summary and the usage of the requests that made it.
@@ -804,13 +826,19 @@ impl Summarizer<'_> {
         }
     }
 
-    /// One summary request with retries on transient failures.
+    /// One summary request with retries on transient failures, reported as
+    /// pi-ai's `retryAssistantCall` reports them.
     async fn complete(&self, prompt: &str, max_tokens: u64) -> AssistantMessage {
         let session_id = self.session_id.clone().unwrap_or_else(uuid_v7);
         let max_attempts = if self.retry.enabled {
             self.retry.max_retries
         } else {
             0
+        };
+        let notify = |retry: SummaryRetry| {
+            if let Some(on_retry) = self.on_retry {
+                on_retry(retry);
+            }
         };
         let mut attempt = 0;
         loop {
@@ -819,19 +847,34 @@ impl Summarizer<'_> {
                 || attempt >= max_attempts
                 || !is_retryable_assistant_error(&response)
             {
+                if attempt > 0 {
+                    notify(SummaryRetry::Finished);
+                }
                 return response;
             }
             attempt += 1;
-            let delay = std::time::Duration::from_millis(self.retry.delay_ms(attempt));
+            let delay_ms = self.retry.delay_ms(attempt);
+            notify(SummaryRetry::Scheduled {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message: response
+                    .error_message
+                    .clone()
+                    .filter(|message| !message.is_empty())
+                    .unwrap_or_else(|| "Unknown error".into()),
+            });
             tokio::select! {
                 () = self.cancel.cancelled() => {
+                    notify(SummaryRetry::Finished);
                     let mut response = response;
                     response.stop_reason = StopReason::Aborted;
                     response.error_message = None;
                     return response;
                 }
-                () = tokio::time::sleep(delay) => {}
+                () = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {}
             }
+            notify(SummaryRetry::AttemptStart);
         }
     }
 

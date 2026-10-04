@@ -4,11 +4,12 @@
 //! data) is mirrored in [`Shared`].
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::future::BoxFuture;
 use ri_core::extensions::{
     CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement, RemoteComponent, Widget,
+    WorkingIndicator,
 };
 use ri_tui::lines::{self, StyledLine};
 use ri_tui::theme::{Paint, Theme};
@@ -16,7 +17,7 @@ use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
-use super::Event;
+use super::{Event, Indicator};
 
 /// A request from an extension.
 pub(super) enum Request {
@@ -49,6 +50,8 @@ pub(super) enum Request {
     Title(String),
     WorkingMessage(Option<String>),
     HiddenThinkingLabel(Option<String>),
+    WorkingVisible(bool),
+    WorkingIndicator(Option<WorkingIndicator>),
     EditorText(String),
     Paste(String),
     Custom(RemoteComponent, CustomOptions),
@@ -101,11 +104,13 @@ impl ExtensionUi for InteractiveUi {
             .send(Event::Notify(self.epoch, message.to_owned(), kind));
     }
 
-    fn extension_error(&self, path: &str, _event: &str, error: &str) {
+    fn extension_error(&self, path: &str, _event: &str, error: &str, stack: Option<&str>) {
         let message = format!("Extension \"{path}\" error: {error}");
-        let _ = self
-            .tx
-            .send(Event::Notify(self.epoch, message, NotifyKind::Error));
+        let _ = self.tx.send(Event::ExtensionError(
+            self.epoch,
+            message,
+            stack.map(str::to_owned),
+        ));
     }
 
     fn select(
@@ -188,6 +193,18 @@ impl ExtensionUi for InteractiveUi {
 
     fn set_working_message(&self, message: Option<&str>) {
         self.send(Request::WorkingMessage(message.map(str::to_owned)));
+    }
+
+    fn refresh_completions(&self) {
+        let _ = self.tx.send(Event::RefreshCompletions(self.epoch));
+    }
+
+    fn set_working_visible(&self, visible: bool) {
+        self.send(Request::WorkingVisible(visible));
+    }
+
+    fn set_working_indicator(&self, indicator: Option<WorkingIndicator>) {
+        self.send(Request::WorkingIndicator(indicator));
     }
 
     fn set_hidden_thinking_label(&self, label: Option<&str>) {
@@ -419,6 +436,8 @@ pub(super) struct ExtensionState {
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
     pub working_message: Option<String>,
+    pub working_hidden: bool,
+    pub working_indicator: Option<WorkingIndicator>,
     pub thinking_label: Option<String>,
 }
 
@@ -439,6 +458,8 @@ impl ExtensionState {
         self.footer = None;
         self.header = None;
         self.working_message = None;
+        self.working_hidden = false;
+        self.working_indicator = None;
         self.thinking_label = None;
     }
 
@@ -603,6 +624,13 @@ impl super::App {
             }
             Request::Title(title) => super::emit(&format!("\x1b]0;{title}\x07")),
             Request::WorkingMessage(message) => self.ext.working_message = message,
+            Request::WorkingVisible(visible) => self.set_working_visible(visible),
+            Request::WorkingIndicator(indicator) => {
+                self.ext.working_indicator = indicator;
+                if let Some((Indicator::Working, started)) = &mut self.indicator {
+                    *started = Instant::now();
+                }
+            }
             Request::HiddenThinkingLabel(label) => {
                 self.ext.thinking_label = label;
                 self.invalidate_all();

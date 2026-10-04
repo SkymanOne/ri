@@ -277,31 +277,29 @@ fn extension_labels(extensions: &[SourceInfo], home: Option<&Path>) -> Vec<Strin
         .collect()
 }
 
-/// pi's expanded `[Extensions]` body: files and packages by scope.
-fn extension_groups(
-    extensions: &[SourceInfo],
-    home: Option<&Path>,
-    theme: &Theme,
-) -> Vec<StyledLine> {
+/// One resource in pi's expanded listing: its source, and how it shows
+/// outside a package and inside one.
+struct Listed<'a> {
+    source: &'a SourceInfo,
+    label: String,
+    package_label: String,
+}
+
+/// pi's `buildScopeGroups` and `formatScopeGroups`: resources by scope
+/// (project, user, path), loose files by path first, then each package's.
+fn scope_groups(items: &[Listed<'_>], theme: &Theme) -> Vec<StyledLine> {
     let group_of = |source: &SourceInfo| match (source.source.as_str(), source.scope.as_str()) {
         ("cli", _) | (_, "temporary") => "path",
         (_, "user") => "user",
         (_, "project") => "project",
         _ => "path",
     };
-    let display = |source: &SourceInfo| {
-        let path = display_path(&source.path, home);
-        path.strip_suffix("/index.ts")
-            .or_else(|| path.strip_suffix("/index.js"))
-            .unwrap_or(&path)
-            .to_owned()
-    };
     let compare = |a: &str, b: &str| ri_types::collate::locale_compare(a, b);
     let mut out = Vec::new();
     for group in ["project", "user", "path"] {
-        let members: Vec<&SourceInfo> = extensions
+        let members: Vec<&Listed<'_>> = items
             .iter()
-            .filter(|source| group_of(source) == group)
+            .filter(|item| group_of(item.source) == group)
             .collect();
         if members.is_empty() {
             continue;
@@ -310,19 +308,22 @@ fn extension_groups(
             Span::raw("  "),
             Span::styled(group, theme.fg("accent")),
         ]));
-        let mut paths: Vec<&SourceInfo> =
-            members.iter().copied().filter(|s| !is_package(s)).collect();
-        paths.sort_by(|a, b| compare(&a.path, &b.path));
-        for source in paths {
+        let mut paths: Vec<&Listed<'_>> = members
+            .iter()
+            .copied()
+            .filter(|item| !is_package(item.source))
+            .collect();
+        paths.sort_by(|a, b| compare(&a.source.path, &b.source.path));
+        for item in paths {
             out.push(lines::styled(
-                format!("    {}", display(source)),
+                format!("    {}", item.label),
                 theme.fg("dim"),
             ));
         }
         let mut packages: Vec<&str> = members
             .iter()
-            .filter(|source| is_package(source))
-            .map(|source| source.source.as_str())
+            .filter(|item| is_package(item.source))
+            .map(|item| item.source.source.as_str())
             .collect();
         packages.sort_by(|a, b| compare(a, b));
         packages.dedup();
@@ -331,23 +332,43 @@ fn extension_groups(
                 Span::raw("    "),
                 Span::styled(package.to_owned(), theme.fg("mdLink")),
             ]));
-            let mut files: Vec<&SourceInfo> = members
+            let mut files: Vec<&Listed<'_>> = members
                 .iter()
                 .copied()
-                .filter(|source| source.source == package)
+                .filter(|item| item.source.source == package)
                 .collect();
-            files.sort_by(|a, b| compare(&a.path, &b.path));
-            for source in files {
-                let short = short_path(source, home);
-                let short = short
-                    .strip_suffix("/index.ts")
-                    .or_else(|| short.strip_suffix("/index.js"))
-                    .unwrap_or(&short);
-                out.push(lines::styled(format!("      {short}"), theme.fg("dim")));
+            files.sort_by(|a, b| compare(&a.source.path, &b.source.path));
+            for item in files {
+                out.push(lines::styled(
+                    format!("      {}", item.package_label),
+                    theme.fg("dim"),
+                ));
             }
         }
     }
     out
+}
+
+/// pi's expanded `[Extensions]` body: files and packages by scope.
+fn extension_groups(
+    extensions: &[SourceInfo],
+    home: Option<&Path>,
+    theme: &Theme,
+) -> Vec<StyledLine> {
+    let without_index = |path: String| {
+        path.strip_suffix("/index.ts")
+            .or_else(|| path.strip_suffix("/index.js"))
+            .map_or_else(|| path.clone(), str::to_owned)
+    };
+    let items: Vec<Listed<'_>> = extensions
+        .iter()
+        .map(|source| Listed {
+            source,
+            label: without_index(display_path(&source.path, home)),
+            package_label: without_index(short_path(source, home)),
+        })
+        .collect();
+    scope_groups(&items, theme)
 }
 
 /// The `[Context]`, `[Skills]`, `[Prompts]` and `[Extensions]` sections.
@@ -398,20 +419,53 @@ pub fn listing(
         out.extend(lines::spacer(1));
     }
     section(&mut out, "Context", context);
-    let mut skills: Vec<String> = resources
-        .skills
-        .iter()
-        .map(|skill| skill.name.clone())
-        .collect();
-    skills.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
-    section(&mut out, "Skills", skills);
-    let mut prompts: Vec<String> = resources
-        .templates
-        .iter()
-        .map(|template| format!("/{}", template.name))
-        .collect();
-    prompts.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
-    section(&mut out, "Prompts", prompts);
+    // Expanded, skills and prompts are grouped by scope as extensions are.
+    let grouped = |out: &mut Vec<StyledLine>, name: &str, items: Vec<Listed<'_>>| {
+        if items.is_empty() {
+            return;
+        }
+        let mut content = vec![heading(name)];
+        content.extend(scope_groups(&items, theme));
+        out.extend(lines::text(&content, width, 0, 0, None));
+        out.extend(lines::spacer(1));
+    };
+    if expanded {
+        let skills = resources
+            .skills
+            .iter()
+            .map(|skill| Listed {
+                source: &skill.source,
+                label: display_path(&skill.source.path, home),
+                package_label: short_path(&skill.source, home),
+            })
+            .collect();
+        grouped(&mut out, "Skills", skills);
+        let prompts = resources
+            .templates
+            .iter()
+            .map(|template| Listed {
+                source: &template.source,
+                label: format!("/{}", template.name),
+                package_label: format!("/{}", template.name),
+            })
+            .collect();
+        grouped(&mut out, "Prompts", prompts);
+    } else {
+        let mut skills: Vec<String> = resources
+            .skills
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect();
+        skills.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
+        section(&mut out, "Skills", skills);
+        let mut prompts: Vec<String> = resources
+            .templates
+            .iter()
+            .map(|template| format!("/{}", template.name))
+            .collect();
+        prompts.sort_by(|a, b| ri_types::collate::locale_compare(a, b));
+        section(&mut out, "Prompts", prompts);
+    }
     if !extensions.is_empty() {
         let mut content = vec![heading("Extensions")];
         if expanded {

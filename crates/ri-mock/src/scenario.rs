@@ -831,6 +831,10 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
         if row.contains("▀▀█") || row.contains("█▀ ▀ v") || row.starts_with(" ri v") {
             continue;
         }
+        // The expanded header shows the tip after the key help.
+        if row.trim() == TIP {
+            continue;
+        }
         let mut row = normalizer
             .text(row.trim_end())
             .replacen("█▀ █ ", "", 1)

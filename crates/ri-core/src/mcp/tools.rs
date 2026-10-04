@@ -62,6 +62,19 @@ pub fn tool_name(server: &str, tool: &str, is_taken: impl Fn(&str) -> bool) -> S
     )
 }
 
+/// The `server/tool` label of the session tool `name` when an MCP server
+/// provides it, which pi's MCP renderers show in place of the name.
+pub fn server_tool_label(tools: &crate::extensions::Tools, name: &str) -> Option<String> {
+    tools.with(|registry| {
+        let tool = registry.get(name)?;
+        let namespace = tool.namespace.as_ref()?;
+        namespace
+            .name
+            .starts_with(&super::config::namespace(""))
+            .then(|| tool.tool.label().to_owned())
+    })
+}
+
 fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
     let _ = getrandom::fill(&mut buffer);

@@ -248,36 +248,52 @@ pub fn context_files(cwd: &Path, agent_dir: &Path) -> Vec<ContextFile> {
 /// in per resource.
 #[derive(Clone)]
 struct Origin {
-    source: &'static str,
-    scope: &'static str,
+    source: String,
+    scope: String,
+    origin: String,
     base_dir: Option<PathBuf>,
 }
 
 impl Origin {
-    fn auto(scope: &'static str, base_dir: PathBuf) -> Origin {
+    fn auto(scope: &str, base_dir: PathBuf) -> Origin {
         Origin {
-            source: "auto",
-            scope,
+            source: "auto".into(),
+            scope: scope.into(),
+            origin: "top-level".into(),
             base_dir: Some(base_dir),
         }
     }
 
-    fn cli() -> Origin {
+    /// The origin `info` gives the resources under its path.
+    fn of(info: &SourceInfo) -> Origin {
         Origin {
-            source: "cli",
-            scope: "temporary",
-            base_dir: None,
+            source: info.source.clone(),
+            scope: info.scope.clone(),
+            origin: info.origin.clone(),
+            base_dir: info.base_dir.as_ref().map(PathBuf::from),
         }
     }
 
     fn info(&self, path: &Path) -> SourceInfo {
         SourceInfo {
             path: path.display().to_string(),
-            source: self.source.to_owned(),
-            scope: self.scope.to_owned(),
-            origin: "top-level".to_owned(),
+            source: self.source.clone(),
+            scope: self.scope.clone(),
+            origin: self.origin.clone(),
             base_dir: self.base_dir.as_ref().map(|dir| dir.display().to_string()),
         }
+    }
+}
+
+/// A path given on the command line, as pi records it: source `cli`, scope
+/// `temporary`.
+pub fn cli_source(path: &Path) -> SourceInfo {
+    SourceInfo {
+        path: path.display().to_string(),
+        source: "cli".into(),
+        scope: "temporary".into(),
+        origin: "top-level".into(),
+        base_dir: None,
     }
 }
 
@@ -346,7 +362,7 @@ pub fn skills(
     cwd: &Path,
     agent_dir: &Path,
     project_trusted: bool,
-    extra: &[PathBuf],
+    extra: &[SourceInfo],
 ) -> Vec<Skill> {
     let mut found = Vec::new();
     let user_agents = home_dir().join(".agents");
@@ -390,16 +406,20 @@ pub fn skills(
 /// directories searched for skills.
 pub fn skills_at(paths: &[PathBuf]) -> Vec<Skill> {
     let mut found = Vec::new();
-    explicit_skills(paths, &mut found);
+    let sources: Vec<SourceInfo> = paths.iter().map(|path| cli_source(path)).collect();
+    explicit_skills(&sources, &mut found);
     unique_skills(found)
 }
 
-fn explicit_skills(paths: &[PathBuf], found: &mut Vec<Skill>) {
-    for path in paths {
+/// Skills at explicit paths, each with the source of the entry that named it.
+fn explicit_skills(sources: &[SourceInfo], found: &mut Vec<Skill>) {
+    for source in sources {
+        let path = Path::new(&source.path);
+        let origin = Origin::of(source);
         if path.is_dir() {
-            skills_in(path, true, &Origin::cli(), found);
+            skills_in(path, true, &origin, found);
         } else if path.is_file() {
-            found.extend(load_skill(path, &Origin::cli()));
+            found.extend(load_skill(path, &origin));
         }
     }
 }
@@ -526,7 +546,6 @@ pub fn theme_paths(
     agent_dir: &Path,
     settings: &crate::settings::SettingsManager,
 ) -> Vec<SourceInfo> {
-    use crate::settings::Scope;
     let info = |path: PathBuf, source: &str, scope: &str| SourceInfo {
         path: path.to_string_lossy().into_owned(),
         source: source.into(),
@@ -535,27 +554,7 @@ pub fn theme_paths(
         base_dir: None,
     };
     let project = cwd.join(PROJECT_DIR);
-    let mut paths = Vec::new();
-    for (scope, base, name) in [
-        (Scope::Project, project.as_path(), "project"),
-        (Scope::Global, agent_dir, "user"),
-    ] {
-        let entries = settings
-            .document(scope)
-            .get("themes")
-            .and_then(serde_json::Value::as_array);
-        for entry in entries.into_iter().flatten().filter_map(|e| e.as_str()) {
-            if entry.starts_with(['!', '+', '-']) {
-                continue;
-            }
-            let path = crate::packages::source::local_path(entry, base);
-            if path.is_dir()
-                || (path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
-            {
-                paths.push(info(path, "local", name));
-            }
-        }
-    }
+    let mut paths = settings_paths(cwd, agent_dir, settings, "themes", "json");
     let auto = [
         (
             settings.project_trusted(),
@@ -572,13 +571,57 @@ pub fn theme_paths(
     paths
 }
 
+/// The existing paths the `key` entries of the project's and then the user's
+/// settings name, resolved against `.ri` and the agent directory, as pi's
+/// `resolveLocalEntries` records them: source `local`, scope `project` or
+/// `user`. Directories count, and files with extension `extension`. Pattern
+/// entries (`!`, `+`, `-`) are skipped.
+pub fn settings_paths(
+    cwd: &Path,
+    agent_dir: &Path,
+    settings: &crate::settings::SettingsManager,
+    key: &str,
+    extension: &str,
+) -> Vec<SourceInfo> {
+    use crate::settings::Scope;
+    let project = cwd.join(PROJECT_DIR);
+    let mut paths = Vec::new();
+    for (scope, base, name) in [
+        (Scope::Project, project.as_path(), "project"),
+        (Scope::Global, agent_dir, "user"),
+    ] {
+        let entries = settings
+            .document(scope)
+            .get(key)
+            .and_then(serde_json::Value::as_array);
+        for entry in entries.into_iter().flatten().filter_map(|e| e.as_str()) {
+            if entry.starts_with(['!', '+', '-']) {
+                continue;
+            }
+            let path = crate::packages::source::local_path(entry, base);
+            if path.is_dir()
+                || (path.is_file() && path.extension().is_some_and(|ext| ext == extension))
+            {
+                paths.push(SourceInfo {
+                    path: path.to_string_lossy().into_owned(),
+                    source: "local".into(),
+                    scope: name.into(),
+                    origin: "top-level".into(),
+                    base_dir: None,
+                });
+            }
+        }
+    }
+    paths
+}
+
 /// Templates from the user's and the trusted project's `prompts` directories and
 /// `extra` paths.
 pub fn prompt_templates(
     cwd: &Path,
     agent_dir: &Path,
     project_trusted: bool,
-    extra: &[PathBuf],
+    extra: &[SourceInfo],
 ) -> Vec<PromptTemplate> {
     let mut templates = Vec::new();
     templates_in(
@@ -602,16 +645,21 @@ pub fn prompt_templates(
 /// files, or directories of them.
 pub fn templates_at(paths: &[PathBuf]) -> Vec<PromptTemplate> {
     let mut templates = Vec::new();
-    explicit_templates(paths, &mut templates);
+    let sources: Vec<SourceInfo> = paths.iter().map(|path| cli_source(path)).collect();
+    explicit_templates(&sources, &mut templates);
     templates
 }
 
-fn explicit_templates(paths: &[PathBuf], templates: &mut Vec<PromptTemplate>) {
-    for path in paths {
+/// Templates at explicit paths, each with the source of the entry that named
+/// it.
+fn explicit_templates(sources: &[SourceInfo], templates: &mut Vec<PromptTemplate>) {
+    for source in sources {
+        let path = PathBuf::from(&source.path);
+        let origin = Origin::of(source);
         if path.is_dir() {
-            templates_in(path, &Origin::cli(), templates);
+            templates_in(&path, &origin, templates);
         } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            templates.extend(template_at(path.clone(), &Origin::cli()));
+            templates.extend(template_at(path, &origin));
         }
     }
 }

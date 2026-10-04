@@ -205,3 +205,21 @@ async fn http_server() {
     client.close().await;
     server.kill().await.unwrap();
 }
+
+#[tokio::test]
+async fn unreachable_http_server_fails_like_pi() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let transport = HttpTransport::new(HttpOptions {
+        url: format!("http://127.0.0.1:{port}/mcp"),
+        ..HttpOptions::default()
+    });
+    let error = McpClient::connect(options(), Transport::Http(transport))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(error.to_string(), "fetch failed");
+}

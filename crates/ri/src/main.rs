@@ -297,8 +297,9 @@ async fn run(parsed: &mut args::Args) -> u8 {
             Some(_) => Some(ri_types::settings::TuiMode::Fullscreen),
             None => None,
         };
-        let startup = match startup::start(parsed, None, &extensions) {
+        let startup = match startup::start(parsed, None, &extensions, true) {
             Ok(startup) => startup,
+            Err(err) if err.is::<startup::Cancelled>() => return 0,
             Err(err) => {
                 eprintln!("{err}");
                 return 1;
@@ -323,7 +324,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
         return survive_crash(run).await;
     }
     if parsed.mode == Some(Mode::Rpc) {
-        let startup = match startup::start(parsed, None, &extensions) {
+        let startup = match startup::start(parsed, None, &extensions, false) {
             Ok(startup) => startup,
             Err(err) => {
                 eprintln!("{err}");
@@ -345,7 +346,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
         .await;
     }
     let stdin = startup::read_piped_stdin();
-    let startup = match startup::start(parsed, stdin, &extensions) {
+    let startup = match startup::start(parsed, stdin, &extensions, false) {
         Ok(startup) => startup,
         Err(err) => {
             eprintln!("{err}");

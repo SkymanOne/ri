@@ -17,6 +17,7 @@
 	const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
 	const errorInfo = (error) => ({ error: errorMessage(error), stack: error instanceof Error ? error.stack : undefined });
 	const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+	const orUndefined = (value) => value ?? undefined;
 
 	// ----- the shared event bus ------------------------------------------------
 	const eventBus = {
@@ -502,10 +503,11 @@
 			onBranchChange: () => () => {},
 		};
 		return {
-			select: (title, options, opts) => (data.hasUI ? ri.op("ui.select", { title, options, timeout: opts?.timeout }) : Promise.resolve(undefined)),
+			// A cancelled dialog resolves to `undefined`, as in pi.
+			select: (title, options, opts) => (data.hasUI ? ri.op("ui.select", { title, options, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
 			confirm: (title, message, opts) => (data.hasUI ? ri.op("ui.confirm", { title, message, timeout: opts?.timeout }) : Promise.resolve(false)),
-			input: (title, placeholder, opts) => (data.hasUI ? ri.op("ui.input", { title, placeholder, timeout: opts?.timeout }) : Promise.resolve(undefined)),
-			editor: (title, prefill) => (data.hasUI ? ri.op("ui.editor", { title, prefill }) : Promise.resolve(undefined)),
+			input: (title, placeholder, opts) => (data.hasUI ? ri.op("ui.input", { title, placeholder, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
+			editor: (title, prefill) => (data.hasUI ? ri.op("ui.editor", { title, prefill }).then(orUndefined) : Promise.resolve(undefined)),
 			notify: (message, type) => request("notify", { message, type: type ?? "info" }),
 			onTerminalInput: () => () => {},
 			setStatus: (key, text) => request("setStatus", { key, text }),
@@ -919,8 +921,8 @@
 							? tool?.renderCall?.(payload.args, theme, context)
 							: tool?.renderResult?.(payload.result, plain(payload.options ?? {}), theme, context);
 				}
-			} catch (error) {
-				console.error("Renderer error:", error);
+			} catch {
+				// pi falls back to the default rendering without a word.
 				component = undefined;
 			}
 			if (!component) {

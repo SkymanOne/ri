@@ -222,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Start ri and run `/hello Ada`. While developing, load a file for one run with `ri -e ./hello.ts`. pi's [extension documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md) covers tools, events, UI components and more; all of it applies to ri.
+Start ri and run `/hello Ada`. While developing, load a file for one run with `ri -e ./hello.ts`, or a whole package folder with `ri -e ./my-package`, which brings its skills, prompts and themes too. pi's [extension documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md) covers tools, events, UI components and more; all of it applies to ri.
 
 **How extensions run.** TypeScript and JavaScript extensions run in a QuickJS runtime compiled to WebAssembly, with Node's built-in modules provided by shims. Native extensions are WebAssembly components written in Rust with [`guest/ri-extension-api`](guest/ri-extension-api); a `.wasm` file loads wherever an extension file does. ri checks every file, process, network and environment access an extension makes against its grants. Today every package gets pi's defaults, which allow all four; per-package restrictions in settings are planned.
 

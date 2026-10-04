@@ -292,7 +292,8 @@ pub fn export_session(
     data.system_prompt = system_prompt;
     data.tools = Some(tools);
     let target = output_path(output, &file);
-    std::fs::write(&target, render(&data, theme)).map_err(|error| error.to_string())?;
+    std::fs::write(&target, render(&data, theme))
+        .map_err(|error| ri_core::tools::node_error(&error, "open", &target))?;
     Ok(target)
 }
 

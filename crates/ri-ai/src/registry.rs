@@ -427,6 +427,13 @@ impl ModelRegistry {
             .find(|model| model.provider == provider && model.id == id)
     }
 
+    /// Adds a provider an extension configures, as a `models.json` entry
+    /// that replaces any of the same name; pi's `registerProvider`.
+    pub fn register_config(&mut self, provider: &str, config: ProviderConfig) {
+        self.config.providers.insert(provider.to_owned(), config);
+        self.rebuild();
+    }
+
     /// Adds models from an extension provider, replacing the provider's models.
     pub fn register_provider(&mut self, provider: &str, models: Vec<Model>) {
         self.models.retain(|model| model.provider != provider);

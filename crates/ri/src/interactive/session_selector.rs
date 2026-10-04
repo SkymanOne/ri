@@ -68,6 +68,21 @@ fn canonical(path: &Path) -> PathBuf {
 }
 
 /// pi's `formatSessionDate`.
+/// The session pi loads first: in one folder, the file named last; across
+/// folders, the file modified last.
+fn first_loaded(sessions: &[SessionSummary], scope: Scope) -> Option<&SessionSummary> {
+    let name = |session: &SessionSummary| session.path.file_name().map(ToOwned::to_owned);
+    match scope {
+        Scope::Current => sessions.iter().max_by_key(|session| name(session)),
+        Scope::All => sessions.iter().max_by_key(|session| {
+            let modified = std::fs::metadata(&session.path)
+                .and_then(|metadata| metadata.modified())
+                .ok();
+            (modified, name(session))
+        }),
+    }
+}
+
 fn age(modified_ms: u64, now_ms: u64) -> String {
     let diff = now_ms.saturating_sub(modified_ms);
     let minutes = diff / 60_000;
@@ -345,11 +360,23 @@ impl SessionSelector {
 
     fn load(&mut self, scope: Scope) {
         let sessions = self.sources.load(scope);
+        // pi lists sessions as they load and first shows only the one loaded
+        // first, which a moved selection lands on and then follows.
+        if scope == self.scope
+            && let Some(first) = first_loaded(&sessions, scope)
+        {
+            self.store(scope, vec![first.clone()]);
+            self.set_sessions();
+        }
+        self.store(scope, sessions);
+        self.set_sessions();
+    }
+
+    fn store(&mut self, scope: Scope, sessions: Vec<SessionSummary>) {
         match scope {
             Scope::Current => self.current = Some(sessions),
             Scope::All => self.all = Some(sessions),
         }
-        self.set_sessions();
     }
 
     fn sessions(&self) -> Vec<SessionSummary> {

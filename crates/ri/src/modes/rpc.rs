@@ -211,7 +211,7 @@ impl ExtensionUi for RpcUi {
         self.shutdown.store(true, Ordering::SeqCst);
     }
 
-    fn extension_error(&self, path: &str, event: &str, error: &str) {
+    fn extension_error(&self, path: &str, event: &str, error: &str, _stack: Option<&str>) {
         let line = json!({"type": "extension_error", "extensionPath": path, "event": event, "error": error});
         if let Ok(text) = ri_types::json::to_string(&line) {
             self.out.line(text);

@@ -51,6 +51,16 @@ pub enum Placement {
     BelowEditor,
 }
 
+/// pi's `WorkingIndicatorOptions`: the animation shown while the agent works.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WorkingIndicator {
+    /// Frames drawn as given, escape sequences included; `None` keeps the
+    /// default spinner frames, and an empty list hides the indicator.
+    pub frames: Option<Vec<String>>,
+    /// Milliseconds per frame; `None` keeps the default.
+    pub interval_ms: Option<u64>,
+}
+
 /// What a widget shows.
 #[derive(Clone, Debug)]
 pub enum Widget {
@@ -189,8 +199,19 @@ pub trait ExtensionUi: Send + Sync {
     /// Sets the terminal title.
     fn set_title(&self, _title: &str) {}
 
+    /// Completions an extension computed in the background are ready; the
+    /// editor asks for its suggestions again.
+    fn refresh_completions(&self) {}
+
     /// Sets the message shown while the agent works, or restores the default.
     fn set_working_message(&self, _message: Option<&str>) {}
+
+    /// Shows or hides the indicator shown while the agent works.
+    fn set_working_visible(&self, _visible: bool) {}
+
+    /// Sets the animation shown while the agent works, or restores the
+    /// default spinner.
+    fn set_working_indicator(&self, _indicator: Option<WorkingIndicator>) {}
 
     /// Sets the label of hidden thinking blocks, or restores the default.
     fn set_hidden_thinking_label(&self, _label: Option<&str>) {}
@@ -243,9 +264,9 @@ pub trait ExtensionUi: Send + Sync {
         Value::Null
     }
 
-    /// A handler of extension `path` failed on `event`; print mode's report
-    /// by default.
-    fn extension_error(&self, path: &str, _event: &str, error: &str) {
+    /// A handler of extension `path` failed on `event`, with the error's
+    /// stack when the runtime gave one; print mode's report by default.
+    fn extension_error(&self, path: &str, _event: &str, error: &str, _stack: Option<&str>) {
         use std::io::Write as _;
         let _ = writeln!(std::io::stderr(), "Extension error ({path}): {error}");
     }

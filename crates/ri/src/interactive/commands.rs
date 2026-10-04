@@ -93,22 +93,10 @@ pub const BUILTIN: &[(&str, &str, Option<&str>)] = &[
     ("quit", "Quit ri", None),
 ];
 
-/// pi's source tag for a resource file: `u` under the agent directory, `p`
-/// in the project, `t` otherwise.
-fn source_tag(path: &Path, agent_dir: &Path, cwd: &Path) -> &'static str {
-    if path.starts_with(agent_dir) {
-        "u"
-    } else if path.starts_with(cwd) {
-        "p"
-    } else {
-        "t"
-    }
-}
-
-/// pi's `getAutocompleteSourceTag` for an extension: none for built-ins, the
-/// scope (`u`, `p` or `t`) for local files, and the scope with the package
-/// for npm and git packages.
-fn extension_tag(source: &ri_types::rpc::SourceInfo) -> Option<String> {
+/// pi's `getAutocompleteSourceTag` for an extension, skill or prompt: none
+/// for built-ins, the scope (`u`, `p` or `t`) for local files, and the scope
+/// with the package for npm and git packages.
+fn source_tag(source: &ri_types::rpc::SourceInfo) -> Option<String> {
     if source.source == "builtin" {
         return None;
     }
@@ -160,7 +148,6 @@ fn model_search_text(id: &str, provider: &str, name: &str) -> String {
 /// arguments, prompt templates, skill commands and paths.
 pub fn autocomplete(
     session: &AgentSession,
-    agent_dir: &Path,
     fd: Option<PathBuf>,
     home: Option<PathBuf>,
 ) -> CombinedProvider {
@@ -219,10 +206,10 @@ pub fn autocomplete(
     for template in &session.resources().templates {
         commands.push(SlashCommand {
             name: template.name.clone(),
-            description: Some(tagged(
-                &template.description,
-                source_tag(&template.file_path, agent_dir, &cwd),
-            )),
+            description: Some(match source_tag(&template.source) {
+                Some(tag) => tagged(&template.description, &tag),
+                None => template.description.clone(),
+            }),
             argument_hint: template.argument_hint.clone(),
             complete: None,
         });
@@ -240,7 +227,7 @@ pub fn autocomplete(
             }
             let owner = Arc::clone(extension);
             let name = command.name.clone();
-            let description = match extension_tag(&extension.source()) {
+            let description = match source_tag(&extension.source()) {
                 Some(tag) => tagged(&command.description, &tag),
                 None => command.description,
             };
@@ -267,10 +254,10 @@ pub fn autocomplete(
         for skill in &session.resources().skills {
             commands.push(SlashCommand {
                 name: format!("skill:{}", skill.name),
-                description: Some(tagged(
-                    &skill.description,
-                    source_tag(&skill.file_path, agent_dir, &cwd),
-                )),
+                description: Some(match source_tag(&skill.source) {
+                    Some(tag) => tagged(&skill.description, &tag),
+                    None => skill.description.clone(),
+                }),
                 argument_hint: None,
                 complete: None,
             });
@@ -307,8 +294,8 @@ fn bold(text: &str) -> StyledLine {
     )
 }
 
-/// The `/session` block.
-pub fn session_info(session: &AgentSession, theme: &Theme, width: usize) -> Vec<StyledLine> {
+/// The `/session` block, unwrapped.
+pub fn session_info(session: &AgentSession, theme: &Theme) -> Vec<StyledLine> {
     let stats = session.session_stats();
     let totals = session.usage_totals();
     let (file, id, name) = session.with_session(|file| {
@@ -415,9 +402,7 @@ pub fn session_info(session: &AgentSession, theme: &Theme, width: usize) -> Vec<
             }
         }
     }
-    let mut out = lines::spacer(1);
-    out.extend(lines::text(&info, width, 1, 0, None));
-    out
+    info
 }
 
 /// The `/hotkeys` block.
@@ -643,43 +628,41 @@ impl super::App {
             "/copy" => self.copy_last(),
             "/name" => self.name(&argument("/name")),
             "/session" => {
-                let lines = session_info(&self.session, &self.theme, self.size.0);
-                self.push(super::Item::Lines(lines));
+                let info = session_info(&self.session, &self.theme);
+                self.text_item(info, true, (1, 0));
             }
             "/changelog" => {
-                let mut out = lines::spacer(1);
-                out.push(lines::border(self.size.0, self.theme.fg("border")));
-                out.extend(lines::text(
-                    &[styled(
-                        "What's New",
-                        self.theme.fg("accent").add_modifier(Modifier::BOLD),
-                    )],
-                    self.size.0,
-                    1,
-                    0,
-                    None,
-                ));
-                out.extend(lines::spacer(1));
-                out.extend(markdown::render(
-                    "No changelog entries found.",
-                    self.size.0,
-                    1,
-                    1,
-                    &self.markdown,
-                    MarkdownOptions::default(),
-                ));
-                out.push(lines::border(self.size.0, self.theme.fg("border")));
-                self.push(super::Item::Lines(out));
+                self.push(super::Item::Render(Box::new(|width, ctx| {
+                    let mut out = lines::spacer(1);
+                    out.push(lines::border(width, ctx.theme.fg("border")));
+                    out.extend(lines::text(
+                        &[styled(
+                            "What's New",
+                            ctx.theme.fg("accent").add_modifier(Modifier::BOLD),
+                        )],
+                        width,
+                        1,
+                        0,
+                        None,
+                    ));
+                    out.extend(lines::spacer(1));
+                    out.extend(markdown::render(
+                        "No changelog entries found.",
+                        width,
+                        1,
+                        1,
+                        ctx.markdown,
+                        MarkdownOptions::default(),
+                    ));
+                    out.push(lines::border(width, ctx.theme.fg("border")));
+                    out
+                })));
             }
             "/hotkeys" => {
-                let lines = hotkeys(
-                    &self.keys,
-                    &self.shortcuts,
-                    &self.theme,
-                    &self.markdown,
-                    self.size.0,
-                );
-                self.push(super::Item::Lines(lines));
+                let (keys, shortcuts) = (self.keys.clone(), self.shortcuts.clone());
+                self.push(super::Item::Render(Box::new(move |width, ctx| {
+                    hotkeys(&keys, &shortcuts, ctx.theme, ctx.markdown, width)
+                })));
             }
             "/fork" => self.open_fork(),
             "/trust" => {
@@ -788,10 +771,16 @@ impl super::App {
         let content = self
             .session
             .with_session(|session| session.serialize_branch());
-        let written = target
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&target, content));
+        let node_error = ri_core::tools::node_error;
+        let written = match target.parent().filter(|dir| !dir.exists()) {
+            Some(dir) => {
+                std::fs::create_dir_all(dir).map_err(|error| node_error(&error, "mkdir", dir))
+            }
+            None => Ok(()),
+        }
+        .and_then(|()| {
+            std::fs::write(&target, content).map_err(|error| node_error(&error, "open", &target))
+        });
         match written {
             Ok(()) => self.status(format!("Session exported to: {}", target.display())),
             Err(error) => self.error(format!("Failed to export session: {error}")),
@@ -910,6 +899,7 @@ impl super::App {
         self.markdown = super::markdown_theme(&theme);
         self.editor.set_theme(super::editor_theme(&theme));
         self.theme = theme;
+        self.style_alt_screen();
         let settings = self.session.settings();
         self.hide_thinking = settings.hide_thinking_block.unwrap_or(false);
         self.output_pad = usize::from(settings.output_pad.unwrap_or(1).min(1));
@@ -955,18 +945,11 @@ impl super::App {
         let path = self.agent_dir.join("ri-debug.log");
         let _ = std::fs::create_dir_all(&self.agent_dir);
         let _ = std::fs::write(&path, data.join("\n"));
-        let mut out = lines::spacer(1);
-        out.extend(lines::text(
-            &[
-                styled("✓ Debug log written", self.theme.fg("accent")),
-                styled(path.display().to_string(), self.theme.fg("muted")),
-            ],
-            width,
-            1,
-            1,
-            None,
-        ));
-        self.push(super::Item::Lines(out));
+        let notice = vec![
+            styled("✓ Debug log written", self.theme.fg("accent")),
+            styled(path.display().to_string(), self.theme.fg("muted")),
+        ];
+        self.text_item(notice, true, (1, 1));
     }
 }
 

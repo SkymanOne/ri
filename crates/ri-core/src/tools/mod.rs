@@ -8,6 +8,8 @@
 pub mod bash;
 mod edit;
 mod edit_diff;
+
+pub use edit_diff::{Replacement, preview_edits};
 pub mod external;
 mod find;
 mod grep;
@@ -287,7 +289,7 @@ fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult
 }
 
 /// `Error code: ENOENT` style text for an I/O error, as Node reports it.
-fn error_code(err: &std::io::Error) -> String {
+pub(crate) fn error_code(err: &std::io::Error) -> String {
     use std::io::ErrorKind;
     let code = match err.kind() {
         ErrorKind::NotFound => "ENOENT",
@@ -302,7 +304,7 @@ fn error_code(err: &std::io::Error) -> String {
 
 /// The message Node gives a failed file system call, such as
 /// `ENOENT: no such file or directory, access '/a/b'`.
-fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
+pub fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
     use std::io::ErrorKind;
     let path = path.display();
     match err.kind() {

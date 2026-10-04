@@ -284,6 +284,24 @@ pub fn unified_patch(path: &str, old: &str, new: &str) -> String {
         .collect()
 }
 
+/// pi's `computeEditsDiff`: the diff `edits` would make to the file at
+/// `path` (resolved against `cwd`), or why they cannot apply. Nothing is
+/// written.
+pub fn preview_edits(
+    path: &str,
+    edits: &[Replacement],
+    cwd: &std::path::Path,
+) -> Result<String, String> {
+    let absolute = super::path::resolve_to_cwd(path, cwd);
+    let raw = std::fs::read(&absolute)
+        .map_err(|err| format!("Could not edit file: {path}. {}.", super::error_code(&err)))?;
+    let raw = String::from_utf8_lossy(&raw);
+    let content = raw.strip_prefix('\u{FEFF}').unwrap_or(&raw);
+    let normalized = normalize_to_lf(content);
+    let new_content = apply_edits(&normalized, edits, path)?;
+    Ok(display_diff(&normalized, &new_content).0)
+}
+
 /// pi's numbered diff for the UI, and the first changed line of the new text.
 pub fn display_diff(old: &str, new: &str) -> (String, Option<usize>) {
     const CONTEXT: usize = 4;

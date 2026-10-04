@@ -88,6 +88,8 @@ function builtinTool(name, cwd, options) {
 		promptSnippet: info.promptSnippet,
 		promptGuidelines: info.promptGuidelines,
 		parameters: info.parameters,
+		// pi's edit tool draws its own shell; ri draws the built-in renderers.
+		...(name === "edit" ? { renderShell: "self" } : {}),
 		async execute(toolCallId, params, _signal, onUpdate) {
 			if (options?.operations) unavailable(`${name} tool operations`);
 			return ri.op("builtin.execute", { name, cwd: cwd ?? process.cwd(), toolCallId, params });

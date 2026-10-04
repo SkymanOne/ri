@@ -34,8 +34,12 @@ pub fn agent_dir() -> PathBuf {
 }
 
 /// Where sessions for `cwd` live by default:
-/// `<agent>/sessions/--<cwd with separators as dashes>--`.
+/// `<agent>/sessions/--<cwd with separators as dashes>--`, both resolved
+/// against the process directory.
 pub fn default_session_dir(agent_dir: &Path, cwd: &Path) -> PathBuf {
+    let base = std::env::current_dir().unwrap_or_default();
+    let resolve = |path: &Path| crate::tools::path::resolve_lexically(&base, path);
+    let cwd = resolve(cwd);
     let text = cwd.to_string_lossy();
     let trimmed = text.trim_start_matches(['/', '\\']);
     let safe: String = trimmed
@@ -48,7 +52,9 @@ pub fn default_session_dir(agent_dir: &Path, cwd: &Path) -> PathBuf {
             }
         })
         .collect();
-    agent_dir.join("sessions").join(format!("--{safe}--"))
+    resolve(agent_dir)
+        .join("sessions")
+        .join(format!("--{safe}--"))
 }
 
 /// Executables the agent installs for its tools, prepended to `PATH` for commands.
