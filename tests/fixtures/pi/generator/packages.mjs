@@ -3,7 +3,7 @@
 // package-registrations`.
 //
 //   node packages.mjs > ../packages/registrations.json
-//   node packages.mjs <name>      # one package
+//   node packages.mjs <name>...   # measures these again in registrations.json
 //
 // Packages install with --ignore-scripts. Each loads in its own Node process
 // under the permission model: no environment, and file access only to its
@@ -44,7 +44,7 @@ function load(args, env) {
 	});
 }
 
-const only = process.argv[2];
+const only = process.argv.slice(2);
 const result = {};
 async function measure(index, name, version) {
 	const dir = path.join(scratch, String(index));
@@ -62,7 +62,10 @@ async function measure(index, name, version) {
 		{ timeout: 300_000 },
 	);
 	if (install.error) {
-		result[name] = { version, install: String(install.stderr || install.error.message).split("\n")[0] };
+		const lines = String(install.stderr || install.error.message)
+			.split("\n")
+			.filter((line) => line.trim() && !line.includes("A complete log of this run"));
+		result[name] = { version, install: lines.slice(0, 2).join(" ") };
 		process.stderr.write(`${name}: install failed\n`);
 		fs.rmSync(dir, { recursive: true, force: true });
 		return;
@@ -89,9 +92,11 @@ async function measure(index, name, version) {
 		{ PATH: process.env.PATH, HOME: path.join(dir, "home"), TMPDIR: dir, PI_OFFLINE: "1", PI_CODING_AGENT_DIR: agentDir },
 	);
 	fs.rmSync(dir, { recursive: true, force: true });
+	const marker = "@@registrations@@";
 	let dump;
 	try {
-		dump = JSON.parse(child.stdout);
+		dump = JSON.parse(child.stdout.slice(child.stdout.lastIndexOf(marker) + marker.length));
+		if (!child.stdout.includes(marker)) throw new Error("no registrations");
 	} catch {
 		dump = { crash: (child.stderr || `exit ${child.status}`).split("\n").slice(0, 3).join(" ") };
 	}
@@ -99,7 +104,7 @@ async function measure(index, name, version) {
 	process.stderr.write(`${name}: ${dump.crash ? "crashed" : `${dump.extensions?.length ?? 0} extension(s)`}\n`);
 }
 
-const queue = top.map(({ name, version }, index) => ({ index, name, version })).filter(({ name }) => !only || name === only);
+const queue = top.map(({ name, version }, index) => ({ index, name, version })).filter(({ name }) => only.length === 0 || only.includes(name));
 const workers = Array.from({ length: Number(process.env.JOBS ?? 4) }, async () => {
 	for (let next = queue.shift(); next; next = queue.shift()) {
 		await measure(next.index, next.name, next.version);
@@ -108,6 +113,16 @@ const workers = Array.from({ length: Number(process.env.JOBS ?? 4) }, async () =
 await Promise.all(workers);
 // pi's own install directory appears in some tool descriptions.
 const piPackage = path.dirname(path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))));
-const ordered = Object.fromEntries(top.filter(({ name }) => name in result).map(({ name }) => [name, result[name]]));
-const text = JSON.stringify(ordered, null, "\t").replaceAll(piPackage, "<pi-package>").replaceAll(scratch, "<scratch>").replace(/<scratch>\/\d+\/agent/g, "<agent>").replace(/<scratch>\/\d+\/project/g, "<cwd>");
-process.stdout.write(`${text}\n`);
+const measured = JSON.parse(
+	JSON.stringify(result)
+		.replaceAll(piPackage, "<pi-package>")
+		.replaceAll(scratch, "<scratch>")
+		.replace(/<scratch>\/\d+\/agent/g, "<agent>")
+		.replace(/<scratch>\/\d+\/project/g, "<cwd>"),
+);
+const saved = path.join(here, "../packages/registrations.json");
+const merged = only.length > 0 ? { ...JSON.parse(fs.readFileSync(saved, "utf8")), ...measured } : measured;
+const ordered = Object.fromEntries(top.filter(({ name }) => name in merged).map(({ name }) => [name, merged[name]]));
+const text = `${JSON.stringify(ordered, null, "\t")}\n`;
+if (only.length > 0) fs.writeFileSync(saved, text);
+else process.stdout.write(text);

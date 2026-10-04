@@ -22,9 +22,10 @@ const FIXTURES: &str = "tests/fixtures/pi/packages";
 /// Compare ri's registrations of the top npm pi packages with pi's.
 #[derive(clap::Args)]
 pub struct Args {
-    /// Only this package.
-    #[arg(long)]
-    only: Option<String>,
+    /// Only these packages, separated by commas. A new run's results replace
+    /// theirs in the saved run.
+    #[arg(long, value_delimiter = ',')]
+    only: Vec<String>,
     /// Print load errors in full.
     #[arg(long)]
     verbose: bool,
@@ -218,7 +219,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             let text = |key: &str| package[key].as_str().unwrap_or_default().to_owned();
             (index, text("name"), text("version"))
         })
-        .filter(|(_, name, _)| args.only.as_deref().is_none_or(|only| only == name))
+        .filter(|(_, name, _)| args.only.is_empty() || args.only.contains(name))
         .collect();
     let saved = scratch.join("registrations-ri.json");
     let results: Vec<(String, Value)> = if args.compare_only {
@@ -229,9 +230,23 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             .filter(|(name, _)| selected.iter().any(|(_, selected, _)| selected == name))
             .collect()
     } else {
+        // Saved as each package finishes, so an interrupted run keeps what it
+        // measured, and `--only` runs replace their packages in the last run.
+        let all: std::sync::Mutex<BTreeMap<String, Value>> =
+            std::sync::Mutex::new(if args.only.is_empty() {
+                BTreeMap::new()
+            } else {
+                std::fs::read_to_string(&saved)
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+                    .unwrap_or_default()
+            });
+        let total = selected.len();
+        let done = std::sync::atomic::AtomicUsize::new(0);
         futures_util::stream::iter(selected)
             .map(|(index, name, version)| {
                 let (engine, scratch, verbose) = (&engine, &scratch, args.verbose);
+                let (all, done, saved) = (&all, &done, &saved);
                 async move {
                     let dir = scratch.join(index.to_string());
                     let _ = std::fs::remove_dir_all(&dir);
@@ -242,6 +257,15 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                         );
                     // The installs are large; only the results are kept.
                     let _ = std::fs::remove_dir_all(&dir);
+                    let mut all = all
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    all.insert(name.clone(), got.clone());
+                    if let Ok(text) = ri_types::json::to_string_pretty(&*all, "\t") {
+                        let _ = std::fs::write(saved, text);
+                    }
+                    let done = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    eprintln!("[{done}/{total}] {name}");
                     (name, got)
                 }
             })
@@ -272,9 +296,6 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         );
         outcomes.entry(result).or_default().push(name.clone());
         actual.insert(name, got);
-    }
-    if !args.compare_only {
-        std::fs::write(&saved, ri_types::json::to_string_pretty(&actual, "\t")?)?;
     }
     let count = |outcome| outcomes.get(&outcome).map_or(0, Vec::len);
     let comparable = actual.len() - count(Outcome::PiFails);
