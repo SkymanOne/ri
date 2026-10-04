@@ -171,6 +171,8 @@ pub enum Selector {
     Settings(Box<super::settings_selector::SettingsSelector>),
     /// `/scoped-models`.
     ScopedModels(Box<super::scoped_models::ScopedModelsSelector>),
+    /// `ri config`.
+    Config(Box<super::config_selector::ConfigSelector>),
 }
 
 impl Selector {
@@ -195,6 +197,7 @@ impl Selector {
             Selector::Trust(selector) => (selector.render(width, ui), None),
             Selector::Settings(selector) => (selector.render(width, ui), None),
             Selector::ScopedModels(selector) => selector.render(width, ui),
+            Selector::Config(selector) => (selector.render(width, ui), None),
         }
     }
 
@@ -218,6 +221,7 @@ impl Selector {
             Selector::Trust(selector) => selector.handle_input(data, ui),
             Selector::Settings(selector) => selector.handle_input(data, ui),
             Selector::ScopedModels(selector) => selector.handle_input(data, ui),
+            Selector::Config(selector) => selector.handle_input(data, ui),
         }
     }
 

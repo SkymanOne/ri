@@ -1,12 +1,13 @@
 //! `ri install`, `remove` (`uninstall`), `update` and `list`: pi's package
 //! commands (`package-manager-cli.ts` in pi `v1.0.0`).
 
-use std::io::Write as _;
+use std::io::{IsTerminal as _, Write as _};
+use std::path::Path;
 
 use ri_core::config::agent_dir;
 use ri_core::packages::PackageManager;
 use ri_core::settings::{Scope, SettingsManager};
-use ri_core::trust::{TrustStore, resolve_trusted};
+use ri_core::trust::{TrustStore, needs_prompt, resolve_trusted};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Command {
@@ -142,6 +143,30 @@ fn err(line: &str) {
     let _ = writeln!(std::io::stderr(), "{line}");
 }
 
+/// pi's `createCommandSettingsManager`: settings whose project scope loads
+/// when `override_`, a stored decision or `defaultProjectTrust` trusts the
+/// project, or when the user trusts it at pi's prompt in a terminal.
+pub fn command_settings(
+    cwd: &Path,
+    agent_dir: &Path,
+    override_: Option<bool>,
+) -> anyhow::Result<SettingsManager> {
+    let global = SettingsManager::load(agent_dir, cwd, false)?;
+    let view = global.settings();
+    let store = TrustStore::new(agent_dir);
+    let default = view.default_project_trust;
+    let trusted = if std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && needs_prompt(cwd, &store, override_, default)
+    {
+        crate::interactive::picker::ask_project_trust(agent_dir, cwd, view.theme.as_deref())?
+            .unwrap_or(false)
+    } else {
+        resolve_trusted(cwd, &store, override_, default)
+    };
+    Ok(SettingsManager::load(agent_dir, cwd, trusted)?)
+}
+
 /// Runs a package command when `args` starts with one; its exit code.
 pub async fn run(args: &[String]) -> Option<u8> {
     let command = match args.first()?.as_str() {
@@ -192,16 +217,7 @@ async fn execute(command: Command, options: Options) -> u8 {
         return 1;
     };
     let agent_dir = agent_dir();
-    let trust = TrustStore::new(&agent_dir);
-    let settings = match SettingsManager::load(&agent_dir, &cwd, false).and_then(|global| {
-        let trusted = resolve_trusted(
-            &cwd,
-            &trust,
-            options.trust,
-            global.settings().default_project_trust,
-        );
-        SettingsManager::load(&agent_dir, &cwd, trusted)
-    }) {
+    let settings = match command_settings(&cwd, &agent_dir, options.trust) {
         Ok(settings) => settings,
         Err(error) => {
             err(&format!("Error: {error}"));

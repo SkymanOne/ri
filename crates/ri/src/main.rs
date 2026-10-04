@@ -7,6 +7,7 @@
 
 mod args;
 mod auth_command;
+mod config_command;
 mod export_html;
 mod help;
 mod import;
@@ -40,6 +41,9 @@ fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     if raw.first().map(String::as_str) == Some("import") {
         return ExitCode::from(import::run(&raw[1..]));
+    }
+    if raw.first().map(String::as_str) == Some("config") {
+        return ExitCode::from(config_command::run(&raw[1..]));
     }
     if raw.first().map(String::as_str) == Some("mcp") {
         apply_http_proxy();

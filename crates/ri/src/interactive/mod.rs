@@ -8,6 +8,7 @@ mod bash_view;
 mod chat;
 mod clipboard;
 mod commands;
+pub mod config_selector;
 mod extension_ui;
 mod footer;
 mod header;
@@ -67,6 +68,11 @@ use self::tools::ToolView;
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL: Duration = Duration::from_millis(80);
+/// pi-tui's OSC 9;4 sequences: indeterminate progress, and none.
+const PROGRESS_ACTIVE: &str = "\x1b]9;4;3\x07";
+const PROGRESS_CLEAR: &str = "\x1b]9;4;0\x07";
+/// How often pi-tui repeats the active sequence, which some terminals expire.
+const PROGRESS_KEEPALIVE: Duration = Duration::from_secs(1);
 const DOUBLE_PRESS: Duration = Duration::from_millis(500);
 const COLOR_QUERY_TIMEOUT: Duration = Duration::from_millis(100);
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
@@ -264,6 +270,8 @@ struct App {
     next_bash: u64,
     compaction_queue: Vec<(String, bool)>,
     manual_compaction: bool,
+    /// When the terminal progress sequence was last written, while active.
+    progress: Option<Instant>,
     indicator: Option<(Indicator, Instant)>,
     expanded: bool,
     hide_thinking: bool,
@@ -1209,6 +1217,52 @@ impl App {
         self.alt.scrollbar_thumb = self.theme.fg("scrollbarThumb");
     }
 
+    fn progress_enabled(&self) -> bool {
+        self.session
+            .settings()
+            .terminal
+            .as_ref()
+            .and_then(|terminal| terminal.show_terminal_progress)
+            .unwrap_or(false)
+    }
+
+    /// pi's progress updates when `terminal.showTerminalProgress` is on:
+    /// pi-tui's `setProgress`, whose active sequence repeats every second.
+    fn show_progress(&mut self, active: bool) {
+        if !self.progress_enabled() {
+            return;
+        }
+        if active {
+            emit(PROGRESS_ACTIVE);
+            self.progress.get_or_insert_with(Instant::now);
+        } else {
+            self.progress = None;
+            emit(PROGRESS_CLEAR);
+        }
+    }
+
+    /// The time until the progress sequence repeats, while it is active.
+    fn progress_wait(&self) -> Option<Duration> {
+        self.progress
+            .map(|last| PROGRESS_KEEPALIVE.saturating_sub(last.elapsed()))
+    }
+
+    fn progress_keepalive(&mut self) {
+        if self.progress_wait() == Some(Duration::ZERO) {
+            emit(PROGRESS_ACTIVE);
+            self.progress = Some(Instant::now());
+        }
+    }
+
+    /// pi-tui's terminal `stop`: a repeating progress sequence is cleared.
+    fn stop_progress(&mut self) -> &'static str {
+        if self.progress.take().is_some() {
+            PROGRESS_CLEAR
+        } else {
+            ""
+        }
+    }
+
     /// Whether something on screen animates.
     fn animating(&self) -> bool {
         (self.fullscreen && self.alt.scrollbar_deadline().is_some())
@@ -1361,6 +1415,7 @@ impl App {
             AgentEvent::AgentStart => self.running = true,
             // pi replaces any other indicator, such as a retry countdown.
             AgentEvent::TurnStart => {
+                self.show_progress(true);
                 if self.ext.working_hidden {
                     self.indicator = None;
                 } else if !matches!(self.indicator, Some((Indicator::Working, _))) {
@@ -1486,6 +1541,7 @@ impl App {
             }
             AgentEvent::AgentSettled if self.shutdown_requested => self.quit = true,
             AgentEvent::AgentEnd { .. } => {
+                self.show_progress(false);
                 if matches!(self.indicator, Some((Indicator::Working, _))) {
                     self.indicator = None;
                 }
@@ -1500,6 +1556,7 @@ impl App {
                 follow_up,
             } => self.pending = (steering, follow_up),
             AgentEvent::CompactionStart { reason } => {
+                self.show_progress(true);
                 self.manual_compaction = reason == CompactionReason::Manual;
                 self.indicator = Some((Indicator::Task(compaction_label(reason)), Instant::now()));
             }
@@ -1545,6 +1602,7 @@ impl App {
                 error_message,
                 ..
             } => {
+                self.show_progress(false);
                 self.indicator = None;
                 let manual = reason == CompactionReason::Manual;
                 self.manual_compaction = false;
@@ -2581,7 +2639,7 @@ impl App {
     /// Gives the terminal to another program and takes it back.
     fn with_terminal_released(&mut self, terminal: &mut Terminal, run: impl FnOnce()) {
         terminal.stdin_paused.store(true, Ordering::SeqCst);
-        let mut out = String::new();
+        let mut out = String::from(self.stop_progress());
         if self.fullscreen {
             out.push_str(ALT_SCREEN_LEAVE);
         } else {
@@ -2980,6 +3038,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         next_bash: 0,
         compaction_queue: Vec::new(),
         manual_compaction: false,
+        progress: None,
         indicator: None,
         expanded: options.verbose,
         hide_thinking: settings.hide_thinking_block.unwrap_or(false),
@@ -3131,6 +3190,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         };
         #[cfg(not(unix))]
         let terminated = std::future::pending::<Option<()>>();
+        let progress_wait = app.progress_wait();
         let flush_wait = if dirty {
             FRAME_INTERVAL.saturating_sub(last_draw.elapsed())
         } else {
@@ -3178,6 +3238,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
                 dirty = true;
             }
             _ = tokio::time::sleep(tick) => dirty = true,
+            _ = tokio::time::sleep(progress_wait.unwrap_or_default()), if progress_wait.is_some() => {
+                app.progress_keepalive();
+            }
             _ = resized => {
                 app.size = ri_tui::terminal::size();
                 app.invalidate_all();
@@ -3200,7 +3263,15 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     ri_core::tools::bash::kill_tracked_children();
     app.indicator = None;
     app.selector = None;
+    // pi's `stop` clears progress when the setting is on; pi-tui's clears a
+    // repeating sequence the setting no longer covers.
     let mut out = String::new();
+    if app.progress_enabled() {
+        app.progress = None;
+        out.push_str(PROGRESS_CLEAR);
+    } else {
+        out.push_str(app.stop_progress());
+    }
     let transcript = app.session.settings().fullscreen_exit_output
         != Some(ri_types::settings::FullscreenExitOutput::ResumeHint);
     if app.fullscreen && !transcript {

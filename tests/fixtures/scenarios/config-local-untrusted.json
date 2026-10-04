@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Project is not trusted. Use --approve to modify local resource config.\n",
+  "requests": []
+}

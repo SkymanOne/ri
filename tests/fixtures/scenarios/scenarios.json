@@ -735,5 +735,11 @@
   {"name": "tui-settings-model-thinking", "cassette": "none.json", "args": ["--model", "anthropic/claude-sonnet-4-5"], "tty": {"cols": 100, "rows": 40, "keys": ["/settings", "\r", "per model", "\r", "opus-4-5"]}},
   {"name": "tui-scoped-models", "cassette": "none.json", "args": ["--model", "anthropic/claude-sonnet-4-5"], "tty": {"cols": 100, "rows": 40, "keys": ["/scoped-models", "\r", "sonnet-4-5", "\r"]}},
   {"name": "mcp-direct-blocked-images-json", "cassette": "mcp/direct.json", "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Use the demo tools"], "agentFiles": {"mcp.json": "{\"mcpServers\": {\"demo\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"exposure\": \"direct\", \"description\": \"Demo tools\"}}}\n", "settings.json": "{\n  \"images\": {\n    \"blockImages\": true\n  }\n}\n"}},
-  {"name": "tui-model-scope-search", "cassette": "none.json", "args": ["--model", "anthropic/claude-sonnet-4-5", "--models", "claude-opus-4-5,claude-sonnet-4-5,gpt-5"], "tty": {"cols": 100, "rows": 40, "keys": ["/model", "\r", "opus", "\t"]}}
+  {"name": "tui-model-scope-search", "cassette": "none.json", "args": ["--model", "anthropic/claude-sonnet-4-5", "--models", "claude-opus-4-5,claude-sonnet-4-5,gpt-5"], "tty": {"cols": 100, "rows": 40, "keys": ["/model", "\r", "opus", "\t"]}},
+  {"name": "config-help", "cassette": "none.json", "args": ["config", "--help"]},
+  {"name": "config-unknown-option", "cassette": "none.json", "args": ["config", "--bogus"]},
+  {"name": "config-unexpected-argument", "cassette": "none.json", "args": ["config", "extra"]},
+  {"name": "config-local-untrusted", "cassette": "none.json", "args": ["config", "-l", "--no-approve"]},
+  {"name": "tui-config", "cassette": "none.json", "args": ["config", "--approve"], "agentFiles": {"prompts/fix.md": "---\ndescription: Fix it\n---\nfix\n", "pkg/prompts/fixup.md": "fixup\n", "settings.json": "{\"packages\": [\"./pkg\"]}"}, "tty": {"cols": 100, "rows": 30, "keys": ["fix", " ", "\t", " ", " "]}},
+  {"name": "tui-terminal-progress", "cassette": "anthropic-messages/tool-call.json", "args": ["--model", "anthropic/claude-sonnet-4-5"], "files": {"hello.txt": "hi\n"}, "agentFiles": {"settings.json": "{\"terminal\": {\"showTerminalProgress\": true}}"}, "tty": {"cols": 100, "rows": 30, "keys": ["Read hello.txt", "\r", "\u0004"], "progress": true}}
 ]

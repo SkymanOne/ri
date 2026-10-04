@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "Usage:\n  pi config [-l] [--approve|--no-approve]\n\nOpen the resource configuration TUI to enable or disable package resources.\nWithout -l, starts in global settings (~/.pi/agent/settings.json).\nPress Tab in the TUI to switch between global and project-local modes.\n\nOptions:\n  -l, --local       Edit project overrides (.pi/settings.json)\n  -a, --approve     Trust project-local files for this command with -l\n  -na, --no-approve Ignore project-local files for this command with -l\n\n",
+  "stderr": "",
+  "requests": []
+}

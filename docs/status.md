@@ -69,6 +69,7 @@ Done for the slice below.
 - Selectors: model (with the all/scoped toggle), thinking, fork, session (`/resume`, `--resume`), tree with filters, folding, labels and branch summaries, and the choice and text dialogs they use.
 - `/settings` with pi's items, search and submenus (warnings, per-model thinking levels, the theme with live preview and automatic light/dark pairs). Changes apply at once where ri implements the setting, including switching between fullscreen and regular mode, and are saved as pi saves them.
 - `/scoped-models`: enabling, clearing, reordering and provider toggles for the session, saved to `enabledModels` with `ctrl+s`.
+- `terminal.showTerminalProgress`: pi's OSC 9;4 progress while the agent runs or compacts, repeated every second and cleared at the end and on exit.
 - `images.blockImages` replaces images sent to providers with pi's notice; `fullscreenExitOutput: "resume-hint"` leaves fullscreen without printing the transcript.
 - Commands: `/model`, `/thinking`, `/settings`, `/scoped-models`, `/export` (JSONL), `/import`, `/copy`, `/name`, `/session`, `/changelog`, `/hotkeys`, `/fork`, `/clone`, `/tree`, `/new`, `/compact`, `/reload`, `/debug`, `/resume`, `/quit`.
 - Keys: interrupt and double escape, clear and exit, suspend, thinking and model cycling, model selector, tool and thinking toggles, external editor, copy, follow-up and dequeue, fullscreen scrolling.
@@ -95,7 +96,7 @@ Budgets, from `cargo xtask bench` on this machine (release build, 100×40 termin
 
 Not yet done:
 
-- Settings that `/settings` saves but ri does not act on yet: image auto-resize, terminal progress, HTTP idle timeout, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
+- Settings that `/settings` saves but ri does not act on yet: image auto-resize, HTTP idle timeout, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
 - Changelog entries.
 - Clipboard image paste, terminal images, mermaid, mouse selection.
 - Regular mode re-renders the whole document each frame, as pi does; fullscreen reuses unchanged rows.
@@ -174,6 +175,7 @@ Done for the slice below.
 - Sessions: extension tools (with prompt snippets, guidelines, updates and activation rules), commands, and the events `session_start`, `session_shutdown`, `input`, `before_agent_start` (messages and a forced system prompt), `context`, `tool_call` (blocking), `tool_result` (changes), and the agent, turn, message and tool execution events. Actions: `sendMessage` with every delivery mode, `sendUserMessage`, `appendEntry`, session names and labels, the session manager's reads, active tools, thinking level, model selection, models and credentials, `exec`, notifications and the select, confirm and input dialogs. Each new session runs the factories again, as pi does.
 - Extension errors are reported per mode: stderr in print and JSON modes, `extension_error` lines in RPC mode, pi's error lines with the stack's extension frames in the TUI. A failing command is named `command:<name>`, as in pi.
 - Packages: `ri install`, `remove` (`uninstall`), `update` and `list` with pi's arguments, messages and settings entries; npm, git and local sources; the user and project scopes; resources from `package.json` manifests (`ri` before `pi`, with globs and exclusions), conventional directories and settings filters; missing packages installed at startup unless offline; top-level `extensions` in settings; pi's extension order. npm packages install through a built-in client: registry resolution with npm's range syntax, integrity checks, hoisted dependencies, pruning on removal, no lifecycle scripts (native addons stay unbuilt and fail only when loaded) and pi's own packages skipped. `cargo xtask vendor-pi` regenerates the vendored bundles reproducibly.
+- `ri config`: pi's resource selector, globally or for the project (`-l`), which writes the same settings patterns. Package commands and `ri config` ask whether to trust the project in a terminal, as pi does.
 - Resources resolve as pi's package manager resolves them: auto-discovered directories (including `.agents/skills` up to the git root), settings entries, packages and built-ins, with `+path`, `-path` and `!glob` overrides, ignore files, project precedence and per-package `autoload` deltas. `crates/ri-core/tests/resolve.rs` compares the result with pi's on eight trees (`tests/fixtures/pi/resolve`).
 - Native extensions: `guest/ri-extension-api`, a Rust SDK for tools, commands, flags, event handlers and synchronous host actions, with an example (`guest/examples/hello`). A `.wasm` file loads wherever a pi extension file does, in its own instance.
 
@@ -193,7 +195,7 @@ Not yet done:
 - `registerProvider` with a custom `streamSimple`, an OAuth sign-in or `refreshModels`; providers configured like `models.json` entries work.
 - `session_start` always reports the reason `startup`; `pi.sendUserMessage` expands prompt templates.
 - Boundary events: `turn_end` handlers cannot stage entries or continue the run, and `agent_before_settle` is not sent; `turn_end` carries only `turnIndex`, `message` and `toolResults`.
-- Package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources.
+- Package update checks at startup; registry credentials from `.npmrc`; temporary installs for `-e npm:` and `-e git:` sources; `ri config` installing configured packages that are missing.
 - Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
 
 ## M6: extension UI

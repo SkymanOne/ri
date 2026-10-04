@@ -209,6 +209,8 @@ ri update --extensions
 ri remove npm:@scope/some-pi-package
 ```
 
+**Turning resources on and off.** `ri config` lists every extension, skill, prompt template and theme that your packages, settings and the agent and project folders provide. <kbd>Space</kbd> toggles one, and the choice is saved as a pattern in `settings.json`. <kbd>Tab</kbd> switches between your global settings and overrides for the current project; `ri config -l` starts with the project.
+
 **Writing an extension.** Extensions use pi's API unchanged. Save this as `~/.ri/agent/extensions/hello.ts`:
 
 ```typescript

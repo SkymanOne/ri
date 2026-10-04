@@ -87,6 +87,9 @@ pub struct Tty {
     pub rows: u16,
     /// Input to send, one write each, such as `"hello"` or `"\r"`.
     pub keys: Vec<String>,
+    /// Whether to record the terminal progress sequences (OSC 9;4) written.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub progress: bool,
 }
 
 /// Which program runs a scenario.
@@ -117,6 +120,8 @@ pub struct Run {
     pub sessions: Vec<SessionFile>,
     /// The final screen of a terminal run, one string per row.
     pub screen: Option<Vec<String>>,
+    /// The progress sequences of a terminal run that records them.
+    pub progress: Option<Vec<String>>,
     /// The mock server's URL, for normalization.
     pub url: String,
 }
@@ -258,15 +263,17 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         ("GEMINI_API_KEY", "mock".into()),
         ("OPENCODE_API_KEY", "mock".into()),
     ];
+    let mut progress = None;
     let (exit_code, stdout, stderr, screen) = match &scenario.tty {
         Some(tty) => {
             let (path, args, dir, tty) = (executable.clone(), args, cwd.clone(), tty.clone());
-            let (exit_code, screen) =
+            let (exit_code, screen, written) =
                 tokio::task::spawn_blocking(move || run_tty(&path, &args, &dir, &env, &tty))
                     .await
                     .map_err(|error| std::io::Error::other(error.to_string()))
                     .and_then(|result| result)
                     .map_err(io(executable))?;
+            progress = written;
             (exit_code, String::new(), String::new(), Some(screen))
         }
         None if scenario.rpc.is_some() => {
@@ -328,6 +335,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         stdout,
         stderr,
         screen,
+        progress,
         url,
         requests,
         cwd: cwd.clone(),
@@ -471,15 +479,15 @@ async fn run_rpc(
 }
 
 /// Runs `executable` in a pseudo-terminal, typing `tty.keys` once the screen
-/// settles each time. Returns the exit code (-1 if it was still running) and
-/// the final screen rows.
+/// settles each time. Returns the exit code (-1 if it was still running), the
+/// final screen rows and, when `tty.progress` asks, the progress sequences.
 fn run_tty(
     executable: &Path,
     args: &[String],
     cwd: &Path,
     env: &[(&'static str, std::ffi::OsString)],
     tty: &Tty,
-) -> std::io::Result<(i32, Vec<String>)> {
+) -> std::io::Result<(i32, Vec<String>, Option<Vec<String>>)> {
     let mut pty = crate::pty::Pty::spawn(executable, args, cwd, env, (tty.cols, tty.rows), false)?;
     pty.settle();
     for key in &tty.keys {
@@ -487,7 +495,8 @@ fn run_tty(
         pty.settle();
     }
     let screen = pty.rows();
-    Ok((pty.finish()?, screen))
+    let progress = tty.progress.then(|| pty.progress());
+    Ok((pty.finish()?, screen, progress))
 }
 
 /// Normalizes runs for comparison: paths, names, timestamps, and ids, which
@@ -549,7 +558,10 @@ impl Normalizer<'_> {
             .replace("\"ri --help\"", "\"pi --help\"")
             .replace("Usage: ri ", "Usage: pi ")
             .replace("ri mcp ", "pi mcp ")
+            .replace("ri config ", "pi config ")
+            .replace("this session: ri --session", "this session: pi --session")
             .replace(".ri/mcp.json", ".pi/mcp.json")
+            .replace(".ri/settings.json", ".pi/settings.json")
             .replace("~/.ri/agent", "~/.pi/agent")
             .replace("start ri in the project", "start pi in the project");
         for (from, to) in &self.renames {
@@ -779,6 +791,9 @@ pub fn normalize(run: &Run) -> Value {
     }
     if let Some(screen) = &run.screen {
         out["screen"] = Value::from(normalize_screen(screen, &mut normalizer));
+    }
+    if let Some(progress) = &run.progress {
+        out["progress"] = Value::from(progress.clone());
     }
     out
 }

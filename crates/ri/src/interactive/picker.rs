@@ -1,9 +1,9 @@
-//! Selectors that run before interactive mode starts: the `--resume` session
-//! picker and the project trust prompt.
+//! Selectors that run outside an interactive session: the `--resume` session
+//! picker, the project trust prompt and `ri config`.
 //!
-//! Ports of `cli/session-picker.ts` and the startup selector of
-//! `cli/startup-ui.ts` in `packages/coding-agent/src` in pi `v1.0.0`, on the
-//! main screen.
+//! Ports of `cli/session-picker.ts`, the startup selector of
+//! `cli/startup-ui.ts` and `cli/config-selector.ts` in
+//! `packages/coding-agent/src` in pi `v1.0.0`, on the main screen.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -17,6 +17,7 @@ use ri_tui::terminal::{
     color_query,
 };
 
+use super::config_selector::ConfigSelector;
 use super::selectors::{Action, ChoiceDialog, Outcome, Selector, Ui};
 use super::session_selector::{SessionSelector, Sources};
 use super::{COLOR_QUERY_TIMEOUT, emit, home_dir, keybindings, load_theme, true_color};
@@ -75,6 +76,21 @@ pub fn ask_choice(
             _ => None,
         },
     )
+}
+
+/// Shows the `ri config` selector until it is closed.
+pub fn configure(
+    agent_dir: &Path,
+    theme_setting: Option<&str>,
+    selector: ConfigSelector,
+) -> std::io::Result<()> {
+    run_selector(
+        agent_dir,
+        theme_setting,
+        Selector::Config(Box::new(selector)),
+        false,
+    )?;
+    Ok(())
 }
 
 /// Runs `selector` on the main screen until it finishes; its action, or

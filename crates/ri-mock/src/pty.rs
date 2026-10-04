@@ -20,6 +20,8 @@ pub const SETTLE_LIMIT: Duration = Duration::from_secs(15);
 
 struct Screen {
     parser: vt100::Parser,
+    /// Everything the program wrote.
+    output: Vec<u8>,
     last_output: Instant,
     seen_output: bool,
     /// When the program first wrote anything.
@@ -108,6 +110,7 @@ impl Pty {
         let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(io_error)?));
         let screen = Arc::new(Mutex::new(Screen {
             parser: vt100::Parser::new(rows, cols, 0),
+            output: Vec::new(),
             last_output: Instant::now(),
             seen_output: false,
             first_output: None,
@@ -133,6 +136,7 @@ impl Pty {
                         {
                             let mut screen = shared.lock().unwrap_or_else(PoisonError::into_inner);
                             screen.parser.process(&buffer[..count]);
+                            screen.output.extend_from_slice(&buffer[..count]);
                             let now = Instant::now();
                             screen.last_output = now;
                             screen.seen_output = true;
@@ -182,6 +186,19 @@ impl Pty {
     /// The screen, one string per row.
     pub fn rows(&self) -> Vec<String> {
         self.lock().parser.screen().rows(0, self.cols).collect()
+    }
+
+    /// The OSC 9;4 progress sequences the program wrote so far, in order,
+    /// such as `"9;4;3"`.
+    pub fn progress(&self) -> Vec<String> {
+        let screen = self.lock();
+        let text = String::from_utf8_lossy(&screen.output);
+        text.split("\x1b]")
+            .skip(1)
+            .filter_map(|rest| rest.split_once('\x07').map(|(body, _)| body))
+            .filter(|body| body.starts_with("9;4;"))
+            .map(str::to_owned)
+            .collect()
     }
 
     /// Waits until the screen has been quiet for [`settle_time`], counting from
