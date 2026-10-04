@@ -864,7 +864,9 @@
 		}
 	}
 	class Transform extends Writable {}
-	builtins.stream = { Stream, Readable, Writable, Transform, PassThrough: Transform, Duplex: Transform, pipeline: notSupported("stream.pipeline"), finished: notSupported("stream.finished") };
+	// As in Node, the module is the legacy `Stream` constructor, which old
+	// packages extend with `util.inherits`, carrying the stream classes.
+	builtins.stream = Object.assign(Stream, { Stream, Readable, Writable, Transform, PassThrough: Transform, Duplex: Transform, pipeline: notSupported("stream.pipeline"), finished: notSupported("stream.finished") });
 	builtins["stream/promises"] = { pipeline: notSupported("stream.pipeline"), finished: notSupported("stream.finished") };
 	builtins.readline = {
 		createInterface: () => {

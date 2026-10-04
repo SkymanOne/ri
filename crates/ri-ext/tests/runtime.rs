@@ -175,12 +175,18 @@ export default function (pi) {
 }
 
 /// Gaps the npm package comparison found: `import.meta.resolve`, Node's
-/// diagnostic report, and a NUL character in a source file.
+/// diagnostic report, a NUL character in a source file, and `stream` as the
+/// constructor old packages extend.
 #[tokio::test(flavor = "multi_thread")]
 async fn resolves_import_meta_reads_reports_and_keeps_nul_characters() {
     let dir = scratch("meta");
     let main = "
 import lib from \"cjs-lib\";
+import util from \"node:util\";
+import { createRequire } from \"node:module\";
+const Stream = createRequire(import.meta.url)(\"stream\");
+function Legacy() {}
+util.inherits(Legacy, Stream);
 const nul = \"a\0b\";
 export default function (pi) {
 	pi.registerCommand(\"probe\", {
@@ -192,6 +198,7 @@ export default function (pi) {
 			nul.length,
 			nul.charCodeAt(1),
 			lib.ok,
+			new Legacy() instanceof Stream && typeof Stream.Readable,
 		].join(\",\"),
 		handler: async () => {},
 	});
@@ -215,7 +222,7 @@ export default function (pi) {
     assert_eq!(
         extension["commands"][0]["description"],
         format!(
-            "file://{dir}/node_modules/cjs-lib/index.js,file://{dir}/data.txt,node:fs,object,3,0,yes\0"
+            "file://{dir}/node_modules/cjs-lib/index.js,file://{dir}/data.txt,node:fs,object,3,0,yes\0,function"
         )
     );
 }
