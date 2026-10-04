@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
 /// Bumped when the output of [`Loader::transpile`] changes for the same input.
-const TRANSPILE_VERSION: &str = "3";
+const TRANSPILE_VERSION: &str = "4";
 
 /// How a file runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,29 +155,30 @@ impl Loader {
         if let Some(found) = prepared.get(path) {
             return Ok(found.clone());
         }
-        if path.extension().is_some_and(|ext| ext == "node") {
+        let file = file_of(path);
+        if file.extension().is_some_and(|ext| ext == "node") {
             return Err(format!(
                 "Native addon {} cannot be loaded in ri extensions",
-                path.display()
+                file.display()
             ));
         }
-        let text = std::fs::read_to_string(path)
-            .map_err(|err| format!("Cannot read module {}: {err}", path.display()))?;
+        let text = std::fs::read_to_string(file)
+            .map_err(|err| format!("Cannot read module {}: {err}", file.display()))?;
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
         // Node ignores a hashbang line; keep the line so positions hold.
         let text = match text.strip_prefix("#!") {
             Some(rest) => &rest[rest.find('\n').unwrap_or(rest.len())..],
             None => text,
         };
-        let found = if path.extension().is_some_and(|ext| ext == "json") {
+        let found = if file.extension().is_some_and(|ext| ext == "json") {
             serde_json::from_str::<Value>(text)
-                .map_err(|err| format!("{}: {err}", path.display()))?;
+                .map_err(|err| format!("{}: {err}", file.display()))?;
             Prepared {
                 format: Format::Json,
                 source: text.to_owned(),
             }
         } else {
-            self.transpile_cached(path, text)?
+            self.transpile_cached(file, text)?
         };
         prepared.insert(path.to_path_buf(), found.clone());
         Ok(found)
@@ -229,6 +230,21 @@ impl Loader {
     }
 }
 
+/// The file module `path` names, without the query or fragment an import
+/// such as `./a.js?v=1` adds and the module keeps in its name.
+fn file_of(path: &Path) -> &Path {
+    if path.exists() {
+        return path;
+    }
+    match path
+        .to_str()
+        .and_then(|text| text.find(['?', '#']).map(|at| &text[..at]))
+    {
+        Some(file) => Path::new(file),
+        None => path,
+    }
+}
+
 /// Strips TypeScript, decides the module format and adds what jiti provides
 /// to ES modules: `require`, `__filename`, `__dirname` and `import.meta` paths.
 fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
@@ -239,12 +255,14 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs());
     let parsed = Parser::new(&allocator, text, source_type).parse();
-    if !parsed.diagnostics.is_empty() {
-        let message = parsed
-            .diagnostics
-            .first()
-            .map_or_else(|| "syntax error".to_owned(), ToString::to_string);
-        return Err(format!("{}: {message}", path.display()));
+    // pi's loader strips types without checking them, so only syntax errors
+    // fail, not the TypeScript grammar checks that oxc reports with `TS` codes.
+    if let Some(error) = parsed
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.scope.as_deref() != Some("TS"))
+    {
+        return Err(format!("{}: {error}", path.display()));
     }
     let has_module_syntax = parsed.module_record.has_module_syntax;
     let mut program = parsed.program;
@@ -260,8 +278,12 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
             .keys()
             .any(|key| key.as_str() == name)
     };
-    let common_js = source_type.is_commonjs()
-        || (!has_module_syntax && (unresolved("module") || unresolved("exports")));
+    // As in Node, a `.js` file without module syntax is CommonJS: a script
+    // such as a polyfill runs when it is required.
+    let explicit_module = path
+        .extension()
+        .is_some_and(|ext| ext == "mjs" || ext == "mts");
+    let common_js = source_type.is_commonjs() || (!has_module_syntax && !explicit_module);
     let uses_require = unresolved("require");
     let uses_filename = unresolved("__filename");
     let uses_dirname = unresolved("__dirname");

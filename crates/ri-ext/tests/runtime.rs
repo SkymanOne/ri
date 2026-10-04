@@ -438,3 +438,38 @@ export default function (pi) {
         "4,6,0,true,false,true,Subnet: IPv6 fd00::/8;Range: IPv4 10.0.0.1-10.0.0.9;Address: IPv4 1.2.3.4,function,false,ERR_NOT_SUPPORTED"
     );
 }
+
+/// Scripts without module syntax load as CommonJS, imports may carry a
+/// query, and TypeScript grammar checks do not stop a module, as with pi's
+/// loader.
+#[tokio::test(flavor = "multi_thread")]
+async fn loads_scripts_queries_and_unchecked_typescript() {
+    let dir = scratch("loading");
+    let main = r#"
+import { createRequire } from "node:module";
+import { value } from "./dep.js?v=1";
+import { join } from "./unchecked.ts";
+createRequire(import.meta.url)("./polyfill.js");
+export default function (pi) {
+	pi.registerCommand("probe", { description: [globalThis.polyfilled, value, join("a", "b")].join(","), handler: async () => {} });
+}
+"#;
+    let (_instance, extension) = load(
+        &dir,
+        &[
+            ("main.ts", main),
+            (
+                "polyfill.js",
+                "(function (global) {\n\tglobal.polyfilled = \"yes\";\n})(globalThis);\n",
+            ),
+            ("dep.js", "export const value = 2;\n"),
+            (
+                "unchecked.ts",
+                "export function join(a?: string, b: string): string {\n\treturn `${a}+${b}`;\n}\n",
+            ),
+        ],
+    )
+    .await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(extension["commands"][0]["description"], "yes,2,a+b");
+}
