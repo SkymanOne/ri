@@ -175,7 +175,8 @@ pub fn render(data: &FooterData<'_>, theme: &Theme, width: usize) -> Vec<StyledL
     }
     let left_width = lines::width(&left_line);
 
-    let model = data.model.unwrap_or("no-model");
+    // pi's agent holds a placeholder model named `unknown` until one is chosen.
+    let model = data.model.unwrap_or("unknown");
     let mut right = model.to_owned();
     if data.reasoning {
         right = if data.thinking == "off" {

@@ -487,12 +487,39 @@ fn js_number(text: &str) -> Value {
     if trimmed.is_empty() {
         return json!(0);
     }
+    // `0x`, `0o` and `0b` integers, without a sign.
+    for (prefix, radix) in [("0x", 16), ("0o", 8), ("0b", 2)] {
+        if let Some(digits) = trimmed
+            .get(..2)
+            .filter(|start| start.eq_ignore_ascii_case(prefix))
+            .and_then(|_| trimmed.get(2..))
+        {
+            let value = digits.chars().try_fold(0.0_f64, |value, c| {
+                c.to_digit(radix)
+                    .map(|digit| value * f64::from(radix) + f64::from(digit))
+            });
+            return match value {
+                Some(value) if !digits.is_empty() => js_integer(value),
+                _ => Value::Null,
+            };
+        }
+    }
     match trimmed.parse::<f64>() {
         Ok(number) if number.fract() == 0.0 && number.abs() < 9_007_199_254_740_992.0 => {
             json!(number as i64)
         }
         Ok(number) if number.is_finite() => json!(number),
         _ => Value::Null,
+    }
+}
+
+fn js_integer(value: f64) -> Value {
+    if value < 9_007_199_254_740_992.0 {
+        json!(value as i64)
+    } else if value.is_finite() {
+        json!(value)
+    } else {
+        Value::Null
     }
 }
 
@@ -799,5 +826,12 @@ mod tests {
         assert_eq!(js_number("8080"), json!(8080));
         assert_eq!(js_number("1.5"), json!(1.5));
         assert_eq!(js_number("x"), Value::Null);
+        // `Number()`'s radix prefixes.
+        assert_eq!(js_number("0x1F90"), json!(8080));
+        assert_eq!(js_number(" 0o17 "), json!(15));
+        assert_eq!(js_number("0B101"), json!(5));
+        assert_eq!(js_number("0x"), Value::Null);
+        assert_eq!(js_number("-0x10"), Value::Null);
+        assert_eq!(js_number("0x+1"), Value::Null);
     }
 }

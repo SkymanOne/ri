@@ -27,6 +27,7 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
         initial_message,
         initial_images,
         messages,
+        ..
     } = startup;
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
     let mode = if json { Mode::Json } else { Mode::Print };

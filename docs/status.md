@@ -136,11 +136,11 @@ OAuth is done for the slice below.
 
 - Sign-in flows ported from pi-ai: Anthropic (Claude Pro/Max; browser callback or copied code), OpenAI Codex (browser callback or device code), Sign in with ChatGPT for `openai` (per-sign-in client registration, the installation's `deviceId`), and GitHub Copilot (device flow, enterprise domains, the account's endpoint from `proxy-ep`, model policies and the account's model list).
 - `auth.json` as pi's credential store: reads follow the file's revision, changes take a `proper-lockfile`-compatible lock and rewrite the document as pi does. Tokens expiring within five minutes refresh under the lock after a second check, so concurrent ri and pi processes refresh once.
-- `/login` and `/logout` in the TUI: pi's method menu, provider selector with configuration status, login dialog, API key login, default model selection after a first login, and the Anthropic subscription notice.
+- `/login` and `/logout` in the TUI: pi's method menu, provider selector with pi's configuration status labels and `models.json` provider names, `/login <provider>` argument completion, login dialog, API key login, default model selection after a first login, and the Anthropic subscription notice.
 - GitHub Copilot's per-request headers on all three of its wire APIs.
 - `ri auth print-api-key`, `print-bearer-token` and `check` for external clients, with pi's resolution, refresh, JSON output and exit codes.
 
-Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Four `/login` and `/logout` screens recorded from pi match, and 16 `ri auth` scenarios match pi's output and exit codes.
+Exit criterion. Each flow passes against a mock authorization server (`crates/ri-ai/tests/oauth.rs`): authorization URLs, pasted and loopback codes, device polling with `slow_down`, token exchange and refresh bodies, and refresh failures surfacing as request errors. Eight `/login` and `/logout` screens recorded from pi match, and 16 `ri auth` scenarios match pi's output and exit codes.
 
 Not yet done:
 

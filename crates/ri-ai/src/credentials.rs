@@ -143,6 +143,15 @@ pub async fn resolve(config: &str, env: Option<&ProviderEnv>, cache: bool) -> Op
     if let Some(command) = config.strip_prefix('!') {
         return run_command(command, cache).await;
     }
+    resolve_template(config, env)
+}
+
+/// Resolves a template value; `None` for a `!command` or when a variable it
+/// reads is not set.
+pub fn resolve_template(config: &str, env: Option<&ProviderEnv>) -> Option<String> {
+    if is_command(config) {
+        return None;
+    }
     let mut resolved = String::new();
     for part in parse_template(config) {
         match part {

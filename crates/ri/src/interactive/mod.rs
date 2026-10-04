@@ -192,6 +192,8 @@ pub struct Options {
     pub factory: SessionFactory,
     /// `--use-theme`: the theme for this run instead of the `theme` setting.
     pub use_theme: Option<String>,
+    /// Why the startup model differs from the session's, or that there is none.
+    pub model_fallback: Option<String>,
 }
 
 fn true_color() -> bool {
@@ -3044,6 +3046,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     };
     let theme_files = themes::ThemeFiles::load(&session.resources().themes);
     let theme_override = options.use_theme.clone();
+    let model_fallback = options.model_fallback;
     let (theme, theme_error) = load_theme(
         theme_override
             .as_deref()
@@ -3187,12 +3190,24 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     if let Some(error) = theme_error {
         app.error(error);
     }
+    if let Some(error) = app
+        .session
+        .with_registry(|registry| registry.error().map(str::to_owned))
+        .flatten()
+    {
+        app.error(format!("models.json error: {error}"));
+    }
+    if let Some(message) = model_fallback {
+        app.warning(message);
+    }
     for event in early_events {
         app.on_event(event, &mut terminal);
     }
+    app.editor.begin_input_batch();
     for key in early {
         app.handle_key(&key, &mut terminal);
     }
+    app.editor.end_input_batch();
     app.warn_anthropic_subscription(None);
     app.ext.set_tools_expanded(app.expanded);
     app.binding = Some(None);
@@ -3261,6 +3276,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
                 let Some(event) = event else { break };
                 if let Event::Input(bytes) = event {
                     let mut write = String::new();
+                    app.editor.begin_input_batch();
                     for input in buffer.push(&bytes) {
                         match input {
                             Input::Key(sequence) => {
@@ -3276,6 +3292,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
                             Input::Paste(text) => app.handle_key(&format!("\x1b[200~{text}\x1b[201~"), &mut terminal),
                         }
                     }
+                    app.editor.end_input_batch();
                     if !write.is_empty() {
                         emit(&write);
                     }

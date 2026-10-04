@@ -876,8 +876,29 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             .take_while(|row| !row.trim().is_empty() && TIP.contains(row.trim()))
             .count(),
     };
+    // pi's sign-in help lists two documents in its install, one per row; ri
+    // links its README in one row. Both become `<sign-in help>`.
+    let mut merged: Vec<String> = Vec::new();
+    let mut rest = rows[start..].iter().peekable();
+    while let Some(row) = rest.next() {
+        if row
+            .trim_end()
+            .ends_with("/pi-coding-agent/docs/providers.md")
+            && rest
+                .peek()
+                .is_some_and(|next| next.trim_end().ends_with("/pi-coding-agent/docs/models.md"))
+        {
+            rest.next();
+            let indent = &row[..row.len() - row.trim_start().len()];
+            merged.push(format!(
+                "{indent}https://github.com/SkymanOne/ri#models-and-sign-in"
+            ));
+        } else {
+            merged.push(row.clone());
+        }
+    }
     let mut out: Vec<String> = Vec::new();
-    for row in &rows[start..] {
+    for row in &merged {
         if row.contains("▀▀█") || row.contains("█▀ ▀ v") || row.starts_with(" ri v") {
             continue;
         }

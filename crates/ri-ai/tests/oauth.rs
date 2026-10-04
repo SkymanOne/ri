@@ -561,10 +561,7 @@ async fn registry_reports_refresh_failures_and_logs_in_with_keys() {
         )
         .await
         .unwrap();
-    assert_eq!(
-        registry.auth_source("openai").as_deref(),
-        Some("stored credential")
-    );
+    assert_eq!(registry.login_status("openai").as_deref(), Some("stored"));
     registry.logout("openai").await.unwrap();
     assert!(registry.store().get("openai").is_none());
     std::fs::remove_dir_all(&dir).unwrap();

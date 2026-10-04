@@ -327,6 +327,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                     startup::create(&args, session, false, &extensions)
                 }),
                 use_theme: parsed.use_theme.clone(),
+                model_fallback: startup.model_fallback,
             },
         );
         return survive_crash(run).await;

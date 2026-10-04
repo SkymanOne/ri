@@ -5,7 +5,7 @@
 //! then extension providers. Credentials resolve in pi's order: a runtime key
 //! (`--api-key`), `auth.json`, `models.json` `apiKey`, then environment variables.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,6 +80,8 @@ pub struct ModelRegistry {
     store: Arc<CredentialStore>,
     oauth: IndexMap<String, Arc<dyn OAuthProvider>>,
     runtime_keys: IndexMap<String, String>,
+    /// Providers whose `apiKey` an extension configures.
+    extension_keys: HashSet<String>,
     error: Option<String>,
 }
 
@@ -329,14 +331,28 @@ impl ModelRegistry {
             ..ModelRegistry::default()
         };
         let models_path = agent_dir.join("models.json");
-        if let Ok(text) = std::fs::read_to_string(&models_path) {
-            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-            match serde_json::from_str::<ModelsConfig>(&strip_json_comments(text)) {
-                Ok(config) => registry.config = config,
-                Err(err) => {
-                    registry.error =
-                        Some(format!("Failed to load {}: {err}", models_path.display()));
+        let file = models_path.display();
+        // pi's three failures: reading, parsing and the schema.
+        match std::fs::read_to_string(&models_path) {
+            Ok(text) => {
+                let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+                match serde_json::from_str::<ModelsConfig>(&strip_json_comments(text)) {
+                    Ok(config) => registry.config = config,
+                    Err(err) if err.is_data() => {
+                        registry.error = Some(format!(
+                            "Invalid models.json schema:\n  - {err}\n\nFile: {file}"
+                        ));
+                    }
+                    Err(err) => {
+                        registry.error = Some(format!(
+                            "Failed to parse models.json: {err}\n\nFile: {file}"
+                        ));
+                    }
                 }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                registry.error = Some(format!("Failed to load models.json: {err}\n\nFile: {file}"));
             }
         }
         registry.rebuild();
@@ -430,6 +446,9 @@ impl ModelRegistry {
     /// Adds a provider an extension configures, as a `models.json` entry
     /// that replaces any of the same name; pi's `registerProvider`.
     pub fn register_config(&mut self, provider: &str, config: ProviderConfig) {
+        if config.api_key.is_some() {
+            self.extension_keys.insert(provider.to_owned());
+        }
         self.config.providers.insert(provider.to_owned(), config);
         self.rebuild();
     }
@@ -506,10 +525,9 @@ impl ModelRegistry {
             .any(|key| credentials::is_command(key))
     }
 
-    /// Where `provider`'s credential comes from, as pi labels it in `/login`:
-    /// `stored credential`, `OAuth`, `configured API key` or an environment
-    /// variable. `None` when it has none. Commands are not run.
-    pub fn auth_source(&self, provider: &str) -> Option<String> {
+    /// Where `provider`'s credential comes from, without running commands;
+    /// `None` when it has none.
+    fn auth_source(&self, provider: &str) -> Option<String> {
         if self.runtime_keys.contains_key(provider) {
             return Some("--api-key".into());
         }
@@ -535,6 +553,40 @@ impl ModelRegistry {
         credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
     }
 
+    /// How `provider` is configured, as pi's `getProviderAuthStatus` labels
+    /// it in `/login`: `runtime`, `stored`, `models_json_command`,
+    /// `models_json_key`, `fallback` (an extension's key), or the environment
+    /// variables the key comes from. `None` when it is not configured.
+    pub fn login_status(&self, provider: &str) -> Option<String> {
+        if self.runtime_keys.contains_key(provider) {
+            return Some("runtime".into());
+        }
+        if self.store.list().iter().any(|(id, _)| id == provider) {
+            return Some("stored".into());
+        }
+        let configured = self
+            .config
+            .providers
+            .get(provider)
+            .and_then(|config| config.api_key.as_ref());
+        if let Some(key) = configured {
+            if credentials::is_command(key) {
+                return Some("models_json_command".into());
+            }
+            let names = credentials::env_var_names(key);
+            if !names.is_empty() {
+                return credentials::is_configured(key, None).then(|| names.join(", "));
+            }
+            let source = if self.extension_keys.contains(provider) {
+                "fallback"
+            } else {
+                "models_json_key"
+            };
+            return Some(source.into());
+        }
+        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+    }
+
     /// The `apiKey` that `models.json` configures for `provider`, if any.
     fn configured_key(&self, provider: &str) -> Option<&String> {
         self.config
@@ -544,9 +596,11 @@ impl ModelRegistry {
             .filter(|key| !key.is_empty())
     }
 
-    /// Whether `provider` authenticates with a stored OAuth credential.
+    /// Whether `provider` authenticates with a stored OAuth credential; a
+    /// runtime key takes its place.
     pub fn is_using_oauth(&self, provider: &str) -> bool {
-        matches!(self.credential(provider), Some(Credential::OAuth(_)))
+        !self.runtime_keys.contains_key(provider)
+            && matches!(self.credential(provider), Some(Credential::OAuth(_)))
     }
 
     /// Stored credentials by provider, in file order.
@@ -576,6 +630,35 @@ impl ModelRegistry {
                         .is_none_or(|ids| ids.contains(&model.id))
             })
             .collect()
+    }
+
+    /// The API key a request to `provider` would use, when it is known
+    /// without running a command or signing in: a runtime key, a stored or
+    /// configured template value, or the environment.
+    pub fn known_api_key(&self, provider: &str) -> Option<String> {
+        if let Some(key) = self.runtime_keys.get(provider) {
+            return Some(key.clone());
+        }
+        let mut env = None;
+        match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) => {
+                if let Some(value) = credential
+                    .key
+                    .as_deref()
+                    .and_then(|key| credentials::resolve_template(key, credential.env.as_ref()))
+                    .filter(|value| !value.is_empty())
+                {
+                    return Some(value);
+                }
+                env = credential.env;
+            }
+            Some(Credential::OAuth(_)) => return None,
+            None => {}
+        }
+        if let Some(key) = self.configured_key(provider) {
+            return credentials::resolve_template(key, None).filter(|value| !value.is_empty());
+        }
+        credentials::env_api_key(provider, env.as_ref()).map(|(_, value)| value)
     }
 
     /// Credentials for a request to `model`, with its configured headers. A
@@ -714,8 +797,17 @@ impl ModelRegistry {
         Ok(Some(flow.to_auth(&credential)))
     }
 
-    /// The display name of a provider: the built-in name, else its id.
+    /// The display name of a provider: its `models.json` or extension
+    /// `name`, else the built-in name, else its id.
     pub fn provider_name(&self, provider: &str) -> String {
+        if let Some(name) = self
+            .config
+            .providers
+            .get(provider)
+            .and_then(|config| config.name.as_ref())
+        {
+            return name.clone();
+        }
         providers::info(provider).map_or_else(|| provider.to_owned(), |info| info.name.to_owned())
     }
 
@@ -828,5 +920,50 @@ mod tests {
             strip_json_comments("{\"a\": \"x//y\", // note\n \"b\": [1, 2,],\n}"),
             "{\"a\": \"x//y\", \n \"b\": [1, 2]\n}"
         );
+    }
+
+    /// pi's `/login` labels for each credential source, and names from
+    /// `models.json`.
+    #[test]
+    fn login_status_follows_pi() {
+        let dir = std::env::temp_dir().join(format!("ri-login-status-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("models.json"),
+            r#"{"providers": {
+                "openai": {"apiKey": "!printf key", "name": "OpenAI Renamed"},
+                "mistral": {"apiKey": "$HOME"},
+                "groq": {"apiKey": "${RI_LOGIN_STATUS_UNSET}"},
+                "xai": {"apiKey": "literal"}
+            }}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("auth.json"),
+            r#"{"anthropic": {"type": "api_key", "key": "$RI_LOGIN_STATUS_UNSET"},
+                "github-copilot": {"type": "oauth", "access": "a", "refresh": "r", "expires": 0}}"#,
+        )
+        .unwrap();
+        let mut registry = ModelRegistry::load(&dir);
+        let status = |registry: &ModelRegistry, id: &str| registry.login_status(id);
+        assert_eq!(status(&registry, "anthropic").as_deref(), Some("stored"));
+        assert_eq!(
+            status(&registry, "openai").as_deref(),
+            Some("models_json_command")
+        );
+        assert_eq!(status(&registry, "mistral").as_deref(), Some("HOME"));
+        assert_eq!(status(&registry, "groq"), None);
+        assert_eq!(status(&registry, "xai").as_deref(), Some("models_json_key"));
+        assert_eq!(registry.provider_name("openai"), "OpenAI Renamed");
+        assert_eq!(registry.provider_name("mistral"), "Mistral");
+
+        assert!(registry.is_using_oauth("github-copilot"));
+        registry.set_runtime_key("github-copilot", "key".into());
+        assert_eq!(
+            status(&registry, "github-copilot").as_deref(),
+            Some("runtime")
+        );
+        assert!(!registry.is_using_oauth("github-copilot"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

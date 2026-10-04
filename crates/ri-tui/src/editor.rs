@@ -284,6 +284,19 @@ fn from_utf16(text: &str, units: usize) -> usize {
     text.len()
 }
 
+/// The byte offset of the character holding UTF-16 unit `units`, so an
+/// offset inside a surrogate pair maps to the pair's start.
+fn floor_from_utf16(text: &str, units: usize) -> usize {
+    let mut count = 0;
+    for (index, c) in text.char_indices() {
+        count += c.len_utf16();
+        if count > units {
+            return index;
+        }
+    }
+    text.len()
+}
+
 /// The prompt editor.
 pub struct Editor {
     state: State,
@@ -302,6 +315,11 @@ pub struct Editor {
     /// A request whose suggestions the provider is still working on: its
     /// `force` and explicit-Tab flags.
     autocomplete_pending: Option<(bool, bool)>,
+    /// Whether keys of one terminal read are being handled; see
+    /// [`Editor::begin_input_batch`].
+    in_input_batch: bool,
+    /// The last autocomplete request of the current input batch.
+    autocomplete_deferred: Option<(bool, bool)>,
     autocomplete_max_visible: usize,
     pastes: BTreeMap<u32, String>,
     paste_counter: u32,
@@ -314,6 +332,9 @@ pub struct Editor {
     last_action: Option<LastAction>,
     jump: Option<Jump>,
     preferred_visual_col: Option<usize>,
+    /// Where a vertical move landed before it snapped to a grapheme's start,
+    /// in UTF-16 units of the line as pi counts, which may fall inside a
+    /// surrogate pair.
     snapped_from_cursor_col: Option<usize>,
     undo_stack: Vec<Snapshot>,
     cursor: Option<(usize, usize)>,
@@ -344,6 +365,8 @@ impl Editor {
             autocomplete_list: None,
             autocomplete_prefix: String::new(),
             autocomplete_pending: None,
+            in_input_batch: false,
+            autocomplete_deferred: None,
             autocomplete_max_visible: autocomplete_max_visible.clamp(3, 20),
             pastes: BTreeMap::new(),
             paste_counter: 0,
@@ -416,6 +439,22 @@ impl Editor {
     /// The cursor as (line, byte column).
     pub fn cursor(&self) -> (usize, usize) {
         (self.state.cursor_line, self.state.cursor_col)
+    }
+
+    /// Starts handling the keys of one terminal read. Until
+    /// [`Editor::end_input_batch`], autocomplete requests wait and keys see
+    /// the list as it was, as in pi, whose suggestions arrive only after the
+    /// keys of a read are handled: Enter right after typed text submits it.
+    pub fn begin_input_batch(&mut self) {
+        self.in_input_batch = true;
+    }
+
+    /// Ends the batch and answers its last autocomplete request.
+    pub fn end_input_batch(&mut self) {
+        self.in_input_batch = false;
+        if let Some((force, explicit_tab)) = self.autocomplete_deferred.take() {
+            self.request_autocomplete(force, explicit_tab);
+        }
     }
 
     /// Whether the autocomplete list is open.
@@ -1431,8 +1470,10 @@ impl Editor {
         let (current, target) = (visual[from], visual[to]);
         let current_col = match self.snapped_from_cursor_col {
             Some(snapped) => {
-                let index = Self::visual_line_at(visual, current.logical, snapped);
-                self.units_from(visual[index], snapped)
+                let line = &self.state.lines[current.logical];
+                let byte = floor_from_utf16(line, snapped);
+                let index = Self::visual_line_at(visual, current.logical, byte);
+                snapped.saturating_sub(to_utf16(line, visual[index].start))
             }
             None => self.units_from(current, self.state.cursor_col),
         };
@@ -1449,18 +1490,24 @@ impl Editor {
         let column = self.vertical_move_column(current_col, source_max, target_max);
         self.state.cursor_line = target.logical;
         let line = self.state.lines[target.logical].clone();
-        let start_units = to_utf16(&line, target.start);
-        self.state.cursor_col = from_utf16(&line, start_units + column).min(line.len());
+        // pi's cursor is a UTF-16 index, which may land inside a surrogate
+        // pair until it snaps to the grapheme's start below.
+        let target_units = (to_utf16(&line, target.start) + column).min(utf16_len(&line));
+        self.state.cursor_col = from_utf16(&line, target_units);
 
         let ids = self.valid_ids();
+        let mut seg_units = 0;
         for seg in segment(&line, Granularity::Grapheme, &ids) {
-            if seg.index > self.state.cursor_col {
+            let start_units = seg_units;
+            let len_units = utf16_len(seg.text);
+            seg_units += len_units;
+            if start_units > target_units {
                 break;
             }
-            if seg.text.chars().count() <= 1 {
+            if len_units <= 1 {
                 continue;
             }
-            if self.state.cursor_col < seg.index + seg.text.len() {
+            if target_units < start_units + len_units {
                 let continuation = seg.index < target.start;
                 if continuation && to > from {
                     let end = seg.index + seg.text.len();
@@ -1476,7 +1523,7 @@ impl Editor {
                         return;
                     }
                 }
-                self.snapped_from_cursor_col = Some(self.state.cursor_col);
+                self.snapped_from_cursor_col = Some(target_units);
                 self.state.cursor_col = seg.index;
                 return;
             }
@@ -1676,6 +1723,10 @@ impl Editor {
     }
 
     fn request_autocomplete(&mut self, force: bool, explicit_tab: bool) {
+        if self.in_input_batch {
+            self.autocomplete_deferred = Some((force, explicit_tab));
+            return;
+        }
         let Some(provider) = &self.autocomplete else {
             return;
         };
@@ -1743,6 +1794,7 @@ impl Editor {
 
     fn cancel_autocomplete(&mut self) {
         self.autocomplete_pending = None;
+        self.autocomplete_deferred = None;
         self.autocomplete_mode = None;
         self.autocomplete_list = None;
         self.autocomplete_prefix.clear();
@@ -1835,6 +1887,45 @@ mod tests {
         assert_eq!(e.text(), "");
     }
 
+    /// Keys of one terminal read see the autocomplete list as it was before
+    /// the read, as in pi: Enter right after typed text submits it.
+    #[test]
+    fn keys_of_one_read_submit_before_suggestions() {
+        let provider = || {
+            let model = crate::autocomplete::SlashCommand {
+                name: "model".into(),
+                description: None,
+                argument_hint: None,
+                complete: None,
+            };
+            Box::new(crate::autocomplete::CombinedProvider::new(
+                vec![model],
+                std::env::temp_dir(),
+                None,
+                None,
+            ))
+        };
+        let mut e = editor();
+        e.set_autocomplete(provider());
+        e.begin_input_batch();
+        let events = typed(&mut e, &["/", "m", "o", "\r"]);
+        e.end_input_batch();
+        assert_eq!(events.last(), Some(&EditorEvent::Submit("/mo".into())));
+        assert!(!e.is_showing_autocomplete());
+
+        // In separate reads the list opens, and Enter completes the command.
+        for key in ["/", "m", "o"] {
+            e.begin_input_batch();
+            typed(&mut e, &[key]);
+            e.end_input_batch();
+        }
+        assert!(e.is_showing_autocomplete());
+        assert!(matches!(
+            typed(&mut e, &["\r"]).as_slice(),
+            [EditorEvent::Submit(text)] if text.starts_with("/model")
+        ));
+    }
+
     #[test]
     fn backslash_enter_inserts_newline() {
         let mut e = editor();
@@ -1895,6 +1986,21 @@ mod tests {
             typed(&mut e, &["\r"]),
             [EditorEvent::Submit(format!("x{pasted}").trim().to_owned())]
         );
+    }
+
+    /// A vertical move counts UTF-16 units as pi does: a column inside an
+    /// emoji's surrogate pair snaps to the emoji's start.
+    #[test]
+    fn vertical_moves_snap_inside_surrogate_pairs() {
+        let mut e = editor();
+        e.set_text("😀😀😀😀 end\nabc");
+        e.render(40);
+        typed(&mut e, &["\x1b[A"]);
+        assert_eq!(e.cursor(), (0, 4));
+        typed(&mut e, &["\x1b[B"]);
+        assert_eq!(e.cursor(), (1, 3));
+        typed(&mut e, &["\x1b[A", "|"]);
+        assert_eq!(e.text(), "😀|😀😀😀 end\nabc");
     }
 
     #[test]

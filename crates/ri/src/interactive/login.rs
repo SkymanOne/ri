@@ -64,7 +64,7 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
     let mut options = Vec::new();
     for id in ids {
         let name = registry.provider_name(&id);
-        let status = registry.auth_source(&id).map(|source| Status {
+        let status = registry.login_status(&id).map(|source| Status {
             kind: if registry.is_using_oauth(&id) {
                 LoginKind::OAuth
             } else {
@@ -155,6 +155,79 @@ pub fn find_options(registry: &ModelRegistry, reference: &str) -> Vec<ProviderOp
             option.id.to_lowercase() == reference || option.name.to_lowercase() == reference
         })
         .collect()
+}
+
+/// A provider in `/login` argument completion, with every method it offers;
+/// pi's `LoginProviderCompletionOption`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompletionOption {
+    /// Provider id.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Sign-in methods, OAuth first.
+    pub kinds: Vec<LoginKind>,
+    /// Whether the OAuth sign-in is a subscription.
+    pub subscription: bool,
+}
+
+impl CompletionOption {
+    /// pi's `getLoginProviderSearchText`.
+    pub fn search_text(&self) -> String {
+        let kinds: Vec<String> = self
+            .kinds
+            .iter()
+            .map(|kind| {
+                let id = match kind {
+                    LoginKind::OAuth => "oauth",
+                    LoginKind::ApiKey => "api_key",
+                };
+                format!("{id} {}", kind_label(*kind, self.subscription))
+            })
+            .collect();
+        format!("{} {} {}", self.id, self.name, kinds.join(" "))
+    }
+
+    /// pi's `formatLoginProviderCompletionDescription`.
+    pub fn description(&self) -> String {
+        let kinds: Vec<&str> = self
+            .kinds
+            .iter()
+            .map(|kind| kind_label(*kind, self.subscription))
+            .collect();
+        let kinds = kinds.join("/");
+        if self.name == self.id {
+            kinds
+        } else {
+            format!("{} · {kinds}", self.name)
+        }
+    }
+}
+
+/// `/login` rows grouped by provider and sorted by name; pi's
+/// `getLoginProviderCompletionOptions`.
+pub fn completion_options(options: Vec<ProviderOption>) -> Vec<CompletionOption> {
+    let mut providers: Vec<CompletionOption> = Vec::new();
+    for option in options {
+        if let Some(existing) = providers
+            .iter_mut()
+            .find(|provider| provider.id == option.id)
+        {
+            if !existing.kinds.contains(&option.kind) {
+                existing.kinds.push(option.kind);
+                existing.kinds.sort_by_key(|kind| *kind != LoginKind::OAuth);
+            }
+            continue;
+        }
+        providers.push(CompletionOption {
+            id: option.id,
+            name: option.name,
+            kinds: vec![option.kind],
+            subscription: option.subscription,
+        });
+    }
+    providers.sort_by(|a, b| locale_compare(&a.name, &b.name));
+    providers
 }
 
 /// pi's `formatAuthSelectorProviderType`.
@@ -1050,8 +1123,9 @@ impl super::App {
         }
         let registry = self.session.registry();
         let subscription = registry.is_using_oauth("anthropic")
-            || ri_ai::credentials::env_api_key("anthropic", None)
-                .is_some_and(|(_, key)| key.starts_with("sk-ant-oat"));
+            || registry
+                .known_api_key("anthropic")
+                .is_some_and(|key| key.starts_with("sk-ant-oat"));
         if subscription {
             self.anthropic_warning_shown = true;
             self.warning("Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage. Disable this warning in /settings.");
@@ -1107,5 +1181,30 @@ mod tests {
                 .iter()
                 .all(|option| option.kind == LoginKind::OAuth)
         );
+    }
+
+    #[test]
+    fn completes_providers_like_pi() {
+        let registry = ModelRegistry::builtin();
+        let providers = completion_options(login_options(&registry, None));
+        let first = &providers[0];
+        assert_eq!(
+            (first.id.as_str(), first.description()),
+            ("amazon-bedrock", "Amazon Bedrock · API key".to_owned())
+        );
+        let anthropic = providers
+            .iter()
+            .find(|provider| provider.id == "anthropic")
+            .unwrap();
+        assert_eq!(anthropic.description(), "Anthropic · subscription/API key");
+        assert_eq!(
+            anthropic.search_text(),
+            "anthropic Anthropic oauth subscription api_key API key"
+        );
+        let matches: Vec<String> = fuzzy_filter(providers, "anth", CompletionOption::search_text)
+            .into_iter()
+            .map(|provider| provider.id)
+            .collect();
+        assert_eq!(matches, ["anthropic", "openai", "openai-codex"]);
     }
 }

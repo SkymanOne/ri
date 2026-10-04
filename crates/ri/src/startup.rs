@@ -30,6 +30,8 @@ use crate::args::{Args, FlagValue};
 pub struct Startup {
     /// The session.
     pub session: AgentSession,
+    /// pi's `modelFallbackMessage`, which the interactive mode shows.
+    pub model_fallback: Option<String>,
     /// The first prompt: piped stdin, `@file` contents and the first message.
     pub initial_message: Option<String>,
     /// Images from `@file` arguments.
@@ -359,7 +361,7 @@ pub fn start(
             .append_session_info(name)
             .map_err(|err| anyhow::anyhow!("Error: {err}"))?;
     }
-    let session = create(args, session, true, extensions)?;
+    let (session, model_fallback) = build(args, session, true, extensions)?;
 
     let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
     let mut parts = Vec::new();
@@ -375,6 +377,7 @@ pub fn start(
     let initial_message = (!parts.is_empty()).then(|| parts.concat());
     Ok(Startup {
         session,
+        model_fallback,
         initial_message,
         initial_images: images,
         messages: std::mem::take(&mut args.messages),
@@ -392,14 +395,23 @@ pub fn create(
     warn: bool,
     extensions: &Extensions,
 ) -> anyhow::Result<AgentSession> {
+    build(args, session, warn, extensions).map(|(session, _)| session)
+}
+
+/// [`create`], with pi's `modelFallbackMessage`: why the session's model
+/// could not be restored, or that no model is available.
+fn build(
+    args: &Args,
+    session: SessionManager,
+    warn: bool,
+    extensions: &Extensions,
+) -> anyhow::Result<(AgentSession, Option<String>)> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
     let (settings, trusted) = load_settings(args, &cwd, &agent_dir)?;
     ri_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
+    // A `models.json` error is shown by the interactive mode, as in pi.
     let mut registry = ModelRegistry::load(&agent_dir);
-    if warn && let Some(error) = registry.error() {
-        eprintln!("Warning: errors loading models.json:\n{error}");
-    }
     // Providers extensions register, after `models.json` as in pi.
     for host in &extensions.hosts {
         for (name, config) in host.providers() {
@@ -486,6 +498,7 @@ pub fn create(
     }
     // pi's createAgentSession: the session's model if it still has
     // credentials, else the initial model.
+    let mut fallback = None;
     if model.is_none()
         && existing
         && let Some((provider, id)) = &context.model
@@ -494,6 +507,9 @@ pub fn create(
             .find(provider, id)
             .filter(|found| registry.has_auth(&found.provider))
             .cloned();
+        if model.is_none() {
+            fallback = Some(format!("Could not restore model {provider}/{id}"));
+        }
     }
     if model.is_none() {
         model = initial_model(
@@ -501,6 +517,13 @@ pub fn create(
             settings_view.default_provider.as_deref(),
             settings_view.default_model.as_deref(),
         );
+        fallback = match (&model, fallback) {
+            (None, _) => Some(ri_core::auth_guidance::no_models_available()),
+            (Some(model), Some(message)) => {
+                Some(format!("{message}. Using {}/{}", model.provider, model.id))
+            }
+            (Some(_), None) => None,
+        };
     }
     // The session's level unless one was given, whatever chose the model.
     if thinking.is_none() && existing {
@@ -677,7 +700,7 @@ pub fn create(
         resources,
     });
     session.set_scoped_models(scoped);
-    Ok(session)
+    Ok((session, fallback))
 }
 
 /// The path prefix naming a built-in extension, as in `-e builtin:mcp`.

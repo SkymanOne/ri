@@ -144,8 +144,8 @@ fn model_search_text(id: &str, provider: &str, name: &str) -> String {
     format!("{id} {provider} {provider}/{id} {provider} {id}{name}")
 }
 
-/// The editor's completion source: built-in commands with model and thinking
-/// arguments, prompt templates, skill commands and paths.
+/// The editor's completion source: built-in commands with model, thinking
+/// and login arguments, prompt templates, skill commands and paths.
 pub fn autocomplete(
     session: &AgentSession,
     fd: Option<PathBuf>,
@@ -195,6 +195,27 @@ pub fn autocomplete(
                         levels
                             .into_iter()
                             .map(|level| SelectItem::new(level.as_str()))
+                            .collect()
+                    })
+                }));
+            }
+            "login" => {
+                let session = session.clone();
+                command.complete = Some(Box::new(move |prefix: &str| {
+                    let options = super::login::login_options(&session.registry(), None);
+                    let providers = fuzzy_filter(
+                        super::login::completion_options(options),
+                        prefix,
+                        super::login::CompletionOption::search_text,
+                    );
+                    (!providers.is_empty()).then(|| {
+                        providers
+                            .into_iter()
+                            .map(|provider| SelectItem {
+                                description: Some(provider.description()),
+                                value: provider.id.clone(),
+                                label: provider.id,
+                            })
                             .collect()
                     })
                 }));
