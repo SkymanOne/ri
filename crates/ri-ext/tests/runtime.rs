@@ -473,3 +473,36 @@ export default function (pi) {
     assert_eq!(extension.get("error"), None, "{extension}");
     assert_eq!(extension["commands"][0]["description"], "yes,2,a+b");
 }
+
+/// pi-ai's API provider registry: an extension's own stream serves its calls
+/// for that API, and built-in APIs run on ri's providers.
+#[tokio::test(flavor = "multi_thread")]
+async fn registers_api_providers() {
+    let dir = scratch("api-providers");
+    let main = r#"
+import { registerApiProvider, getApiProvider, getApiProviders, unregisterApiProviders, streamSimple, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+export default async function (pi) {
+	registerApiProvider({
+		api: "echo",
+		stream: () => { throw new Error("unused"); },
+		streamSimple: (model, context) => {
+			const stream = createAssistantMessageEventStream();
+			const message = { role: "assistant", content: [{ type: "text", text: `echo ${context.messages.length}` }], api: model.api, provider: model.provider, model: model.id, stopReason: "stop", timestamp: 0 };
+			queueMicrotask(() => stream.push({ type: "done", reason: "stop", message }));
+			return stream;
+		},
+	}, "mine");
+	const reply = await streamSimple({ api: "echo", provider: "local", id: "e" }, { messages: [1, 2] }).result();
+	const builtin = typeof getApiProvider("anthropic-messages")?.streamSimple;
+	const count = getApiProviders().length;
+	unregisterApiProviders("mine");
+	pi.registerCommand("probe", {
+		description: [reply.content[0].text, builtin, count, getApiProvider("echo"), getApiProvider("nope")].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(extension["commands"][0]["description"], "echo 2,function,1,,");
+}

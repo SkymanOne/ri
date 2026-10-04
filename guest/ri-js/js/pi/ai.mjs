@@ -120,7 +120,7 @@ export function createAssistantMessageEventStream() {
 }
 
 // ----- completions on ri's providers --------------------------------------------------------------
-export function streamSimple(model, context, options) {
+function hostStream(model, context, options) {
 	const stream = new AssistantMessageEventStream();
 	const { signal, onPayload, ...rest } = options ?? {};
 	ri.op("ai.complete", { model, context, options: rest }).then(
@@ -132,9 +132,55 @@ export function streamSimple(model, context, options) {
 	);
 	return stream;
 }
-export const stream = streamSimple;
 /** Every wire API runs on ri's provider for the model's `api`. */
-const hostApi = { stream: streamSimple, streamSimple };
+const hostApi = { stream: hostStream, streamSimple: hostStream };
+
+// ----- API providers -----------------------------------------------------------------------------
+// pi-ai's registry. A stream an extension registers for an API serves its
+// own calls to `stream` and `streamSimple`. ri's agent runs a session's model
+// on ri's providers, so a model whose API only an extension implements cannot
+// be the session's model.
+const BUILTIN_APIS = [
+	"anthropic-messages",
+	"openai-completions",
+	"openai-responses",
+	"openai-codex-responses",
+	"azure-openai-responses",
+	"google-generative-ai",
+	"google-vertex",
+	"mistral-conversations",
+	"bedrock-converse-stream",
+];
+const apiProviders = new Map();
+const forApi = (api, fn) => (model, context, options) => {
+	if (model.api !== api) throw new Error(`Mismatched api: ${model.api} expected ${api}`);
+	return fn(model, context, options);
+};
+export function registerApiProvider(provider, sourceId) {
+	apiProviders.set(provider.api, {
+		provider: { api: provider.api, stream: forApi(provider.api, provider.stream), streamSimple: forApi(provider.api, provider.streamSimple) },
+		sourceId,
+	});
+}
+export function getApiProvider(api) {
+	return apiProviders.get(api)?.provider ?? (BUILTIN_APIS.includes(api) ? { api, ...hostApi } : undefined);
+}
+export const getApiProviders = () => Array.from(apiProviders.values(), (entry) => entry.provider);
+export function unregisterApiProviders(sourceId) {
+	for (const [api, entry] of apiProviders) if (entry.sourceId === sourceId) apiProviders.delete(api);
+}
+export function resetApiProviders() {
+	apiProviders.clear();
+}
+export function registerBuiltInApiProviders() {}
+export function streamSimple(model, context, options) {
+	const custom = apiProviders.get(model?.api);
+	return custom ? custom.provider.streamSimple(model, context, options) : hostStream(model, context, options);
+}
+export function stream(model, context, options) {
+	const custom = apiProviders.get(model?.api);
+	return custom ? custom.provider.stream(model, context, options) : hostStream(model, context, options);
+}
 export const complete = (model, context, options) => streamSimple(model, context, options).result();
 export const completeSimple = complete;
 
@@ -439,12 +485,6 @@ export function generateImages() {
 export function generateImagesOpenRouter() {
 	return unavailable("generateImagesOpenRouter");
 }
-export function getApiProvider() {
-	return unavailable("getApiProvider");
-}
-export function getApiProviders() {
-	return unavailable("getApiProviders");
-}
 export function getCurrentSystemMessage() {
 	return unavailable("getCurrentSystemMessage");
 }
@@ -588,12 +628,6 @@ export function piMessagesApi() {
 export function reduceAssistantMessageFrames() {
 	return unavailable("reduceAssistantMessageFrames");
 }
-export function registerApiProvider() {
-	return unavailable("registerApiProvider");
-}
-export function registerBuiltInApiProviders() {
-	return unavailable("registerBuiltInApiProviders");
-}
 export function registerBuiltInImagesApiProviders() {
 	return unavailable("registerBuiltInImagesApiProviders");
 }
@@ -608,9 +642,6 @@ export function registerSessionResourceCleanup() {
 }
 export function renderSystemMessageUpdate() {
 	return unavailable("renderSystemMessageUpdate");
-}
-export function resetApiProviders() {
-	return unavailable("resetApiProviders");
 }
 export function resolveTranscript() {
 	return unavailable("resolveTranscript");
@@ -627,27 +658,24 @@ export function retryDelayMs() {
 export function setBedrockProviderModule() {
 	return unavailable("setBedrockProviderModule");
 }
-export const streamAnthropic = streamSimple;
-export const streamAzureOpenAIResponses = streamSimple;
-export const streamGoogle = streamSimple;
-export const streamGoogleVertex = streamSimple;
-export const streamMistral = streamSimple;
-export const streamOpenAICodexResponses = streamSimple;
-export const streamOpenAICompletions = streamSimple;
-export const streamOpenAIResponses = streamSimple;
-export const streamSimpleAnthropic = streamSimple;
-export const streamSimpleAzureOpenAIResponses = streamSimple;
-export const streamSimpleGoogle = streamSimple;
-export const streamSimpleGoogleVertex = streamSimple;
-export const streamSimpleMistral = streamSimple;
-export const streamSimpleOpenAICodexResponses = streamSimple;
-export const streamSimpleOpenAICompletions = streamSimple;
-export const streamSimpleOpenAIResponses = streamSimple;
+export const streamAnthropic = hostStream;
+export const streamAzureOpenAIResponses = hostStream;
+export const streamGoogle = hostStream;
+export const streamGoogleVertex = hostStream;
+export const streamMistral = hostStream;
+export const streamOpenAICodexResponses = hostStream;
+export const streamOpenAICompletions = hostStream;
+export const streamOpenAIResponses = hostStream;
+export const streamSimpleAnthropic = hostStream;
+export const streamSimpleAzureOpenAIResponses = hostStream;
+export const streamSimpleGoogle = hostStream;
+export const streamSimpleGoogleVertex = hostStream;
+export const streamSimpleMistral = hostStream;
+export const streamSimpleOpenAICodexResponses = hostStream;
+export const streamSimpleOpenAICompletions = hostStream;
+export const streamSimpleOpenAIResponses = hostStream;
 export function toToolDeclaration() {
 	return unavailable("toToolDeclaration");
-}
-export function unregisterApiProviders() {
-	return unavailable("unregisterApiProviders");
 }
 export function withoutInitialSystemMessage() {
 	return unavailable("withoutInitialSystemMessage");
