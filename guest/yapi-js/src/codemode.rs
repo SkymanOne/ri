@@ -11,9 +11,10 @@ use std::collections::HashMap;
 
 use rquickjs::function::{Rest, This};
 use rquickjs::{
-    CatchResultExt, CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value,
+    CatchResultExt, CaughtError, Context, Function, Object, Persistent, Runtime, Value,
 };
 
+use crate::eval;
 use crate::yapi::extension::host;
 use crate::yapi::extension::types::Outcome;
 
@@ -113,19 +114,6 @@ fn describe(error: CaughtError<'_>) -> String {
         format!("{head}\n{stack}")
     };
     serde_json::json!({"name": name, "message": message, "stack": stack}).to_string()
-}
-
-/// Evaluates `source` as a global, sloppy script named `filename`.
-fn eval<'js, T: rquickjs::FromJs<'js>>(
-    ctx: &Ctx<'js>,
-    source: &str,
-    filename: &str,
-) -> rquickjs::Result<T> {
-    let mut options = rquickjs::context::EvalOptions::default();
-    options.global = true;
-    options.strict = false;
-    options.filename = Some(filename.to_owned());
-    ctx.eval_with_options(source, options)
 }
 
 /// The script's runtime, context and prelude API.

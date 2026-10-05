@@ -10,6 +10,13 @@
 	const yapi = {};
 	globalThis.__yapi = yapi;
 
+	/** Throws Node's `ERR_NOT_SUPPORTED` error with `message`. */
+	yapi.unsupported = (message) => {
+		const error = new Error(message);
+		error.code = "ERR_NOT_SUPPORTED";
+		throw error;
+	};
+
 	// ----- host plumbing -------------------------------------------------
 	const pendingOps = new Map();
 	yapi.request = (kind, payload) => {

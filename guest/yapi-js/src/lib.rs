@@ -16,11 +16,11 @@ mod fs;
 use std::cell::{Cell, RefCell};
 
 use exports::yapi::extension::guest::Guest;
-use yapi::extension::host;
-use yapi::extension::types::Outcome;
 use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::module::Declared;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Module, Object, Runtime, Value};
+use yapi::extension::host;
+use yapi::extension::types::Outcome;
 
 /// QuickJS's own limit; the host bounds the whole instance's memory.
 const STACK_SIZE: usize = 1024 * 1024;
@@ -46,11 +46,7 @@ impl Resolver for HostResolver {
         if let Some(builtin) = builtins::resolve(base, name) {
             return Ok(builtin);
         }
-        let payload = format!(
-            "{{\"specifier\":{},\"referrer\":{}}}",
-            json_string(name),
-            json_string(base)
-        );
+        let payload = serde_json::json!({"specifier": name, "referrer": base}).to_string();
         let path = host::request("module.resolve", &payload)
             .map_err(|message| rquickjs::Exception::throw_message(ctx, &message))?;
         match serde_json::from_str::<serde_json::Value>(&path) {
@@ -78,7 +74,7 @@ impl Loader for HostLoader {
         if let Some(source) = builtins::source(ctx, name) {
             return Module::declare(ctx.clone(), name, source?);
         }
-        let payload = format!("{{\"path\":{}}}", json_string(name));
+        let payload = serde_json::json!({"path": name}).to_string();
         let response = host::request("module.load", &payload)
             .map_err(|message| rquickjs::Exception::throw_message(ctx, &message))?;
         let response: serde_json::Value = serde_json::from_str(&response).unwrap_or_default();
@@ -95,39 +91,25 @@ fn cjs_module(ctx: &Ctx<'_>, path: &str) -> rquickjs::Result<String> {
     let yapi: Object<'_> = ctx.globals().get("__yapi")?;
     let exports: Function<'_> = yapi.get("cjsExports")?;
     let names: Vec<String> = exports.call((path,))?;
-    let mut source = format!(
-        "const m = globalThis.__yapi_cjs({});\nexport default m !== null && typeof m === \"object\" && m.__esModule && \"default\" in m ? m.default : m;\n",
-        json_string(path)
-    );
+    Ok(format!(
+        "const m = globalThis.__yapi_cjs({});\nexport default m !== null && typeof m === \"object\" && m.__esModule && \"default\" in m ? m.default : m;\n{}",
+        serde_json::Value::from(path),
+        reexports(&names)
+    ))
+}
+
+/// Source that re-exports each of `names` from the object `m`.
+fn reexports(names: &[String]) -> String {
+    let mut source = String::new();
+    for (index, export) in names.iter().enumerate() {
+        source.push_str(&format!("const e{index} = m.{export};\n"));
+    }
     let list: Vec<String> = names
         .iter()
         .enumerate()
-        .map(|(index, export)| {
-            source.push_str(&format!("const e{index} = m.{export};\n"));
-            format!("e{index} as {export}")
-        })
+        .map(|(index, export)| format!("e{index} as {export}"))
         .collect();
-    source.push_str(&format!("export {{ {} }};\n", list.join(", ")));
-    Ok(source)
-}
-
-/// A JSON string literal.
-fn json_string(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+    source + &format!("export {{ {} }};\n", list.join(", "))
 }
 
 /// A new operation id.
@@ -207,10 +189,19 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
 /// Evaluates script `source` as file `filename`, so stack traces name the
 /// file.
 fn compile<'js>(ctx: Ctx<'js>, source: String, filename: String) -> rquickjs::Result<Value<'js>> {
+    eval(&ctx, &source, &filename)
+}
+
+/// Evaluates `source` as a global, sloppy script named `filename`.
+fn eval<'js, T: rquickjs::FromJs<'js>>(
+    ctx: &Ctx<'js>,
+    source: &str,
+    filename: &str,
+) -> rquickjs::Result<T> {
     let mut options = rquickjs::context::EvalOptions::default();
     options.global = true;
     options.strict = false;
-    options.filename = Some(filename);
+    options.filename = Some(filename.to_owned());
     ctx.eval_with_options(source, options)
 }
 
@@ -242,14 +233,8 @@ fn js() -> (Runtime, Context) {
 }
 
 fn log_error(message: &str) {
-    host::request(
-        "log",
-        &format!(
-            "{{\"level\":\"error\",\"message\":{}}}",
-            json_string(message)
-        ),
-    )
-    .ok();
+    let payload = serde_json::json!({"level": "error", "message": message});
+    host::request("log", &payload.to_string()).ok();
 }
 
 /// Runs `f` in the context.
@@ -272,20 +257,18 @@ fn drain() -> Vec<Outcome> {
     take_outcomes()
 }
 
-/// Calls `globalThis.__yapi.<name>(args)`, reporting a synchronous exception as a
-/// failure of call `id` when there is one.
+/// Calls `globalThis.__yapi.<name>(...args)`, reporting a synchronous exception
+/// as a failure of call `id` when there is one.
 fn call_runtime(
     name: &str,
     id: Option<u64>,
-    args: impl for<'js> FnOnce(&Ctx<'js>) -> rquickjs::Result<rquickjs::function::Args<'js>>,
+    args: impl for<'js> rquickjs::function::IntoArgs<'js>,
 ) -> Vec<Outcome> {
     with_ctx(|ctx| {
         let result = (|| -> rquickjs::Result<()> {
             let yapi: Object<'_> = ctx.globals().get("__yapi")?;
             let function: Function<'_> = yapi.get(name)?;
-            let args = args(ctx)?;
-            function.call_arg::<()>(args)?;
-            Ok(())
+            function.call::<_, ()>(args)
         })();
         if let Err(error) = result.catch(ctx) {
             let message = error.to_string();
@@ -305,30 +288,18 @@ impl Guest for Runtime_ {
         if kind == "codemode" {
             return codemode::start(id, &payload);
         }
-        call_runtime("dispatch", Some(id), |ctx| {
-            let mut args = rquickjs::function::Args::new(ctx.clone(), 3);
-            args.push_arg(id as f64)?;
-            args.push_arg(kind)?;
-            args.push_arg(payload)?;
-            Ok(args)
-        })
+        call_runtime("dispatch", Some(id), (id as f64, kind, payload))
     }
 
     fn resolve(op: u64, value: Result<String, String>) -> Vec<Outcome> {
         if let Some(outcomes) = codemode::resolve(op, &value) {
             return outcomes;
         }
-        call_runtime("resolve", None, |ctx| {
-            let (ok, text) = match value {
-                Ok(json) => (true, json),
-                Err(message) => (false, message),
-            };
-            let mut args = rquickjs::function::Args::new(ctx.clone(), 3);
-            args.push_arg(op as f64)?;
-            args.push_arg(ok)?;
-            args.push_arg(text)?;
-            Ok(args)
-        })
+        let (ok, text) = match value {
+            Ok(json) => (true, json),
+            Err(message) => (false, message),
+        };
+        call_runtime("resolve", None, (op as f64, ok, text))
     }
 
     fn render(handle: u32, width: u32) -> Vec<String> {
@@ -343,12 +314,7 @@ impl Guest for Runtime_ {
     }
 
     fn input(handle: u32, data: String) -> Vec<Outcome> {
-        call_runtime("input", None, |ctx| {
-            let mut args = rquickjs::function::Args::new(ctx.clone(), 2);
-            args.push_arg(handle)?;
-            args.push_arg(data)?;
-            Ok(args)
-        })
+        call_runtime("input", None, (handle, data))
     }
 }
 

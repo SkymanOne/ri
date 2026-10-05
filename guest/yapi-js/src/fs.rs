@@ -44,16 +44,21 @@ fn millis(time: std::io::Result<std::time::SystemTime>) -> f64 {
         .map_or(0.0, |elapsed| elapsed.as_secs_f64() * 1000.0)
 }
 
-fn stat(metadata: &std::fs::Metadata) -> Value {
-    let kind = if metadata.is_symlink() {
+/// What a directory entry is: `symlink`, `dir`, `file` or `other`.
+fn kind(file_type: std::fs::FileType) -> &'static str {
+    if file_type.is_symlink() {
         "symlink"
-    } else if metadata.is_dir() {
+    } else if file_type.is_dir() {
         "dir"
-    } else if metadata.is_file() {
+    } else if file_type.is_file() {
         "file"
     } else {
         "other"
-    };
+    }
+}
+
+fn stat(metadata: &std::fs::Metadata) -> Value {
+    let kind = kind(metadata.file_type());
     let mode = match kind {
         "dir" => 0o040755,
         "symlink" => 0o120777,
@@ -169,17 +174,7 @@ fn run(op: &str, args: &Value) -> Value {
                 let mut out: Vec<Value> = entries
                     .flatten()
                     .map(|entry| {
-                        let kind = entry.file_type().map_or("other", |kind| {
-                            if kind.is_symlink() {
-                                "symlink"
-                            } else if kind.is_dir() {
-                                "dir"
-                            } else if kind.is_file() {
-                                "file"
-                            } else {
-                                "other"
-                            }
-                        });
+                        let kind = entry.file_type().map_or("other", kind);
                         json!({"name": entry.file_name().to_string_lossy(), "type": kind})
                     })
                     .collect();

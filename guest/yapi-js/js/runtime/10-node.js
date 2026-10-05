@@ -9,11 +9,7 @@
 	const builtins = {};
 	globalThis.__yapi_builtins = builtins;
 
-	const notSupported = (name) => () => {
-		const error = new Error(`${name} is not supported in yapi extensions`);
-		error.code = "ERR_NOT_SUPPORTED";
-		throw error;
-	};
+	const notSupported = (name) => () => yapi.unsupported(`${name} is not supported in yapi extensions`);
 
 	// ----- path (POSIX) ---------------------------------------------------------
 	function normalizeString(path, allowAboveRoot) {
