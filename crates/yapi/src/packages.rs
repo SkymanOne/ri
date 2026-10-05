@@ -89,6 +89,9 @@ struct Options {
     conflict: Option<String>,
 }
 
+/// What `yapi update` says instead of updating yapi.
+const SELF_UPDATE: &str = "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh";
+
 fn parse(command: Command, args: &[String]) -> Options {
     let mut options = Options::default();
     let mut index = 0;
@@ -387,7 +390,7 @@ async fn execute(command: Command, options: Options) -> u8 {
                 Update::Myself | Update::Models => Ok(()),
             };
             if packages_result.is_ok() && matches!(target, Update::Myself | Update::All) {
-                err("yapi cannot update itself; install the latest release instead.");
+                err(SELF_UPDATE);
                 return 1;
             }
             packages_result

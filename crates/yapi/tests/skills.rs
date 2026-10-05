@@ -81,16 +81,6 @@ fn skills_load_cleanly_and_their_links_resolve() {
     }
 }
 
-#[test]
-fn native_template_is_the_tested_hello_example() {
-    // `crates/yapi-ext/tests/native.rs` builds and runs this example.
-    let read = |path: PathBuf| std::fs::read_to_string(path).unwrap();
-    assert_eq!(
-        read(skill("yapi-extension/templates/native/src/lib.rs")),
-        read(repo().join("guest/examples/hello/src/lib.rs"))
-    );
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn pi_extension_template_registers_what_the_skill_describes() {
     let dir = scratch("template");

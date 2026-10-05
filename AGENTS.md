@@ -55,12 +55,13 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 | `crates/yapi-tui` | ratatui-based widgets, editor, raw input decoder, ANSI bridge. | `pi-tui` |
 | `crates/yapi-core` | Session manager, compaction, settings, resource loading, built-in tools, system prompt, packages, extension runner, MCP. | `pi-coding-agent` core |
 | `crates/yapi-ext` | wasmtime host, WIT bindings, capability grants, JS module loader, codemode, embedded `yapi-js.wasm`. | Extension loader, `pi-codemode` |
-| `crates/yapi` | Binary: CLI, modes, UI adapters. | `pi-coding-agent` CLI and modes |
+| `crates/yapi` | Binary: CLI, modes, UI adapters, and the native extension package template that `yapi new` and `cargo generate` use. | `pi-coding-agent` CLI and modes |
 | `crates/yapi-mock` | Mock provider server: replays HTTP cassettes and records requests. Test support only. | None |
 | `guest/yapi-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
 | `guest/yapi-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
-| `skills/` | Agent Skills for using yapi and writing its extensions, with templates and helper scripts. The repository installs as a package that provides them. | None |
+| `install.sh`, `scripts/` | The release installer, and the packaging and install check that the Release workflow runs. | None |
+| `skills/` | Agent Skills for using yapi and writing its extensions, with a template and helper scripts. The repository installs as a package that provides them. | None |
 | `xtask/` | Developer commands: mock server runner, end-to-end scenarios, benchmarks, model catalog codegen, pi JS vendoring, `yapi-js.wasm` build. | Build scripts |
 
 Dependency direction:

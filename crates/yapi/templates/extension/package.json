@@ -1,0 +1,7 @@
+{
+  "name": "{{project-name}}",
+  "version": "0.1.0",
+  "description": "A native extension for yapi",
+  "files": ["extensions"],
+  "yapi": { "extensions": ["./extensions/{{crate_name}}.wasm"] }
+}

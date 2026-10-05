@@ -339,3 +339,23 @@ fn service_commands_are_not_offered() {
     pty.finish().unwrap();
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn update_self_names_the_installer() {
+    let dir = std::env::temp_dir().join(format!("yapi-update-self-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_yapi"))
+        .args(["update", "self"])
+        .current_dir(&dir)
+        .env_clear()
+        .env("HOME", &dir)
+        .env("YAPI_CODING_AGENT_DIR", dir.join("agent"))
+        .env("PI_OFFLINE", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh\n"
+    );
+}

@@ -14,15 +14,20 @@ yapi reads Pi's settings, sessions and credentials, and runs Pi packages with th
 
 ## Getting started
 
-Build and install the command-line interface with Cargo:
+Install the release binary for Linux or macOS:
 
 ```bash
-git clone https://github.com/SkymanOne/ri yapi
-cd yapi
-cargo install --locked --path crates/yapi
+curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh
 ```
 
-This requires a Rust toolchain from [rustup](https://rustup.rs). The version pinned in `rust-toolchain.toml` installs on the first build. Linux and macOS are supported.
+Or install it with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), or build it from source with Rust 1.99 or newer:
+
+```bash
+cargo binstall --git https://github.com/SkymanOne/ri yapi
+cargo install --locked --git https://github.com/SkymanOne/ri yapi
+```
+
+[Install](https://skymanone.github.io/ri/install.html) covers each method, downloading the release binaries directly and the platforms they support. The first release is not tagged yet, so for now only the source build works.
 
 Start yapi in the directory where you want it to work:
 
@@ -60,7 +65,7 @@ Compatibility is measured against Pi itself, with both programs loading the same
 | The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox give the same registrations and load errors (93%). Of the 367 whose extensions load in Pi without errors, 349 register the same in yapi (95%). |
 | Extension UI | Dialogs, widgets, overlays and custom components match Pi's screens row for row at 80×24 and 120×40 |
 
-A native extension:
+`yapi new shout` creates a native extension as a Cargo project that is also a package. Its `src/lib.rs` registers what the extension offers:
 
 ```rust
 use yapi_extension_api::{Api, Tool, ToolResult, json};
@@ -81,8 +86,10 @@ yapi_extension_api::extension!(init);
 ```
 
 ```bash
-cargo build --release --target wasm32-wasip2
-yapi install ./target/wasm32-wasip2/release/shout.wasm
+cd shout
+cargo build --release
+cp target/wasm32-wasip2/release/shout.wasm extensions/
+yapi install .
 ```
 
 See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.

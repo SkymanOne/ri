@@ -1,0 +1,4 @@
+# Lets `cargo generate` use this template. `yapi new` writes the same files.
+[template]
+cargo_generate_version = ">=0.18.0"
+exclude = ["src/lib.rs"]

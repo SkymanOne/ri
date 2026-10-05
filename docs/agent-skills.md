@@ -5,7 +5,7 @@ The repository ships two [Agent Skills](https://agentskills.io/specification) th
 | Skill | Use it to |
 |---|---|
 | `yapi` | Install and run yapi, hand it tasks from scripts or other agents in print, JSON or RPC mode, choose models and credentials, and manage sessions, packages and settings. `scripts/ask.py` sends one prompt over RPC and prints the answer. |
-| `yapi-extension` | Write, test and package Pi extensions in TypeScript and native extensions in Rust. It has templates for both, notes on where yapi's runtime differs from Pi, and `scripts/check-extension.py`, which loads extensions without a model and reports their commands and load errors. |
+| `yapi-extension` | Write, test and package Pi extensions in TypeScript and native extensions in Rust. It has a template for Pi extensions, uses `yapi new` for native ones, notes on where yapi's runtime differs from Pi, and `scripts/check-extension.py`, which loads extensions without a model and reports their commands and load errors. |
 
 ## Install them
 
