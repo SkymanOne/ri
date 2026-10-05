@@ -1,6 +1,6 @@
 # Native extension examples
 
-The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/ri/tree/main/guest/examples). Four are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/yapi-ext/tests/native.rs`.
+The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Four are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/yapi-ext/tests/native.rs`.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|

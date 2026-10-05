@@ -1,6 +1,6 @@
 # {{project-name}}
 
-A native extension for [yapi](https://github.com/SkymanOne/ri), written in Rust with the `yapi-extension-api` crate. `src/lib.rs` starts as yapi's `hello` example: a `shout` tool, a `/hello` command, a `--shout-suffix` flag and two event handlers. Replace them with your own.
+A native extension for [yapi](https://github.com/SkymanOne/yapi), written in Rust with the `yapi-extension-api` crate. `src/lib.rs` starts as yapi's `hello` example: a `shout` tool, a `/hello` command, a `--shout-suffix` flag and two event handlers. Replace them with your own.
 
 The project is a yapi package. `package.json` names the built extension, `extensions/{{crate_name}}.wasm`.
 
@@ -41,4 +41,4 @@ yapi install git:github.com/<you>/{{project-name}}
 
 To publish on npm, run `npm publish`, and others install it with `yapi install npm:{{project-name}}`.
 
-The [native extension guide](https://skymanone.github.io/ri/native-extensions.html) documents the API.
+The [native extension guide](https://skymanone.github.io/yapi/native-extensions.html) documents the API.

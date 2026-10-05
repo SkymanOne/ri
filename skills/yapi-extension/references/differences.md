@@ -1,6 +1,6 @@
 # Where Pi extensions behave differently in yapi
 
-yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in Node.js. Most extensions behave as in Pi. These are the differences an extension author meets. The full list is [Differences from Pi](https://skymanone.github.io/ri/compat.html).
+yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in Node.js. Most extensions behave as in Pi. These are the differences an extension author meets. The full list is [Differences from Pi](https://skymanone.github.io/yapi/compat.html).
 
 ## Runtime
 

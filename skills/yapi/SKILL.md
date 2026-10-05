@@ -8,7 +8,7 @@ license: MIT OR Apache-2.0
 
 yapi (Yet Another Pi) is a terminal coding agent: give it a goal and a working folder, and it reads files, runs commands and edits code. It reimplements Pi `v1.0.0` in Rust, so it uses Pi's commands, flags, settings, session files, packages and extension API, from one native binary that needs no Node.js.
 
-When you know Pi, assume yapi behaves the same and check [Differences from Pi](https://skymanone.github.io/ri/compat.html) for the exceptions.
+When you know Pi, assume yapi behaves the same and check [Differences from Pi](https://skymanone.github.io/yapi/compat.html) for the exceptions.
 
 ## Paths and names
 
@@ -28,9 +28,9 @@ Every file uses Pi's format. Provider variables such as `ANTHROPIC_API_KEY` and 
 ## Install and check
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh   # release binary into ~/.local/bin
-cargo binstall --git https://github.com/SkymanOne/ri yapi                        # release binary through cargo-binstall
-cargo install --locked --git https://github.com/SkymanOne/ri yapi                # from source, with Rust 1.99 or newer
+curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh   # release binary into ~/.local/bin
+cargo binstall --git https://github.com/SkymanOne/yapi yapi                        # release binary through cargo-binstall
+cargo install --locked --git https://github.com/SkymanOne/yapi yapi                # from source, with Rust 1.99 or newer
 yapi --version
 ```
 
@@ -111,4 +111,4 @@ Pi packages run unchanged. Their extensions run in a WebAssembly sandbox, so cod
 2. `yapi auth check --provider <id>` and `yapi --list-models` confirm the model and credentials.
 3. Startup warnings name settings, skills, themes or extensions that failed to load. The interactive header lists the loaded resources, and `--verbose` shows it even when `quietStartup` is set.
 4. In the interface, `/debug` writes what yapi rendered and sent to `~/.yapi/agent/yapi-debug.log`.
-5. When behavior differs from Pi, check [Differences from Pi](https://skymanone.github.io/ri/compat.html) before treating it as a bug. Report bugs at https://github.com/SkymanOne/ri/issues.
+5. When behavior differs from Pi, check [Differences from Pi](https://skymanone.github.io/yapi/compat.html) before treating it as a bug. Report bugs at https://github.com/SkymanOne/yapi/issues.

@@ -3,8 +3,8 @@
 # checks it against its published SHA-256 and copies it into a directory on
 # PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh -s -- --version v0.1.0 --to /usr/local/bin
+#   curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh -s -- --version v0.1.0 --to /usr/local/bin
 #
 # Options, or the environment variables that set them:
 #   --version <tag>   YAPI_VERSION       release to install (default: the latest)
@@ -12,10 +12,10 @@
 #   YAPI_RELEASES_URL                    the releases page (default: GitHub's)
 set -eu
 
-releases="${YAPI_RELEASES_URL:-https://github.com/SkymanOne/ri/releases}"
+releases="${YAPI_RELEASES_URL:-https://github.com/SkymanOne/yapi/releases}"
 version="${YAPI_VERSION:-latest}"
 dir="${YAPI_INSTALL_DIR:-${HOME:-}/.local/bin}"
-from_source="cargo install --locked --git https://github.com/SkymanOne/ri yapi"
+from_source="cargo install --locked --git https://github.com/SkymanOne/yapi yapi"
 
 fail() {
     echo "install.sh: $*" >&2

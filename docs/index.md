@@ -45,4 +45,4 @@ yapi is tested against Pi itself. Every check below runs both programs on the sa
 | Pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in Pi |
 | The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox behave the same (93%). [Extensions](extensions.md#compatibility-with-pi-extensions) has the breakdown. |
 
-yapi is pre-release software. Report problems in the [issue tracker](https://github.com/SkymanOne/ri/issues).
+yapi is pre-release software. Report problems in the [issue tracker](https://github.com/SkymanOne/yapi/issues).

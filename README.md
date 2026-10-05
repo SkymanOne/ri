@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://github.com/SkymanOne/ri/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SkymanOne/ri/ci.yml?branch=main&style=flat-square&label=CI" /></a>
-  <a href="https://skymanone.github.io/ri/"><img alt="Documentation" src="https://img.shields.io/badge/docs-skymanone.github.io%2Fri-blue?style=flat-square" /></a>
+  <a href="https://github.com/SkymanOne/yapi/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SkymanOne/yapi/ci.yml?branch=main&style=flat-square&label=CI" /></a>
+  <a href="https://skymanone.github.io/yapi/"><img alt="Documentation" src="https://img.shields.io/badge/docs-skymanone.github.io%2Fri-blue?style=flat-square" /></a>
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" /></a>
 </p>
 
@@ -10,24 +10,24 @@ yapi (Yet Another Pi) is a minimal, extensible agent harness for the terminal, w
 
 yapi reads Pi's settings, sessions and credentials, and runs Pi packages with their extensions, skills, prompt templates and themes unchanged. Use it interactively, automate it in print, JSON or RPC mode, or extend it with Pi extensions and native extensions written in Rust. It ships as one native binary and needs no Node.js.
 
-> yapi is pre-release software. It follows Pi `v1.0.0`. [Differences from Pi](https://skymanone.github.io/ri/compat.html) lists every known difference.
+> yapi is pre-release software. It follows Pi `v1.0.0`. [Differences from Pi](https://skymanone.github.io/yapi/compat.html) lists every known difference.
 
 ## Getting started
 
 Install the release binary for Linux or macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh
 ```
 
 Or install it with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), or build it from source with Rust 1.99 or newer:
 
 ```bash
-cargo binstall --git https://github.com/SkymanOne/ri yapi
-cargo install --locked --git https://github.com/SkymanOne/ri yapi
+cargo binstall --git https://github.com/SkymanOne/yapi yapi
+cargo install --locked --git https://github.com/SkymanOne/yapi yapi
 ```
 
-[Install](https://skymanone.github.io/ri/install.html) covers each method, downloading the release binaries directly and the platforms they support. The first release is not tagged yet, so for now only the source build works.
+[Install](https://skymanone.github.io/yapi/install.html) covers each method, downloading the release binaries directly and the platforms they support. The first release is not tagged yet, so for now only the source build works.
 
 Start yapi in the directory where you want it to work:
 
@@ -40,7 +40,7 @@ For a built-in AI provider, run `/login` inside yapi to connect a subscription o
 
 If you use Pi already, `yapi import pi` copies your settings, credentials, sessions and packages.
 
-See the [documentation](https://skymanone.github.io/ri/) for full setup and usage instructions.
+See the [documentation](https://skymanone.github.io/yapi/) for full setup and usage instructions.
 
 ## How yapi differs from Pi
 
@@ -55,7 +55,7 @@ Pi runs extensions inside its own Node.js process, with the user's permissions. 
 - **Limits are enforced by the host.** Each call may compute for 60 seconds and each instance may use 1 GiB of memory. A crashed instance restarts without taking yapi down. File, process, network and environment access goes through grants that the host checks. Packages get Pi's defaults, which allow all four, and per-package restrictions are planned.
 - **Interfaces never wait for an extension.** Custom components render inside the runtime, and yapi paints their last frame.
 
-What the runtime cannot do: native addons, sockets, threads and SQLite fail when used. Links and images in extension components fall back to text. [Extensions](https://skymanone.github.io/ri/extensions.html) has the details.
+What the runtime cannot do: native addons, sockets, threads and SQLite fail when used. Links and images in extension components fall back to text. [Extensions](https://skymanone.github.io/yapi/extensions.html) has the details.
 
 Compatibility is measured against Pi itself, with both programs loading the same code:
 
@@ -92,7 +92,7 @@ cp target/wasm32-wasip2/release/shout.wasm extensions/
 yapi install .
 ```
 
-See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.
+See [Native extensions in Rust](https://skymanone.github.io/yapi/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/yapi/native-examples.html) for five complete extensions.
 
 ### Performance
 
@@ -109,18 +109,18 @@ yapi is one native executable, so it does not pay for starting Node.js and loadi
 | Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB |
 | Install size | 32.3 MB | 245.2 MB with Node.js |
 
-`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges, more memory measures and results from GitHub's hosted Linux and macOS runners.
+`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/yapi/performance.html) explains each measure and the method, and shows the ranges, more memory measures and results from GitHub's hosted Linux and macOS runners.
 
 ## Agent skills
 
-The repository ships two [Agent Skills](https://agentskills.io) for coding agents: `yapi`, for running and scripting yapi, and `yapi-extension`, for writing Pi and native extensions. Install both as a package with `yapi install git:github.com/SkymanOne/ri`, or copy them from [skills/](skills/) into any agent's skills folder. [Agent skills](https://skymanone.github.io/ri/agent-skills.html) has the details.
+The repository ships two [Agent Skills](https://agentskills.io) for coding agents: `yapi`, for running and scripting yapi, and `yapi-extension`, for writing Pi and native extensions. Install both as a package with `yapi install git:github.com/SkymanOne/yapi`, or copy them from [skills/](skills/) into any agent's skills folder. [Agent skills](https://skymanone.github.io/yapi/agent-skills.html) has the details.
 
 ## Development
 
 Clone the repository and run yapi from source:
 
 ```bash
-git clone https://github.com/SkymanOne/ri yapi
+git clone https://github.com/SkymanOne/yapi yapi
 cd yapi
 cargo run -p yapi --
 ```

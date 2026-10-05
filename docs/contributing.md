@@ -1,11 +1,11 @@
 # Contributing
 
-yapi is a Cargo workspace whose crates mirror Pi's packages, so each behavior traces back to its Pi source. [AGENTS.md](https://github.com/SkymanOne/ri/blob/main/AGENTS.md) describes the architecture, the design decisions and the rules for changes. [dev/status.md](https://github.com/SkymanOne/ri/blob/main/dev/status.md) tracks progress and deferred work.
+yapi is a Cargo workspace whose crates mirror Pi's packages, so each behavior traces back to its Pi source. [AGENTS.md](https://github.com/SkymanOne/yapi/blob/main/AGENTS.md) describes the architecture, the design decisions and the rules for changes. [dev/status.md](https://github.com/SkymanOne/yapi/blob/main/dev/status.md) tracks progress and deferred work.
 
 ## Build and run
 
 ```sh
-git clone https://github.com/SkymanOne/ri yapi
+git clone https://github.com/SkymanOne/yapi yapi
 cd yapi
 cargo run -p yapi --
 ```

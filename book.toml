@@ -11,7 +11,7 @@ build-dir = "target/book"
 create-missing = false
 
 [output.html]
-site-url = "/ri/"
-git-repository-url = "https://github.com/SkymanOne/ri"
-edit-url-template = "https://github.com/SkymanOne/ri/edit/main/{path}"
+site-url = "/yapi/"
+git-repository-url = "https://github.com/SkymanOne/yapi"
+edit-url-template = "https://github.com/SkymanOne/yapi/edit/main/{path}"
 no-section-label = true

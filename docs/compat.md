@@ -72,7 +72,7 @@ yapi follows Pi `v1.0.0`. This page lists every known difference: first the inte
 
 ## Not yet ported
 
-These Pi features are missing from yapi or work only in part. [dev/status.md](https://github.com/SkymanOne/ri/blob/main/dev/status.md) tracks them per milestone.
+These Pi features are missing from yapi or work only in part. [dev/status.md](https://github.com/SkymanOne/yapi/blob/main/dev/status.md) tracks them per milestone.
 
 | Area | Pi | yapi |
 |---|---|---|

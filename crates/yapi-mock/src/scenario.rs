@@ -667,7 +667,7 @@ impl Normalizer<'_> {
             .replace("start yapi in the project", "start pi in the project")
             // The sign-in help points at yapi's README; pi's into its install.
             .replace(
-                "  https://github.com/SkymanOne/ri#models-and-sign-in",
+                "  https://github.com/SkymanOne/yapi#models-and-sign-in",
                 "  <sign-in help>",
             );
         const PROVIDERS_DOC: &str = "/pi-coding-agent/docs/providers.md\n";
@@ -979,7 +979,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             rest.next();
             let indent = &row[..row.len() - row.trim_start().len()];
             merged.push(format!(
-                "{indent}https://github.com/SkymanOne/ri#models-and-sign-in"
+                "{indent}https://github.com/SkymanOne/yapi#models-and-sign-in"
             ));
         } else {
             merged.push(row.clone());
