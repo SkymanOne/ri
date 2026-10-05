@@ -1,13 +1,13 @@
 # Contributing
 
-ri is a Cargo workspace whose crates mirror pi's packages, so each behavior traces back to its pi source. [AGENTS.md](https://github.com/SkymanOne/ri/blob/main/AGENTS.md) describes the architecture, the design decisions and the rules for changes. [dev/status.md](https://github.com/SkymanOne/ri/blob/main/dev/status.md) tracks progress and deferred work.
+yapi is a Cargo workspace whose crates mirror Pi's packages, so each behavior traces back to its Pi source. [AGENTS.md](https://github.com/SkymanOne/ri/blob/main/AGENTS.md) describes the architecture, the design decisions and the rules for changes. [dev/status.md](https://github.com/SkymanOne/ri/blob/main/dev/status.md) tracks progress and deferred work.
 
 ## Build and run
 
 ```sh
-git clone https://github.com/SkymanOne/ri
-cd ri
-cargo run -p ri --
+git clone https://github.com/SkymanOne/ri yapi
+cd yapi
+cargo run -p yapi --
 ```
 
 ## Checks
@@ -21,17 +21,17 @@ cargo test --workspace
 cargo deny check
 ```
 
-`cargo test` includes the end-to-end scenarios, which replay recorded provider streams against goldens recorded from pi. They need `rg`, `fd` and `python3` on `PATH`.
+`cargo test` includes the end-to-end scenarios, which replay recorded provider streams against goldens recorded from Pi. They need `rg`, `fd` and `python3` on `PATH`.
 
-## Comparing with pi
+## Comparing with Pi
 
 ```sh
-cargo xtask e2e --differential         # run pi and ri side by side on every scenario
+cargo xtask e2e --differential         # run pi and yapi side by side on every scenario
 cargo xtask e2e --record-pi            # rewrite the goldens from pi
 cargo xtask bench --pi <path-to-pi>    # the performance budgets
 ```
 
-pi installs from `tests/fixtures/pi/generator` with `npm ci`, which needs Node.js 22.19 or newer.
+Pi installs from `tests/fixtures/pi/generator` with `npm ci`, which needs Node.js 22.19 or newer.
 
 ## Documentation
 

@@ -181,7 +181,7 @@ Done for the slice below.
 
 Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/yapi-ext/tests/examples.rs`). The criterion asks for 90%.
 
-The 500 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top500.json`, from `top-packages.mjs`) are compared with `cargo xtask package-registrations` against pi's registrations (`packages.mjs`). Each package installs and loads in a child process of its own on both sides, with file access limited to its scratch directory, no process or network grant on yapi's side, and the same five environment variables. 443 of the 475 comparable packages register the same as in pi, or 93%. pi itself fails on 25 under the sandbox: six platform-specific binaries, and the rest blocked by Node's permission model. Of the 32 that differ:
+The 500 most-downloaded npm pi packages (`tests/fixtures/pi/packages/top500.json`, from `top-packages.mjs`) are compared with `cargo xtask package-registrations` against pi's registrations (`packages.mjs`). Each package installs and loads in a child process of its own on both sides, with file access limited to its scratch directory, no process or network grant on yapi's side, and the same five environment variables. 443 of the 475 comparable packages register the same as in Pi, or 93%. Pi itself fails on 25 under the sandbox: 6 publish builds for other platforms only, Node's permission model stops 16, and 3 crash. The 443 include 41 packages without extensions and 44 whose extensions fail in both with the same error. Of the 367 whose extensions load in Pi without errors and register something, 349 register the same in yapi, or 95%. Of the 32 that differ:
 
 - Native addons or WebAssembly (12): context-mode, opencode-codebase-index, open-codebase-index and @shanepadgett/tau-agent, and eight that pi fails on too (sharp, libsql, wreq-js, the parcel watcher, imagescript).
 - pi internals beyond the extension API (7): pi-fabric patches `ExtensionRunner`; @gotgenes/pi-subagents uses `createToolSearchExtension`; pi-multi-codex and pi-plus use `builtinProviders`; pi-landstrip and pi-smart-router construct `SettingsManager` and `ModelRuntime`; pi-llama-cpp fails the same way.
@@ -267,17 +267,17 @@ Not yet done:
 
 ## Final end-to-end pass
 
-Run on Linux x86_64 after M7, on the release candidate at the head of this branch.
+Run on Linux x86_64 after the rename to yapi, at the head of this branch.
 
 | Check | Command | Result |
 |---|---|---|
-| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | All 239 scenarios match: 93 TUI (PTY, 80×16 to 400×40), 50 JSON mode (six replaying live OpenCode Go streams), 77 CLI and print mode, 18 RPC, and pi's `RpcClient` example driving yapi. They cover every wire API, sessions, compaction, the TUI, sign-in, MCP, packages, extensions with their UI, and codemode. |
-| Workspace tests | `cargo test --workspace` | 296 tests pass, including the scenario suite against the recorded goldens. |
+| Live differential against Pi `v1.0.0` | `cargo xtask e2e --differential` | All 245 scenarios match: 97 TUI (PTY, 80×16 to 400×40), 51 JSON mode (six replaying live OpenCode Go streams), 77 CLI and print mode, 19 RPC, and Pi's `RpcClient` example driving yapi. They cover every wire API, sessions, compaction, the TUI, sign-in, MCP, packages, extensions with their UI, and codemode. |
+| Workspace tests | `cargo test --workspace` | 368 tests pass, including the scenario suite against the recorded goldens. |
 | QA review | Agents drove yapi and pi side by side on the same inputs and compared screens, styles, requests, files and exit codes | Seven areas: the CLI, TUI rendering, slash commands, extensions, print, JSON and RPC modes, sign-in and MCP, and the editor. Every finding is fixed, with a regression test or a scenario recorded from pi, or listed in [compat.md](../docs/compat.md). |
 | pi's example extensions | `crates/yapi-ext/tests/examples.rs` | 79 of 79 register as in pi. |
-| Top 500 npm pi packages | `cargo xtask package-registrations` | 443 of 475 comparable packages register as in pi (93%); see M5. |
+| Top 500 npm Pi packages | `cargo xtask package-registrations` | 443 of the 475 that Pi loads in the sandbox register as in Pi (93%), and 349 of the 367 whose extensions load cleanly in Pi (95%); see M5. |
 | Codemode sandbox | `crates/yapi-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
-| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `macos-latest` | All met on Linux. On macOS all but `--version` (4.5 to 6.7 ms against 5 ms); see M7. |
+| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `ubuntu-latest` and `macos-latest` | All met on Linux; see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
 Deferred work is listed under each milestone; intentional differences are in [compat.md](../docs/compat.md).
