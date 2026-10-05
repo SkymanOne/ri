@@ -28,13 +28,13 @@ Every file uses Pi's format. Provider variables such as `ANTHROPIC_API_KEY` and 
 ## Install and check
 
 ```sh
-git clone https://github.com/SkymanOne/ri yapi
-cd yapi
-cargo install --locked --path crates/yapi
+curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh   # release binary into ~/.local/bin
+cargo binstall --git https://github.com/SkymanOne/ri yapi                        # release binary through cargo-binstall
+cargo install --locked --git https://github.com/SkymanOne/ri yapi                # from source, with Rust 1.99 or newer
 yapi --version
 ```
 
-This needs a Rust toolchain from rustup. To bring an existing Pi setup across, run `yapi import pi`. It copies settings, credentials, sessions and packages, and keeps files yapi already has.
+Keep `--git` with Cargo: on crates.io, `yapi` is an unrelated crate. To bring an existing Pi setup across, run `yapi import pi`. It copies settings, credentials, sessions and packages, and keeps files yapi already has.
 
 ## Hand a task to yapi
 

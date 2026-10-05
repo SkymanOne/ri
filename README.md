@@ -14,15 +14,20 @@ yapi reads Pi's settings, sessions and credentials, and runs Pi packages with th
 
 ## Getting started
 
-Build and install the command-line interface with Cargo:
+Install the release binary for Linux or macOS:
 
 ```bash
-git clone https://github.com/SkymanOne/ri yapi
-cd yapi
-cargo install --locked --path crates/yapi
+curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh
 ```
 
-This requires a Rust toolchain from [rustup](https://rustup.rs). The version pinned in `rust-toolchain.toml` installs on the first build. Linux and macOS are supported.
+Or install it with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), or build it from source with Rust 1.99 or newer:
+
+```bash
+cargo binstall --git https://github.com/SkymanOne/ri yapi
+cargo install --locked --git https://github.com/SkymanOne/ri yapi
+```
+
+[Install](https://skymanone.github.io/ri/install.html) covers each method, downloading the release binaries directly and the platforms they support. The first release is not tagged yet, so for now only the source build works.
 
 Start yapi in the directory where you want it to work:
 

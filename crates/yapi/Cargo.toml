@@ -8,6 +8,17 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+# `cargo binstall --git https://github.com/SkymanOne/ri yapi` installs the
+# release archive for the host, named as scripts/package-release.sh names it.
+# Its other strategies are off because both fetch `yapi` from crates.io, where
+# the name belongs to another project: cargo-quickinstall's builds, and the
+# fallback that compiles from source.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install", "compile"]
+
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
