@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "Error: Failed to load extension \"<cwd>/second.ts\": Tool \"greet\" conflicts with <cwd>/first.ts\nError: Failed to load extension \"<cwd>/second.ts\": Flag \"--mood\" conflicts with <cwd>/first.ts\nError: Failed to load extension \"<cwd>/third.ts\": Tool \"greet\" conflicts with <cwd>/first.ts\nHint: Start without extensions using \"pi -ne\".\n",
+  "requests": []
+}

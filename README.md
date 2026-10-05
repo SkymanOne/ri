@@ -93,15 +93,16 @@ yapi is one native executable, so it does not pay for starting Node.js and loadi
 
 | Measure | yapi | Pi |
 |---|---|---|
-| `--version` | 2.2 ms | 240.5 ms |
-| Interactive first paint | 9.1 ms | 308.4 ms |
-| Print mode, start to first request byte | 13.2 ms | 332.5 ms |
-| Keystroke to paint, p99, 10,000-line session | 2.3 ms | 6.5 ms |
-| Idle memory | 19.5 MB | 115.0 MB |
-| Idle memory with 10 JS extensions | 32.2 MB | 118.3 MB |
-| Install size | 32.2 MB | 245.2 MB with Node.js |
+| `--version` | 2.6 ms | 307.7 ms |
+| Interactive first paint | 12.0 ms | 410.9 ms |
+| Print mode, start to first request byte | 17.2 ms | 451.1 ms |
+| Keystroke to paint, p99, 10,000-line session | 4.7 ms | 11.7 ms |
+| Memory, idle | 18.9 MB | 112.5 MB |
+| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB |
+| Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB |
+| Install size | 32.3 MB | 245.2 MB with Node.js |
 
-`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges, the budgets and results from GitHub's hosted Linux and macOS runners. On the macOS runner, `--version` takes 6.7 ms against its 5 ms budget, and keystroke latency is close to Pi's.
+`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges, more memory measures and results from GitHub's hosted Linux and macOS runners.
 
 ## Agent skills
 
