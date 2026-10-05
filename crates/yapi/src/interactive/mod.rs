@@ -57,7 +57,7 @@ use yapi_tui::theme::{
 };
 use yapi_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, ImageContent, Message, StopReason, ThinkingContent, ToolCall,
 };
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::{DoubleEscapeAction, TuiMode};
@@ -194,6 +194,8 @@ pub struct Options {
     pub verbose: bool,
     /// Messages to send at start, in order.
     pub initial: Vec<String>,
+    /// Images attached to the first of `initial`.
+    pub initial_images: Vec<ImageContent>,
     /// Builds replacement sessions for `/new`, `/resume`, `/fork` and `/clone`.
     pub factory: SessionFactory,
     /// `--use-theme`: the theme for this run instead of the `theme` setting.
@@ -383,6 +385,8 @@ struct App {
     binding: Option<Option<AgentSession>>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
+    /// Images attached to the first of `initial`.
+    initial_images: Vec<ImageContent>,
     /// pi's `OverlayOptions` when the open custom component is an overlay.
     overlay: Option<Value>,
     /// Overlays an open overlay covers, bottom first, with their options;
@@ -1763,7 +1767,7 @@ impl App {
         if self.running {
             messages.push((first, StreamingBehavior::Steer));
         } else {
-            self.start_prompt(first);
+            self.start_prompt(first, Vec::new());
         }
         messages.extend(queue.map(|(text, follow_up)| {
             let behavior = if follow_up {
@@ -1798,13 +1802,13 @@ impl App {
 
     // Input
 
-    fn start_prompt(&mut self, text: String) {
+    fn start_prompt(&mut self, text: String, images: Vec<ImageContent>) {
         self.running = true;
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            let result = session.prompt(&text, Vec::new()).await;
+            let result = session.prompt(&text, images).await;
             let _ = tx.send(Event::PromptDone(epoch, result));
         });
     }
@@ -1861,7 +1865,7 @@ impl App {
         for view in std::mem::take(&mut self.pending_bash) {
             self.push(Item::Bash(Box::new(view)));
         }
-        self.start_prompt(text);
+        self.start_prompt(text, Vec::new());
     }
 
     fn run_bash(&mut self, command: String, exclude: bool) {
@@ -3139,6 +3143,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         anthropic_warning_shown: false,
         ext: extension_ui::ExtensionState::default(),
         initial: options.initial,
+        initial_images: options.initial_images,
         provider_count: 0,
         model_network: options.model_network,
         next_refresh: 0,
@@ -3474,7 +3479,8 @@ impl App {
                 self.redraw_transcript();
                 let mut initial = std::mem::take(&mut self.initial).into_iter();
                 if let Some(first) = initial.next() {
-                    self.start_prompt(first);
+                    let images = std::mem::take(&mut self.initial_images);
+                    self.start_prompt(first, images);
                     self.queue_messages(
                         initial
                             .map(|message| (message, StreamingBehavior::FollowUp))

@@ -29,6 +29,10 @@ pub struct Scenario {
     /// Files to create in the working directory, by relative path.
     #[serde(default)]
     pub files: IndexMap<String, String>,
+    /// Binary files to create in the working directory, by relative path, as
+    /// base64.
+    #[serde(default, rename = "binaryFiles")]
+    pub binary_files: IndexMap<String, String>,
     /// Text on stdin; stdin is empty otherwise.
     #[serde(default)]
     pub stdin: Option<String>,
@@ -309,6 +313,17 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
             .replace("{{agent}}", &agent_dir.to_string_lossy())
             .replace("{{fixtures}}", &fixtures_dir().to_string_lossy());
         std::fs::write(&path, content).map_err(io(&path))?;
+        seeded.push(path);
+    }
+    for (relative, content) in &scenario.binary_files {
+        use base64::Engine;
+        let path = cwd.join(relative);
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(content)
+            .map_err(|error| {
+                io(&path)(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+            })?;
+        std::fs::write(&path, bytes).map_err(io(&path))?;
         seeded.push(path);
     }
     let mut models = json!({"providers": {

@@ -307,6 +307,11 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 return 1;
             }
         };
+        // pi attaches `@` images to the initial message only.
+        let initial_images = match startup.initial_message {
+            Some(_) => startup.initial_images,
+            None => Vec::new(),
+        };
         let mut initial: Vec<String> = startup.initial_message.into_iter().collect();
         initial.extend(startup.messages);
         let args = parsed.clone();
@@ -317,6 +322,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 tui_mode,
                 verbose: parsed.verbose,
                 initial,
+                initial_images,
                 factory: Box::new(move |session| {
                     startup::create(&args, session, false, &extensions)
                 }),
