@@ -1,12 +1,9 @@
 //! `yapi new`: creates a Cargo project for a native extension package from
 //! the template in `templates/extension`, which `cargo generate` also reads.
 
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::{err, out};
-
-const USAGE: &str = "Usage:\n  yapi new <path> [--name <name>]\n\nCreate a Cargo project for a native extension package in <path>, which must not\nexist or be empty. The package is named after the directory unless --name says\notherwise.\n";
 
 /// The template's files, by path in the project, with cargo-generate's
 /// `{{project-name}}` and `{{crate_name}}` placeholders.
@@ -50,34 +47,22 @@ fn create(dir: &Path, name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Create a Cargo project for a native extension package in PATH, which must
+/// not exist or be empty.
+#[derive(clap::Parser)]
+struct NewArgs {
+    /// Where to create the project.
+    path: PathBuf,
+    /// The package name; the directory's name by default.
+    #[arg(long, allow_hyphen_values = true)]
+    name: Option<String>,
+}
+
 /// Runs `yapi new` with `args` (after `new`); the exit code.
 pub fn run(args: &[String]) -> u8 {
-    let mut path = None;
-    let mut name = None;
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "-h" | "--help" => {
-                let _ = write!(std::io::stdout(), "{USAGE}");
-                return 0;
-            }
-            "--name" => match rest.next() {
-                Some(value) => name = Some(value.clone()),
-                None => {
-                    err("Error: --name requires a value");
-                    return 1;
-                }
-            },
-            _ if path.is_none() && !arg.starts_with('-') => path = Some(PathBuf::from(arg)),
-            _ => {
-                err("Usage: yapi new <path> [--name <name>]");
-                return 1;
-            }
-        }
-    }
-    let Some(path) = path else {
-        err("Usage: yapi new <path> [--name <name>]");
-        return 1;
+    let NewArgs { path, name } = match crate::parse_command("yapi new", args) {
+        Ok(args) => args,
+        Err(code) => return code,
     };
     let dir = match std::path::absolute(&path) {
         Ok(dir) => dir,

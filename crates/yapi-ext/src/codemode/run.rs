@@ -167,46 +167,21 @@ fn truncate_text(text: &str, max: usize) -> String {
     }
 }
 
-fn text_of(result: &ToolResult) -> String {
-    let texts: Vec<&str> = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect();
-    texts.join("\n")
-}
-
 /// A nested call as `details.calls` reports it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CallRecord {
     id: String,
     name: String,
     args: String,
     status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     duration_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     /// Cost in USD of a `models.*` call that reported usage.
+    #[serde(skip_serializing_if = "Option::is_none")]
     cost: Option<f64>,
-}
-
-impl CallRecord {
-    fn json(&self) -> Value {
-        let mut out =
-            json!({"id": self.id, "name": self.name, "args": self.args, "status": self.status});
-        if let Some(duration) = self.duration_ms {
-            out["durationMs"] = json!(duration);
-        }
-        if let Some(error) = &self.error {
-            out["error"] = json!(error);
-        }
-        if let Some(cost) = self.cost {
-            out["cost"] = json!(cost);
-        }
-        out
-    }
 }
 
 /// What the script produced so far.
@@ -262,11 +237,7 @@ fn is_namespace_name(namespace: &str, query: &str) -> bool {
 
 impl ScriptBridge {
     fn publish(&self) {
-        let calls: Vec<Value> = lock(&self.progress)
-            .calls
-            .iter()
-            .map(CallRecord::json)
-            .collect();
+        let calls = lock(&self.progress).calls.clone();
         (self.updates)(ToolResult {
             details: Some(json!({"calls": calls})),
             ..ToolResult::default()
@@ -424,7 +395,7 @@ impl ScriptBridge {
         let outcome = session
             .execute_tool(&self.call_id, &name, args, cancel.clone(), None)
             .await;
-        let text = text_of(&outcome.result);
+        let text = yapi_types::message::blocks_text(&outcome.result.content, "\n");
         {
             let mut progress = lock(&self.progress);
             let record = &mut progress.calls[index];
@@ -935,16 +906,13 @@ impl Runner {
                 "Script failed"
             }
         );
-        let mut content = vec![ContentBlock::Text(yapi_types::message::TextContent {
-            text: header,
-            text_signature: None,
-        })];
+        let mut content = vec![ContentBlock::text(header)];
         content.extend(
             items
                 .into_iter()
                 .filter_map(|item| serde_json::from_value::<ContentBlock>(item).ok()),
         );
-        let mut details = json!({"calls": calls.iter().map(CallRecord::json).collect::<Vec<_>>()});
+        let mut details = json!({ "calls": calls });
         if let Some(path) = full_output_path {
             details["fullOutputPath"] = json!(path);
         }

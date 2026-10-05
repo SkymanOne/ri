@@ -48,6 +48,30 @@ impl Spawn {
         }
     }
 
+    /// The process to start, with piped output and, when there is input,
+    /// piped input. An explicit environment replaces the process's, as in
+    /// Node.
+    fn command(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(&self.command);
+        command
+            .args(&self.args)
+            .stdin(if self.input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .envs(yapi_core::config::child_env());
+        if let Some(cwd) = &self.cwd {
+            command.current_dir(cwd);
+        }
+        if let Some(env) = self.env_pairs() {
+            command.env_clear().envs(env);
+        }
+        command
+    }
+
     fn env_pairs(&self) -> Option<Vec<(String, String)>> {
         self.env.as_ref().map(|env| {
             env.iter()
@@ -68,29 +92,21 @@ pub(crate) async fn timer(payload: Value) -> Result<Value, String> {
     Ok(Value::Null)
 }
 
+/// Reads `pipe` to its end; empty without a pipe.
+async fn read_all(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    if let Some(mut pipe) = pipe {
+        let _ = pipe.read_to_end(&mut buffer).await;
+    }
+    buffer
+}
+
 /// Runs a process to completion: `{stdout, stderr, code, signal, killed}`.
 /// A process that cannot start fails with Node's spawn error message.
 pub(crate) async fn exec(payload: Value) -> Result<Value, String> {
     let spawn = Spawn::parse(&payload);
-    let mut command = tokio::process::Command::new(&spawn.command);
-    command
-        .args(&spawn.args)
-        .stdin(if spawn.input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    if let Some(cwd) = &spawn.cwd {
-        command.current_dir(cwd);
-    }
-    // An explicit environment replaces the process's, as in Node.
-    command.envs(yapi_core::config::child_env());
-    if let Some(env) = spawn.env_pairs() {
-        command.env_clear().envs(env);
-    }
+    let mut command = tokio::process::Command::from(spawn.command());
+    command.kill_on_drop(true);
     let mut child = command
         .spawn()
         .map_err(|err| spawn_error(&spawn.command, &err))?;
@@ -99,22 +115,8 @@ pub(crate) async fn exec(payload: Value) -> Result<Value, String> {
             let _ = stdin.write_all(input.as_bytes()).await;
         });
     }
-    let mut stdout = child.stdout.take();
-    let mut stderr = child.stderr.take();
-    let read_out = async {
-        let mut buffer = Vec::new();
-        if let Some(pipe) = stdout.as_mut() {
-            let _ = pipe.read_to_end(&mut buffer).await;
-        }
-        buffer
-    };
-    let read_err = async {
-        let mut buffer = Vec::new();
-        if let Some(pipe) = stderr.as_mut() {
-            let _ = pipe.read_to_end(&mut buffer).await;
-        }
-        buffer
-    };
+    let read_out = read_all(child.stdout.take());
+    let read_err = read_all(child.stderr.take());
     let mut killed = false;
     let wait = async {
         match spawn.timeout {
@@ -142,25 +144,7 @@ pub(crate) async fn exec(payload: Value) -> Result<Value, String> {
 /// Runs a process and blocks until it exits; the result of [`exec`].
 pub(crate) fn exec_sync(payload: &Value) -> Result<Value, String> {
     let spawn = Spawn::parse(payload);
-    let mut command = std::process::Command::new(&spawn.command);
-    command
-        .args(&spawn.args)
-        .stdin(if spawn.input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(cwd) = &spawn.cwd {
-        command.current_dir(cwd);
-    }
-    // An explicit environment replaces the process's, as in Node.
-    command.envs(yapi_core::config::child_env());
-    if let Some(env) = spawn.env_pairs() {
-        command.env_clear().envs(env);
-    }
-    let mut child = match command.spawn() {
+    let mut child = match spawn.command().spawn() {
         Ok(child) => child,
         Err(err) => {
             return Ok(json!({

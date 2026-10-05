@@ -1,14 +1,11 @@
 //! `yapi import pi`: copies pi's agent directory, and the current project's
 //! `.pi` directory, into yapi's.
 
-use std::io::Write as _;
 use std::path::Path;
 
 use yapi_core::import::{AGENT_ENTRIES, Imported, PROJECT_ENTRIES, import, pi_agent_dir};
 
 use crate::{err, out};
-
-const USAGE: &str = "Usage:\n  yapi import pi\n\nCopy pi's settings, credentials, models, keybindings, MCP servers, sessions,\nprompts, skills, themes, extensions and packages into yapi. Files yapi already has\nare kept. The current project's .pi directory is copied into .yapi.\n";
 
 /// "file" or "files" for `count`.
 fn files(count: usize) -> &'static str {
@@ -42,18 +39,27 @@ fn report(from: &Path, to: &Path, imported: &[Imported]) -> (usize, usize) {
     })
 }
 
+/// Copy pi's settings, credentials, models, keybindings, MCP servers,
+/// sessions, prompts, skills, themes, extensions and packages into yapi.
+/// Files yapi already has are kept. The current project's .pi directory is
+/// copied into .yapi.
+#[derive(clap::Parser)]
+struct ImportArgs {
+    /// Where to import from.
+    #[arg(value_enum)]
+    from: Source,
+}
+
+#[derive(Clone, clap::ValueEnum)]
+enum Source {
+    /// pi's agent directory and the project's .pi directory.
+    Pi,
+}
+
 /// Runs `yapi import` with `args` (after `import`); the exit code.
 pub fn run(args: &[String]) -> u8 {
-    match args.first().map(String::as_str) {
-        Some("-h" | "--help") => {
-            let _ = write!(std::io::stdout(), "{USAGE}");
-            return 0;
-        }
-        Some("pi") if args.len() == 1 => {}
-        _ => {
-            err("Usage: yapi import pi");
-            return 1;
-        }
+    if let Err(code) = crate::parse_command::<ImportArgs>("yapi import", args) {
+        return code;
     }
     let from = pi_agent_dir();
     if !from.is_dir() {

@@ -22,6 +22,7 @@ disabled-strategies = ["quick-install", "compile"]
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
+clap.workspace = true
 futures-util = { workspace = true, features = ["std"] }
 indexmap.workspace = true
 regex-lite.workspace = true

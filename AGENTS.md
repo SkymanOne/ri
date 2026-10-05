@@ -92,7 +92,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 
 | Concern | Choice |
 |---|---|
-| Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` |
+| Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` for commands pi does not have (`yapi new`, `yapi import`, `xtask`). Pi's own arguments and commands keep ports of pi's hand-written parsers, whose quirks and messages clap cannot reproduce. |
 | Serialization | `serde`, `serde_json` |
 | TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ratatui-image` |
 | Markdown, diffs, images | `pulldown-cmark`, `similar`, `image` |

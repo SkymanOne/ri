@@ -35,6 +35,18 @@ pub(crate) fn err(line: &str) {
     let _ = writeln!(std::io::stderr(), "{line}");
 }
 
+/// Parses the arguments of `name`, a command pi does not have, with clap.
+/// On `--help` or an error it prints the help or the error and returns the
+/// exit code: 0 for help, 1 for an error, as yapi's other errors.
+pub(crate) fn parse_command<T: clap::Parser>(name: &str, args: &[String]) -> Result<T, u8> {
+    T::try_parse_from(std::iter::once(name).chain(args.iter().map(String::as_str))).map_err(
+        |error| {
+            let _ = error.print();
+            u8::from(error.use_stderr())
+        },
+    )
+}
+
 /// pi's `applyHttpProxySettings`: the global `httpProxy` setting stands in for
 /// unset proxy variables.
 fn apply_http_proxy() {

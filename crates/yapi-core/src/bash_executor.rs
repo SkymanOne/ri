@@ -73,15 +73,7 @@ impl Output {
 
     fn push(&mut self, data: &[u8], on_chunk: &mut impl FnMut(&str)) {
         self.total_bytes += data.len();
-        self.pending.extend_from_slice(data);
-        let valid = match std::str::from_utf8(&self.pending) {
-            Ok(text) => text.len(),
-            Err(err) if err.error_len().is_none() => err.valid_up_to(),
-            Err(_) => self.pending.len(),
-        };
-        let rest = self.pending.split_off(valid);
-        let decoded =
-            String::from_utf8_lossy(&std::mem::replace(&mut self.pending, rest)).into_owned();
+        let decoded = yapi_types::js::decode_utf8_stream(&mut self.pending, data);
         self.text(&decoded, on_chunk);
     }
 

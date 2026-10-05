@@ -784,12 +784,7 @@ impl Summarizer<'_> {
                 tools_removed: None,
             }),
             Message::User(UserMessage {
-                content: Content::Blocks(vec![ContentBlock::Text(
-                    yapi_types::message::TextContent {
-                        text: prompt.to_owned(),
-                        text_signature: None,
-                    },
-                )]),
+                content: Content::Blocks(vec![ContentBlock::text(prompt)]),
                 timestamp: now_ms(),
             }),
         ];

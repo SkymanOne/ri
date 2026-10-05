@@ -313,14 +313,26 @@ fn service_commands_are_not_offered() {
 #[test]
 fn update_self_names_the_installer() {
     let dir = common::scratch("update-self");
+    // pi's `--force` reinstalls pi; yapi accepts it for `update` only.
+    for args in [&["update", "self"][..], &["update", "--force"]] {
+        let output = common::yapi(&dir)
+            .args(args)
+            .env("PI_OFFLINE", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{args:?}: {output:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh\n"
+        );
+    }
     let output = common::yapi(&dir)
-        .args(["update", "self"])
-        .env("PI_OFFLINE", "1")
+        .args(["install", "./pkg", "--force"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert_eq!(
-        String::from_utf8(output.stderr).unwrap(),
-        "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh\n"
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .starts_with("Unknown option --force for \"install\".\n")
     );
 }

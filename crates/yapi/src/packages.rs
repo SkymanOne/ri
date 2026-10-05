@@ -34,7 +34,7 @@ impl Command {
             Command::Install => "yapi install <source> [-l] [--approve|--no-approve]",
             Command::Remove => "yapi remove <source> [-l] [--approve|--no-approve]",
             Command::Update => {
-                "yapi update [source|self|yapi] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve]"
+                "yapi update [source|self|yapi] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve] [--force]"
             }
             Command::List => "yapi list [--approve|--no-approve]",
         }
@@ -50,7 +50,7 @@ impl Command {
                 "Usage:\n  {usage}\n\nRemove a package and its source from settings.\nAlias: yapi uninstall <source> [-l]\n\nOptions:\n  -l, --local       Remove from project settings (.yapi/settings.json)\n  -a, --approve     Trust project-local files for this command\n  -na, --no-approve Ignore project-local files for this command\n\nExamples:\n  yapi remove npm:@foo/bar\n  yapi uninstall npm:@foo/bar\n"
             ),
             Command::Update => format!(
-                "Usage:\n  {usage}\n\nUpdate installed packages or model catalogs.\n\nOptions:\n  --self                  Update yapi only (default when no target is given)\n  --extensions            Update installed packages only\n  --models                Refresh model catalogs only\n  --all                   Update yapi and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n"
+                "Usage:\n  {usage}\n\nUpdate installed packages or model catalogs.\n\nOptions:\n  --self                  Update yapi only (default when no target is given)\n  --extensions            Update installed packages only\n  --models                Refresh model catalogs only\n  --all                   Update yapi and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n  --force                 No effect: yapi updates only through its installer\n"
             ),
             Command::List => format!(
                 "Usage:\n  {usage}\n\nList installed packages from user and project settings.\n\nOptions:\n  -a, --approve      Trust project-local files for this command\n  -na, --no-approve  Ignore project-local files for this command\n"
@@ -107,6 +107,9 @@ fn parse(command: Command, args: &[String]) -> Options {
             "--extensions" if command == Command::Update => options.extensions_flag = true,
             "--all" if command == Command::Update => options.all_flag = true,
             "--models" if command == Command::Update => options.models_flag = true,
+            // pi's `--force` reinstalls pi itself, which yapi leaves to its
+            // installer.
+            "--force" if command == Command::Update => {}
             "-a" | "--approve" => options.trust = Some(true),
             "-na" | "--no-approve" => options.trust = Some(false),
             "--extension" if command == Command::Update => match args.get(index) {
