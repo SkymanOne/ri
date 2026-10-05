@@ -22,6 +22,7 @@
 - [Native extension examples](native-examples.md)
 - [Packages](packages.md)
 - [MCP servers and codemode](mcp.md)
+- [Agent skills](agent-skills.md)
 
 # Reference
 
