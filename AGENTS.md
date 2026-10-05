@@ -274,6 +274,7 @@ MB means 10^6 bytes. Runs alternate between yapi and pi, and reports give the ra
 - A change to user-facing behavior updates the matching page in `docs/` in the same commit.
 - A change to the architecture or to a decision updates this file in the same commit.
 - Commit messages use `type(scope): summary`. Type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`; scope is the crate name.
+- Pull request descriptions state the key changes, behavior changes and decisions. They do not paraphrase commits or report line counts.
 - Stage explicit paths. Never commit secrets, `target/` or local caches.
 
 ## Milestones
