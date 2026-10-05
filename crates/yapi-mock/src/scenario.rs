@@ -99,18 +99,33 @@ pub struct RpcStep {
 const RPC_STEP_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// A terminal session: its size and what to type. After starting and after
-/// each key the screen is left to settle.
+/// each key the screen is left to settle, unless the next step waits for text.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tty {
     /// Columns.
     pub cols: u16,
     /// Rows.
     pub rows: u16,
-    /// Input to send, one write each, such as `"hello"` or `"\r"`.
-    pub keys: Vec<String>,
+    /// Steps: input to send, one write each, such as `"hello"` or `"\r"`, or
+    /// text to wait for.
+    pub keys: Vec<Key>,
     /// Whether to record the terminal progress sequences (OSC 9;4) written.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub progress: bool,
+}
+
+/// One step of a terminal session.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Key {
+    /// Input to send.
+    Input(String),
+    /// Text to wait for on screen instead of waiting for the screen to settle,
+    /// for screens that keep changing, such as a dialog's countdown.
+    Wait {
+        /// The text.
+        wait: String,
+    },
 }
 
 /// Which program runs a scenario.
@@ -541,9 +556,21 @@ fn run_tty(
 ) -> std::io::Result<(i32, Vec<String>, Option<Vec<String>>)> {
     let mut pty = crate::pty::Pty::spawn(executable, args, cwd, env, (tty.cols, tty.rows), false)?;
     pty.settle();
-    for key in &tty.keys {
-        pty.write(key)?;
-        pty.settle();
+    for (index, key) in tty.keys.iter().enumerate() {
+        match key {
+            Key::Input(input) => {
+                pty.write(input)?;
+                if !matches!(tty.keys.get(index + 1), Some(Key::Wait { .. })) {
+                    pty.settle();
+                }
+            }
+            // A missing text shows in the comparison of the final screen.
+            Key::Wait { wait } => {
+                let _ = pty.wait_for(crate::pty::SETTLE_LIMIT, |rows| {
+                    rows.iter().any(|row| row.contains(wait.as_str()))
+                });
+            }
+        }
     }
     let screen = pty.rows();
     let progress = tty.progress.then(|| pty.progress());
