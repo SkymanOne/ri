@@ -72,7 +72,7 @@ cd yapi
 cargo install --locked --path crates/yapi
 ```
 
-Inside the clone, `rust-toolchain.toml` selects the stable toolchain with Clippy and rustfmt, which rustup installs on the first build if needed.
+Inside the clone, `rust-toolchain.toml` selects the stable toolchain with Clippy and rustfmt. rustup installs it on the first build if needed, but does not update an older one, so run `rustup update` if Cargo reports that rustc is too old.
 
 ## Check the installation
 
