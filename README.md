@@ -103,6 +103,10 @@ yapi is one native executable, so it does not pay for starting Node.js and loadi
 
 `cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges and the budgets.
 
+## Agent skills
+
+The repository ships two [Agent Skills](https://agentskills.io) for coding agents: `yapi`, for running and scripting yapi, and `yapi-extension`, for writing Pi and native extensions. Install both as a package with `yapi install git:github.com/SkymanOne/ri`, or copy them from [skills/](skills/) into any agent's skills folder. [Agent skills](https://skymanone.github.io/ri/agent-skills.html) has the details.
+
 ## Development
 
 Clone the repository and run yapi from source:

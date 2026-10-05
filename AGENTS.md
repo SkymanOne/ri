@@ -60,6 +60,7 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 | `guest/yapi-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
 | `guest/yapi-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
+| `skills/` | Agent Skills for using yapi and writing its extensions, with templates and helper scripts. The repository installs as a package that provides them. | None |
 | `xtask/` | Developer commands: mock server runner, end-to-end scenarios, benchmarks, model catalog codegen, pi JS vendoring, `yapi-js.wasm` build. | Build scripts |
 
 Dependency direction:

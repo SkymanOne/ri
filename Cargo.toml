@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/*", "xtask"]
+# The native extension template in the skills is a crate of its own.
+exclude = ["skills"]
 resolver = "3"
 
 [workspace.package]
