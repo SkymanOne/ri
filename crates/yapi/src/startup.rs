@@ -904,6 +904,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         }
     }
     messages.append(&mut missing);
+    messages.extend(conflicts(&hosts));
     let load_failed = !messages.is_empty();
 
     // pi's applyExtensionFlagValues.
@@ -950,6 +951,35 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
         prompts,
         themes,
     })
+}
+
+/// pi's extension conflicts: each tool or flag that an extension registers
+/// after an earlier extension, in load order, registered the same name.
+fn conflicts(hosts: &[Arc<ExtensionHost>]) -> Vec<String> {
+    let mut owners = std::collections::HashMap::<(&str, String), String>::new();
+    let mut messages = Vec::new();
+    for extension in hosts.iter().flat_map(|host| host.registrations()) {
+        let path = extension["path"].as_str().unwrap_or_default();
+        for (kind, label) in [("tools", "Tool \""), ("flags", "Flag \"--")] {
+            let names = extension[kind]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|item| item["name"].as_str());
+            for name in names {
+                match owners.get(&(kind, name.to_owned())) {
+                    Some(owner) if owner != path => messages.push(format!(
+                        "Failed to load extension \"{path}\": {label}{name}\" conflicts with {owner}"
+                    )),
+                    Some(_) => {}
+                    None => {
+                        owners.insert((kind, name.to_owned()), path.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    messages
 }
 
 /// The run's loaded extensions, and the skills, prompt templates and themes
