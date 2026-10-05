@@ -320,15 +320,15 @@ pub fn js_number(value: f64) -> String {
     yapi_types::json::to_string(&value).unwrap_or_default()
 }
 
-/// Output capped at the default byte limit with no line limit, then pi's
-/// bracketed notices: `before`, the byte limit if hit, `after`. The truncation
-/// goes into `details` when it applied.
+/// The result of output capped at the default byte limit with no line limit,
+/// then pi's bracketed notices: `before`, the byte limit if hit, `after`. The
+/// truncation joins `details` when it applied; empty details are left out.
 fn capped_output(
     raw: &str,
     before: Vec<String>,
     after: Vec<String>,
-    details: &mut serde_json::Map<String, Value>,
-) -> String {
+    mut details: serde_json::Map<String, Value>,
+) -> ToolResult {
     let mut notices = before;
     let truncation = truncate::truncate_head(raw, JS_MAX_SAFE_INTEGER, truncate::DEFAULT_MAX_BYTES);
     let mut output = truncation.content.clone();
@@ -346,7 +346,10 @@ fn capped_output(
     if !notices.is_empty() {
         output += &format!("\n\n[{}]", notices.join(". "));
     }
-    output
+    text_result(
+        output,
+        (!details.is_empty()).then_some(Value::Object(details)),
+    )
 }
 
 /// `Number.MAX_SAFE_INTEGER`, pi's "no line limit".
