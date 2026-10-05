@@ -375,23 +375,12 @@ fn parse_modify_other_keys(data: &str) -> Option<(i64, u32)> {
     Some((code?, u32::try_from(modifier? - 1).ok()?))
 }
 
-/// Whether input carries the Kitty event type `event` (flag 2). Pasted text
-/// never does.
-fn has_event(data: &str, event: char) -> bool {
+/// Whether input is a Kitty key release (flag 2). Pasted text never is.
+pub fn is_key_release(data: &str) -> bool {
     !data.contains("\x1b[200~")
         && "u~ABCDHF"
             .chars()
-            .any(|last| data.contains(&format!(":{event}{last}")))
-}
-
-/// Whether input is a Kitty key release (flag 2). Pasted text never is.
-pub fn is_key_release(data: &str) -> bool {
-    has_event(data, '3')
-}
-
-/// Whether input is a Kitty key repeat (flag 2). Pasted text never is.
-pub fn is_key_repeat(data: &str) -> bool {
-    has_event(data, '2')
+            .any(|last| data.contains(&format!(":3{last}")))
 }
 
 fn raw_ctrl_char(key: &str) -> Option<String> {
@@ -878,7 +867,6 @@ mod tests {
         assert_eq!(decode_printable("\x1b[97:65;2u").as_deref(), Some("A"));
         assert_eq!(decode_printable("\x1b[97;5u"), None);
         assert!(is_key_release("\x1b[97;1:3u"));
-        assert!(is_key_repeat("\x1b[97;1:2u"));
         assert!(!is_key_release("\x1b[200~90:62:3F"));
     }
 }

@@ -7,10 +7,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use indexmap::IndexMap;
 use ratatui_core::style::{Modifier, Style};
 use serde_json::{Map, Value};
 
-use crate::color::{Color, ColorMode, InvalidColor, okhsl_to_rgb, oklab_to_okhsl_lightness};
+use crate::color::{
+    Color, ColorMode, InvalidColor, bisect, okhsl_to_rgb, oklab_to_okhsl_lightness,
+};
 
 /// The theme pi uses when none is configured.
 pub const SYSTEM_THEME_NAME: &str = "system";
@@ -170,9 +173,8 @@ pub struct Theme {
     /// The theme's name.
     pub name: Option<String>,
     mode: ColorMode,
-    paints: HashMap<String, Paint>,
-    /// Tokens in pi's order: the document's, then fallbacks it lacks.
-    order: Vec<String>,
+    /// Paints in pi's token order: the document's, then fallbacks it lacks.
+    paints: IndexMap<String, Paint>,
     dim: HashSet<String>,
     appearance: Option<Appearance>,
     /// The `export` section's page, card and info backgrounds.
@@ -282,7 +284,7 @@ fn detect_appearance(foregrounds: &[Color], backgrounds: &[Color]) -> Option<App
 impl Theme {
     fn new(
         name: Option<String>,
-        (paints, order): (HashMap<String, Paint>, Vec<String>),
+        paints: IndexMap<String, Paint>,
         dim: HashSet<String>,
         appearance: Option<Appearance>,
         mode: ColorMode,
@@ -304,7 +306,6 @@ impl Theme {
             name,
             mode,
             paints,
-            order,
             dim,
             appearance,
             export: [None, None, None],
@@ -371,19 +372,16 @@ impl Theme {
             .get("vars")
             .and_then(Value::as_object)
             .unwrap_or(&empty);
-        let mut paints = HashMap::new();
-        let mut order = Vec::new();
+        let mut paints = IndexMap::new();
         for (token, value) in colors {
             let resolved = resolve(value, vars, &mut Vec::new())?;
             paints.insert(token.clone(), paint_of(&resolved)?);
-            order.push(token.clone());
         }
         check_tokens()?;
         for (token, fallback) in OPTIONAL_TOKENS {
             if !paints.contains_key(token) {
                 let paint = paints.get(fallback).copied().unwrap_or(Paint::Default);
                 paints.insert(token.to_owned(), paint);
-                order.push(token.to_owned());
             }
         }
         let appearance = json
@@ -391,7 +389,7 @@ impl Theme {
             .and_then(Value::as_str)
             .and_then(Appearance::parse);
         let name = json.get("name").and_then(Value::as_str).map(str::to_owned);
-        let mut theme = Theme::new(name, (paints, order), HashSet::new(), appearance, mode);
+        let mut theme = Theme::new(name, paints, HashSet::new(), appearance, mode);
         if let Some(export) = json.get("export").and_then(Value::as_object) {
             theme.export = ["pageBg", "cardBg", "infoBg"]
                 .map(|key| export.get(key).and_then(|value| export_color(value, vars)));
@@ -412,11 +410,6 @@ impl Theme {
     /// The system theme for what the terminal reported.
     pub fn system(input: &SystemThemeInput, mode: ColorMode) -> Theme {
         let generated = generate_system_theme(input);
-        let order = generated
-            .colors
-            .iter()
-            .map(|(token, _)| (*token).to_owned())
-            .collect();
         let paints = generated
             .colors
             .into_iter()
@@ -432,7 +425,7 @@ impl Theme {
         let dim = generated.dim.into_iter().map(str::to_owned).collect();
         Theme::new(
             Some(SYSTEM_THEME_NAME.to_owned()),
-            (paints, order),
+            paints,
             dim,
             generated.appearance,
             mode,
@@ -470,8 +463,8 @@ impl Theme {
         let background = background.unwrap_or(guess_bg);
         let is_background = |token: &str| BACKGROUND_TOKENS.contains(&token);
         let side = |backgrounds: bool| {
-            self.order
-                .iter()
+            self.paints
+                .keys()
                 .filter(move |token| is_background(token) == backgrounds)
         };
         let mut concrete = Vec::new();
@@ -1207,10 +1200,6 @@ pub fn terminal_appearance(background: [f64; 3], foreground: Option<[f64; 3]>) -
     }
 }
 
-fn okhsl_of(rgb: [f64; 3]) -> (f64, f64, f64) {
-    crate::color::rgb_to_okhsl(rgb)
-}
-
 fn bell_weight(lightness: f64) -> f64 {
     let gaussian = |x: f64| (-((x - 0.5).powi(2)) / (2.0 * 0.25f64.powi(2))).exp();
     (gaussian(lightness) - gaussian(0.0)) / (1.0 - gaussian(0.0))
@@ -1249,7 +1238,7 @@ struct Source {
 }
 
 fn source_of(rgb: [f64; 3]) -> Source {
-    let (h, s, l) = okhsl_of(rgb);
+    let (h, s, l) = crate::color::rgb_to_okhsl(rgb);
     Source {
         h,
         s,
@@ -1288,22 +1277,13 @@ fn with_text_contrast(color: [f64; 3], surfaces: &[[f64; 3]], lighter: bool) -> 
     if meets(color) {
         return color;
     }
-    let (h, s, l) = okhsl_of(color);
+    let (h, s, l) = crate::color::rgb_to_okhsl(color);
     let at = |lightness: f64| okhsl_rgb(h, s, lightness);
     let extreme = if lighter { 1.0 } else { 0.0 };
     if !meets(at(extreme)) {
         return at(extreme);
     }
-    let (mut low, mut high) = (l, extreme);
-    for _ in 0..20 {
-        let middle = (low + high) / 2.0;
-        if meets(at(middle)) {
-            high = middle;
-        } else {
-            low = middle;
-        }
-    }
-    at(high)
+    at(bisect(extreme, l, |lightness| meets(at(lightness))))
 }
 
 fn indexed_colors(saturation: f64, appearance: Option<Appearance>) -> SystemThemeColors {
@@ -1390,16 +1370,12 @@ pub fn generate_system_theme(input: &SystemThemeInput) -> SystemThemeColors {
         if readable(color) {
             return color;
         }
-        let (mut low, mut high) = (background_l, l);
-        for _ in 0..20 {
-            let middle = (low + high) / 2.0;
-            if readable(paint(token, middle)) {
-                low = middle;
-            } else {
-                high = middle;
-            }
-        }
-        paint(token, low)
+        paint(
+            token,
+            bisect(background_l, l, |lightness| {
+                readable(paint(token, lightness))
+            }),
+        )
     };
     let solve = |t: f64| -> Option<HashMap<&'static str, [f64; 3]>> {
         let mut colors: HashMap<&'static str, [f64; 3]> = HashMap::new();
@@ -1435,19 +1411,8 @@ pub fn generate_system_theme(input: &SystemThemeInput) -> SystemThemeColors {
     let mut relaxation = 0.0;
     let mut solved = solve(0.0);
     if solved.is_none() {
-        let (mut low, mut high) = (0.0, 2.0);
-        solved = solve(high);
-        for _ in 0..20 {
-            let middle = (low + high) / 2.0;
-            match solve(middle) {
-                Some(attempt) => {
-                    high = middle;
-                    solved = Some(attempt);
-                }
-                None => low = middle,
-            }
-        }
-        relaxation = high;
+        relaxation = bisect(2.0, 0.0, |t| solve(t).is_some());
+        solved = solve(relaxation);
     }
     let solved = solved.unwrap_or_default();
     let surfaces_of = |token: &str| -> Vec<[f64; 3]> {

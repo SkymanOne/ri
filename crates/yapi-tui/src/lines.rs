@@ -287,19 +287,21 @@ pub fn pad(mut line: StyledLine, width: usize) -> StyledLine {
     line
 }
 
-/// Pads a line to `width` and puts `bg` under every span without its own
-/// background.
-pub fn with_background(line: StyledLine, width: usize, bg: Style) -> StyledLine {
+/// `spans` with `style` under each; a span's own style wins.
+pub fn under(spans: Vec<Span<'static>>, style: Style) -> Vec<Span<'static>> {
+    spans
+        .into_iter()
+        .map(|span| Span::styled(span.content, style.patch(span.style)))
+        .collect()
+}
+
+/// Pads a line to `width`, with `bg` under every span when given.
+pub fn fill(line: StyledLine, width: usize, bg: Option<Style>) -> StyledLine {
     let line = pad(line, width);
-    Line::from(
-        line.spans
-            .into_iter()
-            .map(|span| {
-                let style = bg.patch(span.style);
-                Span::styled(span.content, style)
-            })
-            .collect::<Vec<_>>(),
-    )
+    match bg {
+        Some(bg) => Line::from(under(line.spans, bg)),
+        None => line,
+    }
 }
 
 fn indent(line: StyledLine, columns: usize) -> StyledLine {
@@ -335,10 +337,7 @@ pub fn text(
     let finish = |line: StyledLine| -> StyledLine {
         let mut line = indent(line, px);
         line.spans.push(Span::raw(" ".repeat(px)));
-        match bg {
-            Some(bg) => with_background(line, width, bg),
-            None => pad(line, width),
-        }
+        fill(line, width, bg)
     };
     let blank = || finish(Line::default());
     let mut out: Vec<StyledLine> = (0..py).map(|_| blank()).collect();
@@ -370,10 +369,7 @@ pub fn boxed(
     if children.is_empty() {
         return Vec::new();
     }
-    let finish = |line: StyledLine| match bg {
-        Some(bg) => with_background(line, width, bg),
-        None => pad(line, width),
-    };
+    let finish = |line: StyledLine| fill(line, width, bg);
     let mut out: Vec<StyledLine> = (0..py).map(|_| finish(Line::default())).collect();
     out.extend(children.into_iter().map(|line| finish(indent(line, px))));
     out.extend((0..py).map(|_| finish(Line::default())));

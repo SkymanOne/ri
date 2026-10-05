@@ -278,19 +278,21 @@ fn oklch_to_rgb(l: f64, c: f64, h: f64) -> [f64; 3] {
     if in_gamut(direct) {
         return linear_srgb_to_rgb(direct);
     }
-    let mut linear = at(0.0);
-    let (mut low, mut high) = (0.0, c);
+    linear_srgb_to_rgb(at(bisect(0.0, c, |chroma| in_gamut(at(chroma)))))
+}
+
+/// Twenty halvings of the interval between `good` and `bad`, moving `good`
+/// to each midpoint `ok` accepts; the last such `good`.
+pub(crate) fn bisect(mut good: f64, mut bad: f64, ok: impl Fn(f64) -> bool) -> f64 {
     for _ in 0..20 {
-        let chroma = (low + high) / 2.0;
-        let candidate = at(chroma);
-        if in_gamut(candidate) {
-            low = chroma;
-            linear = candidate;
+        let middle = (good + bad) / 2.0;
+        if ok(middle) {
+            good = middle;
         } else {
-            high = chroma;
+            bad = middle;
         }
     }
-    linear_srgb_to_rgb(linear)
+    good
 }
 
 const BASIC_COLORS: [[f64; 3]; 16] = [

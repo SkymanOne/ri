@@ -4263,6 +4263,7 @@ dependencies = [
 name = "yapi-tui"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "pulldown-cmark",
  "ratatui-core",
  "regex-lite",

@@ -686,16 +686,7 @@ impl AltScreen {
             let label = truncate(&label, right_edge.saturating_sub(left), "");
             let label_width = line_width(&label);
             if label_width > 0 {
-                let label = Line::from(
-                    label
-                        .spans
-                        .into_iter()
-                        .map(|span| {
-                            let style = self.jump_label_style.patch(span.style);
-                            Span::styled(span.content, style)
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let label = Line::from(crate::lines::under(label.spans, self.jump_label_style));
                 rows[viewport - 1] =
                     composite(&rows[viewport - 1], &label, left, label_width, width);
             }

@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
 use serde_json::Value;
-use yapi_tui::keys::{Keys, decode_printable, is_key_release, is_key_repeat};
+use yapi_tui::keys::{Keys, decode_printable, is_key_release};
 
 fn check(keys: Keys, ids: &[&str], entries: &[Value]) -> Vec<String> {
     let mut failures = Vec::new();
@@ -42,9 +42,6 @@ fn check(keys: Keys, ids: &[&str], entries: &[Value]) -> Vec<String> {
         }
         if is_key_release(data) != (entry["release"] == true) {
             failures.push(format!("{data:?} release"));
-        }
-        if is_key_repeat(data) != (entry["repeat"] == true) {
-            failures.push(format!("{data:?} repeat"));
         }
     }
     failures

@@ -11,7 +11,7 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 
-use crate::lines::{StyledLine, pad, raw as raw_line, width as line_width, with_background, wrap};
+use crate::lines::{StyledLine, pad, raw as raw_line, width as line_width, wrap};
 use crate::text::visible_width;
 
 /// Styles for markdown elements.
@@ -493,16 +493,6 @@ fn next_of(blocks: &[Spaced], index: usize) -> Next {
     }
 }
 
-fn patch_under(spans: Vec<Span<'static>>, outer: Style) -> Vec<Span<'static>> {
-    spans
-        .into_iter()
-        .map(|span| {
-            let style = outer.patch(span.style);
-            Span::styled(span.content, style)
-        })
-        .collect()
-}
-
 /// A quoted line's spans under the quote style. pi colors the whole line,
 /// and the first span with a color of its own, such as a list bullet, ends
 /// with a foreground reset that leaves the rest of the line uncolored but
@@ -542,15 +532,15 @@ impl Renderer<'_> {
             match inline {
                 Inline::Text(text) => out.push(Span::styled(text.clone(), text_style)),
                 Inline::Code(code) => out.push(Span::styled(code.clone(), self.theme.code)),
-                Inline::Strong(children) => out.extend(patch_under(
+                Inline::Strong(children) => out.extend(crate::lines::under(
                     self.inlines(children, text_style),
                     Style::new().add_modifier(Modifier::BOLD),
                 )),
-                Inline::Emphasis(children) => out.extend(patch_under(
+                Inline::Emphasis(children) => out.extend(crate::lines::under(
                     self.inlines(children, text_style),
                     Style::new().add_modifier(Modifier::ITALIC),
                 )),
-                Inline::Strike(children) => out.extend(patch_under(
+                Inline::Strike(children) => out.extend(crate::lines::under(
                     self.inlines(children, text_style),
                     Style::new().add_modifier(Modifier::CROSSED_OUT),
                 )),
@@ -560,7 +550,10 @@ impl Renderer<'_> {
                     href,
                 } => {
                     let link = self.theme.link.add_modifier(Modifier::UNDERLINED);
-                    out.extend(patch_under(self.inlines(children, text_style), link));
+                    out.extend(crate::lines::under(
+                        self.inlines(children, text_style),
+                        link,
+                    ));
                     let bare = href.strip_prefix("mailto:").unwrap_or(href);
                     if text != href && text != bare {
                         out.push(Span::styled(format!(" ({href})"), self.theme.link_url));
@@ -900,7 +893,7 @@ impl Renderer<'_> {
                             widths[index],
                         );
                         if bold {
-                            spans.extend(patch_under(
+                            spans.extend(crate::lines::under(
                                 cell.spans,
                                 Style::new().add_modifier(Modifier::BOLD),
                             ));
@@ -973,11 +966,7 @@ pub fn render(
         let mut spans = vec![Span::raw(" ".repeat(px))];
         spans.extend(line.spans);
         spans.push(Span::raw(" ".repeat(px)));
-        let line = Line::from(spans);
-        match options.background {
-            Some(bg) => with_background(line, width, bg),
-            None => pad(line, width),
-        }
+        crate::lines::fill(Line::from(spans), width, options.background)
     };
     let mut out: Vec<StyledLine> = (0..py).map(|_| finish(Line::default())).collect();
     for line in rendered {
