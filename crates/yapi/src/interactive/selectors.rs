@@ -17,7 +17,7 @@ use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::lines::{self, StyledLine, styled};
 use yapi_tui::select_list::{
-    SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme,
+    SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme, step, visible_range,
 };
 use yapi_tui::text::truncate_to_width;
 use yapi_tui::text_input::{InputEvent, TextInput};
@@ -108,31 +108,28 @@ pub struct Ui<'a> {
     pub keys: &'a Keybindings,
 }
 
+/// pi's `rawKeyHint`: `key` dim, then the description, muted.
+pub fn key_hint(theme: &Theme, key: &str, description: &str) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(key.to_owned(), theme.fg("dim")),
+        Span::styled(format!(" {description}"), theme.fg("muted")),
+    ]
+}
+
+/// pi's `getSelectListTheme`.
+pub fn select_list_theme(theme: &Theme) -> SelectListTheme {
+    SelectListTheme {
+        selected_text: theme.fg("accent"),
+        description: theme.fg("muted"),
+        scroll_info: theme.fg("muted"),
+        no_match: theme.fg("muted"),
+    }
+}
+
 impl Ui<'_> {
     /// pi's `keyHint`: the action's keys, dim, then the description, muted.
     pub fn key_hint(&self, action: &str, description: &str) -> Vec<Span<'static>> {
-        vec![
-            Span::styled(keys_text(self.keys, action), self.theme.fg("dim")),
-            Span::styled(format!(" {description}"), self.theme.fg("muted")),
-        ]
-    }
-
-    /// pi's `rawKeyHint`.
-    pub fn raw_key_hint(&self, key: &str, description: &str) -> Vec<Span<'static>> {
-        vec![
-            Span::styled(key.to_owned(), self.theme.fg("dim")),
-            Span::styled(format!(" {description}"), self.theme.fg("muted")),
-        ]
-    }
-
-    /// pi's `getSelectListTheme`.
-    pub fn select_list_theme(&self) -> SelectListTheme {
-        SelectListTheme {
-            selected_text: self.theme.fg("accent"),
-            description: self.theme.fg("muted"),
-            scroll_info: self.theme.fg("muted"),
-            no_match: self.theme.fg("muted"),
-        }
+        key_hint(self.theme, &keys_text(self.keys, action), description)
     }
 
     /// pi's default `DynamicBorder`.
@@ -446,11 +443,7 @@ impl ModelSelector {
         out.extend(lines::spacer(1));
         let max_visible = 10usize;
         let count = self.filtered.len();
-        let start = self
-            .selected
-            .saturating_sub(max_visible / 2)
-            .min(count.saturating_sub(max_visible));
-        let end = (start + max_visible).min(count);
+        let (start, end) = visible_range(self.selected, count, max_visible);
         for position in start..end {
             let model = &self.models[self.filtered[position]];
             let selected = position == self.selected;
@@ -557,21 +550,9 @@ impl ModelSelector {
             return Outcome::None;
         }
         if kb.matches(data, "tui.select.up") {
-            if count > 0 {
-                self.selected = if self.selected == 0 {
-                    count - 1
-                } else {
-                    self.selected - 1
-                };
-            }
+            self.selected = step(self.selected, count, false);
         } else if kb.matches(data, "tui.select.down") {
-            if count > 0 {
-                self.selected = if self.selected + 1 >= count {
-                    0
-                } else {
-                    self.selected + 1
-                };
-            }
+            self.selected = step(self.selected, count, true);
         } else if kb.matches(data, "tui.select.confirm") {
             return self.chosen(false);
         } else if kb.matches(data, "tui.select.cancel") {
@@ -601,10 +582,41 @@ pub fn level_description(level: ThinkingLevel) -> &'static str {
     }
 }
 
-const PRIMARY_LAYOUT: SelectListLayout = SelectListLayout {
+/// pi's select list layout with a 12 to 32 column primary column.
+pub const PRIMARY_LAYOUT: SelectListLayout = SelectListLayout {
     min_primary_column_width: Some(12),
     max_primary_column_width: Some(32),
 };
+
+/// A list over `items` showing `max_visible` rows, with the item whose value
+/// is `selected` highlighted.
+pub fn preselected_list(
+    items: Vec<SelectItem>,
+    selected: &str,
+    max_visible: usize,
+    theme: SelectListTheme,
+    layout: SelectListLayout,
+) -> SelectList {
+    let index = items.iter().position(|item| item.value == selected);
+    let mut list = SelectList::new(items, max_visible, theme, layout);
+    if let Some(index) = index {
+        list.set_selected_index(index);
+    }
+    list
+}
+
+/// Whether `data` is a key a `SelectList` handles: up, down, confirm or
+/// cancel.
+pub fn is_navigation(keys: &Keybindings, data: &str) -> bool {
+    [
+        "tui.select.up",
+        "tui.select.down",
+        "tui.select.confirm",
+        "tui.select.cancel",
+    ]
+    .iter()
+    .any(|action| keys.matches(data, action))
+}
 
 /// The `/thinking` selector.
 pub struct ThinkingSelector {
@@ -640,7 +652,7 @@ impl ThinkingSelector {
             .collect();
         let mut input = TextInput::default();
         input.focused = true;
-        let list = Self::list(items.clone(), Some(current.as_str()), theme);
+        let list = Self::list(items.clone(), current.as_str(), theme);
         ThinkingSelector {
             input,
             items,
@@ -649,13 +661,9 @@ impl ThinkingSelector {
         }
     }
 
-    fn list(items: Vec<SelectItem>, selected: Option<&str>, theme: SelectListTheme) -> SelectList {
-        let index = selected.and_then(|value| items.iter().position(|item| item.value == value));
-        let mut list = SelectList::new(items.clone(), items.len().max(1), theme, PRIMARY_LAYOUT);
-        if let Some(index) = index {
-            list.set_selected_index(index);
-        }
-        list
+    fn list(items: Vec<SelectItem>, selected: &str, theme: SelectListTheme) -> SelectList {
+        let max_visible = items.len().max(1);
+        preselected_list(items, selected, max_visible, theme, PRIMARY_LAYOUT)
     }
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> (Vec<StyledLine>, Option<(usize, usize)>) {
@@ -694,56 +702,35 @@ impl ThinkingSelector {
         (out, cursor)
     }
 
-    fn selected_level(&self) -> Option<ThinkingLevel> {
-        self.list
-            .selected_item()
-            .and_then(|item| ThinkingLevel::parse(&item.value))
-    }
-
     fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         let kb = ui.keys;
+        let done = |item: Option<&SelectItem>, default| {
+            item.and_then(|item| ThinkingLevel::parse(&item.value))
+                .map_or(Outcome::None, |level| {
+                    Outcome::Done(Action::Thinking { level, default })
+                })
+        };
         if kb.matches(data, "app.thinking.save") {
-            return match self.selected_level() {
-                Some(level) => Outcome::Done(Action::Thinking {
-                    level,
-                    default: true,
-                }),
-                None => Outcome::None,
-            };
+            return done(self.list.selected_item(), true);
         }
-        let navigation = [
-            "tui.select.up",
-            "tui.select.down",
-            "tui.select.confirm",
-            "tui.select.cancel",
-        ]
-        .iter()
-        .any(|action| kb.matches(data, action));
-        if navigation {
-            return match self.list.handle_input(data, kb) {
-                SelectEvent::Selected(item) => match ThinkingLevel::parse(&item.value) {
-                    Some(level) => Outcome::Done(Action::Thinking {
-                        level,
-                        default: false,
-                    }),
-                    None => Outcome::None,
-                },
-                SelectEvent::Cancelled => Outcome::Cancel,
-                _ => Outcome::None,
-            };
+        let navigation = is_navigation(kb, data);
+        let event = if navigation {
+            self.list.handle_input(data, kb)
+        } else if let InputEvent::Submit(_) = self.input.handle_input(data, kb) {
+            self.list.handle_input("\r", kb)
+        } else {
+            self.filter();
+            return Outcome::None;
+        };
+        match event {
+            SelectEvent::Selected(item) => done(Some(&item), false),
+            SelectEvent::Cancelled if navigation => Outcome::Cancel,
+            _ => Outcome::None,
         }
-        if let InputEvent::Submit(_) = self.input.handle_input(data, kb) {
-            return match self.list.handle_input("\r", kb) {
-                SelectEvent::Selected(item) => match ThinkingLevel::parse(&item.value) {
-                    Some(level) => Outcome::Done(Action::Thinking {
-                        level,
-                        default: false,
-                    }),
-                    None => Outcome::None,
-                },
-                _ => Outcome::None,
-            };
-        }
+    }
+
+    /// Narrows the list to the levels matching the query.
+    fn filter(&mut self) {
         let query = self.input.value().to_owned();
         let filtered = if query.is_empty() {
             self.items.clone()
@@ -757,8 +744,7 @@ impl ThinkingSelector {
             })
         };
         let selected = self.list.selected_item().map(|item| item.value.clone());
-        self.list = Self::list(filtered, selected.as_deref(), self.theme);
-        Outcome::None
+        self.list = Self::list(filtered, &selected.unwrap_or_default(), self.theme);
     }
 }
 
@@ -806,11 +792,7 @@ impl ForkSelector {
             out.push(styled("  No user messages found", theme.fg("muted")));
         } else {
             let max_visible = 10usize;
-            let start = self
-                .selected
-                .saturating_sub(max_visible / 2)
-                .min(count.saturating_sub(max_visible));
-            let end = (start + max_visible).min(count);
+            let (start, end) = visible_range(self.selected, count, max_visible);
             for position in start..end {
                 let selected = position == self.selected;
                 let text = self.messages[position].1.replace('\n', " ");
@@ -849,17 +831,9 @@ impl ForkSelector {
         let kb = ui.keys;
         let count = self.messages.len();
         if kb.matches(data, "tui.select.up") {
-            self.selected = if self.selected == 0 {
-                count.saturating_sub(1)
-            } else {
-                self.selected - 1
-            };
+            self.selected = step(self.selected, count, false);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = if self.selected + 1 >= count {
-                0
-            } else {
-                self.selected + 1
-            };
+            self.selected = step(self.selected, count, true);
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some((id, _)) = self.messages.get(self.selected) {
                 return Outcome::Done(Action::Fork(id.clone()));
@@ -986,11 +960,12 @@ impl TrustSelector {
             out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
         }
         out.extend(lines::spacer(1));
-        let mut hint = ui.raw_key_hint("↑↓", "navigate");
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.confirm", "save"));
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+        let hint = [
+            key_hint(theme, "↑↓", "navigate"),
+            ui.key_hint("tui.select.confirm", "save"),
+            ui.key_hint("tui.select.cancel", "cancel"),
+        ]
+        .join(&Span::raw("  "));
         out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
@@ -1127,11 +1102,12 @@ impl ChoiceDialog {
             out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
         }
         out.extend(lines::spacer(1));
-        let mut hint = ui.raw_key_hint("↑↓", "navigate");
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.confirm", "select"));
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+        let hint = [
+            key_hint(theme, "↑↓", "navigate"),
+            ui.key_hint("tui.select.confirm", "select"),
+            ui.key_hint("tui.select.cancel", "cancel"),
+        ]
+        .join(&Span::raw("  "));
         out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
@@ -1199,13 +1175,13 @@ impl TextDialog {
             .map(|(row, col)| (out.len() + row, col));
         out.extend(editor);
         out.extend(lines::spacer(1));
-        let mut hint = ui.key_hint("tui.select.confirm", "submit");
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.input.newLine", "newline"));
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("app.editor.external", "external editor"));
+        let hint = [
+            ui.key_hint("tui.select.confirm", "submit"),
+            ui.key_hint("tui.input.newLine", "newline"),
+            ui.key_hint("tui.select.cancel", "cancel"),
+            ui.key_hint("app.editor.external", "external editor"),
+        ]
+        .join(&Span::raw("  "));
         out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
@@ -1263,9 +1239,11 @@ impl InputDialog {
         out.push(self.input.render(width));
         let cursor = self.input.cursor_column().map(|column| (row, column));
         out.extend(lines::spacer(1));
-        let mut hint = ui.key_hint("tui.select.confirm", "submit");
-        hint.push(Span::raw("  "));
-        hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+        let hint = [
+            ui.key_hint("tui.select.confirm", "submit"),
+            ui.key_hint("tui.select.cancel", "cancel"),
+        ]
+        .join(&Span::raw("  "));
         out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));

@@ -99,37 +99,76 @@ impl CustomView {
             out.extend(view.render(width).0);
             return out;
         }
-        let label = Line::from(Span::styled(
+        out.extend(labelled_box(
             format!("[{}]", self.message.custom_type),
-            theme.fg("customMessageLabel").add_modifier(Modifier::BOLD),
+            custom_markdown(&self.message.content.text("\n"), width, ctx),
+            width,
+            theme,
         ));
-        let inner = box_content_width(width, 1);
-        let mut body = vec![label, Line::default()];
-        let text = match &self.message.content {
-            yapi_types::message::Content::Text(text) => text.clone(),
-            yapi_types::message::Content::Blocks(blocks) => blocks
-                .iter()
-                .filter_map(|block| match block {
-                    yapi_types::message::ContentBlock::Text(text) => Some(text.text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        };
-        body.extend(markdown::render(
-            &text,
-            inner,
-            0,
-            0,
-            ctx.markdown,
-            MarkdownOptions {
-                text: Some(theme.fg("customMessageText")),
-                ..MarkdownOptions::default()
-            },
-        ));
-        out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
         out
     }
+}
+
+/// Markdown in the custom-message text color, for a custom-message box at
+/// `width`.
+fn custom_markdown(text: &str, width: usize, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
+    markdown::render(
+        text,
+        box_content_width(width, 1),
+        0,
+        0,
+        ctx.markdown,
+        MarkdownOptions {
+            text: Some(ctx.theme.fg("customMessageText")),
+            ..MarkdownOptions::default()
+        },
+    )
+}
+
+/// A custom-message box: `label` bold, a blank row, then `body`.
+fn labelled_box(
+    label: String,
+    body: Vec<StyledLine>,
+    width: usize,
+    theme: &Theme,
+) -> Vec<StyledLine> {
+    let mut rows = vec![
+        Line::from(Span::styled(
+            label,
+            theme.fg("customMessageLabel").add_modifier(Modifier::BOLD),
+        )),
+        Line::default(),
+    ];
+    rows.extend(body);
+    boxed(rows, width, 1, 1, Some(theme.bg("customMessageBg")))
+}
+
+/// pi's compaction and branch summary components: `label` over `expanded`
+/// markdown, or over `collapsed` and the expand hint.
+fn summary_box(
+    label: &str,
+    expanded: &str,
+    collapsed: &str,
+    width: usize,
+    ctx: &RenderContext<'_>,
+) -> Vec<StyledLine> {
+    let theme = ctx.theme;
+    let text = theme.fg("customMessageText");
+    let body = if ctx.expanded {
+        custom_markdown(expanded, width, ctx)
+    } else {
+        lines::wrap(
+            &Line::from(vec![
+                Span::styled(format!("{collapsed} ("), text),
+                Span::styled(ctx.expand_key.to_owned(), theme.fg("dim")),
+                Span::styled(" to expand)", text),
+            ]),
+            box_content_width(width, 1),
+        )
+    };
+    let mut out = lines::spacer(1);
+    out.extend(labelled_box(label.to_owned(), body, width, theme));
+    out
 }
 
 /// `12345` as `12,345`.
@@ -175,6 +214,16 @@ fn padded_text(text: StyledLine, width: usize, px: usize) -> Vec<StyledLine> {
 }
 
 impl Item {
+    /// Whether the item animates: a started tool call without a result, or a
+    /// running `!` command.
+    pub fn animating(&self) -> bool {
+        match self {
+            Item::Tool(view) => view.result.is_none() && view.started.is_some(),
+            Item::Bash(view) => view.running(),
+            _ => false,
+        }
+    }
+
     /// The item's rows at `width`. `first` says nothing precedes it in the chat.
     pub fn render(&self, width: usize, first: bool, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
         let theme = ctx.theme;
@@ -193,16 +242,10 @@ impl Item {
                         "[skill]",
                         label.add_modifier(Modifier::BOLD),
                     ))];
-                    body.extend(markdown::render(
+                    body.extend(custom_markdown(
                         &format!("**{}**\n\n{}", block.name, block.content),
-                        inner,
-                        0,
-                        0,
-                        ctx.markdown,
-                        MarkdownOptions {
-                            text: Some(theme.fg("customMessageText")),
-                            ..MarkdownOptions::default()
-                        },
+                        width,
+                        ctx,
                     ));
                     body
                 } else {
@@ -234,75 +277,22 @@ impl Item {
                 tokens_before,
                 summary,
             } => {
-                let label = Line::from(Span::styled(
-                    "[compaction]",
-                    theme.fg("customMessageLabel").add_modifier(Modifier::BOLD),
-                ));
-                let inner = box_content_width(width, 1);
                 let tokens = group_thousands(*tokens_before);
-                let mut body = vec![label, Line::default()];
-                if ctx.expanded {
-                    body.extend(markdown::render(
-                        &format!("**Compacted from {tokens} tokens**\n\n{summary}"),
-                        inner,
-                        0,
-                        0,
-                        ctx.markdown,
-                        MarkdownOptions {
-                            text: Some(theme.fg("customMessageText")),
-                            ..MarkdownOptions::default()
-                        },
-                    ));
-                } else {
-                    body.extend(lines::wrap(
-                        &Line::from(vec![
-                            Span::styled(
-                                format!("Compacted from {tokens} tokens ("),
-                                theme.fg("customMessageText"),
-                            ),
-                            Span::styled(ctx.expand_key.to_owned(), theme.fg("dim")),
-                            Span::styled(" to expand)", theme.fg("customMessageText")),
-                        ]),
-                        inner,
-                    ));
-                }
-                let mut out = lines::spacer(1);
-                out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
-                out
+                summary_box(
+                    "[compaction]",
+                    &format!("**Compacted from {tokens} tokens**\n\n{summary}"),
+                    &format!("Compacted from {tokens} tokens"),
+                    width,
+                    ctx,
+                )
             }
-            Item::BranchSummary(summary) => {
-                let label = Line::from(Span::styled(
-                    "[branch]",
-                    theme.fg("customMessageLabel").add_modifier(Modifier::BOLD),
-                ));
-                let inner = box_content_width(width, 1);
-                let mut body = vec![label, Line::default()];
-                if ctx.expanded {
-                    body.extend(markdown::render(
-                        &format!("**Branch Summary**\n\n{summary}"),
-                        inner,
-                        0,
-                        0,
-                        ctx.markdown,
-                        MarkdownOptions {
-                            text: Some(theme.fg("customMessageText")),
-                            ..MarkdownOptions::default()
-                        },
-                    ));
-                } else {
-                    body.extend(lines::wrap(
-                        &Line::from(vec![
-                            Span::styled("Branch summary (", theme.fg("customMessageText")),
-                            Span::styled(ctx.expand_key.to_owned(), theme.fg("dim")),
-                            Span::styled(" to expand)", theme.fg("customMessageText")),
-                        ]),
-                        inner,
-                    ));
-                }
-                let mut out = lines::spacer(1);
-                out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
-                out
-            }
+            Item::BranchSummary(summary) => summary_box(
+                "[branch]",
+                &format!("**Branch Summary**\n\n{summary}"),
+                "Branch summary",
+                width,
+                ctx,
+            ),
             Item::Status(text) => {
                 let mut out = lines::spacer(1);
                 out.extend(padded_text(styled(text.clone(), theme.fg("dim")), width, 1));

@@ -13,6 +13,7 @@ use yapi_ai::providers;
 use yapi_ai::registry::{LoginKind, ModelRegistry};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::select_list::visible_range;
 use yapi_tui::text_input::{InputEvent, TextInput};
 use yapi_types::collate::locale_compare;
 
@@ -363,11 +364,7 @@ impl ProviderSelector {
         out.push(input);
         out.extend(lines::spacer(1));
         let count = self.filtered.len();
-        let start = self
-            .selected
-            .saturating_sub(MAX_VISIBLE / 2)
-            .min(count.saturating_sub(MAX_VISIBLE));
-        let end = (start + MAX_VISIBLE).min(count);
+        let (start, end) = visible_range(self.selected, count, MAX_VISIBLE);
         for (index, option) in self.filtered[start..end].iter().enumerate() {
             let mut spans = if start + index == self.selected {
                 vec![

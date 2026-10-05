@@ -4097,6 +4097,7 @@ dependencies = [
  "anyhow",
  "clap",
  "futures-util",
+ "regex-lite",
  "serde",
  "serde_json",
  "sha2 0.11.0",

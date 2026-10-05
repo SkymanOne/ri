@@ -342,17 +342,12 @@ async fn run(parsed: &mut args::Args) -> u8 {
         if model_network(parsed) {
             let session = startup.session.clone();
             tokio::spawn(async move {
-                let cancel = tokio_util::sync::CancellationToken::new();
-                let options = yapi_ai::model_catalog::RefreshOptions {
-                    cancel: cancel.clone(),
+                use yapi_ai::model_catalog::{REFRESH_TIMEOUT, RefreshOptions, cancel_after};
+                let options = RefreshOptions {
+                    cancel: cancel_after(REFRESH_TIMEOUT),
                     ..Default::default()
                 };
-                let timer = tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-                    cancel.cancel();
-                });
                 session.refresh_model_catalogs(options).await;
-                timer.abort();
             });
         }
         // pi's RPC mode starts without a model, on a placeholder; prompts

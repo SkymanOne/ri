@@ -11,9 +11,10 @@ use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 use yapi_core::session::{SessionTree, TreeNode};
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::select_list::{step, visible_range};
 use yapi_tui::text::grapheme_width;
 use yapi_tui::text_input::{InputEvent, TextInput};
-use yapi_types::message::{Content, ContentBlock, Message, StopReason};
+use yapi_types::message::{Content, ContentBlock, Message, StopReason, blocks_text};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::TreeFilterMode as Filter;
 
@@ -39,6 +40,60 @@ struct Walk<T> {
     last: bool,
     gutters: Vec<(usize, bool)>,
     virtual_root: bool,
+}
+
+impl<T> Walk<T> {
+    /// The walks of `roots`, the first root last so that it pops first;
+    /// `multiple` says the tree shows several roots.
+    fn roots(roots: Vec<T>, multiple: bool) -> Vec<Walk<T>> {
+        let count = roots.len();
+        roots
+            .into_iter()
+            .enumerate()
+            .rev()
+            .map(|(position, node)| Walk {
+                node,
+                indent: usize::from(multiple),
+                just_branched: multiple,
+                connector: multiple,
+                last: position + 1 == count,
+                gutters: Vec::new(),
+                virtual_root: multiple,
+            })
+            .collect()
+    }
+
+    /// Pushes the walks of this node's `children` onto `stack`, the first
+    /// child on top.
+    fn push_children(self, children: Vec<T>, multiple: bool, stack: &mut Vec<Walk<T>>) {
+        let branching = children.len() > 1;
+        let indent = if branching || (self.just_branched && self.indent > 0) {
+            self.indent + 1
+        } else {
+            self.indent
+        };
+        let mut gutters = self.gutters;
+        if self.connector && !self.virtual_root {
+            let display = if multiple {
+                self.indent.saturating_sub(1)
+            } else {
+                self.indent
+            };
+            gutters.push((display.saturating_sub(1), !self.last));
+        }
+        let count = children.len();
+        for (position, node) in children.into_iter().enumerate().rev() {
+            stack.push(Walk {
+                node,
+                indent,
+                just_branched: branching,
+                connector: branching,
+                last: position + 1 == count,
+                gutters: gutters.clone(),
+                virtual_root: false,
+            });
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -72,47 +127,16 @@ fn role(message: &Message) -> &'static str {
     }
 }
 
-fn blocks_text(blocks: &[ContentBlock]) -> String {
-    blocks
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
-fn content_text(content: &Content) -> String {
-    match content {
-        Content::Text(text) => text.clone(),
-        Content::Blocks(blocks) => blocks_text(blocks),
-    }
-}
-
 /// A message's text, as pi's `extractFullContent` reads it.
 fn message_text(message: &Message) -> Option<String> {
     Some(match message {
-        Message::System(system) => content_text(&system.content),
-        Message::User(user) => content_text(&user.content),
-        Message::Assistant(assistant) => blocks_text(&assistant.content),
-        Message::ToolResult(result) => blocks_text(&result.content),
-        Message::Custom(custom) => content_text(&custom.content),
+        Message::System(system) => system.content.text(""),
+        Message::User(user) => user.content.text(""),
+        Message::Assistant(assistant) => blocks_text(&assistant.content, ""),
+        Message::ToolResult(result) => blocks_text(&result.content, ""),
+        Message::Custom(custom) => custom.content.text(""),
         _ => return None,
     })
-}
-
-/// The first 200 UTF-16 units, as JavaScript's `slice(0, 200)`.
-fn first_200(text: &str) -> String {
-    let mut units = 0;
-    let mut out = String::new();
-    for c in text.chars() {
-        units += c.len_utf16();
-        if units > 200 {
-            break;
-        }
-        out.push(c);
-    }
-    out
 }
 
 fn normalize(text: &str) -> String {
@@ -324,33 +348,12 @@ impl TreeSelector {
             }
             contains_active[node] = has;
         }
-        let multiple = self.tree.roots.len() > 1;
         let mut roots = self.tree.roots.clone();
         roots.sort_by_key(|root| !contains_active[*root]);
-        let mut stack: Vec<Walk<usize>> = Vec::new();
-        let root_count = roots.len();
-        for (position, &root) in roots.iter().enumerate().rev() {
-            stack.push(Walk {
-                node: root,
-                indent: usize::from(multiple),
-                just_branched: multiple,
-                connector: multiple,
-                last: position + 1 == root_count,
-                gutters: Vec::new(),
-                virtual_root: multiple,
-            });
-        }
+        let mut stack = Walk::roots(roots, self.multiple_roots);
         let mut result = Vec::new();
-        while let Some(Walk {
-            node,
-            indent,
-            just_branched,
-            connector,
-            last,
-            gutters,
-            virtual_root,
-        }) = stack.pop()
-        {
+        while let Some(walk) = stack.pop() {
+            let node = walk.node;
             if let FileEntry::Message(entry) = &self.tree.nodes[node].entry
                 && let Message::Assistant(assistant) = &entry.message
             {
@@ -365,11 +368,11 @@ impl TreeSelector {
             }
             result.push(Flat {
                 node,
-                indent,
-                connector,
-                last,
-                gutters: gutters.clone(),
-                virtual_root_child: virtual_root,
+                indent: walk.indent,
+                connector: walk.connector,
+                last: walk.last,
+                gutters: walk.gutters.clone(),
+                virtual_root_child: walk.virtual_root,
             });
             let children = &self.tree.nodes[node].children;
             let mut ordered: Vec<usize> = children
@@ -383,36 +386,7 @@ impl TreeSelector {
                     .copied()
                     .filter(|child| !contains_active[*child]),
             );
-            let branching = ordered.len() > 1;
-            let child_indent = if branching || (just_branched && indent > 0) {
-                indent + 1
-            } else {
-                indent
-            };
-            let child_gutters = if connector && !virtual_root {
-                let display = if self.multiple_roots {
-                    indent.saturating_sub(1)
-                } else {
-                    indent
-                };
-                let mut next = gutters.clone();
-                next.push((display.saturating_sub(1), !last));
-                next
-            } else {
-                gutters
-            };
-            let count = ordered.len();
-            for (position, &child) in ordered.iter().enumerate().rev() {
-                stack.push(Walk {
-                    node: child,
-                    indent: child_indent,
-                    just_branched: branching,
-                    connector: branching,
-                    last: position + 1 == count,
-                    gutters: child_gutters.clone(),
-                    virtual_root: false,
-                });
-            }
+            walk.push_children(ordered, self.multiple_roots, &mut stack);
         }
         self.flat = result;
     }
@@ -426,7 +400,7 @@ impl TreeSelector {
             FileEntry::Message(entry) => {
                 parts.push(role(&entry.message).to_owned());
                 if let Some(text) = message_text(&entry.message) {
-                    parts.push(first_200(&text));
+                    parts.push(yapi_types::js::slice(&text, 0, 200));
                 }
                 if let Message::BashExecution(bash) = &entry.message {
                     parts.push(bash.command.clone());
@@ -436,7 +410,9 @@ impl TreeSelector {
                 parts.push(entry.custom_type.clone());
                 parts.push(match &entry.content {
                     Content::Text(text) => text.clone(),
-                    Content::Blocks(blocks) => first_200(&blocks_text(blocks)),
+                    Content::Blocks(blocks) => {
+                        yapi_types::js::slice(&blocks_text(blocks, ""), 0, 200)
+                    }
                 });
             }
             FileEntry::Compaction(_) => parts.push("compaction".into()),
@@ -609,70 +585,22 @@ impl TreeSelector {
             .enumerate()
             .map(|(position, flat)| (self.id(flat.node).to_owned(), position))
             .collect();
-        let multiple = self.multiple_roots;
-        let mut stack: Vec<Walk<String>> = Vec::new();
-        let count = roots.len();
-        for (position, root) in roots.iter().enumerate().rev() {
-            stack.push(Walk {
-                node: root.clone(),
-                indent: usize::from(multiple),
-                just_branched: multiple,
-                connector: multiple,
-                last: position + 1 == count,
-                gutters: Vec::new(),
-                virtual_root: multiple,
-            });
-        }
-        while let Some(Walk {
-            node: id,
-            indent,
-            just_branched,
-            connector,
-            last,
-            gutters,
-            virtual_root,
-        }) = stack.pop()
-        {
-            let Some(&position) = positions.get(&id) else {
+        let mut stack = Walk::roots(roots, self.multiple_roots);
+        while let Some(walk) = stack.pop() {
+            let Some(&position) = positions.get(&walk.node) else {
                 continue;
             };
             let flat = &mut self.filtered[position];
-            flat.indent = indent;
-            flat.connector = connector;
-            flat.last = last;
-            flat.gutters = gutters.clone();
-            flat.virtual_root_child = virtual_root;
-            let kids = children.get(&Some(id)).cloned().unwrap_or_default();
-            let branching = kids.len() > 1;
-            let child_indent = if branching || (just_branched && indent > 0) {
-                indent + 1
-            } else {
-                indent
-            };
-            let child_gutters = if connector && !virtual_root {
-                let display = if multiple {
-                    indent.saturating_sub(1)
-                } else {
-                    indent
-                };
-                let mut next = gutters;
-                next.push((display.saturating_sub(1), !last));
-                next
-            } else {
-                gutters
-            };
-            let count = kids.len();
-            for (position, kid) in kids.into_iter().enumerate().rev() {
-                stack.push(Walk {
-                    node: kid,
-                    indent: child_indent,
-                    just_branched: branching,
-                    connector: branching,
-                    last: position + 1 == count,
-                    gutters: child_gutters.clone(),
-                    virtual_root: false,
-                });
-            }
+            flat.indent = walk.indent;
+            flat.connector = walk.connector;
+            flat.last = walk.last;
+            flat.gutters = walk.gutters.clone();
+            flat.virtual_root_child = walk.virtual_root;
+            let kids = children
+                .get(&Some(walk.node.clone()))
+                .cloned()
+                .unwrap_or_default();
+            walk.push_children(kids, self.multiple_roots, &mut stack);
         }
         self.visible_parent = parents;
         self.visible_children = children;
@@ -740,12 +668,7 @@ impl TreeSelector {
     }
 
     fn shorten(&self, path: &str) -> String {
-        match &self.home {
-            Some(home) if !home.is_empty() && path.starts_with(home.as_str()) => {
-                format!("~{}", &path[home.len()..])
-            }
-            _ => path.to_owned(),
-        }
+        super::tools::shorten_home(path, self.home.as_deref())
     }
 
     /// pi's `formatToolCall`.
@@ -830,11 +753,19 @@ impl TreeSelector {
             FileEntry::Message(entry) => match &entry.message {
                 Message::User(user) => vec![
                     Span::styled("user: ", theme.fg("accent")),
-                    Span::raw(normalize(&first_200(&content_text(&user.content)))),
+                    Span::raw(normalize(&yapi_types::js::slice(
+                        &user.content.text(""),
+                        0,
+                        200,
+                    ))),
                 ],
                 Message::Assistant(assistant) => {
                     let label = Span::styled("assistant: ", theme.fg("success"));
-                    let text = normalize(&first_200(&blocks_text(&assistant.content)));
+                    let text = normalize(&yapi_types::js::slice(
+                        &blocks_text(&assistant.content, ""),
+                        0,
+                        200,
+                    ));
                     if !text.is_empty() {
                         vec![label, Span::raw(text)]
                     } else if assistant.stop_reason == StopReason::Aborted {
@@ -866,7 +797,7 @@ impl TreeSelector {
                     format!("[{}]: ", entry.custom_type),
                     theme.fg("customMessageLabel"),
                 ),
-                Span::raw(normalize(&content_text(&entry.content))),
+                Span::raw(normalize(&entry.content.text(""))),
             ],
             FileEntry::Compaction(entry) => vec![Span::styled(
                 format!(
@@ -980,11 +911,7 @@ impl TreeSelector {
             ];
         }
         let count = self.filtered.len();
-        let start = self
-            .selected
-            .saturating_sub(self.max_visible / 2)
-            .min(count.saturating_sub(self.max_visible));
-        let end = (start + self.max_visible).min(count);
+        let (start, end) = visible_range(self.selected, count, self.max_visible);
         let mut rows: Vec<(StyledLine, StyledLine, usize, bool)> = Vec::new();
         for position in start..end {
             let flat = &self.filtered[position];
@@ -1273,9 +1200,13 @@ impl TreeSelector {
                 row.spans.insert(0, Span::raw(indent));
                 out.push(lines::truncate(&row, width, "..."));
                 let mut hint = vec![Span::raw(indent)];
-                hint.extend(ui.key_hint("tui.select.confirm", "save"));
-                hint.push(Span::raw("  "));
-                hint.extend(ui.key_hint("tui.select.cancel", "cancel"));
+                hint.extend(
+                    [
+                        ui.key_hint("tui.select.confirm", "save"),
+                        ui.key_hint("tui.select.cancel", "cancel"),
+                    ]
+                    .join(&Span::raw("  ")),
+                );
                 out.push(lines::truncate(&Line::from(hint), width, "..."));
             }
             None => out.extend(self.list(width, ui)),
@@ -1290,7 +1221,7 @@ impl TreeSelector {
             FileEntry::Message(entry) => match &entry.message {
                 Message::BashExecution(bash) => Some(bash.command.clone()),
                 Message::Assistant(assistant) => {
-                    let text = blocks_text(&assistant.content);
+                    let text = blocks_text(&assistant.content, "");
                     if text.is_empty() {
                         assistant.error_message.clone()
                     } else {
@@ -1299,7 +1230,7 @@ impl TreeSelector {
                 }
                 other => message_text(other),
             },
-            FileEntry::CustomMessage(entry) => Some(content_text(&entry.content)),
+            FileEntry::CustomMessage(entry) => Some(entry.content.text("")),
             FileEntry::Compaction(entry) => Some(entry.summary.clone()),
             FileEntry::BranchSummary(entry) => Some(entry.summary.clone()),
             _ => None,
@@ -1339,18 +1270,19 @@ impl TreeSelector {
             return Outcome::None;
         }
         let count = self.filtered.len();
+        let toggled = [
+            ("app.tree.filter.default", Filter::Default),
+            ("app.tree.filter.noTools", Filter::NoTools),
+            ("app.tree.filter.userOnly", Filter::UserOnly),
+            ("app.tree.filter.labeledOnly", Filter::LabeledOnly),
+            ("app.tree.filter.all", Filter::All),
+        ]
+        .into_iter()
+        .find(|(action, _)| kb.matches(data, action));
         if kb.matches(data, "tui.select.up") {
-            self.selected = if self.selected == 0 {
-                count.saturating_sub(1)
-            } else {
-                self.selected - 1
-            };
+            self.selected = step(self.selected, count, false);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = if self.selected + 1 >= count {
-                0
-            } else {
-                self.selected + 1
-            };
+            self.selected = step(self.selected, count, true);
         } else if kb.matches(data, "app.tree.foldOrUp") {
             let id = self
                 .filtered
@@ -1399,31 +1331,12 @@ impl TreeSelector {
             self.search.clear();
             self.folded.clear();
             self.apply_filter();
-        } else if kb.matches(data, "app.tree.filter.default") {
-            self.set_filter(Filter::Default);
-        } else if kb.matches(data, "app.tree.filter.noTools") {
-            self.set_filter(if self.filter == Filter::NoTools {
+        } else if let Some((_, filter)) = toggled {
+            // A filter's key toggles it, back to the default.
+            self.set_filter(if self.filter == filter {
                 Filter::Default
             } else {
-                Filter::NoTools
-            });
-        } else if kb.matches(data, "app.tree.filter.userOnly") {
-            self.set_filter(if self.filter == Filter::UserOnly {
-                Filter::Default
-            } else {
-                Filter::UserOnly
-            });
-        } else if kb.matches(data, "app.tree.filter.labeledOnly") {
-            self.set_filter(if self.filter == Filter::LabeledOnly {
-                Filter::Default
-            } else {
-                Filter::LabeledOnly
-            });
-        } else if kb.matches(data, "app.tree.filter.all") {
-            self.set_filter(if self.filter == Filter::All {
-                Filter::Default
-            } else {
-                Filter::All
+                filter
             });
         } else if kb.matches(data, "app.tree.filter.cycleBackward")
             || kb.matches(data, "app.tree.filter.cycleForward")
@@ -1433,12 +1346,7 @@ impl TreeSelector {
                 .iter()
                 .position(|filter| *filter == self.filter)
                 .unwrap_or(0);
-            let next = if forward {
-                (index + 1) % CYCLE.len()
-            } else {
-                (index + CYCLE.len() - 1) % CYCLE.len()
-            };
-            self.set_filter(CYCLE[next]);
+            self.set_filter(CYCLE[step(index, CYCLE.len(), forward)]);
         } else if kb.matches(data, "tui.editor.deleteCharBackward") {
             if !self.search.is_empty() {
                 self.search.pop();

@@ -11,16 +11,18 @@ use std::path::{Path, PathBuf};
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value};
+use yapi_core::packages::entry_source;
 use yapi_core::packages::resolve::{BUILTIN_PREFIX, ResolvedPaths, ResourceType};
 use yapi_core::packages::source::{is_local, local_path};
 use yapi_core::settings::{Scope, SettingsManager};
 use yapi_core::tools::path::relative;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::select_list::visible_range;
 use yapi_tui::text::visible_width;
 use yapi_tui::text_input::TextInput;
 use yapi_types::rpc::SourceInfo;
 
-use super::selectors::{Outcome, Ui};
+use super::selectors::{Outcome, Ui, key_hint};
 
 fn label(kind: ResourceType) -> &'static str {
     match kind {
@@ -373,37 +375,36 @@ impl ConfigSelector {
         }
     }
 
-    fn item_scope(item: &Item) -> &'static str {
+    fn item_scope(item: &Item) -> Scope {
         if item.info.scope == "project" {
-            "project"
-        } else {
-            "user"
-        }
-    }
-
-    fn base(&self, scope: &str) -> PathBuf {
-        if scope == "project" {
-            self.cwd.join(yapi_core::config::PROJECT_DIR)
-        } else {
-            self.agent_dir.clone()
-        }
-    }
-
-    fn document(&self, scope: &str) -> Map<String, Value> {
-        let scope = if scope == "project" {
             Scope::Project
         } else {
             Scope::Global
-        };
+        }
+    }
+
+    fn base(&self, scope: Scope) -> PathBuf {
+        match scope {
+            Scope::Project => self.cwd.join(yapi_core::config::PROJECT_DIR),
+            Scope::Global => self.agent_dir.clone(),
+        }
+    }
+
+    fn document(&self, scope: Scope) -> Map<String, Value> {
         self.settings.document(scope).clone()
     }
 
-    fn write(&mut self, scope: &str, key: &str, value: Option<Value>) {
-        let scope = if scope == "project" {
-            Scope::Project
-        } else {
-            Scope::Global
-        };
+    /// The `packages` entries of `scope`'s settings.
+    fn packages(&self, scope: Scope) -> Vec<Value> {
+        self.settings
+            .document(scope)
+            .get("packages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn write(&mut self, scope: Scope, key: &str, value: Option<Value>) {
         let _ = self.settings.set(scope, key, value);
     }
 
@@ -417,8 +418,19 @@ impl ConfigSelector {
             .collect()
     }
 
-    fn strings(values: Vec<String>) -> Value {
-        Value::Array(values.into_iter().map(Value::String).collect())
+    /// A package entry as an object; a bare source becomes `{"source": ...}`.
+    fn package_object(entry: &Value) -> Option<Map<String, Value>> {
+        match entry {
+            Value::String(_) => Some(Map::from_iter([("source".to_owned(), entry.clone())])),
+            Value::Object(object) => Some(object.clone()),
+            _ => None,
+        }
+    }
+
+    /// Drops `pattern`'s entries from `list`, then adds it with `sign`.
+    fn set_pattern(list: &mut Vec<String>, pattern: &str, sign: Option<&str>) {
+        list.retain(|entry| strip_sign(entry) != pattern);
+        list.extend(sign.map(|sign| format!("{sign}{pattern}")));
     }
 
     /// pi's `getResourcePattern`.
@@ -453,40 +465,26 @@ impl ConfigSelector {
         let enabled = !item.enabled;
         let scope = Self::item_scope(item);
         let key = item.kind.key();
-        let sign = if enabled { "+" } else { "-" };
+        let sign = Some(if enabled { "+" } else { "-" });
         if item.info.origin == "top-level" {
-            let pattern = self.resource_pattern(item);
             let mut list = Self::list(&self.document(scope), key);
-            list.retain(|entry| strip_sign(entry) != pattern);
-            list.push(format!("{sign}{pattern}"));
-            self.write(scope, key, Some(Self::strings(list)));
+            Self::set_pattern(&mut list, &self.resource_pattern(item), sign);
+            self.write(scope, key, Some(Value::from(list)));
             return enabled;
         }
-        let document = self.document(scope);
-        let mut packages: Vec<Value> = document
-            .get("packages")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let Some(index) = packages.iter().position(|entry| {
-            entry.as_str().or_else(|| entry["source"].as_str()) == Some(item.info.source.as_str())
-        }) else {
+        let mut packages = self.packages(scope);
+        let Some(index) = packages
+            .iter()
+            .position(|entry| entry_source(entry) == Some(item.info.source.as_str()))
+        else {
             return enabled;
         };
-        let mut entry = match &packages[index] {
-            Value::String(source) => {
-                let mut object = Map::new();
-                object.insert("source".into(), Value::String(source.clone()));
-                object
-            }
-            Value::Object(object) => object.clone(),
-            _ => return enabled,
+        let Some(mut entry) = Self::package_object(&packages[index]) else {
+            return enabled;
         };
-        let pattern = Self::package_pattern(item);
         let mut list = Self::list(&entry, key);
-        list.retain(|existing| strip_sign(existing) != pattern);
-        list.push(format!("{sign}{pattern}"));
-        entry.insert(key.to_owned(), Self::strings(list));
+        Self::set_pattern(&mut list, &Self::package_pattern(item), sign);
+        entry.insert(key.to_owned(), Value::from(list));
         packages[index] = Value::Object(entry);
         self.write(scope, "packages", Some(Value::Array(packages)));
         enabled
@@ -496,15 +494,15 @@ impl ConfigSelector {
         self.inherited
             .get(&item_key(item))
             .copied()
-            .unwrap_or(Self::item_scope(item) != "user" || item.enabled)
+            .unwrap_or(Self::item_scope(item) == Scope::Project || item.enabled)
     }
 
     fn is_inherited_global(&self, item: &Item) -> bool {
-        Self::item_scope(item) == "user" || self.inherited.contains_key(&item_key(item))
+        Self::item_scope(item) == Scope::Global || self.inherited.contains_key(&item_key(item))
     }
 
     /// pi's `getResourcePatternForScope`.
-    fn pattern_for_scope(&self, item: &Item, scope: &str) -> String {
+    fn pattern_for_scope(&self, item: &Item, scope: Scope) -> String {
         let source_scope = Self::item_scope(item);
         if scope != source_scope || item.info.source == "builtin" {
             return item.path.clone();
@@ -520,9 +518,9 @@ impl ConfigSelector {
     /// pi's `getTopLevelOverridePatterns`.
     fn top_level_patterns(&self, item: &Item) -> Vec<String> {
         let mut patterns = vec![
-            self.pattern_for_scope(item, "project"),
+            self.pattern_for_scope(item, Scope::Project),
             item.path.clone(),
-            relative(&self.base("project"), Path::new(&item.path)),
+            relative(&self.base(Scope::Project), Path::new(&item.path)),
         ];
         if let Some(base) = &item.info.base_dir {
             patterns.push(relative(Path::new(base), Path::new(&item.path)));
@@ -530,7 +528,13 @@ impl ConfigSelector {
         patterns
     }
 
-    fn source_matches(&self, left: &str, left_scope: &str, right: &str, right_scope: &str) -> bool {
+    fn source_matches(
+        &self,
+        left: &str,
+        left_scope: Scope,
+        right: &str,
+        right_scope: Scope,
+    ) -> bool {
         if left == right {
             return true;
         }
@@ -541,24 +545,16 @@ impl ConfigSelector {
     }
 
     fn matching_package(&self, item: &Item) -> Option<Value> {
-        self.document("project")
-            .get("packages")
-            .and_then(Value::as_array)?
-            .iter()
-            .find(|entry| {
-                entry
-                    .as_str()
-                    .or_else(|| entry["source"].as_str())
-                    .is_some_and(|source| {
-                        self.source_matches(
-                            &item.info.source,
-                            Self::item_scope(item),
-                            source,
-                            "project",
-                        )
-                    })
+        self.packages(Scope::Project).into_iter().find(|entry| {
+            entry_source(entry).is_some_and(|source| {
+                self.source_matches(
+                    &item.info.source,
+                    Self::item_scope(item),
+                    source,
+                    Scope::Project,
+                )
             })
-            .cloned()
+        })
     }
 
     fn state_from_entries(
@@ -589,7 +585,7 @@ impl ConfigSelector {
             return Override::Inherit;
         }
         if item.info.origin == "top-level" {
-            let entries = Self::list(&self.document("project"), item.kind.key());
+            let entries = Self::list(&self.document(Scope::Project), item.kind.key());
             return Self::state_from_entries(&entries, &self.top_level_patterns(item), false);
         }
         let Some(Value::Object(entry)) = self.matching_package(item) else {
@@ -630,10 +626,10 @@ impl ConfigSelector {
             let pattern = if inherited {
                 item.path.clone()
             } else {
-                self.pattern_for_scope(item, "project")
+                self.pattern_for_scope(item, Scope::Project)
             };
             let patterns = self.top_level_patterns(item);
-            let mut list = Self::list(&self.document("project"), key);
+            let mut list = Self::list(&self.document(Scope::Project), key);
             list.retain(|entry| {
                 let target = strip_sign(entry);
                 if entry.starts_with(['!', '+', '-'])
@@ -650,23 +646,15 @@ impl ConfigSelector {
                 let sign = if state == Override::Load { "+" } else { "-" };
                 list.push(format!("{sign}{pattern}"));
             }
-            self.write("project", key, Some(Self::strings(list)));
+            self.write(Scope::Project, key, Some(Value::from(list)));
             return true;
         }
-        let document = self.document("project");
-        let mut packages: Vec<Value> = document
-            .get("packages")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let mut packages = self.packages(Scope::Project);
         let scope = Self::item_scope(item);
         let index = packages.iter().position(|entry| {
-            entry
-                .as_str()
-                .or_else(|| entry["source"].as_str())
-                .is_some_and(|source| {
-                    self.source_matches(&item.info.source, scope, source, "project")
-                })
+            entry_source(entry).is_some_and(|source| {
+                self.source_matches(&item.info.source, scope, source, Scope::Project)
+            })
         });
         let index = match index {
             Some(index) => index,
@@ -675,7 +663,7 @@ impl ConfigSelector {
                 let source = &item.info.source;
                 let source = if is_local(source) {
                     let path = local_path(source, &self.base(scope));
-                    let rel = relative(&self.base("project"), &path);
+                    let rel = relative(&self.base(Scope::Project), &path);
                     if rel.is_empty() { ".".to_owned() } else { rel }
                 } else {
                     source.clone()
@@ -687,27 +675,21 @@ impl ConfigSelector {
                 packages.len() - 1
             }
         };
-        let mut entry = match &packages[index] {
-            Value::String(source) => {
-                let mut object = Map::new();
-                object.insert("source".into(), Value::String(source.clone()));
-                object
-            }
-            Value::Object(object) => object.clone(),
-            _ => return false,
+        let Some(mut entry) = Self::package_object(&packages[index]) else {
+            return false;
         };
         let key = item.kind.key();
-        let pattern = Self::package_pattern(item);
+        let sign = match state {
+            Override::Inherit => None,
+            Override::Load => Some("+"),
+            Override::Unload => Some("-"),
+        };
         let mut list = Self::list(&entry, key);
-        list.retain(|existing| strip_sign(existing) != pattern);
-        if state != Override::Inherit {
-            let sign = if state == Override::Load { "+" } else { "-" };
-            list.push(format!("{sign}{pattern}"));
-        }
+        Self::set_pattern(&mut list, &Self::package_pattern(item), sign);
         if list.is_empty() {
             entry.remove(key);
         } else {
-            entry.insert(key.to_owned(), Self::strings(list));
+            entry.insert(key.to_owned(), Value::from(list));
         }
         let filtered = ResourceType::ALL
             .iter()
@@ -719,7 +701,7 @@ impl ConfigSelector {
         } else {
             packages[index] = entry["source"].clone();
         }
-        self.write("project", "packages", Some(Value::Array(packages)));
+        self.write(Scope::Project, "packages", Some(Value::Array(packages)));
         true
     }
 
@@ -729,7 +711,7 @@ impl ConfigSelector {
             return;
         };
         let item = self.groups()[g].subgroups[s].items[i].clone();
-        if !self.project && Self::item_scope(&item) != "user" {
+        if !self.project && Self::item_scope(&item) != Scope::Global {
             return;
         }
         let enabled = if self.project {
@@ -793,19 +775,18 @@ impl ConfigSelector {
         } else {
             "Global Resources"
         };
-        let sep = Span::styled(" · ", theme.fg("muted"));
-        let mut hint: Vec<Span<'static>> = Vec::new();
+        let mut parts = Vec::new();
         if self.project_available {
-            hint.extend(ui.key_hint("tui.input.tab", "switch mode"));
-            hint.push(sep.clone());
+            parts.push(ui.key_hint("tui.input.tab", "switch mode"));
         }
-        hint.extend(if self.project {
-            ui.raw_key_hint("space", "cycle inherit/+/-")
+        let space = if self.project {
+            "cycle inherit/+/-"
         } else {
-            ui.raw_key_hint("space", "toggle")
-        });
-        hint.push(sep);
-        hint.extend(ui.raw_key_hint("esc", "close"));
+            "toggle"
+        };
+        parts.push(key_hint(theme, "space", space));
+        parts.push(key_hint(theme, "esc", "close"));
+        let hint = parts.join(&Span::styled(" · ", theme.fg("muted")));
         let hint_width: usize = hint.iter().map(|span| visible_width(&span.content)).sum();
         let spacing = width
             .saturating_sub(visible_width(title) + hint_width)
@@ -840,11 +821,7 @@ impl ConfigSelector {
             return out;
         }
         let count = self.filtered.len();
-        let start = self
-            .selected
-            .saturating_sub(self.max_visible / 2)
-            .min(count.saturating_sub(self.max_visible));
-        let end = (start + self.max_visible).min(count);
+        let (start, end) = visible_range(self.selected, count, self.max_visible);
         let groups = self.groups();
         for index in start..end {
             let row = self.filtered[index];

@@ -9,12 +9,14 @@ use std::time::Instant;
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 use serde_json::Value;
+use yapi_core::tools::truncate::format_size;
 use yapi_tui::lines::{self, StyledLine, box_content_width, boxed};
 use yapi_tui::theme::Theme;
 use yapi_types::event::ToolResult;
 use yapi_types::message::ContentBlock;
 
 use super::chat::RenderContext;
+use super::selectors::key_hint;
 
 /// A tool call, its streamed progress and its result.
 pub struct ToolView {
@@ -261,7 +263,8 @@ fn string_arg<'a>(args: &'a Value, keys: &[&str]) -> Option<Option<&'a str>> {
     Some(None)
 }
 
-fn shorten_home(path: &str, home: Option<&str>) -> String {
+/// `path` with a leading `home` shown as `~`.
+pub(super) fn shorten_home(path: &str, home: Option<&str>) -> String {
     match home {
         Some(home) if !home.is_empty() && path.starts_with(home) => {
             format!("~{}", &path[home.len()..])
@@ -270,12 +273,36 @@ fn shorten_home(path: &str, home: Option<&str>) -> String {
     }
 }
 
-/// Spans of a key hint: the key dim, the text muted.
-fn key_hint(theme: &Theme, key: &str, text: &str) -> Vec<Span<'static>> {
-    vec![
-        Span::styled(key.to_owned(), theme.fg("dim")),
-        Span::styled(format!(" {text}"), theme.fg("muted")),
-    ]
+/// The first `limit` of `rows` in `style`, or all of them when expanded, and
+/// pi's hint for the rest: `... (N more lines,`, with the row count when
+/// `total`.
+fn head_lines(
+    rows: Vec<String>,
+    limit: usize,
+    style: Style,
+    total: bool,
+    ctx: &RenderContext<'_>,
+) -> (Vec<StyledLine>, Option<StyledLine>) {
+    let count = rows.len();
+    let max = if ctx.expanded { count } else { limit };
+    let shown = rows
+        .into_iter()
+        .take(max)
+        .map(|row| lines::styled(row, style))
+        .collect();
+    let total = if total {
+        format!(" {count} total,")
+    } else {
+        String::new()
+    };
+    let hint = (count > max).then(|| {
+        more_lines_hint(
+            ctx.theme,
+            ctx,
+            format!("... ({} more lines,{total}", count - max),
+        )
+    });
+    (shown, hint)
 }
 
 fn more_lines_hint(theme: &Theme, ctx: &RenderContext<'_>, text: String) -> StyledLine {
@@ -319,16 +346,6 @@ fn trim_trailing_empty(mut lines: Vec<String>) -> Vec<String> {
         lines.pop();
     }
     lines
-}
-
-fn format_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes}B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1}KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
-    }
 }
 
 /// `1.2s`, `3m 4s`, `1h 2m 3s`.
@@ -616,23 +633,11 @@ impl ToolView {
                     Some(Some(content)) if !content.is_empty() => {
                         let content = content.replace('\r', "");
                         let all =
-                            trim_trailing_empty(content.split('\n').map(str::to_owned).collect());
-                        let max = if ctx.expanded { all.len() } else { 10 };
+                            trim_trailing_empty(content.split('\n').map(replace_tabs).collect());
+                        let (shown, hint) = head_lines(all, 10, theme.fg("toolOutput"), true, ctx);
                         lines.push(Line::default());
-                        for line in all.iter().take(max) {
-                            lines.push(lines::styled(replace_tabs(line), theme.fg("toolOutput")));
-                        }
-                        if all.len() > max {
-                            lines.push(more_lines_hint(
-                                theme,
-                                ctx,
-                                format!(
-                                    "... ({} more lines, {} total,",
-                                    all.len() - max,
-                                    all.len()
-                                ),
-                            ));
-                        }
+                        lines.extend(shown);
+                        lines.extend(hint);
                     }
                     Some(_) => {}
                 }
@@ -646,10 +651,7 @@ impl ToolView {
                         theme.fg("accent"),
                     ),
                 };
-                let path = match string_arg(args, &["path"]) {
-                    None => "[invalid arg]".to_owned(),
-                    Some(path) => shorten_home(path.filter(|p| !p.is_empty()).unwrap_or("."), home),
-                };
+                let path = path_span(theme, string_arg(args, &["path"]), home, Some(".")).content;
                 let mut spans = vec![
                     title(theme, "grep"),
                     Span::raw(" "),
@@ -676,10 +678,7 @@ impl ToolView {
                         Span::styled(pattern.unwrap_or_default().to_owned(), theme.fg("accent"))
                     }
                 };
-                let path = match string_arg(args, &["path"]) {
-                    None => "[invalid arg]".to_owned(),
-                    Some(path) => shorten_home(path.filter(|p| !p.is_empty()).unwrap_or("."), home),
-                };
+                let path = path_span(theme, string_arg(args, &["path"]), home, Some(".")).content;
                 let mut spans = vec![
                     title(theme, "find"),
                     Span::raw(" "),
@@ -695,14 +694,11 @@ impl ToolView {
                 vec![Line::from(spans)]
             }
             "ls" => {
-                let path = match string_arg(args, &["path"]) {
-                    None => Span::styled("[invalid arg]", theme.fg("error")),
-                    Some(path) => Span::styled(
-                        shorten_home(path.filter(|p| !p.is_empty()).unwrap_or("."), home),
-                        theme.fg("accent"),
-                    ),
-                };
-                let mut spans = vec![title(theme, "ls"), Span::raw(" "), path];
+                let mut spans = vec![
+                    title(theme, "ls"),
+                    Span::raw(" "),
+                    path_span(theme, string_arg(args, &["path"]), home, Some(".")),
+                ];
                 if let Some(limit) = number_arg(args, "limit") {
                     spans.push(Span::styled(
                         format!(" (limit {limit})"),
@@ -835,26 +831,16 @@ impl ToolView {
                     return Vec::new();
                 }
                 let output = text_output(result);
-                let all = trim_trailing_empty(output.split('\n').map(str::to_owned).collect());
-                let max = if ctx.expanded { all.len() } else { 10 };
+                let all = trim_trailing_empty(output.split('\n').map(replace_tabs).collect());
+                let (shown, hint) = head_lines(all, 10, output_style, false, ctx);
                 let mut out = vec![Line::default()];
-                out.extend(
-                    all.iter()
-                        .take(max)
-                        .map(|line| lines::styled(replace_tabs(line), output_style)),
-                );
-                if all.len() > max {
-                    out.push(more_lines_hint(
-                        theme,
-                        ctx,
-                        format!("... ({} more lines,", all.len() - max),
-                    ));
-                }
+                out.extend(shown);
+                out.extend(hint);
                 if let Some(truncation) = details
                     .and_then(|d| d.get("truncation"))
                     .filter(|t| t["truncated"] == true)
                 {
-                    let max_bytes = truncation["maxBytes"].as_u64().unwrap_or(50 * 1024);
+                    let max_bytes = truncation["maxBytes"].as_u64().unwrap_or(50 * 1024) as usize;
                     let warning = if truncation["firstLineExceedsLimit"] == true {
                         format!("[First line exceeds {} limit]", format_size(max_bytes))
                     } else if truncation["truncatedBy"] == "lines" {
@@ -898,22 +884,12 @@ impl ToolView {
                 let output = output.trim();
                 let mut out = Vec::new();
                 if !output.is_empty() {
-                    let all: Vec<&str> = output.split('\n').collect();
+                    let all = output.split('\n').map(str::to_owned).collect();
                     let limit = if self.name == "grep" { 15 } else { 20 };
-                    let max = if ctx.expanded { all.len() } else { limit };
+                    let (shown, hint) = head_lines(all, limit, output_style, false, ctx);
                     out.push(Line::default());
-                    out.extend(
-                        all.iter()
-                            .take(max)
-                            .map(|line| lines::styled((*line).to_owned(), output_style)),
-                    );
-                    if all.len() > max {
-                        out.push(more_lines_hint(
-                            theme,
-                            ctx,
-                            format!("... ({} more lines,", all.len() - max),
-                        ));
-                    }
+                    out.extend(shown);
+                    out.extend(hint);
                 }
                 let mut warnings = Vec::new();
                 let unit = match self.name.as_str() {
@@ -938,7 +914,7 @@ impl ToolView {
                 {
                     warnings.push(format!(
                         "{} limit",
-                        format_size(truncation["maxBytes"].as_u64().unwrap_or(50 * 1024))
+                        format_size(truncation["maxBytes"].as_u64().unwrap_or(50 * 1024) as usize)
                     ));
                 }
                 if self.name == "grep" && details.is_some_and(|d| d["linesTruncated"] == true) {
@@ -957,20 +933,11 @@ impl ToolView {
                 if output.is_empty() {
                     return Vec::new();
                 }
-                let all: Vec<&str> = output.split('\n').collect();
-                let max = if ctx.expanded { all.len() } else { 10 };
-                let mut out: Vec<StyledLine> = all
-                    .iter()
-                    .take(max)
-                    .map(|line| lines::styled(replace_tabs(line), output_style))
-                    .collect();
-                if all.len() > max {
+                let all = output.split('\n').map(replace_tabs).collect();
+                let (mut out, hint) = head_lines(all, 10, output_style, false, ctx);
+                if let Some(hint) = hint {
                     out.push(Line::default());
-                    out.push(more_lines_hint(
-                        theme,
-                        ctx,
-                        format!("... ({} more lines,", all.len() - max),
-                    ));
+                    out.push(hint);
                 }
                 lines::wrap_all(&out, width)
             }
@@ -1077,7 +1044,7 @@ impl ToolView {
                     warnings.push(format!(
                         "Truncated: {} lines shown ({} limit)",
                         truncation["outputLines"],
-                        format_size(truncation["maxBytes"].as_u64().unwrap_or(50 * 1024))
+                        format_size(truncation["maxBytes"].as_u64().unwrap_or(50 * 1024) as usize)
                     ));
                 }
             }

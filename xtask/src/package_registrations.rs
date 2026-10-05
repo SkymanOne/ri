@@ -208,17 +208,14 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
 /// `value` without codemode's `models` line, which points into pi's install
 /// for pi and into the agent directory for yapi (docs/compat.md).
 fn without_models_line(value: Value) -> Value {
-    const LINE: &str = "\n- `models`: classifiers and image generation. Read ";
+    static LINE: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
+        regex_lite::Regex::new(
+            r"(?s)\n- `models`: classifiers and image generation\. Read .*? first\.",
+        )
+        .expect("the pattern is valid")
+    });
     match value {
-        Value::String(mut text) => {
-            while let Some(start) = text.find(LINE) {
-                match text[start..].find(" first.") {
-                    Some(end) => text.replace_range(start..start + end + " first.".len(), ""),
-                    None => break,
-                }
-            }
-            Value::String(text)
-        }
+        Value::String(text) => Value::String(LINE.replace_all(&text, "").into_owned()),
         Value::Array(items) => Value::Array(items.into_iter().map(without_models_line).collect()),
         Value::Object(object) => Value::Object(
             object

@@ -15,11 +15,9 @@ use yapi_types::model::Model;
 use yapi_types::settings::Settings;
 
 use super::keybindings::keys_display;
-use super::selectors::{Action, Outcome, Ui, level_description};
-
-const SUBMENU_LAYOUT: SelectListLayout = SelectListLayout {
-    min_primary_column_width: Some(12),
-    max_primary_column_width: Some(32),
+use super::selectors::{
+    Action, Outcome, PRIMARY_LAYOUT, Ui, is_navigation, level_description, preselected_list,
+    select_list_theme,
 };
 
 const MODEL_PICKER_LAYOUT: SelectListLayout = SelectListLayout {
@@ -90,8 +88,15 @@ pub struct SettingsConfig {
     pub light_terminal: bool,
 }
 
-fn flag(value: bool) -> String {
-    if value { "true" } else { "false" }.to_owned()
+/// An on/off setting.
+fn bool_item(id: &str, label: &str, description: &str, value: bool) -> SettingItem {
+    item(
+        id,
+        label,
+        description,
+        value.to_string(),
+        &["true", "false"],
+    )
 }
 
 fn item(id: &str, label: &str, description: &str, value: String, values: &[&str]) -> SettingItem {
@@ -110,10 +115,6 @@ fn submenu_item(id: &str, label: &str, description: &str, value: String) -> Sett
         submenu: true,
         ..item(id, label, description, value, &[])
     }
-}
-
-fn model_key(model: &Model) -> String {
-    format!("{}/{}", model.provider, model.id)
 }
 
 fn overrides_summary(count: usize) -> String {
@@ -194,17 +195,14 @@ impl SelectSubmenu {
         layout: SelectListLayout,
         ui: &Ui<'_>,
     ) -> SelectList {
-        let index = items.iter().position(|item| item.value == current);
-        let mut list = SelectList::new(
-            items.clone(),
-            items.len().min(10),
-            ui.select_list_theme(),
+        let max_visible = items.len().min(10);
+        preselected_list(
+            items,
+            current,
+            max_visible,
+            select_list_theme(ui.theme),
             layout,
-        );
-        if let Some(index) = index {
-            list.set_selected_index(index);
-        }
-        list
+        )
     }
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
@@ -236,16 +234,8 @@ impl SelectSubmenu {
 
     fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> SubmenuEvent {
         let kb = ui.keys;
-        let navigation = [
-            "tui.select.up",
-            "tui.select.down",
-            "tui.select.confirm",
-            "tui.select.cancel",
-        ]
-        .iter()
-        .any(|action| kb.matches(data, action));
         if let Some(input) = &mut self.search
-            && !navigation
+            && !is_navigation(kb, data)
         {
             input.handle_input(data, kb);
             let query = input.value().to_owned();
@@ -297,7 +287,7 @@ impl ModelThinking {
 
     fn models_step(&self, ui: &Ui<'_>) -> SelectSubmenu {
         let rank = |model: &Model| {
-            let key = model_key(model);
+            let key = model.reference();
             if Some(&key) == self.current.as_ref() {
                 0
             } else if Some(&key) == self.default.as_ref() {
@@ -318,7 +308,7 @@ impl ModelThinking {
         let mut items: Vec<SelectItem> = sorted
             .iter()
             .map(|model| {
-                let key = model_key(model);
+                let key = model.reference();
                 SelectItem {
                     description: self
                         .override_of(&key)
@@ -372,7 +362,7 @@ impl ModelThinking {
     }
 
     fn levels_step(&self, key: &str, ui: &Ui<'_>) -> SelectSubmenu {
-        let model = self.models.iter().find(|model| model_key(model) == key);
+        let model = self.models.iter().find(|model| model.reference() == key);
         let title = match model {
             Some(model) => format!("Thinking Level for {} [{}]", model.id, model.provider),
             None => format!("Thinking Level for {key}"),
@@ -413,7 +403,7 @@ impl ModelThinking {
             items,
             &preselect,
             false,
-            SUBMENU_LAYOUT,
+            PRIMARY_LAYOUT,
             ui,
         )
     }
@@ -546,7 +536,7 @@ impl ThemeMenu {
                 items,
                 &self.single,
                 false,
-                SUBMENU_LAYOUT,
+                PRIMARY_LAYOUT,
                 ui,
             ),
         ));
@@ -679,7 +669,7 @@ impl ThemeMenu {
                     theme_items(&self.themes, &current),
                     &current,
                     false,
-                    SUBMENU_LAYOUT,
+                    PRIMARY_LAYOUT,
                     ui,
                 );
                 self.select = Some((Some(side), select));
@@ -768,44 +758,37 @@ impl SettingsSelector {
         let wheel_refs: Vec<&str> = wheel_values.iter().map(String::as_str).collect();
         let timeouts: Vec<&str> = HTTP_IDLE_TIMEOUTS.iter().map(|(label, _)| *label).collect();
         let items = vec![
-            item(
+            bool_item(
                 "autocompact",
                 "Auto-compact",
                 "Automatically compact context when it gets too large",
-                flag(config.auto_compact),
-                &["true", "false"],
+                config.auto_compact,
             ),
-            item(
+            bool_item(
                 "auto-resize-images",
                 "Auto-resize images",
                 "Resize large images to 2000x2000 max for better model compatibility",
-                flag(images.auto_resize.unwrap_or(true)),
-                &["true", "false"],
+                images.auto_resize.unwrap_or(true),
             ),
-            item(
+            bool_item(
                 "block-images",
                 "Block images",
                 "Prevent images from being sent to LLM providers",
-                flag(images.block_images.unwrap_or(false)),
-                &["true", "false"],
+                images.block_images.unwrap_or(false),
             ),
-            item(
+            bool_item(
                 "skill-commands",
                 "Skill commands",
                 "Register skills as /skill:name commands",
-                flag(settings.enable_skill_commands.unwrap_or(true)),
-                &["true", "false"],
+                settings.enable_skill_commands.unwrap_or(true),
             ),
-            item(
+            bool_item(
                 "show-hardware-cursor",
                 "Show hardware cursor",
                 "Show the terminal cursor while still positioning it for IME support",
-                flag(
-                    settings.show_hardware_cursor.unwrap_or_else(|| {
-                        std::env::var("PI_HARDWARE_CURSOR").as_deref() == Ok("1")
-                    }),
-                ),
-                &["true", "false"],
+                settings
+                    .show_hardware_cursor
+                    .unwrap_or_else(|| std::env::var("PI_HARDWARE_CURSOR").as_deref() == Ok("1")),
             ),
             item(
                 "editor-padding",
@@ -833,23 +816,19 @@ impl SettingsSelector {
                 settings.autocomplete_max_visible.unwrap_or(5).to_string(),
                 &["3", "5", "7", "10", "15", "20"],
             ),
-            item(
+            bool_item(
                 "clear-on-shrink",
                 "Clear on shrink",
                 "Clear empty rows when content shrinks (may cause flicker)",
-                flag(
-                    terminal.clear_on_shrink.unwrap_or_else(|| {
-                        std::env::var("PI_CLEAR_ON_SHRINK").as_deref() == Ok("1")
-                    }),
-                ),
-                &["true", "false"],
+                terminal
+                    .clear_on_shrink
+                    .unwrap_or_else(|| std::env::var("PI_CLEAR_ON_SHRINK").as_deref() == Ok("1")),
             ),
-            item(
+            bool_item(
                 "terminal-progress",
                 "Terminal progress",
                 "Show OSC 9;4 progress indicators in the terminal tab bar",
-                flag(terminal.show_terminal_progress.unwrap_or(false)),
-                &["true", "false"],
+                terminal.show_terminal_progress.unwrap_or(false),
             ),
             item(
                 "steering-mode",
@@ -891,12 +870,11 @@ impl SettingsSelector {
                 ),
                 &["off", "streaming", "idle"],
             ),
-            item(
+            bool_item(
                 "hide-thinking",
                 "Hide thinking",
                 "Hide thinking blocks in assistant responses",
-                flag(config.hide_thinking),
-                &["true", "false"],
+                config.hide_thinking,
             ),
             item(
                 "mermaid-rendering",
@@ -914,19 +892,17 @@ impl SettingsSelector {
                 },
                 &["off", "final", "streaming"],
             ),
-            item(
+            bool_item(
                 "cache-miss-notices",
                 "Cache miss notices",
                 "Show transcript notices for cache costs and provider recovery diagnostics",
-                flag(settings.show_cache_miss_notices.unwrap_or(false)),
-                &["true", "false"],
+                settings.show_cache_miss_notices.unwrap_or(false),
             ),
-            item(
+            bool_item(
                 "collapse-changelog",
                 "Collapse changelog",
                 "Show condensed changelog after updates",
-                flag(settings.collapse_changelog.unwrap_or(false)),
-                &["true", "false"],
+                settings.collapse_changelog.unwrap_or(false),
             ),
             item(
                 "quiet-startup",
@@ -935,12 +911,11 @@ impl SettingsSelector {
                 quiet.to_owned(),
                 &["true", "header", "false"],
             ),
-            item(
+            bool_item(
                 "install-telemetry",
                 "Install telemetry",
                 "Send an anonymous version/update ping after changelog-detected updates",
-                flag(settings.enable_install_telemetry.unwrap_or(true)),
-                &["true", "false"],
+                settings.enable_install_telemetry.unwrap_or(true),
             ),
             item(
                 "default-project-trust",
@@ -1015,12 +990,11 @@ impl SettingsSelector {
                 ),
                 &["auto", "always", "hidden"],
             ),
-            item(
+            bool_item(
                 "fullscreen-copy-on-select",
                 "Fullscreen copy on select",
                 "Automatically copy selected text in fullscreen mode; disable to copy selections with Ctrl+X",
-                flag(settings.fullscreen_copy_on_select.unwrap_or(true)),
-                &["true", "false"],
+                settings.fullscreen_copy_on_select.unwrap_or(true),
             ),
             item(
                 "fullscreen-wheel-scroll-lines",
@@ -1120,12 +1094,11 @@ impl SettingsSelector {
     fn open(&mut self, id: &str, ui: &Ui<'_>) {
         self.submenu = match id {
             "warnings" => Some(Submenu::Warnings(Box::new(SettingsList::new(
-                vec![item(
+                vec![bool_item(
                     "anthropic-extra-usage",
                     "Anthropic extra usage",
                     "Warn when Anthropic subscription auth may use paid extra usage",
-                    flag(self.anthropic_extra_usage),
-                    &["true", "false"],
+                    self.anthropic_extra_usage,
                 )],
                 1,
                 list_theme(ui),
@@ -1144,7 +1117,7 @@ impl SettingsSelector {
                     (Some(provider), Some(id)) => Some(format!("{provider}/{id}")),
                     _ => None,
                 }
-                .filter(|key| config.models.iter().any(|model| model_key(model) == *key));
+                .filter(|key| config.models.iter().any(|model| model.reference() == *key));
                 let mut menu = ModelThinking {
                     models: config.models.clone(),
                     current,
@@ -1158,7 +1131,7 @@ impl SettingsSelector {
                         Vec::new(),
                         "",
                         false,
-                        SUBMENU_LAYOUT,
+                        PRIMARY_LAYOUT,
                         ui,
                     ),
                 };
@@ -1190,7 +1163,7 @@ impl SettingsSelector {
                     Outcome::None
                 }
                 Some(key) => {
-                    let Some(model) = menu.models.iter().find(|model| model_key(model) == key)
+                    let Some(model) = menu.models.iter().find(|model| model.reference() == key)
                     else {
                         menu.menu = menu.models_step(ui);
                         return Outcome::None;
@@ -1270,13 +1243,7 @@ impl super::App {
     /// pi's `showSettingsSelector`.
     pub(super) fn open_settings(&mut self) {
         let settings = self.session.settings();
-        let appearance = match self.colors.background {
-            Some(background) => {
-                yapi_tui::theme::terminal_appearance(background, self.colors.foreground)
-            }
-            None => yapi_tui::theme::detect_colorfgbg(std::env::var("COLORFGBG").ok().as_deref())
-                .unwrap_or(yapi_tui::theme::Appearance::Dark),
-        };
+        let appearance = super::appearance(&self.colors);
         let mode = |mode: yapi_types::settings::QueueMode| {
             serde_json::to_value(mode)
                 .ok()

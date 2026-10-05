@@ -128,12 +128,8 @@ fn luminance([r, g, b]: [f64; 3]) -> f64 {
 }
 
 /// JavaScript's `Math.round`, which rounds halves up.
-fn js_round(value: f64) -> f64 {
-    (value + 0.5).floor()
-}
-
 fn adjust_brightness(color: [f64; 3], factor: f64) -> String {
-    let [r, g, b] = color.map(|c| js_round(c * factor).clamp(0.0, 255.0));
+    let [r, g, b] = color.map(|c| yapi_types::js::round(c * factor).clamp(0.0, 255.0));
     format!("rgb({r}, {g}, {b})")
 }
 

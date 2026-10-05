@@ -441,14 +441,6 @@ pub(super) struct ExtensionState {
     pub thinking_label: Option<String>,
 }
 
-/// `localeCompare` for status keys: letters without regard to case, then
-/// lower case first.
-fn locale_order(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase()
-        .cmp(&b.to_lowercase())
-        .then_with(|| b.cmp(a))
-}
-
 impl ExtensionState {
     /// pi's `resetExtensionUI`, for a new session.
     pub fn reset(&mut self) {
@@ -468,7 +460,8 @@ impl ExtensionState {
         self.statuses.retain(|(existing, _)| *existing != key);
         if let Some(text) = text {
             self.statuses.push((key, text));
-            self.statuses.sort_by(|(a, _), (b, _)| locale_order(a, b));
+            self.statuses
+                .sort_by(|(a, _), (b, _)| yapi_types::collate::locale_compare(a, b));
         }
     }
 
@@ -1032,13 +1025,27 @@ pub(super) struct OverlayLayout {
     pub max_height: Option<usize>,
 }
 
+/// A `"50%"` value's percentage.
+fn percent(value: &Value) -> Option<f64> {
+    value.as_str()?.strip_suffix('%')?.parse().ok()
+}
+
 /// pi-tui's `parseSizeValue`: columns or rows, or a percentage of `reference`.
 fn size_value(value: &Value, reference: usize) -> Option<i64> {
     if let Some(number) = value.as_f64() {
         return Some(number as i64);
     }
-    let percent: f64 = value.as_str()?.strip_suffix('%')?.parse().ok()?;
-    Some((reference as f64 * percent / 100.0).floor() as i64)
+    Some((reference as f64 * percent(value)? / 100.0).floor() as i64)
+}
+
+/// An overlay's row or column: a number, a percentage of the `free` space
+/// after `start`, else `anchored`.
+fn position(value: &Value, start: i64, free: i64, anchored: i64) -> i64 {
+    match (value.as_i64(), percent(value)) {
+        (Some(at), _) => at,
+        (None, Some(percent)) => start + (free.max(0) as f64 * percent / 100.0).floor() as i64,
+        (None, None) => anchored,
+    }
 }
 
 /// The layout of an overlay `height` rows tall with pi's `OverlayOptions`
@@ -1069,44 +1076,20 @@ pub(super) fn overlay_layout(
         (overlay_height as i64).min(max)
     });
     let anchor = options["anchor"].as_str().unwrap_or("center");
-    let anchored_row = || match anchor {
+    let anchored_row = match anchor {
         "top-left" | "top-center" | "top-right" => top,
         "bottom-left" | "bottom-center" | "bottom-right" => top + avail_height - height,
         _ => top + (avail_height - height).div_euclid(2),
     };
-    let anchored_col = || match anchor {
+    let anchored_col = match anchor {
         "top-left" | "left-center" | "bottom-left" => left,
         "top-right" | "right-center" | "bottom-right" => left + avail_width - width,
         _ => left + (avail_width - width).div_euclid(2),
     };
-    let percent = |value: &Value| {
-        value
-            .as_str()
-            .and_then(|text| text.strip_suffix('%'))
-            .and_then(|text| text.parse::<f64>().ok())
-    };
-    let mut row = match &options["row"] {
-        Value::Null => anchored_row(),
-        value => match (value.as_i64(), percent(value)) {
-            (Some(row), _) => row,
-            (None, Some(percent)) => {
-                top + ((avail_height - height).max(0) as f64 * percent / 100.0).floor() as i64
-            }
-            _ => anchored_row(),
-        },
-    };
-    let mut col = match &options["col"] {
-        Value::Null => anchored_col(),
-        value => match (value.as_i64(), percent(value)) {
-            (Some(col), _) => col,
-            (None, Some(percent)) => {
-                left + ((avail_width - width).max(0) as f64 * percent / 100.0).floor() as i64
-            }
-            _ => anchored_col(),
-        },
-    };
-    row += options["offsetY"].as_i64().unwrap_or(0);
-    col += options["offsetX"].as_i64().unwrap_or(0);
+    let row = position(&options["row"], top, avail_height - height, anchored_row)
+        + options["offsetY"].as_i64().unwrap_or(0);
+    let col = position(&options["col"], left, avail_width - width, anchored_col)
+        + options["offsetX"].as_i64().unwrap_or(0);
     let row = row.min(term_height - bottom - height).max(top);
     let col = col.min(term_width - right - width).max(left);
     OverlayLayout {
