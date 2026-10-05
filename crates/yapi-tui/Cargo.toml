@@ -12,6 +12,7 @@ publish.workspace = true
 pulldown-cmark.workspace = true
 yapi-types.workspace = true
 ratatui-core.workspace = true
+regex-lite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 unicode-segmentation.workspace = true

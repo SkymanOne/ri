@@ -11,6 +11,7 @@ use ratatui_core::text::{Line, Span};
 use crate::fuzzy::fuzzy_filter;
 use crate::keybindings::Keybindings;
 use crate::lines::{self, StyledLine, styled};
+use crate::select_list::{step, visible_range};
 use crate::text::{truncate_to_width, visible_width};
 use crate::text_input::TextInput;
 
@@ -117,12 +118,6 @@ impl SettingsList {
             .collect()
     }
 
-    fn visible_range(&self, count: usize) -> (usize, usize) {
-        let centered = self.selected.saturating_sub(self.max_visible / 2);
-        let start = centered.min(count.saturating_sub(self.max_visible));
-        (start, (start + self.max_visible).min(count))
-    }
-
     /// The list's rows at `width`.
     pub fn render(&mut self, width: usize) -> Vec<StyledLine> {
         let theme = self.theme;
@@ -148,7 +143,7 @@ impl SettingsList {
             self.hint(&mut out, width);
             return out;
         }
-        let (start, end) = self.visible_range(shown.len());
+        let (start, end) = visible_range(self.selected, shown.len(), self.max_visible);
         let label_width = self
             .items
             .iter()
@@ -224,21 +219,9 @@ impl SettingsList {
             .as_ref()
             .is_none_or(|input| input.value().is_empty());
         if keybindings.matches(data, "tui.select.up") {
-            if count > 0 {
-                self.selected = if self.selected == 0 {
-                    count - 1
-                } else {
-                    self.selected - 1
-                };
-            }
+            self.selected = step(self.selected, count, false);
         } else if keybindings.matches(data, "tui.select.down") {
-            if count > 0 {
-                self.selected = if self.selected + 1 >= count {
-                    0
-                } else {
-                    self.selected + 1
-                };
-            }
+            self.selected = step(self.selected, count, true);
         } else if keybindings.matches(data, "tui.select.confirm") || (data == " " && search_empty) {
             return self.activate();
         } else if keybindings.matches(data, "tui.select.cancel") {

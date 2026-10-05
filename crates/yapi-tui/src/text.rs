@@ -24,6 +24,17 @@ pub fn grapheme_width(grapheme: &str) -> usize {
     width
 }
 
+/// `ellipsis` and its width, clipped to `max_width` columns when wider.
+pub(crate) fn fit_ellipsis(ellipsis: &str, max_width: usize) -> (String, usize) {
+    let width = visible_width(ellipsis);
+    if width < max_width {
+        return (ellipsis.to_owned(), width);
+    }
+    let clipped = take_width(ellipsis, max_width);
+    let width = visible_width(&clipped);
+    (clipped, width)
+}
+
 /// `text` cut to `max_width` columns with `ellipsis` appended when cut, and
 /// padded with spaces to `max_width` when `pad` is set.
 pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool) -> String {
@@ -38,14 +49,7 @@ pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool
         }
         return out;
     }
-    let ellipsis_width = visible_width(ellipsis);
-    let (ellipsis, ellipsis_width) = if ellipsis_width >= max_width {
-        let clipped = take_width(ellipsis, max_width);
-        let clipped_width = visible_width(&clipped);
-        (clipped, clipped_width)
-    } else {
-        (ellipsis.to_owned(), ellipsis_width)
-    };
+    let (ellipsis, ellipsis_width) = fit_ellipsis(ellipsis, max_width);
     let mut out = take_width(text, max_width - ellipsis_width);
     let kept = visible_width(&out);
     out.push_str(&ellipsis);

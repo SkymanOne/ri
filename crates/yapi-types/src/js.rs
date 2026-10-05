@@ -16,6 +16,21 @@ pub fn slice(text: &str, start: usize, end: usize) -> String {
     String::from_utf16_lossy(&units[start..end])
 }
 
+/// `TextDecoder.decode(bytes, {stream: true})`: appends `bytes` to `pending`
+/// and decodes what is complete. A character cut off at the end stays
+/// pending; invalid bytes become U+FFFD.
+pub fn decode_utf8_stream(pending: &mut Vec<u8>, bytes: &[u8]) -> String {
+    pending.extend_from_slice(bytes);
+    let valid = match std::str::from_utf8(pending) {
+        Ok(text) => text.len(),
+        Err(error) if error.error_len().is_none() => error.valid_up_to(),
+        Err(_) => pending.len(),
+    };
+    let text = String::from_utf8_lossy(&pending[..valid]).into_owned();
+    pending.drain(..valid);
+    text
+}
+
 /// `Math.round(value)`.
 pub fn round(value: f64) -> f64 {
     (value + 0.5).floor()
@@ -78,6 +93,16 @@ mod tests {
         assert_eq!(slice("a😀b", 0, 3), "a😀");
         assert_eq!(slice("a😀b", 0, 2), "a\u{fffd}");
         assert_eq!(slice("abc", 2, 10), "c");
+    }
+
+    #[test]
+    fn decodes_utf8_streams() {
+        let mut pending = Vec::new();
+        let euro = "€".as_bytes();
+        assert_eq!(decode_utf8_stream(&mut pending, &euro[..2]), "");
+        assert_eq!(decode_utf8_stream(&mut pending, &euro[2..]), "€");
+        assert_eq!(decode_utf8_stream(&mut pending, b"a\xffb"), "a\u{fffd}b");
+        assert!(pending.is_empty());
     }
 
     #[test]

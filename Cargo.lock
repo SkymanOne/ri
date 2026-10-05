@@ -4238,6 +4238,7 @@ version = "0.1.0"
 dependencies = [
  "pulldown-cmark",
  "ratatui-core",
+ "regex-lite",
  "rustix",
  "serde_json",
  "thiserror 2.0.21",

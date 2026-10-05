@@ -203,14 +203,7 @@ pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine
     if cells_width(&all) <= max_width {
         return from_cells(&all);
     }
-    let ellipsis_width = crate::text::visible_width(ellipsis);
-    let (ellipsis, ellipsis_width) = if ellipsis_width >= max_width {
-        let clipped = crate::text::take_width(ellipsis, max_width);
-        let width = crate::text::visible_width(&clipped);
-        (clipped, width)
-    } else {
-        (ellipsis.to_owned(), ellipsis_width)
-    };
+    let (ellipsis, ellipsis_width) = crate::text::fit_ellipsis(ellipsis, max_width);
     let target = max_width - ellipsis_width;
     let mut kept = Vec::new();
     let mut used = 0;

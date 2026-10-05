@@ -174,7 +174,7 @@ fn hex_channel(channel: &str) -> Option<f64> {
     }
     let max = 16f64.powi(channel.len() as i32) - 1.0;
     let value = u64::from_str_radix(channel, 16).ok()? as f64;
-    Some(((value / max) * 255.0 + 0.5).floor())
+    Some(yapi_types::js::round((value / max) * 255.0))
 }
 
 fn osc_color(value: &str) -> Option<[f64; 3]> {

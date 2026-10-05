@@ -9,29 +9,36 @@ use ratatui_core::text::{Line, Span};
 /// leak across lines.
 pub const LINE_RESET: &str = "\x1b[0m";
 
+/// The 16 named colors in SGR order: 30-37, then the bright 90-97.
+const NAMED: [Color; 16] = [
+    Color::Black,
+    Color::Red,
+    Color::Green,
+    Color::Yellow,
+    Color::Blue,
+    Color::Magenta,
+    Color::Cyan,
+    Color::Gray,
+    Color::DarkGray,
+    Color::LightRed,
+    Color::LightGreen,
+    Color::LightYellow,
+    Color::LightBlue,
+    Color::LightMagenta,
+    Color::LightCyan,
+    Color::White,
+];
+
 fn color_code(out: &mut String, color: Color, background: bool) {
     let base = if background { 40 } else { 30 };
-    let bright = if background { 100 } else { 90 };
     let _ = match color {
-        Color::Reset => write!(out, "{}", if background { 49 } else { 39 }),
-        Color::Black => write!(out, "{base}"),
-        Color::Red => write!(out, "{}", base + 1),
-        Color::Green => write!(out, "{}", base + 2),
-        Color::Yellow => write!(out, "{}", base + 3),
-        Color::Blue => write!(out, "{}", base + 4),
-        Color::Magenta => write!(out, "{}", base + 5),
-        Color::Cyan => write!(out, "{}", base + 6),
-        Color::Gray => write!(out, "{}", base + 7),
-        Color::DarkGray => write!(out, "{bright}"),
-        Color::LightRed => write!(out, "{}", bright + 1),
-        Color::LightGreen => write!(out, "{}", bright + 2),
-        Color::LightYellow => write!(out, "{}", bright + 3),
-        Color::LightBlue => write!(out, "{}", bright + 4),
-        Color::LightMagenta => write!(out, "{}", bright + 5),
-        Color::LightCyan => write!(out, "{}", bright + 6),
-        Color::White => write!(out, "{}", bright + 7),
+        Color::Reset => write!(out, "{}", base + 9),
         Color::Indexed(index) => write!(out, "{};5;{index}", base + 8),
         Color::Rgb(r, g, b) => write!(out, "{};2;{r};{g};{b}", base + 8),
+        named => {
+            let index = NAMED.iter().position(|color| *color == named).unwrap_or(0);
+            write!(out, "{}", base + index % 8 + 60 * (index / 8))
+        }
     };
 }
 
@@ -94,24 +101,7 @@ pub fn line_to_ansi(line: &Line<'_>) -> String {
 pub const CURSOR_MARKER: &str = "\x1b_pi:c\x07";
 
 fn basic_color(index: u16, bright: bool) -> Color {
-    match (index, bright) {
-        (0, false) => Color::Black,
-        (1, false) => Color::Red,
-        (2, false) => Color::Green,
-        (3, false) => Color::Yellow,
-        (4, false) => Color::Blue,
-        (5, false) => Color::Magenta,
-        (6, false) => Color::Cyan,
-        (7, false) => Color::Gray,
-        (0, true) => Color::DarkGray,
-        (1, true) => Color::LightRed,
-        (2, true) => Color::LightGreen,
-        (3, true) => Color::LightYellow,
-        (4, true) => Color::LightBlue,
-        (5, true) => Color::LightMagenta,
-        (6, true) => Color::LightCyan,
-        _ => Color::White,
-    }
+    NAMED[usize::from(index.min(7)) + 8 * usize::from(bright)]
 }
 
 /// An extended color from `38`/`48` parameters; consumes what it reads.

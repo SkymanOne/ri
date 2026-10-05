@@ -99,10 +99,7 @@ impl TextInput {
     /// Replaces the text; the cursor stays where it was, within the text.
     pub fn set_value(&mut self, value: &str) {
         self.value = value.to_owned();
-        self.cursor = self.cursor.min(self.value.len());
-        while !self.value.is_char_boundary(self.cursor) {
-            self.cursor -= 1;
-        }
+        self.cursor = self.value.floor_char_boundary(self.cursor);
     }
 
     /// Handles one key or paste.

@@ -256,16 +256,8 @@ impl<'a> Builder<'a> {
                     href: dest_url.into_string(),
                 });
             }
-            Event::Start(Tag::Image { .. }) => {
-                let children = self.inlines(TagEnd::Image);
-                out.extend(children);
-            }
-            Event::Start(Tag::Superscript) => {
-                let children = self.inlines(TagEnd::Superscript);
-                out.extend(children);
-            }
-            Event::Start(Tag::Subscript) => {
-                let children = self.inlines(TagEnd::Subscript);
+            Event::Start(tag @ (Tag::Image { .. } | Tag::Superscript | Tag::Subscript)) => {
+                let children = self.inlines(tag.to_end());
                 out.extend(children);
             }
             _ => {}
@@ -529,17 +521,9 @@ fn quote_spans(spans: Vec<Span<'static>>, quote: Style) -> Vec<Span<'static>> {
         .collect()
 }
 
-fn line_of(spans: Vec<Span<'static>>) -> StyledLine {
-    Line::from(spans)
-}
-
 fn longest_word(line: &StyledLine, cap: usize) -> usize {
-    let text: String = line
-        .spans
-        .iter()
-        .map(|span| span.content.as_ref())
-        .collect();
-    text.split_whitespace()
+    crate::lines::plain(line)
+        .split_whitespace()
         .map(visible_width)
         .max()
         .unwrap_or(0)
@@ -622,15 +606,15 @@ impl Renderer<'_> {
                     ));
                 }
                 spans.extend(self.inlines(inlines, style));
-                lines.push(line_of(spans));
+                lines.push(Line::from(spans));
                 spaced_unless(&mut lines, false);
             }
             Block::Paragraph(inlines) => {
-                lines.push(line_of(self.inlines(inlines, self.text_style(quoted))));
+                lines.push(Line::from(self.inlines(inlines, self.text_style(quoted))));
                 spaced_unless(&mut lines, true);
             }
             Block::Text(inlines) => {
-                lines.push(line_of(self.inlines(inlines, self.text_style(quoted))))
+                lines.push(Line::from(self.inlines(inlines, self.text_style(quoted))))
             }
             Block::Code(lang, code) => {
                 let border = self.theme.code_block_border;
@@ -672,7 +656,7 @@ impl Renderer<'_> {
                 }
                 let quote_style = self.theme.quote.add_modifier(Modifier::ITALIC);
                 for line in inner {
-                    let styled = line_of(quote_spans(line.spans, quote_style));
+                    let styled = Line::from(quote_spans(line.spans, quote_style));
                     for wrapped in wrap(&styled, quote_width) {
                         let mut spans = vec![Span::styled("│ ", self.theme.quote_border)];
                         spans.extend(wrapped.spans);
@@ -807,7 +791,7 @@ impl Renderer<'_> {
         }
         let for_cells = available - overhead;
         let style = self.text_style(quoted);
-        let render = |cell: &[Inline]| line_of(self.inlines(cell, style));
+        let render = |cell: &[Inline]| Line::from(self.inlines(cell, style));
         let header_lines: Vec<StyledLine> = header.iter().map(|cell| render(cell)).collect();
         let row_lines: Vec<Vec<StyledLine>> = rows
             .iter()

@@ -74,11 +74,29 @@ pub enum SelectEvent {
 #[derive(Clone, Debug)]
 pub struct SelectList {
     items: Vec<SelectItem>,
-    filtered: Vec<usize>,
     selected: usize,
     max_visible: usize,
     theme: SelectListTheme,
     layout: SelectListLayout,
+}
+
+/// The first and one-past-last of `count` rows a window of `max_visible`
+/// shows around `selected`, as pi-tui's lists scroll.
+pub fn visible_range(selected: usize, count: usize, max_visible: usize) -> (usize, usize) {
+    let start = selected
+        .saturating_sub(max_visible / 2)
+        .min(count.saturating_sub(max_visible));
+    (start, (start + max_visible).min(count))
+}
+
+/// The row after `selected`, or before it unless `forward`, wrapping around
+/// `count` rows.
+pub fn step(selected: usize, count: usize, forward: bool) -> usize {
+    match count {
+        0 => 0,
+        _ if forward => (selected + 1) % count,
+        _ => (selected + count - 1) % count,
+    }
 }
 
 fn single_line(text: &str) -> String {
@@ -98,10 +116,8 @@ impl SelectList {
         theme: SelectListTheme,
         layout: SelectListLayout,
     ) -> SelectList {
-        let filtered = (0..items.len()).collect();
         SelectList {
             items,
-            filtered,
             selected: 0,
             max_visible,
             theme,
@@ -109,43 +125,23 @@ impl SelectList {
         }
     }
 
-    /// Keeps the items whose value starts with `filter`, ignoring case.
-    pub fn set_filter(&mut self, filter: &str) {
-        let filter = filter.to_lowercase();
-        self.filtered = (0..self.items.len())
-            .filter(|&index| self.items[index].value.to_lowercase().starts_with(&filter))
-            .collect();
-        self.selected = 0;
-    }
-
     /// Highlights the `index`th visible item, clamped to the list.
     pub fn set_selected_index(&mut self, index: usize) {
-        self.selected = index.min(self.filtered.len().saturating_sub(1));
+        self.selected = index.min(self.items.len().saturating_sub(1));
     }
 
     /// The highlighted item.
     pub fn selected_item(&self) -> Option<&SelectItem> {
-        self.filtered
-            .get(self.selected)
-            .map(|&index| &self.items[index])
+        self.items.get(self.selected)
     }
 
     /// Handles a key.
     pub fn handle_input(&mut self, data: &str, keybindings: &Keybindings) -> SelectEvent {
-        let count = self.filtered.len();
         if keybindings.matches(data, "tui.select.up") {
-            self.selected = if self.selected == 0 {
-                count.saturating_sub(1)
-            } else {
-                self.selected - 1
-            };
+            self.selected = step(self.selected, self.items.len(), false);
             SelectEvent::Moved
         } else if keybindings.matches(data, "tui.select.down") {
-            self.selected = if self.selected + 1 >= count {
-                0
-            } else {
-                self.selected + 1
-            };
+            self.selected = step(self.selected, self.items.len(), true);
             SelectEvent::Moved
         } else if keybindings.matches(data, "tui.select.confirm") {
             match self.selected_item() {
@@ -157,14 +153,6 @@ impl SelectList {
         } else {
             SelectEvent::Ignored
         }
-    }
-
-    fn visible_range(&self) -> (usize, usize) {
-        let count = self.filtered.len();
-        let start = (self.selected as isize - (self.max_visible / 2) as isize)
-            .min(count as isize - self.max_visible as isize)
-            .max(0) as usize;
-        (start, (start + self.max_visible).min(count))
     }
 
     fn display_value(item: &SelectItem) -> &str {
@@ -188,11 +176,9 @@ impl SelectList {
             .unwrap_or(DEFAULT_PRIMARY_COLUMN_WIDTH);
         let (min, max) = (raw_min.min(raw_max).max(1), raw_min.max(raw_max).max(1));
         let widest = self
-            .filtered
+            .items
             .iter()
-            .map(|&index| {
-                visible_width(Self::display_value(&self.items[index])) + PRIMARY_COLUMN_GAP
-            })
+            .map(|item| visible_width(Self::display_value(item)) + PRIMARY_COLUMN_GAP)
             .max()
             .unwrap_or(0);
         widest.clamp(min, max)
@@ -200,22 +186,26 @@ impl SelectList {
 
     /// The rows for `width` columns.
     pub fn render(&self, width: usize) -> Vec<Line<'static>> {
-        if self.filtered.is_empty() {
+        if self.items.is_empty() {
             return vec![Line::from(Span::styled(
                 "  No matching commands",
                 self.theme.no_match,
             ))];
         }
         let primary = self.primary_column_width();
-        let (start, end) = self.visible_range();
+        let (start, end) = visible_range(self.selected, self.items.len(), self.max_visible);
         let mut lines: Vec<Line<'static>> = (start..end)
             .map(|position| {
-                let item = &self.items[self.filtered[position]];
-                self.render_item(item, position == self.selected, width, primary)
+                self.render_item(
+                    &self.items[position],
+                    position == self.selected,
+                    width,
+                    primary,
+                )
             })
             .collect();
-        if start > 0 || end < self.filtered.len() {
-            let text = format!("  ({}/{})", self.selected + 1, self.filtered.len());
+        if start > 0 || end < self.items.len() {
+            let text = format!("  ({}/{})", self.selected + 1, self.items.len());
             lines.push(Line::from(Span::styled(
                 truncate_to_width(&text, width.saturating_sub(2), "", false),
                 self.theme.scroll_info,
@@ -336,12 +326,16 @@ mod tests {
             list.selected_item().map(|item| item.value.as_str()),
             Some("item2")
         );
-        list.set_filter("ITEM1");
         assert_eq!(
             list.handle_input("\r", &keybindings),
-            SelectEvent::Selected(items(3)[1].clone())
+            SelectEvent::Selected(items(3)[2].clone())
         );
-        list.set_filter("zzz");
-        assert_eq!(plain(&list.render(40)), ["  No matching commands"]);
+        let empty = SelectList::new(
+            Vec::new(),
+            5,
+            SelectListTheme::default(),
+            SelectListLayout::default(),
+        );
+        assert_eq!(plain(&empty.render(40)), ["  No matching commands"]);
     }
 }

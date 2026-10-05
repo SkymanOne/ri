@@ -198,31 +198,13 @@ struct PathPrefix<'a> {
 }
 
 fn parse_path_prefix(prefix: &str) -> PathPrefix<'_> {
-    if let Some(raw) = prefix.strip_prefix("@\"") {
-        PathPrefix {
-            raw,
-            at: true,
-            quoted: true,
-        }
-    } else if let Some(raw) = prefix.strip_prefix('"') {
-        PathPrefix {
-            raw,
-            at: false,
-            quoted: true,
-        }
-    } else if let Some(raw) = prefix.strip_prefix('@') {
-        PathPrefix {
-            raw,
-            at: true,
-            quoted: false,
-        }
-    } else {
-        PathPrefix {
-            raw: prefix,
-            at: false,
-            quoted: false,
-        }
-    }
+    let (at, rest) = prefix
+        .strip_prefix('@')
+        .map_or((false, prefix), |rest| (true, rest));
+    let (quoted, raw) = rest
+        .strip_prefix('"')
+        .map_or((false, rest), |raw| (true, raw));
+    PathPrefix { raw, at, quoted }
 }
 
 fn completion_value(path: &str, at: bool, quoted: bool) -> String {
@@ -282,22 +264,10 @@ fn fd_path_query(query: &str) -> String {
         return normalized;
     }
     const SEPARATOR: &str = "[\\\\/]";
-    let escape = |segment: &str| {
-        segment
-            .chars()
-            .map(|c| {
-                if ".*+?^${}()|[]\\".contains(c) {
-                    format!("\\{c}")
-                } else {
-                    c.to_string()
-                }
-            })
-            .collect::<String>()
-    };
     let mut pattern = trimmed
         .split('/')
         .filter(|segment| !segment.is_empty())
-        .map(escape)
+        .map(regex_lite::escape)
         .collect::<Vec<_>>()
         .join(SEPARATOR);
     if normalized.ends_with('/') {

@@ -1172,14 +1172,7 @@ fn oklab_lightness(rgb: [f64; 3]) -> f64 {
 }
 
 fn relative_luminance(rgb: [f64; 3]) -> f64 {
-    let linear = |channel: f64| {
-        let value = channel / 255.0;
-        if value <= 0.04045 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
-        }
-    };
+    let linear = |channel: f64| crate::color::srgb_to_linear(channel / 255.0);
     0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
 }
 

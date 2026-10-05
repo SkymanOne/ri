@@ -220,12 +220,43 @@ struct Kitty {
     event: KeyEventType,
 }
 
+impl Kitty {
+    /// A key without shifted or base-layout codes.
+    fn plain(code: i64, modifier: u32, event: KeyEventType) -> Kitty {
+        Kitty {
+            code,
+            shifted: None,
+            base_layout: None,
+            modifier,
+            event,
+        }
+    }
+}
+
 /// Reads a run of ASCII digits from the front of `text`.
 fn digits(text: &str) -> (Option<i64>, &str) {
     let end = text
         .find(|c: char| !c.is_ascii_digit())
         .unwrap_or(text.len());
     (text[..end].parse().ok(), &text[end..])
+}
+
+/// The `[; mod] [: event]` end of a CSI key: its modifier, 1 when absent, and
+/// event; `None` when anything else follows.
+fn mod_event(mut rest: &str) -> Option<(i64, Option<i64>)> {
+    let mut modifier = 1;
+    if let Some(after) = rest.strip_prefix(';') {
+        let (value, after) = digits(after);
+        modifier = value?;
+        rest = after;
+    }
+    let mut event = None;
+    if let Some(after) = rest.strip_prefix(':') {
+        let (value, after) = digits(after);
+        event = Some(value?);
+        rest = after;
+    }
+    rest.is_empty().then_some((modifier, event))
 }
 
 fn event_type(value: Option<i64>) -> KeyEventType {
@@ -254,21 +285,7 @@ fn parse_csi_u(data: &str) -> Option<Kitty> {
             rest = after;
         }
     }
-    let mut modifier = 1;
-    let mut event = None;
-    if let Some(after) = rest.strip_prefix(';') {
-        let (value, after) = digits(after);
-        modifier = value?;
-        rest = after;
-    }
-    if let Some(after) = rest.strip_prefix(':') {
-        let (value, after) = digits(after);
-        event = Some(value?);
-        rest = after;
-    }
-    if !rest.is_empty() {
-        return None;
-    }
+    let (modifier, event) = mod_event(rest)?;
     Some(Kitty {
         code,
         shifted,
@@ -304,23 +321,9 @@ fn parse_modified_final(data: &str, finals: &str) -> Option<(char, u32, KeyEvent
 /// `ESC [ num [; mod] [: event] ~` for functional keys.
 fn parse_functional(data: &str) -> Option<Kitty> {
     let body = data.strip_prefix("\x1b[")?.strip_suffix('~')?;
-    let (number, mut rest) = digits(body);
+    let (number, rest) = digits(body);
     let number = number?;
-    let mut modifier = 1;
-    if let Some(after) = rest.strip_prefix(';') {
-        let (value, after) = digits(after);
-        modifier = value?;
-        rest = after;
-    }
-    let mut event = None;
-    if let Some(after) = rest.strip_prefix(':') {
-        let (value, after) = digits(after);
-        event = Some(value?);
-        rest = after;
-    }
-    if !rest.is_empty() {
-        return None;
-    }
+    let (modifier, event) = mod_event(rest)?;
     let code = match number {
         2 => INSERT,
         3 => DELETE,
@@ -330,13 +333,11 @@ fn parse_functional(data: &str) -> Option<Kitty> {
         8 => END,
         _ => return None,
     };
-    Some(Kitty {
+    Some(Kitty::plain(
         code,
-        shifted: None,
-        base_layout: None,
-        modifier: u32::try_from(modifier - 1).ok()?,
-        event: event_type(event),
-    })
+        u32::try_from(modifier - 1).ok()?,
+        event_type(event),
+    ))
 }
 
 fn parse_kitty(data: &str) -> Option<Kitty> {
@@ -350,25 +351,17 @@ fn parse_kitty(data: &str) -> Option<Kitty> {
             'C' => RIGHT,
             _ => LEFT,
         };
-        return Some(Kitty {
-            code,
-            shifted: None,
-            base_layout: None,
-            modifier,
-            event,
-        });
+        return Some(Kitty::plain(code, modifier, event));
     }
     if let Some(kitty) = parse_functional(data) {
         return Some(kitty);
     }
     let (last, modifier, event) = parse_modified_final(data, "HF")?;
-    Some(Kitty {
-        code: if last == 'H' { HOME } else { END },
-        shifted: None,
-        base_layout: None,
+    Some(Kitty::plain(
+        if last == 'H' { HOME } else { END },
         modifier,
         event,
-    })
+    ))
 }
 
 /// `ESC [ 27 ; mod ; code ~`, xterm's modifyOtherKeys.
@@ -382,20 +375,23 @@ fn parse_modify_other_keys(data: &str) -> Option<(i64, u32)> {
     Some((code?, u32::try_from(modifier? - 1).ok()?))
 }
 
+/// Whether input carries the Kitty event type `event` (flag 2). Pasted text
+/// never does.
+fn has_event(data: &str, event: char) -> bool {
+    !data.contains("\x1b[200~")
+        && "u~ABCDHF"
+            .chars()
+            .any(|last| data.contains(&format!(":{event}{last}")))
+}
+
 /// Whether input is a Kitty key release (flag 2). Pasted text never is.
 pub fn is_key_release(data: &str) -> bool {
-    !data.contains("\x1b[200~")
-        && [":3u", ":3~", ":3A", ":3B", ":3C", ":3D", ":3H", ":3F"]
-            .iter()
-            .any(|marker| data.contains(marker))
+    has_event(data, '3')
 }
 
 /// Whether input is a Kitty key repeat (flag 2). Pasted text never is.
 pub fn is_key_repeat(data: &str) -> bool {
-    !data.contains("\x1b[200~")
-        && [":2u", ":2~", ":2A", ":2B", ":2C", ":2D", ":2H", ":2F"]
-            .iter()
-            .any(|marker| data.contains(marker))
+    has_event(data, '2')
 }
 
 fn raw_ctrl_char(key: &str) -> Option<String> {
