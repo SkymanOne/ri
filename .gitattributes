@@ -1,3 +1,3 @@
-crates/ri-ext/ri-js.wasm binary
-guest/ri-js/js/vendor/*.mjs linguist-generated -diff
-crates/ri-ext/tests/fixtures/*.wasm binary
+crates/yapi-ext/yapi-js.wasm binary
+guest/yapi-js/js/vendor/*.mjs linguist-generated -diff
+crates/yapi-ext/tests/fixtures/*.wasm binary

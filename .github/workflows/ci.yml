@@ -53,7 +53,7 @@ jobs:
         env:
           # Hosted runners can pause longer than a desktop; terminal scenarios
           # wait this long for the screen to settle after each key.
-          RI_SETTLE_MS: "1200"
+          YAPI_SETTLE_MS: "1200"
 
   deny:
     runs-on: ubuntu-latest

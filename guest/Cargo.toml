@@ -6,8 +6,8 @@ members = [
     "examples/protected-paths",
     "examples/repo-status",
     "examples/todo",
-    "ri-extension-api",
-    "ri-js",
+    "yapi-extension-api",
+    "yapi-js",
 ]
 
 [workspace.package]

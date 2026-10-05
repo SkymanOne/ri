@@ -4,7 +4,7 @@
 //! A port of pi's `permission-gate.ts` example. pi asks for confirmation in
 //! the terminal; native handlers answer at once, so this one blocks.
 
-use ri_extension_api::{Api, FlagType, Value, get_flag, json};
+use yapi_extension_api::{Api, FlagType, Value, get_flag, json};
 
 /// Whether `command` matches pi's patterns: `rm -r…` or `rm --recursive`,
 /// `sudo`, and `chmod` or `chown` followed later by `777`.
@@ -38,9 +38,9 @@ fn init(api: &mut Api) {
         }
         Ok(Some(json!({
             "block": true,
-            "reason": "Dangerous command blocked. Start ri with --allow-dangerous to allow it.",
+            "reason": "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.",
         })))
     });
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);

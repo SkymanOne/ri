@@ -8,7 +8,7 @@
 
 use std::cell::RefCell;
 
-use ri_extension_api::{Api, Tool, ToolResult, Value, json, notify, request};
+use yapi_extension_api::{Api, Tool, ToolResult, Value, json, notify, request};
 
 #[derive(Clone)]
 struct State {
@@ -163,4 +163,4 @@ fn init(api: &mut Api) {
     );
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);

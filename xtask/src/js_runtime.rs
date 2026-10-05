@@ -1,4 +1,4 @@
-//! `cargo xtask js-runtime`: build the `ri-js` runtime component and record
+//! `cargo xtask js-runtime`: build the `yapi-js` runtime component and record
 //! the hash of its inputs next to it, so CI can reject a stale artifact
 //! without a wasm toolchain.
 
@@ -13,21 +13,21 @@ use sha2::{Digest as _, Sha256};
 const INPUTS: [&str; 6] = [
     "guest/Cargo.toml",
     "guest/Cargo.lock",
-    "guest/ri-js",
-    "guest/ri-extension-api",
+    "guest/yapi-js",
+    "guest/yapi-extension-api",
     "guest/examples",
     "wit",
 ];
-/// The JS runtime ri embeds.
-const ARTIFACT: &str = "crates/ri-ext/ri-js.wasm";
+/// The JS runtime yapi embeds.
+const ARTIFACT: &str = "crates/yapi-ext/yapi-js.wasm";
 /// The Rust SDK's example extensions, one crate each; test fixtures.
 const EXAMPLES: &str = "guest/examples";
 /// Where each example's build lands, as `<crate>.wasm`.
-const FIXTURES: &str = "crates/ri-ext/tests/fixtures";
-const RECORD: &str = "crates/ri-ext/ri-js.wasm.inputs";
+const FIXTURES: &str = "crates/yapi-ext/tests/fixtures";
+const RECORD: &str = "crates/yapi-ext/yapi-js.wasm.inputs";
 const TARGET: &str = "wasm32-wasip2";
 
-/// Build `crates/ri-ext/ri-js.wasm` from `guest/`.
+/// Build `crates/yapi-ext/yapi-js.wasm` from `guest/`.
 ///
 /// Needs the `wasm32-wasip2` Rust target (`rustup target add wasm32-wasip2`)
 /// and a WASI SDK for QuickJS's C sources, found through `--wasi-sdk` or
@@ -75,7 +75,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         "--target",
         TARGET,
         "-p",
-        "ri-js",
+        "yapi-js",
     ];
     for example in &examples {
         build.extend(["-p", example.as_str()]);
@@ -96,7 +96,10 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     if !status.success() {
         bail!("building the guest failed");
     }
-    fs::copy(target_dir.join(TARGET).join("release/ri_js.wasm"), ARTIFACT)?;
+    fs::copy(
+        target_dir.join(TARGET).join("release/yapi_js.wasm"),
+        ARTIFACT,
+    )?;
     fs::create_dir_all(FIXTURES)?;
     for example in &examples {
         let built = target_dir

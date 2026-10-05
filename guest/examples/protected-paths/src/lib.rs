@@ -3,7 +3,7 @@
 //!
 //! A port of pi's `protected-paths.ts` example, with the same messages.
 
-use ri_extension_api::{Api, json, notify};
+use yapi_extension_api::{Api, json, notify};
 
 const PROTECTED: [&str; 3] = [".env", ".git/", "node_modules/"];
 
@@ -29,4 +29,4 @@ fn init(api: &mut Api) {
     });
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);

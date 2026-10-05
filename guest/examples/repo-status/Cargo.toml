@@ -1,6 +1,6 @@
 [package]
 name = "repo-status"
-description = "An example native ri extension. Reports the git branch and uncommitted files, as a tool, a command and a startup warning."
+description = "An example native yapi extension. Reports the git branch and uncommitted files, as a tool, a command and a startup warning."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,4 +10,4 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-ri-extension-api = { path = "../../ri-extension-api" }
+yapi-extension-api = { path = "../../yapi-extension-api" }

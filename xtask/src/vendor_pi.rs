@@ -1,8 +1,8 @@
 //! `cargo xtask vendor-pi`: bundle the npm packages pi extensions import and
-//! ri provides, `typebox` and `@earendil-works/pi-tui`, into
-//! `guest/ri-js/js/vendor`. The bundles share chunks, so each package is
+//! yapi provides, `typebox` and `@earendil-works/pi-tui`, into
+//! `guest/yapi-js/js/vendor`. The bundles share chunks, so each package is
 //! included once. Also copies pi's HTML export template, unchanged, into
-//! `crates/ri/assets/export-html`.
+//! `crates/yapi/assets/export-html`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use anyhow::{Context, bail};
 
 /// The pinned esbuild release.
 const ESBUILD: &str = "esbuild@0.25.10";
-const VENDOR: &str = "guest/ri-js/js/vendor";
+const VENDOR: &str = "guest/yapi-js/js/vendor";
 /// Where the fixture generator's `npm ci` installs pi and its dependencies.
 const NODE_MODULES: &str =
     "tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules";
@@ -23,9 +23,9 @@ const ENTRIES: [(&str, &str); 4] = [
     ("typebox-compile", "typebox/compile"),
     ("pi-tui", "@earendil-works/pi-tui"),
 ];
-/// pi's HTML export template in the installed package, and where ri keeps it.
+/// pi's HTML export template in the installed package, and where yapi keeps it.
 const EXPORT_TEMPLATE: &str = "tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/dist/core/export-html";
-const EXPORT_ASSETS: &str = "crates/ri/assets/export-html";
+const EXPORT_ASSETS: &str = "crates/yapi/assets/export-html";
 const EXPORT_FILES: [&str; 5] = [
     "template.html",
     "template.css",

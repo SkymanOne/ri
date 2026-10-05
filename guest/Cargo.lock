@@ -114,7 +114,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "hello"
 version = "0.1.0"
 dependencies = [
- "ri-extension-api",
+ "yapi-extension-api",
 ]
 
 [[package]]
@@ -174,7 +174,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "permission-gate"
 version = "0.1.0"
 dependencies = [
- "ri-extension-api",
+ "yapi-extension-api",
 ]
 
 [[package]]
@@ -215,7 +215,7 @@ dependencies = [
 name = "protected-paths"
 version = "0.1.0"
 dependencies = [
- "ri-extension-api",
+ "yapi-extension-api",
 ]
 
 [[package]]
@@ -240,26 +240,7 @@ dependencies = [
 name = "repo-status"
 version = "0.1.0"
 dependencies = [
- "ri-extension-api",
-]
-
-[[package]]
-name = "ri-extension-api"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
-name = "ri-js"
-version = "0.1.0"
-dependencies = [
- "base64",
- "rquickjs",
- "serde_json",
- "unicode-segmentation",
- "wit-bindgen",
+ "yapi-extension-api",
 ]
 
 [[package]]
@@ -377,7 +358,7 @@ dependencies = [
 name = "todo"
 version = "0.1.0"
 dependencies = [
- "ri-extension-api",
+ "yapi-extension-api",
 ]
 
 [[package]]
@@ -554,6 +535,25 @@ dependencies = [
  "serde_json",
  "unicode-ident",
  "wasmparser",
+]
+
+[[package]]
+name = "yapi-extension-api"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "yapi-js"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rquickjs",
+ "serde_json",
+ "unicode-segmentation",
+ "wit-bindgen",
 ]
 
 [[package]]

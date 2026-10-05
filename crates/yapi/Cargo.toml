@@ -1,0 +1,37 @@
+[package]
+name = "yapi"
+description = "Coding agent CLI compatible with pi packages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+indexmap.workspace = true
+regex-lite.workspace = true
+ratatui-core.workspace = true
+yapi-ai.workspace = true
+yapi-core.workspace = true
+yapi-ext.workspace = true
+yapi-tui.workspace = true
+yapi-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+similar.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util", "sync"] }
+tokio-util.workspace = true
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+yapi-mock.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

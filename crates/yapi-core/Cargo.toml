@@ -1,0 +1,43 @@
+[package]
+name = "yapi-core"
+description = "Coding agent core: sessions, compaction, settings, resources, built-in tools, system prompt, packages, extension runner and MCP."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+indexmap.workspace = true
+yapi-agent.workspace = true
+regex-lite.workspace = true
+reqwest.workspace = true
+yapi-ai.workspace = true
+yapi-types.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+url.workspace = true
+similar.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
+tokio-util.workspace = true
+unicode-normalization.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[dev-dependencies]
+yapi-mock.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

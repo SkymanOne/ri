@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Context;
-use ri_mock::{Cassette, MockServer};
+use yapi_mock::{Cassette, MockServer};
 
 /// Serve a cassette with the mock provider server, or record one through a proxy to
 /// a real provider, until Ctrl-C or SIGTERM.
@@ -92,7 +92,7 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
 }
 
 fn write_json(path: &std::path::Path, value: &impl serde::Serialize) -> anyhow::Result<()> {
-    let json = ri_types::json::to_string_pretty(value, "  ")?;
+    let json = yapi_types::json::to_string_pretty(value, "  ")?;
     fs::write(path, json + "\n").with_context(|| format!("writing {}", path.display()))
 }
 

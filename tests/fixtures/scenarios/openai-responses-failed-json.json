@@ -603,7 +603,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       }
     },
@@ -631,7 +631,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       },
       "toolResults": []
@@ -661,7 +661,7 @@
           },
           "stopReason": "error",
           "timestamp": "<timestamp>",
-          "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
+          "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}",
           "thinkingLevel": "medium"
         }
       ],
@@ -672,7 +672,7 @@
       "attempt": 2,
       "maxAttempts": 3,
       "delayMs": 10,
-      "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}"
+      "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 2 (POST /v1/responses): no interactions left\"}"
     },
     {
       "type": "entry_appended",
@@ -721,7 +721,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       }
     },
@@ -749,7 +749,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       },
       "toolResults": []
@@ -779,7 +779,7 @@
           },
           "stopReason": "error",
           "timestamp": "<timestamp>",
-          "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
+          "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}",
           "thinkingLevel": "medium"
         }
       ],
@@ -790,7 +790,7 @@
       "attempt": 3,
       "maxAttempts": 3,
       "delayMs": 20,
-      "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}"
+      "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 3 (POST /v1/responses): no interactions left\"}"
     },
     {
       "type": "entry_appended",
@@ -839,7 +839,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       }
     },
@@ -867,7 +867,7 @@
         },
         "stopReason": "error",
         "timestamp": "<timestamp>",
-        "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
+        "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
         "thinkingLevel": "medium"
       },
       "toolResults": []
@@ -897,7 +897,7 @@
           },
           "stopReason": "error",
           "timestamp": "<timestamp>",
-          "errorMessage": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
+          "errorMessage": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}",
           "thinkingLevel": "medium"
         }
       ],
@@ -907,7 +907,7 @@
       "type": "auto_retry_end",
       "success": false,
       "attempt": 3,
-      "finalError": "OpenAI API error (500): {\"type\":\"ri_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}"
+      "finalError": "OpenAI API error (500): {\"type\":\"yapi_mock\",\"message\":\"request 4 (POST /v1/responses): no interactions left\"}"
     },
     {
       "type": "agent_settled"

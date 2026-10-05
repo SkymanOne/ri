@@ -67,7 +67,7 @@ The following semantics shape the boundary. Sources are `src/core/extensions/{lo
 
 ### Zed
 
-The template for the native tier. ri adopts Zed's WIT versioning, build target, epoch limits and default-grant model.
+The template for the native tier. yapi adopts Zed's WIT versioning, build target, epoch limits and default-grant model.
 - Extensions are components built for `wasm32-wasip2` (`crates/extension/src/extension_builder.rs`).
 - Each released WIT world is frozen in `crates/extension_api/wit/since_vX.Y.Z/`. Ten versions exist so far, from `since_v0.0.1` to `since_v0.8.0`, and the host has bindings for each.
 - The host enables epoch interruption (`crates/extension_host/src/wasm_host.rs`).
@@ -87,14 +87,14 @@ Scope decisions:
 - Custom TUI rendering is a non-goal ("core owns the UI").
 - The project has dropped strict drop-in parity as "both impractical and undesirable".
 
-Lessons for ri:
+Lessons for yapi:
 - Invest in module resolution early.
 - Use real pi as a differential oracle. pi_agent_rust compares its runtime against a Bun-based pi harness.
 - Treat UI compatibility as a first-class requirement rather than leaving it out.
 
 ### pi itself
 
-`pi-codemode` already runs QuickJS-NG on WASI (`quickjs-wasi`) as a sandbox whose only capability is calling tools. ri's codemode reuses `ri-js` with no grants.
+`pi-codemode` already runs QuickJS-NG on WASI (`quickjs-wasi`) as a sandbox whose only capability is calling tools. yapi's codemode reuses `yapi-js` with no grants.
 
 ### Other agents
 
@@ -102,7 +102,7 @@ goose and Codex CLI extend through MCP servers and external processes. Neither r
 
 ## Chosen design
 
-`ri-ext` hosts native extension components and one JS runtime component, `ri-js`, on wasmtime. Mechanics and rationale are in [AGENTS.md](../../AGENTS.md#extension-system).
+`yapi-ext` hosts native extension components and one JS runtime component, `yapi-js`, on wasmtime. Mechanics and rationale are in [AGENTS.md](../../AGENTS.md#extension-system).
 
 ## Risks
 
@@ -113,15 +113,15 @@ goose and Codex CLI extend through MCP servers and external processes. Neither r
 | QuickJS gaps: `Intl.Segmenter`, which pi-tui's editor uses, and the `Intl` formatters. | Guest polyfills that share ratatui's `unicode-width` tables. |
 | ANSI bridge losses: OSC 8 links and image escapes. | pi-tui in the guest reports no hyperlink or image support (its `TerminalCapabilities`), so components use their text fallbacks. Remaining escapes are stripped. Listed in [compat.md](../../docs/compat.md). |
 | QuickJS is an interpreter and slower than V8 on CPU-heavy code. | Wizer snapshot of the vendored modules, render caching, bytecode cache. A sidecar remains possible. |
-| Upstream API drift. | Pin the pi version per ri release. Diff the extension `types.ts` on every bump. Pin the oracle to the same version. |
-| First-run compile latency for `ri-js.wasm`. | Lazy instantiation, a cached `.cwasm`, and optionally precompiled artifacts in releases. |
+| Upstream API drift. | Pin the pi version per yapi release. Diff the extension `types.ts` on every bump. Pin the oracle to the same version. |
+| First-run compile latency for `yapi-js.wasm`. | Lazy instantiation, a cached `.cwasm`, and optionally precompiled artifacts in releases. |
 
 ## Platform status
 
 Accessed 2026-10-02.
 - WASI 0.3.0 was released on 2026-06-11. It adds `async func`, `stream<T>` and `future<T>` to the component model.
 - Wasmtime 46.0.0 (2026-06-22) states: "Wasmtime now supports WASI 0.3.0 by default and the `component-model-async` wasm feature is now enabled by default." The current release is 49.0.1 (2026-09-24).
-- ri targets wasip2 now. Async exports and streams become a new WIT version once guest toolchains for wasip3 are stable.
+- yapi targets wasip2 now. Async exports and streams become a new WIT version once guest toolchains for wasip3 are stable.
 
 ## Sources
 

@@ -5,7 +5,7 @@
 //! Shows `exec`, which runs a process and waits for it. The extension needs
 //! the process grant, which every extension has by default.
 
-use ri_extension_api::{Api, Context, Tool, ToolResult, exec, json, notify};
+use yapi_extension_api::{Api, Context, Tool, ToolResult, exec, json, notify};
 
 /// The branch and the changed files, or `None` outside a git repository.
 fn status(ctx: &Context) -> Option<(String, Vec<String>)> {
@@ -67,4 +67,4 @@ fn init(api: &mut Api) {
     ));
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);
