@@ -62,7 +62,7 @@ Compatibility is measured against Pi itself, with both programs loading the same
 | Test | Result |
 |---|---|
 | Pi's example extensions | 79 of 79 register the same tools, commands, flags, shortcuts and event handlers as in Pi |
-| The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox give the same registrations and load errors (93%). Of the 367 whose extensions load in Pi without errors, 349 register the same in yapi (95%). |
+| The 500 most-downloaded Pi packages on npm | 418 of 500 work without errors |
 | Extension UI | Dialogs, widgets, overlays and custom components match Pi's screens row for row at 80×24 and 120×40 |
 
 `yapi new shout` creates a native extension as a Cargo project that is also a package. Its `src/lib.rs` registers what the extension offers:

@@ -43,6 +43,6 @@ yapi is tested against Pi itself. Every check below runs both programs on the sa
 | End-to-end scenarios | 245 of 245 match Pi: 97 terminal screens, 51 JSON event streams, 77 CLI and print mode runs, 19 RPC sessions and Pi's own RPC client |
 | Settings, credentials and session files | Read and written back byte for byte |
 | Pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in Pi |
-| The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox behave the same (93%). [Extensions](extensions.md#compatibility-with-pi-extensions) has the breakdown. |
+| The 500 most-downloaded Pi packages on npm | 418 of 500 work without errors. [Extensions](extensions.md#compatibility-with-pi-extensions) has the breakdown. |
 
 yapi is pre-release software. Report problems in the [issue tracker](https://github.com/SkymanOne/yapi/issues).
