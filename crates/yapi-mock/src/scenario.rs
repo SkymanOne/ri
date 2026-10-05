@@ -205,12 +205,32 @@ pub fn load_scenarios() -> Result<Vec<Scenario>, Error> {
     serde_json::from_str(&text).map_err(|source| Error::Parse { path, source })
 }
 
+/// The length of every run's root directory path. Screens show paths under the
+/// root, and pi's goldens wrap them where a root of 36 to 54 characters does:
+/// some rows need a path to fit, others need it to move to the next row. A
+/// fixed length in the middle keeps the process id, the run counter and the
+/// platform's temporary directory, such as macOS's `/private/tmp`, from moving
+/// those wraps.
+const ROOT_LEN: usize = 45;
+
+/// A fresh directory for one run, named after the scenario and padded or
+/// truncated to [`ROOT_LEN`].
 fn scratch_dir(name: &str) -> PathBuf {
     static COUNTER: OnceLock<std::sync::atomic::AtomicU64> = OnceLock::new();
     let n = COUNTER
         .get_or_init(Default::default)
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    scratch_base().join(format!("yapi-scenario-{}-{n}-{name}", std::process::id()))
+    let base = scratch_base();
+    let unique = format!("yapi-{}-{n}", std::process::id());
+    let len = ROOT_LEN
+        .saturating_sub(base.to_string_lossy().chars().count() + 1)
+        .max(unique.len());
+    let dir: String = format!("{unique}-{name}")
+        .chars()
+        .chain(std::iter::repeat('-'))
+        .take(len)
+        .collect();
+    base.join(dir)
 }
 
 /// Where scenarios run: `/tmp` with symlinks resolved, as programs report
@@ -1090,4 +1110,22 @@ pub fn first_difference(expected: &Value, actual: &Value) -> Option<String> {
         }
     }
     walk("$", expected, actual)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roots_have_a_fixed_length() {
+        for name in ["a", "tui-trust-command-save", &"x".repeat(80)] {
+            let root = scratch_dir(name);
+            assert_eq!(
+                root.to_string_lossy().chars().count(),
+                ROOT_LEN,
+                "{}",
+                root.display()
+            );
+        }
+    }
 }

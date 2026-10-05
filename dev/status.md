@@ -238,21 +238,21 @@ Done for the slice below.
 - `yapi import pi` copies pi's agent directory (settings, credentials, models, keybindings, MCP servers, trust, system prompt files, sessions, prompts, skills, themes, extensions and packages) and the current project's `.pi` into yapi's, keeping files yapi already has.
 - A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64, with checksums.
 
-Budgets, from `cargo xtask bench --pi` with Pi `1.0.0` installed from npm with `--ignore-scripts` (release build, 100×40 terminal; medians of 20 alternating startups and 5 memory samples; 200 keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler). Linux is an x86_64 VM (Xeon at 2.1 GHz, 4 threads); [docs/performance.md](../docs/performance.md) has the ranges. MB means 10^6 bytes.
+Budgets, from `cargo xtask bench --pi` with Pi `1.0.0` installed from npm with `--ignore-scripts` (release build, 100×40 terminal; medians of 20 alternating startups and 5 memory samples; 200 keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler). Linux is an x86_64 VM (Xeon at 2.1 GHz, 4 threads). macOS is GitHub's hosted `macos-latest` runner (Apple M1 VM, 3 threads), measured by the Bench workflow. Its `ubuntu-latest` run met every budget too. [docs/performance.md](../docs/performance.md) has the ranges and the hosted Linux results. MB means 10^6 bytes.
 
-| Metric | Budget | yapi, Linux | Pi, Linux |
-|---|---|---|---|
-| `--version` | < 5 ms | 2.2 ms | 240.5 ms |
-| Print mode, start to first request byte | < 25 ms | 13.2 ms | 332.5 ms |
-| Interactive first paint | < 40 ms | 9.1 ms | 308.4 ms |
-| Keystroke to paint, p99 | < 16 ms | 2.3 ms | 6.5 ms |
-| Idle memory, no extensions | < 30 MB | 19.5 MB | 115.0 MB |
-| Idle memory, 10 JS extensions | < 70 MB | 32.2 MB | 118.3 MB |
-| Stripped release binary | < 35 MB | 32.2 MB | 245.2 MB installed |
+| Metric | Budget | yapi, Linux | Pi, Linux | yapi, macOS | Pi, macOS |
+|---|---|---|---|---|---|
+| `--version` | < 5 ms | 2.2 ms | 240.5 ms | 6.7 ms | 182.2 ms |
+| Print mode, start to first request byte | < 25 ms | 13.2 ms | 332.5 ms | 12.1 ms | 259.4 ms |
+| Interactive first paint | < 40 ms | 9.1 ms | 308.4 ms | 15.8 ms | 271.1 ms |
+| Keystroke to paint, p99 | < 16 ms | 2.3 ms | 6.5 ms | 10.6 ms | 10.4 ms |
+| Idle memory, no extensions | < 30 MB | 19.5 MB | 115.0 MB | 16.3 MB | 125.9 MB |
+| Idle memory, 10 JS extensions | < 70 MB | 32.2 MB | 118.3 MB | 26.8 MB | 129.8 MB |
+| Stripped release binary | < 35 MB | 32.2 MB | 245.2 MB installed | 26.3 MB | 233.9 MB installed |
 
 The providers of PR A had pushed the binary to 37.0 MB and print mode to 21 ms. The binary now embeds the JS runtime deflated (1.7 MB less) and builds Cranelift's code generator for size (3.1 MB less, and about 0.2 s more for the one compile per runtime version). Print mode lost 8 ms: enabling the llama.cpp provider no longer rebuilds the model list when it has no stored catalog, and the provider sort computes each key once.
 
-macOS was last measured before these changes, on GitHub's hosted `macos-latest` runner (arm64 VM): `--version` 4.5 to 6.7 ms over five runs, against the 5 ms budget, with every other budget met. The `--version` overhead is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower, the same as `yapi --version`. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store.
+On macOS, `--version` misses its budget: 6.7 ms (6.1 to 9.0), 5.0 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The other 2.9 ms is not traced yet. Keystroke p99 on that runner is close to Pi's (10.6 ms and 10.4 ms), and single startup samples there reach 463 ms.
 
 The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
@@ -263,7 +263,7 @@ Not yet done:
 - `codemode.mode: "only"`, which hides direct tools from requests; yapi treats it as `on`.
 - Grammar-constrained sampling of scripts on the Responses wire APIs.
 - The warning pi prints when a package's `codemode` replaces the built-in.
-- `--version` within its budget on macOS, which needs yapi to stop linking Security and CoreFoundation; see the budgets above.
+- `--version` within its budget on macOS. It needs yapi to stop linking Security and CoreFoundation and the rest of the overhead traced; see the budgets above.
 
 ## Final end-to-end pass
 
@@ -277,7 +277,7 @@ Run on Linux x86_64 after the rename to yapi, at the head of this branch.
 | pi's example extensions | `crates/yapi-ext/tests/examples.rs` | 79 of 79 register as in pi. |
 | Top 500 npm Pi packages | `cargo xtask package-registrations` | 443 of the 475 that Pi loads in the sandbox register as in Pi (93%), and 349 of the 367 whose extensions load cleanly in Pi (95%); see M5. |
 | Codemode sandbox | `crates/yapi-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
-| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `ubuntu-latest` and `macos-latest` | All met on Linux; see M7. |
+| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `ubuntu-latest` and `macos-latest` | All met on Linux. On macOS all but `--version`; see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
 Deferred work is listed under each milestone; intentional differences are in [compat.md](../docs/compat.md).

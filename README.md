@@ -101,7 +101,7 @@ yapi is one native executable, so it does not pay for starting Node.js and loadi
 | Idle memory with 10 JS extensions | 32.2 MB | 118.3 MB |
 | Install size | 32.2 MB | 245.2 MB with Node.js |
 
-`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges and the budgets.
+`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges, the budgets and results from GitHub's hosted Linux and macOS runners. On the macOS runner, `--version` takes 6.7 ms against its 5 ms budget, and keystroke latency is close to Pi's.
 
 ## Development
 
