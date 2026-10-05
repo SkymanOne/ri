@@ -26,19 +26,33 @@ trap cleanup EXIT
 
 # GitHub serves the latest release's files under latest/download as well.
 for path in "download/$tag" latest/download; do
-    mkdir -p "$work/site/SkymanOne/ri/releases/$path"
-    cp "$dist"/yapi-* "$work/site/SkymanOne/ri/releases/$path/"
+    mkdir -p "$work/site/SkymanOne/yapi/releases/$path"
+    cp "$dist"/yapi-* "$work/site/SkymanOne/yapi/releases/$path/"
 done
 
-# A certificate authority and a certificate for 127.0.0.1 that it signs.
+# A certificate authority and a certificate for 127.0.0.1 that it signs. The
+# extensions are explicit: macOS's verifier, which cargo-binstall uses there,
+# accepts a server certificate only for the serverAuth key usage.
 cd "$work"
+cat >certs.cnf <<'EOF'
+[req]
+distinguished_name = name
+[name]
+[ca]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, keyCertSign, cRLSign
+[server]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = IP:127.0.0.1
+EOF
 openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 1 \
-    -subj "/CN=yapi release check" 2>/dev/null
+    -subj "/CN=yapi release check" -config certs.cnf -extensions ca 2>/dev/null
 openssl req -newkey rsa:2048 -nodes -keyout key.pem -out server.csr \
-    -subj "/CN=127.0.0.1" 2>/dev/null
-printf 'subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\n' >server.ext
+    -subj "/CN=127.0.0.1" -config certs.cnf 2>/dev/null
 openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
-    -out cert.pem -days 1 -extfile server.ext 2>/dev/null
+    -out cert.pem -days 1 -extfile certs.cnf -extensions server 2>/dev/null
 
 cat >serve.py <<'EOF'
 import functools, http.server, socketserver, ssl
@@ -72,7 +86,7 @@ if [ ! -s port ]; then
     cat server.log >&2
     exit 1
 fi
-repo="https://127.0.0.1:$(cat port)/SkymanOne/ri"
+repo="https://127.0.0.1:$(cat port)/SkymanOne/yapi"
 version=${tag#v}
 
 check() {
