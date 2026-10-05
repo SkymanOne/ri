@@ -227,6 +227,34 @@ pub(crate) async fn fetch(payload: Value) -> Result<Value, String> {
     }))
 }
 
+/// Resolves `{hostname}` with the system resolver, as Node's `dns.lookup`
+/// does; answers `{addresses: [{address, family}]}` in the resolver's order,
+/// or `{error}` when the name does not resolve.
+pub(crate) async fn dns_lookup(payload: Value) -> Result<Value, String> {
+    let hostname = payload["hostname"].as_str().unwrap_or_default().to_owned();
+    let resolved = tokio::task::spawn_blocking(move || {
+        std::net::ToSocketAddrs::to_socket_addrs(&(hostname.as_str(), 0))
+            .map(|addresses| addresses.map(|address| address.ip()).collect::<Vec<_>>())
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+    let ips = match resolved {
+        Ok(ips) => ips,
+        Err(err) => return Ok(json!({ "error": err.to_string() })),
+    };
+    let mut addresses: Vec<Value> = Vec::new();
+    for ip in ips {
+        let entry = json!({
+            "address": ip.to_string(),
+            "family": if ip.is_ipv4() { 4 } else { 6 },
+        });
+        if !addresses.contains(&entry) {
+            addresses.push(entry);
+        }
+    }
+    Ok(json!({ "addresses": addresses }))
+}
+
 async fn terminate(child: &mut tokio::process::Child) -> std::io::Result<std::process::ExitStatus> {
     #[cfg(unix)]
     if let Some(pid) = child.id() {

@@ -54,6 +54,19 @@ pub fn parse(source: &str) -> Source {
 }
 
 fn npm(spec: &str) -> Source {
+    let (name, version) = split_npm_spec(spec);
+    let pinned = version
+        .as_deref()
+        .is_some_and(|version| semver::Version::parse(version).is_ok());
+    Source::Npm {
+        name,
+        version,
+        pinned,
+    }
+}
+
+/// Splits `<name>[@<version or range>]` into the name and the version.
+pub(crate) fn split_npm_spec(spec: &str) -> (String, Option<String>) {
     // `^(@?[^@]+(?:/[^@]+)?)(?:@(.+))?$`: a scoped name keeps its leading `@`.
     let (scope, rest) = match spec.strip_prefix('@') {
         Some(rest) => ("@", rest),
@@ -63,14 +76,7 @@ fn npm(spec: &str) -> Source {
         Some((name, version)) if !version.is_empty() => (name, Some(version.to_owned())),
         _ => (rest, None),
     };
-    let pinned = version
-        .as_deref()
-        .is_some_and(|version| semver::Version::parse(version).is_ok());
-    Source::Npm {
-        name: format!("{scope}{name}"),
-        version,
-        pinned,
-    }
+    (format!("{scope}{name}"), version)
 }
 
 /// Splits `@ref` (or `#ref`) off the end of a repository path.

@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-yapi-extension-api = { git = "https://github.com/SkymanOne/ri" }
+yapi-extension-api = { git = "https://github.com/SkymanOne/yapi" }
 
 [profile.release]
 codegen-units = 1

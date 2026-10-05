@@ -265,6 +265,66 @@ async fn installs_native_addons_unbuilt_and_rejects_bad_integrity() {
     assert_eq!(error.to_string(), "Integrity check failed for pkg@1.0.0");
 }
 
+/// An `npm:` alias installs the package it names under the alias, and
+/// packuments are asked for in npm's abbreviated form.
+#[tokio::test(flavor = "multi_thread")]
+async fn installs_aliased_dependencies_from_abbreviated_packuments() {
+    let dir = scratch("alias");
+    let app = tarball(&[("package.json", r#"{"name": "app-pkg"}"#)]);
+    let fork = tarball(&[(
+        "package.json",
+        r#"{"name": "@forks/pty", "version": "0.13.2"}"#,
+    )]);
+    let server = registry(|base| {
+        let mut all = publish(
+            base,
+            "app-pkg",
+            &[(
+                "1.0.0",
+                json!({"dependencies": {"node-pty": "npm:@forks/pty@^0.13.1"}}),
+                app.clone(),
+            )],
+            "1.0.0",
+        );
+        let mut forked = publish(
+            base,
+            "@forks/pty",
+            &[
+                ("0.13.2", json!({}), fork.clone()),
+                ("1.0.0", json!({}), fork.clone()),
+            ],
+            "0.13.2",
+        );
+        forked[0].request.path = "/@forks%2fpty".into();
+        all.extend(forked);
+        all
+    })
+    .await;
+    let mut packages = manager(&dir, &server.url());
+    packages.install("npm:app-pkg", false).await.unwrap();
+
+    let modules = dir.join("agent/npm/node_modules");
+    let installed: Value = serde_json::from_str(
+        &std::fs::read_to_string(modules.join("node-pty/package.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(installed["name"], "@forks/pty");
+    assert_eq!(installed["version"], "0.13.2");
+    assert!(!modules.join("@forks").exists());
+    let requests = server.finish().unwrap();
+    let packuments: Vec<_> = requests
+        .iter()
+        .filter(|request| !request.path.ends_with(".tgz"))
+        .collect();
+    assert_eq!(packuments.len(), 2);
+    for request in packuments {
+        assert!(
+            request.headers["accept"].starts_with("application/vnd.npm.install-v1+json"),
+            "{request:?}"
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn local_packages_are_stored_relative_to_the_scope() {
     let dir = scratch("local");

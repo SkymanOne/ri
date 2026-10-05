@@ -36,7 +36,7 @@ pub struct Grants {
     pub filesystem: bool,
     /// Run processes.
     pub process: bool,
-    /// Send HTTP requests.
+    /// Send HTTP requests and resolve host names.
     pub network: bool,
     /// Read environment variables.
     pub environment: bool,

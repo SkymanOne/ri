@@ -94,7 +94,7 @@ struct Options {
 }
 
 /// What `yapi update` says instead of updating yapi.
-const SELF_UPDATE: &str = "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh";
+const SELF_UPDATE: &str = "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh";
 
 fn parse(command: Command, args: &[String]) -> Options {
     let mut options = Options::default();

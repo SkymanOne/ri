@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# `cargo binstall --git https://github.com/SkymanOne/ri yapi` installs the
+# `cargo binstall --git https://github.com/SkymanOne/yapi yapi` installs the
 # release archive for the host, named as scripts/package-release.sh names it.
 # Its other strategies are off because both fetch `yapi` from crates.io, where
 # the name belongs to another project: cargo-quickinstall's builds, and the
