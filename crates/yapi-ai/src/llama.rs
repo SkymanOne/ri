@@ -237,28 +237,27 @@ impl Client {
         })
     }
 
+    /// POSTs `{"model": model}` to `path`.
+    async fn post_model(
+        &self,
+        path: &str,
+        model: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), String> {
+        let body = Some(json!({ "model": model }));
+        self.request(reqwest::Method::POST, path, body, cancel)
+            .await
+            .map(drop)
+    }
+
     /// Asks the router to load `model`.
     pub async fn load(&self, model: &str, cancel: &CancellationToken) -> Result<(), String> {
-        self.request(
-            reqwest::Method::POST,
-            "/models/load",
-            Some(json!({ "model": model })),
-            cancel,
-        )
-        .await
-        .map(drop)
+        self.post_model("/models/load", model, cancel).await
     }
 
     /// Asks the router to unload `model`, or to stop loading or downloading it.
     pub async fn unload(&self, model: &str, cancel: &CancellationToken) -> Result<(), String> {
-        self.request(
-            reqwest::Method::POST,
-            "/models/unload",
-            Some(json!({ "model": model })),
-            cancel,
-        )
-        .await
-        .map(drop)
+        self.post_model("/models/unload", model, cancel).await
     }
 
     /// Unloads `model` and waits until it is unloaded.
@@ -280,14 +279,7 @@ impl Client {
 
     /// Asks the router to download `model`, a Hugging Face `repo[:quant]`.
     pub async fn download(&self, model: &str, cancel: &CancellationToken) -> Result<(), String> {
-        self.request(
-            reqwest::Method::POST,
-            "/models",
-            Some(json!({ "model": model })),
-            cancel,
-        )
-        .await
-        .map(drop)
+        self.post_model("/models", model, cancel).await
     }
 
     /// Loads `model` and waits until it is loaded, reporting progress.

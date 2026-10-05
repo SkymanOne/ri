@@ -11,7 +11,6 @@
 
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
     ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
@@ -21,24 +20,25 @@ use yapi_types::model::{Model, OpenAiResponsesCompat};
 use super::sanitize_id_part;
 use crate::cost::calculate_cost;
 use crate::hash::short_hash;
-use crate::http::{self, Failure, SseReader};
+use crate::http::{self, Failure, Headers, SseReader, is_truthy};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms, send_error,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
+    now_ms, send_error,
 };
 use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// Which Responses endpoint a request goes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Flavor {
+pub(super) enum Flavor {
     /// `openai-responses`.
     OpenAi,
-    /// `azure-openai-responses`.
+    /// `azure-openai-responses`: Responses on an Azure resource.
     Azure,
-    /// `openai-codex-responses`.
+    /// `openai-codex-responses`: ChatGPT's Codex backend, signed in with a
+    /// ChatGPT account.
     Codex,
 }
 
@@ -59,55 +59,6 @@ impl Flavor {
 /// The Responses API rejects `max_output_tokens` below this.
 const MIN_OUTPUT_TOKENS: u64 = 16;
 const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
-
-/// The `openai-responses` wire API.
-#[derive(Debug, Default)]
-pub struct OpenAiResponses;
-
-impl Provider for OpenAiResponses {
-    fn api(&self) -> &str {
-        "openai-responses"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender, Flavor::OpenAi));
-        stream
-    }
-}
-
-/// The `azure-openai-responses` wire API: Responses on an Azure resource.
-#[derive(Debug, Default)]
-pub struct AzureOpenAiResponses;
-
-impl Provider for AzureOpenAiResponses {
-    fn api(&self) -> &str {
-        "azure-openai-responses"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender, Flavor::Azure));
-        stream
-    }
-}
-
-/// The `openai-codex-responses` wire API: ChatGPT's Codex backend, signed in
-/// with a ChatGPT account.
-#[derive(Debug, Default)]
-pub struct OpenAiCodexResponses;
-
-impl Provider for OpenAiCodexResponses {
-    fn api(&self) -> &str {
-        "openai-codex-responses"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender, Flavor::Codex));
-        stream
-    }
-}
 
 /// Compat flags with defaults applied.
 #[derive(Clone, Debug)]
@@ -829,18 +780,6 @@ fn codex_url(base_url: &str) -> String {
     }
 }
 
-/// The ChatGPT account id in a Codex access token.
-fn codex_account_id(token: &str) -> Result<String, String> {
-    crate::auth::codex::decode_jwt(token)
-        .and_then(|payload| {
-            payload["https://api.openai.com/auth"]["chatgpt_account_id"]
-                .as_str()
-                .filter(|id| !id.is_empty())
-                .map(str::to_owned)
-        })
-        .ok_or_else(|| "Failed to extract accountId from token".to_owned())
-}
-
 /// pi's `parseErrorResponse` for Codex: a usage-limit notice, else the
 /// error's message, else the body.
 fn codex_error_message(status: u16, body: &str) -> String {
@@ -893,175 +832,16 @@ fn codex_error_message(status: u16, body: &str) -> String {
     friendly.unwrap_or(message)
 }
 
-async fn run(request: Request, sender: EventSender, flavor: Flavor) {
+pub(super) async fn run(request: Request, sender: EventSender, flavor: Flavor) {
     let Request {
         model,
         messages,
         options,
     } = request;
-    let compat = Compat::new(&model, flavor);
-    let normalized = resolve_transcript(&messages, compat.supports_mid_convo_system_messages);
     let output = new_output(&model, now_ms());
-    let fail = |output, message: String| send_error(&sender, output, &options.cancel, message);
-    let api_key = match options.api_key.clone().filter(|key| !key.is_empty()) {
-        Some(key) => key,
-        None if flavor == Flavor::OpenAi
-            && (options.has_header("authorization")
-                || options.has_header("cf-aig-authorization")) =>
-        {
-            "unused".to_owned()
-        }
-        None => {
-            fail(
-                output,
-                format!("No API key for provider: {}", model.provider),
-            );
-            return;
-        }
-    };
-    let max_tokens = clamp_max_tokens_to_context(
-        &model,
-        &messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(&model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
-
-    let mut headers: IndexMap<String, Option<String>> = IndexMap::new();
-    let mut set = |name: &str, value: Option<String>| {
-        headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
-        headers.insert(name.to_owned(), value);
-    };
-    let prepared = match flavor {
-        Flavor::OpenAi => build_params(&model, &normalized, &options, &compat, max_tokens, effort)
-            .map(|params| {
-                set("authorization", Some(format!("Bearer {api_key}")));
-                set("content-type", Some("application/json".into()));
-                set("accept", Some("application/json".into()));
-                for (key, value) in model.headers.iter().flatten() {
-                    set(key, Some(value.clone()));
-                }
-                if model.provider == "github-copilot" {
-                    for (key, value) in super::copilot_headers(&messages) {
-                        set(key, Some(value));
-                    }
-                }
-                if options.resolved_cache_retention() != CacheRetention::None
-                    && let Some(session) = &options.session_id
-                {
-                    if compat.session_affinity_format == "openrouter" {
-                        set("x-session-id", Some(session.clone()));
-                    } else {
-                        if compat.session_affinity_format == "openai" {
-                            set("session_id", Some(session.clone()));
-                        }
-                        set("x-client-request-id", Some(session.clone()));
-                    }
-                }
-                for (key, value) in &options.headers {
-                    set(key, value.clone());
-                }
-                (
-                    params,
-                    format!("{}/responses", model.base_url.trim_end_matches('/')),
-                )
-            }),
-        Flavor::Azure => azure_endpoint(&model).and_then(|url| {
-            let deployment = azure_deployment(&model);
-            build_azure_params(
-                &model,
-                &normalized,
-                &options,
-                &compat,
-                max_tokens,
-                effort,
-                &deployment,
-            )
-            .map(|params| {
-                set("api-key", Some(api_key.clone()));
-                set("content-type", Some("application/json".into()));
-                set("accept", Some("application/json".into()));
-                for (key, value) in model.headers.iter().flatten() {
-                    set(key, Some(value.clone()));
-                }
-                for (key, value) in &options.headers {
-                    set(key, value.clone());
-                }
-                (params, url)
-            })
-        }),
-        Flavor::Codex => codex_account_id(&api_key).and_then(|account| {
-            build_codex_body(&model, &normalized, &options, &compat, effort).map(|body| {
-                for (key, value) in model.headers.iter().flatten() {
-                    set(key, Some(value.clone()));
-                }
-                for (key, value) in &options.headers {
-                    set(key, value.clone());
-                }
-                set("authorization", Some(format!("Bearer {api_key}")));
-                set("chatgpt-account-id", Some(account));
-                // The value the Codex backend expects from this client id.
-                set("originator", Some("pi".into()));
-                set("openai-beta", Some("responses=experimental".into()));
-                set("accept", Some("text/event-stream".into()));
-                set("content-type", Some("application/json".into()));
-                if options.resolved_cache_retention() != CacheRetention::None
-                    && let Some(session) = &options.session_id
-                {
-                    let session = prompt_cache_key(session);
-                    set("session-id", Some(session.clone()));
-                    set("x-client-request-id", Some(session));
-                }
-                (body, codex_url(&model.base_url))
-            })
-        }),
-    };
-    let (params, url) = match prepared {
-        Ok(prepared) => prepared,
-        Err(message) => {
-            fail(output, message);
-            return;
-        }
-    };
-    let body = match yapi_types::json::to_string(&params) {
-        Ok(body) => body,
-        Err(err) => {
-            fail(output, err.to_string());
-            return;
-        }
-    };
-    let build = || {
-        let mut request = http::client().post(&url).body(body.clone());
-        for (name, value) in headers.iter() {
-            if let Some(value) = value {
-                request = request.header(name.as_str(), value.as_str());
-            }
-        }
-        request
-    };
-    let response = match http::send(build, &options).await {
+    let response = match connect(&model, &messages, &options, flavor).await {
         Ok(response) => response,
-        Err(failure) => {
-            let message = match (flavor, failure) {
-                (Flavor::Codex, Failure::Status { status, body }) => {
-                    codex_error_message(status, &body)
-                }
-                (Flavor::Codex, Failure::Aborted) => http::ABORTED_DURING_STREAM.to_owned(),
-                (Flavor::Azure, failure) => failure_message(failure, "Azure OpenAI API error"),
-                (_, failure) => {
-                    let prefix = if model.provider == "openai" {
-                        "OpenAI API error".to_owned()
-                    } else {
-                        format!("{} API error", model.provider)
-                    };
-                    failure_message(failure, &prefix)
-                }
-            };
-            fail(output, message);
-            return;
-        }
+        Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
 
     sender.send(StreamEvent::Start(output.clone()));
@@ -1073,48 +853,145 @@ async fn run(request: Request, sender: EventSender, flavor: Flavor) {
         reasoning_by_id: IndexMap::new(),
         terminal: false,
     };
+    let pending = match flavor {
+        Flavor::OpenAi => "OpenAI Responses stream ended without a stop reason",
+        Flavor::Azure => "Azure OpenAI Responses stream ended without a stop reason",
+        Flavor::Codex => "Codex stream ended without a stop reason",
+    };
     let result = state
         .consume(SseReader::new(response), &model, &sender, &options)
         .await
-        .and_then(|()| {
-            if options.cancel.is_cancelled() {
-                return Err(http::ABORTED_DURING_STREAM.to_owned());
-            }
-            match state.output.stop_reason {
-                StopReason::Pending => Err(match flavor {
-                    Flavor::OpenAi => "OpenAI Responses stream ended without a stop reason",
-                    Flavor::Azure => "Azure OpenAI Responses stream ended without a stop reason",
-                    Flavor::Codex => "Codex stream ended without a stop reason",
-                }
-                .to_owned()),
-                StopReason::Aborted | StopReason::Error => Err(state
-                    .output
-                    .error_message
-                    .clone()
-                    .filter(|message| !message.is_empty())
-                    .unwrap_or_else(|| "An unknown error occurred".into())),
-                _ => Ok(()),
-            }
-        });
+        .and_then(|()| check_complete(&state.output, &options.cancel, pending));
     match result {
         Ok(()) => sender.send(StreamEvent::Done(state.output)),
         Err(message) => send_error(&sender, state.output, &options.cancel, message),
     }
 }
 
+/// Sends the request; the response once its status is a success.
+async fn connect(
+    model: &Model,
+    messages: &[Message],
+    options: &StreamOptions,
+    flavor: Flavor,
+) -> Result<reqwest::Response, String> {
+    let compat = Compat::new(model, flavor);
+    let normalized = resolve_transcript(messages, compat.supports_mid_convo_system_messages);
+    let api_key = match options.api_key.clone().filter(|key| !key.is_empty()) {
+        Some(key) => key,
+        None if flavor == Flavor::OpenAi
+            && (options.has_header("authorization")
+                || options.has_header("cf-aig-authorization")) =>
+        {
+            "unused".to_owned()
+        }
+        None => return Err(format!("No API key for provider: {}", model.provider)),
+    };
+    let max_tokens = clamp_max_tokens_to_context(
+        model,
+        messages,
+        options.max_tokens.unwrap_or(model.max_tokens),
+    );
+    let effort = options
+        .reasoning
+        .map(|level| clamp_level(model, level))
+        .filter(|level| *level != ThinkingLevel::Off);
+
+    let mut headers = Headers::default();
+    let session = options
+        .session_id
+        .as_deref()
+        .filter(|_| options.resolved_cache_retention() != CacheRetention::None);
+    let (params, url) = match flavor {
+        Flavor::OpenAi => {
+            let params = build_params(model, &normalized, options, &compat, max_tokens, effort)?;
+            headers.set("authorization", Some(format!("Bearer {api_key}")));
+            headers.set("content-type", Some("application/json"));
+            headers.set("accept", Some("application/json"));
+            headers.extend_model(model.headers.as_ref());
+            if model.provider == "github-copilot" {
+                for (key, value) in super::copilot_headers(messages) {
+                    headers.set(key, Some(value));
+                }
+            }
+            if let Some(session) = session {
+                if compat.session_affinity_format == "openrouter" {
+                    headers.set("x-session-id", Some(session));
+                } else {
+                    if compat.session_affinity_format == "openai" {
+                        headers.set("session_id", Some(session));
+                    }
+                    headers.set("x-client-request-id", Some(session));
+                }
+            }
+            headers.extend(&options.headers);
+            let url = format!("{}/responses", model.base_url.trim_end_matches('/'));
+            (params, url)
+        }
+        Flavor::Azure => {
+            let url = azure_endpoint(model)?;
+            let deployment = azure_deployment(model);
+            let params = build_azure_params(
+                model,
+                &normalized,
+                options,
+                &compat,
+                max_tokens,
+                effort,
+                &deployment,
+            )?;
+            headers.set("api-key", Some(api_key.as_str()));
+            headers.set("content-type", Some("application/json"));
+            headers.set("accept", Some("application/json"));
+            headers.extend_model(model.headers.as_ref());
+            headers.extend(&options.headers);
+            (params, url)
+        }
+        Flavor::Codex => {
+            let account = crate::auth::codex::account_id(&api_key)
+                .ok_or("Failed to extract accountId from token")?;
+            let body = build_codex_body(model, &normalized, options, &compat, effort)?;
+            headers.extend_model(model.headers.as_ref());
+            headers.extend(&options.headers);
+            headers.set("authorization", Some(format!("Bearer {api_key}")));
+            headers.set("chatgpt-account-id", Some(account));
+            // The value the Codex backend expects from this client id.
+            headers.set("originator", Some("pi"));
+            headers.set("openai-beta", Some("responses=experimental"));
+            headers.set("accept", Some("text/event-stream"));
+            headers.set("content-type", Some("application/json"));
+            if let Some(session) = session {
+                let session = prompt_cache_key(session);
+                headers.set("session-id", Some(session.as_str()));
+                headers.set("x-client-request-id", Some(session));
+            }
+            (body, codex_url(&model.base_url))
+        }
+    };
+    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let build = || headers.apply(http::client().post(&url).body(body.clone()));
+    http::send(build, options)
+        .await
+        .map_err(|failure| match (flavor, failure) {
+            (Flavor::Codex, Failure::Status { status, body }) => codex_error_message(status, &body),
+            (Flavor::Codex, Failure::Aborted) => http::ABORTED_DURING_STREAM.to_owned(),
+            (Flavor::Azure, failure) => failure_message(failure, "Azure OpenAI API error"),
+            (_, failure) => {
+                let prefix = if model.provider == "openai" {
+                    "OpenAI API error".to_owned()
+                } else {
+                    format!("{} API error", model.provider)
+                };
+                failure_message(failure, &prefix)
+            }
+        })
+}
+
 fn failure_message(failure: Failure, prefix: &str) -> String {
     let message = match failure {
-        Failure::Status { status, body } => match serde_json::from_str::<Value>(&body) {
-            Ok(json) => {
-                let error = json.get("error");
-                let message = http::sdk_status_message(status, error, None);
-                http::provider_error_message(&message, Some(status), error, Some(prefix))
-            }
-            Err(_) => {
-                let message = http::sdk_status_message(status, None, Some(&body));
-                http::provider_error_message(&message, Some(status), None, Some(prefix))
-            }
-        },
+        Failure::Status { status, body } => {
+            http::openai_status_message(status, &body, Some(prefix))
+        }
         other => other.plain_message().unwrap_or_default(),
     };
     if message.contains("subscription_sharing_usage_limit_exceeded") {
@@ -1167,61 +1044,39 @@ impl State {
 
     fn create_slot(&mut self, index: u64, item: &Value, sender: &EventSender) -> Option<Slot> {
         let position = self.output.content.len();
-        let (slot, event) = match item["type"].as_str()? {
-            "reasoning" => {
-                self.output
-                    .content
-                    .push(ContentBlock::Thinking(ThinkingContent {
-                        thinking: String::new(),
-                        thinking_signature: None,
-                        redacted: None,
-                    }));
-                (
-                    Slot::Thinking(position),
-                    AssistantMessageEvent::ThinkingStart {
-                        content_index: position,
-                    },
-                )
-            }
+        let (slot, block) = match item["type"].as_str()? {
+            "reasoning" => (
+                Slot::Thinking(position),
+                ContentBlock::Thinking(ThinkingContent {
+                    thinking: String::new(),
+                    thinking_signature: None,
+                    redacted: None,
+                }),
+            ),
             "message" => {
                 self.apply_phase(item);
-                self.output.content.push(ContentBlock::text(""));
-                (
-                    Slot::Text(position),
-                    AssistantMessageEvent::TextStart {
-                        content_index: position,
-                    },
-                )
+                (Slot::Text(position), ContentBlock::text(""))
             }
             "function_call" => {
-                let id = format!(
-                    "{}|{}",
-                    template_or_undefined(item.get("call_id")),
-                    template_or_undefined(item.get("id"))
-                );
-                let name = item["name"].as_str().unwrap_or_default().to_owned();
-                self.output.content.push(ContentBlock::ToolCall(ToolCall {
-                    id: id.clone(),
-                    name: name.clone(),
+                self.partial_args
+                    .insert(position, string_or(&item["arguments"], "").to_owned());
+                let call = ToolCall {
+                    id: format!(
+                        "{}|{}",
+                        template_or_undefined(item.get("call_id")),
+                        template_or_undefined(item.get("id"))
+                    ),
+                    name: item["name"].as_str().unwrap_or_default().to_owned(),
                     arguments: Map::new(),
                     thought_signature: None,
                     namespace: item["namespace"].as_str().map(str::to_owned),
-                }));
-                self.partial_args
-                    .insert(position, string_or(&item["arguments"], "").to_owned());
-                (
-                    Slot::ToolCall(position),
-                    AssistantMessageEvent::ToolcallStart {
-                        content_index: position,
-                        id,
-                        tool_name: name,
-                    },
-                )
+                };
+                (Slot::ToolCall(position), ContentBlock::ToolCall(call))
             }
             _ => return None,
         };
         self.slots.insert(index, slot);
-        sender.update(&self.output, event);
+        sender.start(&mut self.output, block);
         Some(slot)
     }
 
@@ -1247,35 +1102,15 @@ impl State {
     }
 
     fn thinking_delta(&mut self, index: u64, delta: &str, sender: &EventSender) {
-        let Some(Slot::Thinking(position)) = self.slots.get(&index).copied() else {
-            return;
-        };
-        if let Some(block) = self.thinking(position) {
-            block.thinking.push_str(delta);
+        if let Some(Slot::Thinking(position)) = self.slots.get(&index).copied() {
+            sender.delta(&mut self.output, position, delta);
         }
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ThinkingDelta {
-                content_index: position,
-                delta: delta.to_owned(),
-            },
-        );
     }
 
     fn text_delta(&mut self, index: u64, delta: &str, sender: &EventSender) {
-        let Some(Slot::Text(position)) = self.slots.get(&index).copied() else {
-            return;
-        };
-        if let Some(block) = self.text(position) {
-            block.text.push_str(delta);
+        if let Some(Slot::Text(position)) = self.slots.get(&index).copied() {
+            sender.delta(&mut self.output, position, delta);
         }
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::TextDelta {
-                content_index: position,
-                delta: delta.to_owned(),
-            },
-        );
     }
 
     fn streaming_call(&self, index: u64) -> Option<usize> {
@@ -1326,17 +1161,10 @@ impl State {
                     block.thinking = content;
                 }
                 block.thinking_signature = Some(signature);
-                let thinking = block.thinking.clone();
                 if let Some(id) = item["id"].as_str() {
                     self.reasoning_by_id.insert(id.to_owned(), position);
                 }
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ThinkingEnd {
-                        content_index: position,
-                        content: thinking,
-                    },
-                );
+                sender.end(&self.output, position);
                 self.slots.shift_remove(&index);
             }
             (Some("message"), Some(Slot::Text(position))) => {
@@ -1362,15 +1190,9 @@ impl State {
                 let Some(block) = self.text(position) else {
                     return;
                 };
-                block.text = text.clone();
+                block.text = text;
                 block.text_signature = Some(signature);
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::TextEnd {
-                        content_index: position,
-                        content: text,
-                    },
-                );
+                sender.end(&self.output, position);
                 self.slots.shift_remove(&index);
             }
             (Some("function_call"), Some(Slot::ToolCall(position)))
@@ -1397,14 +1219,7 @@ impl State {
                 if let Some(namespace) = item["namespace"].as_str() {
                     call.namespace = Some(namespace.to_owned());
                 }
-                let tool_call = call.clone();
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallEnd {
-                        content_index: position,
-                        tool_call,
-                    },
-                );
+                sender.end(&self.output, position);
                 self.slots.shift_remove(&index);
             }
             _ => {}
@@ -1597,13 +1412,7 @@ impl State {
                 if let Some(position) = self.streaming_call(index) {
                     let partial = format!("{}{delta}", self.partial_args[&position]);
                     self.set_partial_args(position, partial);
-                    sender.update(
-                        &self.output,
-                        AssistantMessageEvent::ToolcallDelta {
-                            content_index: position,
-                            delta: delta.to_owned(),
-                        },
-                    );
+                    sender.delta(&mut self.output, position, delta);
                 }
             }
             "response.function_call_arguments.done" => {
@@ -1615,13 +1424,7 @@ impl State {
                         .strip_prefix(previous.as_str())
                         .filter(|rest| !rest.is_empty())
                     {
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ToolcallDelta {
-                                content_index: position,
-                                delta: rest.to_owned(),
-                            },
-                        );
+                        sender.delta(&mut self.output, position, rest);
                     }
                 }
             }
@@ -1717,16 +1520,6 @@ fn join_part(value: &Value) -> String {
 
 fn template_or_undefined(value: Option<&Value>) -> String {
     value.map_or_else(|| "undefined".to_owned(), template)
-}
-
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(number) => number.as_f64().is_some_and(|n| n != 0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
 }
 
 fn truthy_or(value: &Value, fallback: &str) -> String {

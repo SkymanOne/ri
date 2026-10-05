@@ -11,7 +11,6 @@ use std::time::Duration;
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
     ToolCall, ToolDeclaration,
@@ -20,12 +19,12 @@ use yapi_types::model::Model;
 
 use crate::cost::calculate_cost;
 use crate::hash::short_hash;
-use crate::http;
+use crate::http::{self, Headers};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms, send_error,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
+    now_ms, send_error,
 };
 use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
 use crate::transcript::{current_tools, resolve_transcript, transform_messages};
@@ -35,22 +34,6 @@ const MAX_ERROR_BODY_CHARS: usize = 4000;
 /// pi's default `timeoutMs`; it bounds the whole request, stream included.
 const TIMEOUT: Duration = Duration::from_secs(60);
 const TIMEOUT_MESSAGE: &str = "The operation was aborted due to timeout";
-
-/// The `mistral-conversations` wire API.
-#[derive(Debug, Default)]
-pub struct MistralConversations;
-
-impl Provider for MistralConversations {
-    fn api(&self) -> &str {
-        "mistral-conversations"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
-        stream
-    }
-}
 
 /// A Mistral tool-call id for `id`: nine alphanumerics, from the id itself when
 /// it already is one, else from its hash.
@@ -341,18 +324,6 @@ fn build_payload(
     Ok(Value::Object(payload))
 }
 
-fn truncate_error(text: &str) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= MAX_ERROR_BODY_CHARS {
-        return text.to_owned();
-    }
-    format!(
-        "{}... [truncated {} chars]",
-        String::from_utf16_lossy(&units[..MAX_ERROR_BODY_CHARS]),
-        units.len() - MAX_ERROR_BODY_CHARS
-    )
-}
-
 /// The events of a Mistral stream: blank-line separated blocks of `data:` lines.
 #[derive(Default)]
 struct EventParser {
@@ -461,92 +432,36 @@ impl State {
     }
 
     fn finish_current(&mut self, sender: &EventSender) {
-        let index = self.last();
-        let event = match (self.current.take(), self.output.content.last()) {
-            (Some(Current::Text), Some(ContentBlock::Text(text))) => {
-                AssistantMessageEvent::TextEnd {
-                    content_index: index,
-                    content: text.text.clone(),
-                }
-            }
-            (Some(Current::Thinking), Some(ContentBlock::Thinking(thinking))) => {
-                AssistantMessageEvent::ThinkingEnd {
-                    content_index: index,
-                    content: thinking.thinking.clone(),
-                }
-            }
-            _ => return,
-        };
-        sender.update(&self.output, event);
+        if self.current.take().is_some() {
+            sender.end(&self.output, self.last());
+        }
     }
 
-    fn text(&mut self, delta: &str, sender: &EventSender) {
+    /// Appends a text or thinking delta, opening a block of that kind first.
+    fn append(&mut self, kind: Current, delta: &str, sender: &EventSender) {
         // GLM models send empty deltas around thinking and tool calls.
         if delta.is_empty() {
             return;
         }
-        if self.current != Some(Current::Text) {
+        if self.current != Some(kind) {
             self.finish_current(sender);
-            self.current = Some(Current::Text);
-            self.output.content.push(ContentBlock::text(""));
-            sender.update(
-                &self.output,
-                AssistantMessageEvent::TextStart {
-                    content_index: self.last(),
-                },
-            );
-        }
-        let index = self.last();
-        if let Some(ContentBlock::Text(text)) = self.output.content.last_mut() {
-            text.text.push_str(delta);
-        }
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::TextDelta {
-                content_index: index,
-                delta: delta.to_owned(),
-            },
-        );
-    }
-
-    fn thinking(&mut self, delta: &str, sender: &EventSender) {
-        if delta.is_empty() {
-            return;
-        }
-        if self.current != Some(Current::Thinking) {
-            self.finish_current(sender);
-            self.current = Some(Current::Thinking);
-            self.output
-                .content
-                .push(ContentBlock::Thinking(ThinkingContent {
+            self.current = Some(kind);
+            let block = match kind {
+                Current::Text => ContentBlock::text(""),
+                Current::Thinking => ContentBlock::Thinking(ThinkingContent {
                     thinking: String::new(),
                     thinking_signature: None,
                     redacted: None,
-                }));
-            sender.update(
-                &self.output,
-                AssistantMessageEvent::ThinkingStart {
-                    content_index: self.last(),
-                },
-            );
+                }),
+            };
+            sender.start(&mut self.output, block);
         }
         let index = self.last();
-        if let Some(ContentBlock::Thinking(thinking)) = self.output.content.last_mut() {
-            thinking.thinking.push_str(delta);
-        }
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ThinkingDelta {
-                content_index: index,
-                delta: delta.to_owned(),
-            },
-        );
+        sender.delta(&mut self.output, index, delta);
     }
 
     fn tool_call(&mut self, call: &Value, sender: &EventSender) {
-        if self.current.is_some() {
-            self.finish_current(sender);
-        }
+        self.finish_current(sender);
         let stream_index = call["index"].as_u64();
         let id = call["id"]
             .as_str()
@@ -563,24 +478,16 @@ impl State {
                     .as_str()
                     .unwrap_or_default()
                     .to_owned();
-                self.output.content.push(ContentBlock::ToolCall(ToolCall {
-                    id: id.clone(),
-                    name: name.clone(),
+                let block = ContentBlock::ToolCall(ToolCall {
+                    id,
+                    name,
                     arguments: Map::new(),
                     thought_signature: None,
                     namespace: None,
-                }));
-                let position = self.output.content.len() - 1;
+                });
+                let position = sender.start(&mut self.output, block);
                 self.tools.insert(key, position);
                 self.partial_args.insert(position, String::new());
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallStart {
-                        content_index: position,
-                        id,
-                        tool_name: name,
-                    },
-                );
                 position
             }
         };
@@ -596,13 +503,7 @@ impl State {
         if let Some(ContentBlock::ToolCall(block)) = self.output.content.get_mut(position) {
             block.arguments = parsed;
         }
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ToolcallDelta {
-                content_index: position,
-                delta,
-            },
-        );
+        sender.delta(&mut self.output, position, &delta);
     }
 
     fn handle(&mut self, chunk: &Value, model: &Model, sender: &EventSender) {
@@ -656,11 +557,11 @@ impl State {
         }
         let delta = &choice["delta"];
         match &delta["content"] {
-            Value::String(text) => self.text(text, sender),
+            Value::String(text) => self.append(Current::Text, text, sender),
             Value::Array(items) => {
                 for item in items {
                     match item {
-                        Value::String(text) => self.text(text, sender),
+                        Value::String(text) => self.append(Current::Text, text, sender),
                         _ if item["type"] == "thinking" => {
                             let text: String = item["thinking"]
                                 .as_array()
@@ -668,10 +569,11 @@ impl State {
                                 .flatten()
                                 .filter_map(|part| part["text"].as_str())
                                 .collect();
-                            self.thinking(&text, sender);
+                            self.append(Current::Thinking, &text, sender);
                         }
                         _ if item["type"] == "text" => {
-                            self.text(item["text"].as_str().unwrap_or_default(), sender);
+                            let text = item["text"].as_str().unwrap_or_default();
+                            self.append(Current::Text, text, sender);
                         }
                         _ => {}
                     }
@@ -692,14 +594,7 @@ impl State {
             let arguments = parse_streaming_json(&partial);
             if let Some(ContentBlock::ToolCall(block)) = self.output.content.get_mut(position) {
                 block.arguments = arguments;
-                let tool_call = block.clone();
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallEnd {
-                        content_index: position,
-                        tool_call,
-                    },
-                );
+                sender.end(&self.output, position);
             }
         }
     }
@@ -721,89 +616,13 @@ fn start_timeout(token: &CancellationToken) -> Arc<AtomicBool> {
     fired
 }
 
-async fn run(request: Request, sender: EventSender) {
+pub(super) async fn run(request: Request, sender: EventSender) {
     let Request {
         model,
         messages,
         options,
     } = request;
-    let compat: yapi_types::model::OpenAiResponsesCompat = model.compat();
-    let normalized = resolve_transcript(
-        &messages,
-        compat.supports_mid_convo_system_messages.unwrap_or(false),
-    );
     let output = new_output(&model, now_ms());
-    let Some(api_key) = options.api_key.clone().filter(|key| !key.is_empty()) else {
-        send_error(
-            &sender,
-            output,
-            &options.cancel,
-            format!("No API key for provider: {}", model.provider),
-        );
-        return;
-    };
-    let transformed = {
-        let ids = RefCell::new(IdNormalizer::default());
-        let normalize = |id: &str, _: &AssistantMessage| ids.borrow_mut().normalize(id);
-        transform_messages(&normalized, &model, Some(&normalize), now_ms())
-    };
-    let max_tokens = clamp_max_tokens_to_context(
-        &model,
-        &messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let level = options
-        .reasoning
-        .map(|level| clamp_level(&model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
-    let payload = match build_payload(
-        &model,
-        &normalized,
-        &transformed,
-        &options,
-        max_tokens,
-        level,
-    )
-    .and_then(|payload| yapi_types::json::to_string(&payload).map_err(|err| err.to_string()))
-    {
-        Ok(payload) => payload,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-
-    let mut headers: IndexMap<String, Option<String>> = IndexMap::new();
-    let mut set = |name: &str, value: Option<String>| {
-        headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
-        headers.insert(name.to_owned(), value);
-    };
-    set("accept", Some("text/event-stream".into()));
-    set("authorization", Some(format!("Bearer {api_key}")));
-    set("content-type", Some("application/json".into()));
-    for (key, value) in model.headers.iter().flatten() {
-        set(key, Some(value.clone()));
-    }
-    for (key, value) in &options.headers {
-        set(key, value.clone());
-    }
-    let explicit_affinity = model
-        .headers
-        .iter()
-        .flatten()
-        .map(|(name, _)| name)
-        .chain(options.headers.keys())
-        .any(|name| name.eq_ignore_ascii_case("x-affinity"));
-    if let Some(session) = uses_prompt_cache(&options)
-        && !explicit_affinity
-    {
-        set("x-affinity", Some(session.to_owned()));
-    }
-
-    let url = format!(
-        "{}/v1/chat/completions",
-        model.base_url.trim_end_matches('/')
-    );
     let cancel = options.cancel.child_token();
     let timed_out = start_timeout(&cancel);
     let aborted = || {
@@ -813,52 +632,94 @@ async fn run(request: Request, sender: EventSender) {
             http::ABORTED_READ.to_owned()
         }
     };
-    let mut request = http::client().post(&url).body(payload);
-    for (name, value) in &headers {
-        if let Some(value) = value {
-            request = request.header(name.as_str(), value.as_str());
+    let response = async {
+        let compat: yapi_types::model::OpenAiResponsesCompat = model.compat();
+        let normalized = resolve_transcript(
+            &messages,
+            compat.supports_mid_convo_system_messages.unwrap_or(false),
+        );
+        let Some(api_key) = options.api_key.clone().filter(|key| !key.is_empty()) else {
+            return Err(format!("No API key for provider: {}", model.provider));
+        };
+        let transformed = {
+            let ids = RefCell::new(IdNormalizer::default());
+            let normalize = |id: &str, _: &AssistantMessage| ids.borrow_mut().normalize(id);
+            transform_messages(&normalized, &model, Some(&normalize), now_ms())
+        };
+        let max_tokens = clamp_max_tokens_to_context(
+            &model,
+            &messages,
+            options.max_tokens.unwrap_or(model.max_tokens),
+        );
+        let level = options
+            .reasoning
+            .map(|level| clamp_level(&model, level))
+            .filter(|level| *level != ThinkingLevel::Off);
+        let payload = build_payload(
+            &model,
+            &normalized,
+            &transformed,
+            &options,
+            max_tokens,
+            level,
+        )?;
+        let payload = yapi_types::json::to_string(&payload).map_err(|err| err.to_string())?;
+
+        let mut headers = Headers::default();
+        headers.set("accept", Some("text/event-stream"));
+        headers.set("authorization", Some(format!("Bearer {api_key}")));
+        headers.set("content-type", Some("application/json"));
+        headers.extend_model(model.headers.as_ref());
+        headers.extend(&options.headers);
+        let explicit_affinity = model
+            .headers
+            .iter()
+            .flatten()
+            .map(|(name, _)| name)
+            .chain(options.headers.keys())
+            .any(|name| name.eq_ignore_ascii_case("x-affinity"));
+        if let Some(session) = uses_prompt_cache(&options)
+            && !explicit_affinity
+        {
+            headers.set("x-affinity", Some(session));
         }
-    }
-    let response = tokio::select! {
-        () = cancel.cancelled() => {
-            send_error(&sender, output, &options.cancel, aborted());
-            return;
+
+        let url = format!(
+            "{}/v1/chat/completions",
+            model.base_url.trim_end_matches('/')
+        );
+        let request = headers.apply(http::client().post(&url).body(payload));
+        let response = tokio::select! {
+            () = cancel.cancelled() => return Err(aborted()),
+            response = request.send() => response.map_err(|_| "fetch failed".to_owned())?,
+        };
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
         }
-        response = request.send() => response,
-    };
-    let mut response = match response {
-        Ok(response) => response,
-        Err(_) => {
-            send_error(&sender, output, &options.cancel, "fetch failed".into());
-            return;
-        }
-    };
-    let status = response.status();
-    if !status.is_success() {
         let body = tokio::select! {
-            () = cancel.cancelled() => {
-                send_error(&sender, output, &options.cancel, aborted());
-                return;
-            }
+            () = cancel.cancelled() => return Err(aborted()),
             body = response.text() => body.unwrap_or_default(),
         };
         let body = body.trim();
-        let message = if body.is_empty() {
-            let text = status.canonical_reason().map_or_else(
+        let text = if body.is_empty() {
+            status.canonical_reason().map_or_else(
                 || format!("Request failed with status {}", status.as_u16()),
                 str::to_owned,
-            );
-            format!("Mistral API error ({}): {text}", status.as_u16())
-        } else {
-            format!(
-                "Mistral API error ({}): {}",
-                status.as_u16(),
-                truncate_error(body)
             )
+        } else {
+            http::truncate_chars(body, MAX_ERROR_BODY_CHARS)
         };
-        send_error(&sender, output, &options.cancel, message);
-        return;
+        Err(format!("Mistral API error ({}): {text}", status.as_u16()))
     }
+    .await;
+    let mut response = match response {
+        Ok(response) => response,
+        Err(message) => {
+            cancel.cancel();
+            return send_error(&sender, output, &options.cancel, message);
+        }
+    };
 
     sender.send(StreamEvent::Start(output.clone()));
     let mut state = State {
@@ -883,13 +744,7 @@ async fn run(request: Request, sender: EventSender) {
             Err(_) if cancel.is_cancelled() => break 'stream Err(aborted()),
             Err(message) => break 'stream Err(message),
         };
-        pending.extend_from_slice(&chunk);
-        let valid = match std::str::from_utf8(&pending) {
-            Ok(text) => text.len(),
-            Err(err) => err.valid_up_to(),
-        };
-        let text = String::from_utf8_lossy(&pending[..valid]).into_owned();
-        pending.drain(..valid);
+        let text = yapi_types::js::decode_utf8_stream(&mut pending, &chunk);
         match parser.push(&text) {
             Ok(events) => {
                 for event in events {
@@ -904,19 +759,11 @@ async fn run(request: Request, sender: EventSender) {
     };
     cancel.cancel();
     let result = result.map(|()| state.finish(&sender)).and_then(|()| {
-        if options.cancel.is_cancelled() {
-            return Err(http::ABORTED_DURING_STREAM.to_owned());
-        }
-        match state.output.stop_reason {
-            StopReason::Pending => Err("Mistral stream ended without a finish reason".into()),
-            StopReason::Aborted | StopReason::Error => Err(state
-                .output
-                .error_message
-                .clone()
-                .filter(|message| !message.is_empty())
-                .unwrap_or_else(|| "An unknown error occurred".into())),
-            _ => Ok(()),
-        }
+        check_complete(
+            &state.output,
+            &options.cancel,
+            "Mistral stream ended without a finish reason",
+        )
     });
     match result {
         Ok(()) => sender.send(StreamEvent::Done(state.output)),

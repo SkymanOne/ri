@@ -10,7 +10,7 @@ use yapi_types::message::{Cost, ImageContent, TextContent, Usage};
 use yapi_types::model::ImageModel;
 use yapi_types::models::InputKind;
 
-use crate::http::{self, Failure};
+use crate::http::{self, Failure, Headers};
 use crate::stream::{StreamOptions, now_ms};
 
 /// Options of one image request.
@@ -53,11 +53,7 @@ pub async fn generate_images(
         api => Err(format!("No API provider registered for api: {api}")),
     };
     if let Err(message) = result {
-        output.stop_reason = if options.cancel.is_cancelled() {
-            OutcomeReason::Aborted
-        } else {
-            OutcomeReason::Error
-        };
+        output.stop_reason = super::classify::failure_reason(&options.cancel);
         output.error_message = Some(message);
     }
     output
@@ -133,25 +129,12 @@ async fn openrouter(
     };
     let body = yapi_types::json::to_string(&params(model, context)).unwrap_or_default();
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
-    let authorization = format!("Bearer {api_key}");
-    let headers = super::classify::merge_headers([
-        vec![
-            ("Authorization", Some(authorization.as_str())),
-            ("Content-Type", Some("application/json")),
-            ("Accept", Some("application/json")),
-        ],
-        model
-            .headers
-            .iter()
-            .flatten()
-            .map(|(name, value)| (name.as_str(), Some(value.as_str())))
-            .collect(),
-        options
-            .headers
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_deref()))
-            .collect(),
-    ]);
+    let mut headers = Headers::default();
+    headers.set("Authorization", Some(format!("Bearer {api_key}")));
+    headers.set("Content-Type", Some("application/json"));
+    headers.set("Accept", Some("application/json"));
+    headers.extend_model(model.headers.as_ref());
+    headers.extend(&options.headers);
     let retry = StreamOptions {
         max_retries: options.max_retries.unwrap_or(0),
         max_retry_delay_ms: options.max_retry_delay_ms,
@@ -159,10 +142,7 @@ async fn openrouter(
         ..StreamOptions::default()
     };
     let build = || {
-        let mut request = http::client().post(&url).body(body.clone());
-        for (name, value) in &headers {
-            request = request.header(name.as_str(), value.as_str());
-        }
+        let mut request = headers.apply(http::client().post(&url).body(body.clone()));
         if let Some(timeout) = options.timeout_ms {
             request = request.timeout(std::time::Duration::from_millis(timeout));
         }
@@ -171,14 +151,7 @@ async fn openrouter(
     let response = match http::send(build, &retry).await {
         Ok(response) => response,
         Err(Failure::Status { status, body }) => {
-            return Err(match serde_json::from_str::<Value>(&body) {
-                Ok(json) => {
-                    let error = json.get("error");
-                    let message = http::sdk_status_message(status, error, None);
-                    http::provider_error_message(&message, Some(status), error, None)
-                }
-                Err(_) => http::sdk_status_message(status, None, Some(&body)),
-            });
+            return Err(http::openai_status_message(status, &body, None));
         }
         Err(other) => return Err(other.plain_message().unwrap_or_default()),
     };

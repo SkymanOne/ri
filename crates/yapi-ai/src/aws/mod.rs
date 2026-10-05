@@ -443,39 +443,23 @@ async fn sts(
     let pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let body = crate::auth::form(&pairs);
     let url = url::Url::parse(&endpoint).map_err(|err| err.to_string())?;
-    let host = match url.port() {
-        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
-        None => url.host_str().unwrap_or_default().to_owned(),
-    };
-    let mut headers = vec![
-        (
-            "content-type".to_owned(),
-            "application/x-www-form-urlencoded".to_owned(),
-        ),
-        ("host".to_owned(), host),
-    ];
+    let mut headers = vec![(
+        "content-type".to_owned(),
+        "application/x-www-form-urlencoded".to_owned(),
+    )];
     if let Some(credentials) = signer {
-        let amz_date = sigv4::amz_date(now_ms());
-        let authorization = sigv4::sign(
-            "POST",
-            url.path(),
-            "",
+        sigv4::sign_request(
+            &url,
             &mut headers,
             body.as_bytes(),
             credentials,
-            &sigv4::Scope {
-                region,
-                service: "sts",
-                amz_date: &amz_date,
-            },
+            region,
+            "sts",
         );
-        headers.push(("authorization".to_owned(), authorization));
     }
     let mut request = crate::http::client().post(url.as_str()).body(body);
     for (name, value) in &headers {
-        if name != "host" {
-            request = request.header(name.as_str(), value.as_str());
-        }
+        request = request.header(name.as_str(), value.as_str());
     }
     let response = send(request, cancel).await?;
     let status = response.status().as_u16();
@@ -589,10 +573,15 @@ async fn sso(
         Some(session) => session.clone(),
         None => setting("sso_start_url").unwrap_or_default(),
     };
-    use sha1::Digest as _;
     let file = ini::home(env).join(".aws/sso/cache").join(format!(
         "{}.json",
-        yapi_types::time::hex(&sha1::Sha1::digest(cache_id.as_bytes()))
+        yapi_types::time::hex(
+            aws_lc_rs::digest::digest(
+                &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+                cache_id.as_bytes()
+            )
+            .as_ref()
+        )
     ));
     let invalid =
         || format!("The SSO session associated with this profile is invalid. {SSO_REFRESH}");

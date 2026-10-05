@@ -43,6 +43,27 @@ pub struct Interaction {
     pub response: Response,
 }
 
+impl Interaction {
+    /// Answers `method` `path` with `status` and `body` as JSON.
+    pub fn json(method: &str, path: &str, status: u16, body: &serde_json::Value) -> Interaction {
+        Interaction {
+            request: RequestMatch {
+                method: method.into(),
+                path: path.into(),
+            },
+            response: Response {
+                status,
+                headers: [("content-type".to_owned(), "application/json".to_owned())]
+                    .into_iter()
+                    .collect(),
+                chunks: vec![body.to_string()],
+                body_base64: None,
+                chunk_delay_ms: 0,
+            },
+        }
+    }
+}
+
 /// Method and path a request must have. The query string is not compared.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RequestMatch {

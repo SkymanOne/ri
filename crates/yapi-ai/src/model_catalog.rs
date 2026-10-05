@@ -170,6 +170,21 @@ pub fn generated_at_ms() -> u64 {
     yapi_types::time::parse_iso(crate::catalog::GENERATED_AT).unwrap_or(0)
 }
 
+/// How long pi lets a catalog refresh run before aborting it.
+pub const REFRESH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// A token cancelled after `timeout`, as `AbortSignal.timeout` is. Needs a
+/// tokio runtime.
+pub fn cancel_after(timeout: std::time::Duration) -> CancellationToken {
+    let cancel = CancellationToken::new();
+    let timer = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(timeout).await;
+        timer.cancel();
+    });
+    cancel
+}
+
 /// What a refresh does.
 #[derive(Clone, Debug)]
 pub struct RefreshOptions {

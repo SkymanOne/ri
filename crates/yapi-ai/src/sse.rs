@@ -25,21 +25,8 @@ pub struct Decoder {
 impl Decoder {
     /// Decodes a chunk and returns the events it completes.
     pub fn push(&mut self, chunk: &[u8]) -> Vec<Event> {
-        self.pending.extend_from_slice(chunk);
-        let valid = match std::str::from_utf8(&self.pending) {
-            Ok(text) => text.len(),
-            Err(err) if err.error_len().is_none() => err.valid_up_to(),
-            // Invalid bytes: decode lossily, as TextDecoder does.
-            Err(_) => {
-                let text = String::from_utf8_lossy(&self.pending).into_owned();
-                self.pending.clear();
-                self.buffer.push_str(&text);
-                return self.lines();
-            }
-        };
-        let rest = self.pending.split_off(valid);
-        let text = std::mem::replace(&mut self.pending, rest);
-        self.buffer.push_str(&String::from_utf8_lossy(&text));
+        let text = yapi_types::js::decode_utf8_stream(&mut self.pending, chunk);
+        self.buffer.push_str(&text);
         self.lines()
     }
 

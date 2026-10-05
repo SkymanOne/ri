@@ -5,65 +5,31 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
     ToolCall, ToolDeclaration, ToolResultMessage, Usage,
 };
 use yapi_types::model::Model;
 
-use super::sanitize_id_part;
 use crate::auth::google_adc;
 use crate::cost::calculate_cost;
-use crate::http::{self, Failure};
+use crate::http::{self, Failure, Headers};
 use crate::schema;
 use crate::stream::{
-    EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions, ThinkingBudgets,
-    new_output, now_ms, send_error,
+    EventSender, Request, StreamEvent, StreamOptions, ThinkingBudgets, check_complete, new_output,
+    now_ms, send_error,
 };
 use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
 use crate::transcript::{
     current_tools, initial_system_message, resolve_transcript, transform_messages,
 };
 
-/// The `google-generative-ai` wire API.
-#[derive(Debug, Default)]
-pub struct GoogleGenerativeAi;
-
-impl Provider for GoogleGenerativeAi {
-    fn api(&self) -> &str {
-        "google-generative-ai"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender, Flavor::Gemini));
-        stream
-    }
-}
-
-/// The `google-vertex` wire API: Gemini on Vertex AI, with a Google Cloud API
-/// key or Application Default Credentials. Port of `google-vertex.ts`.
-#[derive(Debug, Default)]
-pub struct GoogleVertex;
-
-impl Provider for GoogleVertex {
-    fn api(&self) -> &str {
-        "google-vertex"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender, Flavor::Vertex));
-        stream
-    }
-}
-
-/// Which Google API a request goes to.
+/// Which Google API a request goes to: `google-generative-ai` or, with a
+/// Google Cloud API key or Application Default Credentials, `google-vertex`
+/// (port of `google-vertex.ts`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Flavor {
+pub(super) enum Flavor {
     Gemini,
     Vertex,
 }
@@ -376,7 +342,7 @@ fn convert_messages(model: &Model, messages: &[Message]) -> Vec<Value> {
     let needs_ids = requires_tool_call_id(&model.id);
     let normalize = |id: &str, _: &AssistantMessage| {
         if needs_ids {
-            sanitize_id_part(id).chars().take(64).collect()
+            super::normalize_tool_call_id(id)
         } else {
             id.to_owned()
         }
@@ -567,24 +533,9 @@ impl State {
     }
 
     fn close(&mut self, sender: &EventSender) {
-        let Some(open) = self.open.take() else {
-            return;
-        };
-        let index = self.last();
-        let event = match (&self.output.content[index], open) {
-            (ContentBlock::Text(text), Open::Text) => AssistantMessageEvent::TextEnd {
-                content_index: index,
-                content: text.text.clone(),
-            },
-            (ContentBlock::Thinking(thinking), Open::Thinking) => {
-                AssistantMessageEvent::ThinkingEnd {
-                    content_index: index,
-                    content: thinking.thinking.clone(),
-                }
-            }
-            _ => return,
-        };
-        sender.update(&self.output, event);
+        if self.open.take().is_some() {
+            sender.end(&self.output, self.last());
+        }
     }
 
     fn text_part(&mut self, part: &Value, text: &str, sender: &EventSender) {
@@ -595,58 +546,31 @@ impl State {
         };
         if self.open != Some(kind) {
             self.close(sender);
-            let index = self.output.content.len();
-            let (block, event) = match kind {
-                Open::Thinking => (
-                    ContentBlock::Thinking(ThinkingContent {
-                        thinking: String::new(),
-                        thinking_signature: None,
-                        redacted: None,
-                    }),
-                    AssistantMessageEvent::ThinkingStart {
-                        content_index: index,
-                    },
-                ),
-                Open::Text => (
-                    ContentBlock::text(""),
-                    AssistantMessageEvent::TextStart {
-                        content_index: index,
-                    },
-                ),
+            let block = match kind {
+                Open::Thinking => ContentBlock::Thinking(ThinkingContent {
+                    thinking: String::new(),
+                    thinking_signature: None,
+                    redacted: None,
+                }),
+                Open::Text => ContentBlock::text(""),
             };
-            self.output.content.push(block);
+            sender.start(&mut self.output, block);
             self.open = Some(kind);
-            sender.update(&self.output, event);
         }
         let incoming = part["thoughtSignature"]
             .as_str()
             .filter(|signature| !signature.is_empty())
             .map(str::to_owned);
         let index = self.last();
-        let event = match &mut self.output.content[index] {
-            ContentBlock::Thinking(block) => {
-                block.thinking.push_str(text);
-                if incoming.is_some() {
-                    block.thinking_signature = incoming;
-                }
-                AssistantMessageEvent::ThinkingDelta {
-                    content_index: index,
-                    delta: text.to_owned(),
-                }
-            }
-            ContentBlock::Text(block) => {
-                block.text.push_str(text);
-                if incoming.is_some() {
-                    block.text_signature = incoming;
-                }
-                AssistantMessageEvent::TextDelta {
-                    content_index: index,
-                    delta: text.to_owned(),
-                }
-            }
+        let signature = match &mut self.output.content[index] {
+            ContentBlock::Thinking(block) => &mut block.thinking_signature,
+            ContentBlock::Text(block) => &mut block.text_signature,
             _ => return,
         };
-        sender.update(&self.output, event);
+        if incoming.is_some() {
+            *signature = incoming;
+        }
+        sender.delta(&mut self.output, index, text);
     }
 
     fn function_call(&mut self, part: &Value, sender: &EventSender) {
@@ -669,43 +593,20 @@ impl State {
             ),
         };
         let arguments = call["args"].as_object().cloned().unwrap_or_default();
-        let tool_call = ToolCall {
-            id: id.clone(),
-            name: name.clone(),
+        let delta = yapi_types::json::to_string(&arguments).unwrap_or_default();
+        let tool_call = ContentBlock::ToolCall(ToolCall {
+            id,
+            name,
             arguments,
             thought_signature: part["thoughtSignature"]
                 .as_str()
                 .filter(|signature| !signature.is_empty())
                 .map(str::to_owned),
             namespace: None,
-        };
-        let delta = yapi_types::json::to_string(&tool_call.arguments).unwrap_or_default();
-        self.output
-            .content
-            .push(ContentBlock::ToolCall(tool_call.clone()));
-        let index = self.last();
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ToolcallStart {
-                content_index: index,
-                id,
-                tool_name: name,
-            },
-        );
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ToolcallDelta {
-                content_index: index,
-                delta,
-            },
-        );
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ToolcallEnd {
-                content_index: index,
-                tool_call,
-            },
-        );
+        });
+        let index = sender.start(&mut self.output, tool_call);
+        sender.delta(&mut self.output, index, &delta);
+        sender.end(&self.output, index);
     }
 
     fn handle(&mut self, chunk: &Value, model: &Model, sender: &EventSender) -> Result<(), String> {
@@ -730,6 +631,8 @@ impl State {
         if let Some(reason) = candidate["finishReason"].as_str() {
             self.output.raw_stop_reason = Some(reason.to_owned());
             self.output.stop_reason = map_stop_reason(reason)?;
+            self.output.error_message = (self.output.stop_reason == StopReason::Error)
+                .then(|| format!("Provider stopped with: {reason}"));
             if self.output.stop_reason == StopReason::Stop
                 && self
                     .output
@@ -812,14 +715,7 @@ async fn consume(
             }
             break;
         };
-        pending.extend_from_slice(&bytes);
-        let valid = match std::str::from_utf8(&pending) {
-            Ok(text) => text.len(),
-            Err(err) if err.error_len().is_none() => err.valid_up_to(),
-            Err(_) => pending.len(),
-        };
-        let rest = pending.split_off(valid);
-        let text = String::from_utf8_lossy(&std::mem::replace(&mut pending, rest)).into_owned();
+        let text = yapi_types::js::decode_utf8_stream(&mut pending, &bytes);
         if let Some(error) = chunk_error(&text) {
             return Err(error);
         }
@@ -837,138 +733,87 @@ async fn consume(
     Ok(())
 }
 
-async fn run(request: Request, sender: EventSender, flavor: Flavor) {
+pub(super) async fn run(request: Request, sender: EventSender, flavor: Flavor) {
     let Request {
         model,
         messages,
         options,
     } = request;
     let output = new_output(&model, now_ms());
+    let response = match connect(&model, &messages, &options, flavor).await {
+        Ok(response) => response,
+        Err(message) => return send_error(&sender, output, &options.cancel, message),
+    };
+    sender.send(StreamEvent::Start(output.clone()));
+    let mut state = State { output, open: None };
+    let pending = match flavor {
+        Flavor::Gemini => "Google stream ended without a finish reason",
+        Flavor::Vertex => "Google Vertex stream ended without a finish reason",
+    };
+    let result = consume(&mut state, response, &model, &sender, &options)
+        .await
+        .and_then(|()| {
+            state.close(&sender);
+            check_complete(&state.output, &options.cancel, pending)
+        });
+    match result {
+        Ok(()) => sender.send(StreamEvent::Done(state.output)),
+        Err(message) => send_error(&sender, state.output, &options.cancel, message),
+    }
+}
+
+/// Sends the request; the response once its status is a success.
+async fn connect(
+    model: &Model,
+    messages: &[Message],
+    options: &StreamOptions,
+    flavor: Flavor,
+) -> Result<reqwest::Response, String> {
     let api_key = options.api_key.clone().filter(|key| !key.is_empty());
     if flavor == Flavor::Gemini && api_key.is_none() {
-        send_error(
-            &sender,
-            output,
-            &options.cancel,
-            format!("No API key for provider: {}", model.provider),
-        );
-        return;
+        return Err(format!("No API key for provider: {}", model.provider));
     }
     let target = match flavor {
-        Flavor::Gemini => Ok(Target {
+        Flavor::Gemini => Target {
             url: format!(
                 "{}/{}:streamGenerateContent?alt=sse",
                 model.base_url.trim_end_matches('/'),
                 model_path(&model.id)
             ),
             auth: Auth::Key(api_key.unwrap_or_default()),
-        }),
-        Flavor::Vertex => vertex::target(&model, &options),
-    };
-    let target = match target {
-        Ok(target) => target,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
+        },
+        Flavor::Vertex => vertex::target(model, options)?,
     };
     let max_tokens = clamp_max_tokens_to_context(
-        &model,
-        &messages,
+        model,
+        messages,
         options.max_tokens.unwrap_or(model.max_tokens),
     );
-    let body = thinking(&model, &options, flavor)
-        .and_then(|thinking| build_body(&model, &messages, &options, max_tokens, &thinking))
-        .and_then(|body| yapi_types::json::to_string(&body).map_err(|err| err.to_string()));
-    let body = match body {
-        Ok(body) => body,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-    let mut headers: IndexMap<String, Option<String>> = IndexMap::new();
-    let mut set = |name: &str, value: Option<String>| {
-        headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
-        headers.insert(name.to_owned(), value);
-    };
-    set("content-type", Some("application/json".into()));
+    let thinking = thinking(model, options, flavor)?;
+    let body = build_body(model, messages, options, max_tokens, &thinking)?;
+    let body = yapi_types::json::to_string(&body).map_err(|err| err.to_string())?;
+    let mut headers = Headers::default();
+    headers.set("content-type", Some("application/json"));
     match target.auth {
-        Auth::Key(key) => set("x-goog-api-key", Some(key)),
+        Auth::Key(key) => headers.set("x-goog-api-key", Some(key)),
         Auth::Credentials { credentials_file } => {
-            match google_adc::token(
+            let token = google_adc::token(
                 credentials_file,
                 google_adc::OAUTH2_TOKEN_URL,
                 &options.cancel,
             )
-            .await
-            {
-                Ok(token) => {
-                    set(
-                        "authorization",
-                        Some(format!("Bearer {}", token.access_token)),
-                    );
-                    if let Some(project) = token.quota_project {
-                        set("x-goog-user-project", Some(project));
-                    }
-                }
-                Err(message) => {
-                    send_error(&sender, output, &options.cancel, message);
-                    return;
-                }
-            }
+            .await?;
+            headers.set(
+                "authorization",
+                Some(format!("Bearer {}", token.access_token)),
+            );
+            headers.set("x-goog-user-project", token.quota_project);
         }
     }
-    for (key, value) in model.headers.iter().flatten() {
-        set(key, Some(value.clone()));
-    }
-    for (key, value) in &options.headers {
-        set(key, value.clone());
-    }
-    let url = target.url;
-    let build = || {
-        let mut request = http::client().post(&url).body(body.clone());
-        for (name, value) in headers.iter() {
-            if let Some(value) = value {
-                request = request.header(name.as_str(), value.as_str());
-            }
-        }
-        request
-    };
-    let response = match http::send(build, &options).await {
-        Ok(response) => response,
-        Err(failure) => {
-            send_error(&sender, output, &options.cancel, failure_message(failure));
-            return;
-        }
-    };
-    sender.send(StreamEvent::Start(output.clone()));
-    let mut state = State { output, open: None };
-    let result = consume(&mut state, response, &model, &sender, &options)
-        .await
-        .and_then(|()| {
-            state.close(&sender);
-            if options.cancel.is_cancelled() {
-                return Err(http::ABORTED_DURING_STREAM.into());
-            }
-            match state.output.stop_reason {
-                StopReason::Pending => Err(match flavor {
-                    Flavor::Gemini => "Google stream ended without a finish reason".into(),
-                    Flavor::Vertex => "Google Vertex stream ended without a finish reason".into(),
-                }),
-                StopReason::Aborted | StopReason::Error => {
-                    Err(match &state.output.raw_stop_reason {
-                        Some(reason) => format!("Provider stopped with: {reason}"),
-                        None => "An unknown error occurred".into(),
-                    })
-                }
-                _ => Ok(()),
-            }
-        });
-    match result {
-        Ok(()) => sender.send(StreamEvent::Done(state.output)),
-        Err(message) => send_error(&sender, state.output, &options.cancel, message),
-    }
+    headers.extend_model(model.headers.as_ref());
+    headers.extend(&options.headers);
+    let build = || headers.apply(http::client().post(&target.url).body(body.clone()));
+    http::send(build, options).await.map_err(failure_message)
 }
 
 /// Where a request goes and how it authenticates.

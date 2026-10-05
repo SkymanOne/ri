@@ -5,13 +5,12 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
 use yapi_ai::model_catalog::{ModelsStore, RefreshOptions, Source, Target, refresh};
 use yapi_ai::registry::ModelRegistry;
-use yapi_mock::{Cassette, Interaction, MockServer, REDACTED, RequestMatch, Response};
+use yapi_mock::{Cassette, Interaction, MockServer, REDACTED};
 
 fn store(name: &str) -> (PathBuf, ModelsStore) {
     let dir = std::env::temp_dir().join(format!("yapi-catalogs-{name}-{}", std::process::id()));
@@ -22,34 +21,21 @@ fn store(name: &str) -> (PathBuf, ModelsStore) {
 }
 
 fn get(path: &str, status: u16, headers: &[(&str, &str)], body: &Value) -> Interaction {
-    Interaction {
-        request: RequestMatch {
-            method: "GET".into(),
-            path: path.into(),
-        },
-        response: Response {
-            status,
-            headers: headers
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                .chain([("content-type".to_owned(), "application/json".to_owned())])
-                .collect(),
-            chunks: if status == 304 {
-                Vec::new()
-            } else {
-                vec![body.to_string()]
-            },
-            body_base64: None,
-            chunk_delay_ms: 0,
-        },
+    let mut exchange = Interaction::json("GET", path, status, body);
+    let response = &mut exchange.response;
+    for (name, value) in headers {
+        response
+            .headers
+            .insert((*name).to_owned(), (*value).to_owned());
     }
+    if status == 304 {
+        response.chunks.clear();
+    }
+    exchange
 }
 
 async fn mock(interactions: Vec<Interaction>) -> MockServer {
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    MockServer::start(addr, Cassette { interactions })
-        .await
-        .unwrap()
+    MockServer::local(Cassette { interactions }).await.unwrap()
 }
 
 fn chat_model(id: &str) -> Value {

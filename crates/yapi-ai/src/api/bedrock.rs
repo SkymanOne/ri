@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use serde_json::{Map, Value, json};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingContent,
     ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
@@ -19,33 +18,17 @@ use yapi_types::model::Model;
 use crate::aws::{self, AwsEnv, Credentials, eventstream, sigv4};
 use crate::cost::calculate_cost;
 use crate::credentials::provider_env_value;
-use crate::http;
+use crate::http::{self, Headers};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms, send_error,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
+    now_ms, send_error,
 };
 use crate::thinking::{adjust_max_tokens_for_thinking, clamp_max_tokens_to_context};
 use crate::transcript::{
     current_tools, initial_system_message, resolve_transcript, transform_messages,
 };
-
-/// The `bedrock-converse-stream` wire API.
-#[derive(Debug, Default)]
-pub struct BedrockConverseStream;
-
-impl Provider for BedrockConverseStream {
-    fn api(&self) -> &str {
-        "bedrock-converse-stream"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
-        stream
-    }
-}
 
 const EMPTY_TEXT: &str = "<empty>";
 const REDACTED_THINKING: &str = "[Reasoning redacted]";
@@ -154,21 +137,6 @@ fn cache_point(retention: CacheRetention) -> Value {
         point.insert("ttl".into(), json!("1h"));
     }
     json!({ "cachePoint": point })
-}
-
-/// pi's `normalizeToolCallId`: `[a-zA-Z0-9_-]`, at most 64 characters.
-fn normalize_tool_call_id(id: &str) -> String {
-    let sanitized: String = id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    sanitized.chars().take(64).collect()
 }
 
 fn text_block(text: &str) -> Option<Value> {
@@ -310,7 +278,7 @@ fn convert_messages(
         Some(Message::System(_)) => messages[1..].to_vec(),
         _ => messages.to_vec(),
     };
-    let normalize = |id: &str, _: &AssistantMessage| normalize_tool_call_id(id);
+    let normalize = |id: &str, _: &AssistantMessage| super::normalize_tool_call_id(id);
     let transformed = transform_messages(&without_system, model, Some(&normalize), now_ms());
     let mut result = Vec::new();
     let mut index = 0;
@@ -679,46 +647,27 @@ fn reserved(name: &str) -> bool {
     lower.starts_with("x-amz-") || lower == "authorization" || lower == "host"
 }
 
-fn signed_headers(
-    target: &Target,
-    body: &str,
-    options: &StreamOptions,
-) -> Result<Vec<(String, String)>, String> {
+fn signed_headers(target: &Target, body: &str, options: &StreamOptions) -> Result<Headers, String> {
     let url = url::Url::parse(&target.url).map_err(|err| err.to_string())?;
-    let host = match url.port() {
-        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
-        None => url.host_str().unwrap_or_default().to_owned(),
-    };
-    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    let mut headers = Headers::default();
+    headers.set("content-type", Some("application/json"));
     for (name, value) in &options.headers {
         if let Some(value) = value
             && !reserved(name)
         {
-            headers.retain(|(key, _)| !key.eq_ignore_ascii_case(name));
-            headers.push((name.clone(), value.clone()));
+            headers.set(name, Some(value.as_str()));
         }
     }
     match &target.signer {
-        Signer::Bearer(token) => headers.push(("authorization".into(), format!("Bearer {token}"))),
-        Signer::SigV4(credentials) => {
-            headers.push(("host".into(), host));
-            let amz_date = sigv4::amz_date(now_ms());
-            let authorization = sigv4::sign(
-                "POST",
-                url.path(),
-                "",
-                &mut headers,
-                body.as_bytes(),
-                credentials,
-                &sigv4::Scope {
-                    region: &target.region,
-                    service: "bedrock",
-                    amz_date: &amz_date,
-                },
-            );
-            headers.retain(|(name, _)| name != "host");
-            headers.push(("authorization".into(), authorization));
-        }
+        Signer::Bearer(token) => headers.set("authorization", Some(format!("Bearer {token}"))),
+        Signer::SigV4(credentials) => sigv4::sign_request(
+            &url,
+            &mut headers.0,
+            body.as_bytes(),
+            credentials,
+            &target.region,
+            "bedrock",
+        ),
     }
     Ok(headers)
 }
@@ -730,6 +679,19 @@ struct Failure {
     code: Option<String>,
     request_id: Option<String>,
     retryable: bool,
+}
+
+impl Failure {
+    /// A failure with only a message, never retried.
+    fn plain(message: String) -> Failure {
+        Failure {
+            message,
+            status: None,
+            code: None,
+            request_id: None,
+            retryable: false,
+        }
+    }
 }
 
 const ERROR_PREFIXES: &[(&str, &str)] = &[
@@ -922,17 +884,8 @@ async fn send(
     let attempts = max_attempts(options);
     let mut attempt = 1;
     loop {
-        let headers = signed_headers(target, body, options).map_err(|message| Failure {
-            message,
-            status: None,
-            code: None,
-            request_id: None,
-            retryable: false,
-        })?;
-        let mut request = http::client().post(&target.url).body(body.to_owned());
-        for (name, value) in &headers {
-            request = request.header(name.as_str(), value.as_str());
-        }
+        let headers = signed_headers(target, body, options).map_err(Failure::plain)?;
+        let request = headers.apply(http::client().post(&target.url).body(body.to_owned()));
         let result = tokio::select! {
             () = options.cancel.cancelled() => return Err(aborted()),
             result = request.send() => result,
@@ -970,13 +923,7 @@ async fn send(
 }
 
 fn aborted() -> Failure {
-    Failure {
-        message: http::ABORTED_BEFORE_RESPONSE.into(),
-        status: None,
-        code: None,
-        request_id: None,
-        retryable: false,
-    }
+    Failure::plain(http::ABORTED_BEFORE_RESPONSE.into())
 }
 
 /// A streamed content block: its Bedrock index while open, and scratch data.
@@ -997,14 +944,13 @@ impl State {
         self.open.iter().position(|open| open.index == Some(index))
     }
 
-    fn push(&mut self, block: ContentBlock, index: u64) -> usize {
-        self.output.content.push(block);
+    fn push(&mut self, block: ContentBlock, index: u64, sender: &EventSender) -> usize {
         self.open.push(Open {
             index: Some(index),
             partial_json: String::new(),
             redacted: Vec::new(),
         });
-        self.output.content.len() - 1
+        sender.start(&mut self.output, block)
     }
 
     fn flush_redacted(&mut self, position: usize) {
@@ -1050,26 +996,14 @@ impl State {
                 let index = event["contentBlockIndex"].as_u64().unwrap_or_default();
                 let tool = &event["start"]["toolUse"];
                 if tool.is_object() {
-                    let id = tool["toolUseId"].as_str().unwrap_or_default().to_owned();
-                    let name = tool["name"].as_str().unwrap_or_default().to_owned();
-                    let position = self.push(
-                        ContentBlock::ToolCall(ToolCall {
-                            id: id.clone(),
-                            name: name.clone(),
-                            arguments: Map::new(),
-                            thought_signature: None,
-                            namespace: None,
-                        }),
-                        index,
-                    );
-                    sender.update(
-                        &self.output,
-                        AssistantMessageEvent::ToolcallStart {
-                            content_index: position,
-                            id,
-                            tool_name: name,
-                        },
-                    );
+                    let call = ToolCall {
+                        id: tool["toolUseId"].as_str().unwrap_or_default().to_owned(),
+                        name: tool["name"].as_str().unwrap_or_default().to_owned(),
+                        arguments: Map::new(),
+                        thought_signature: None,
+                        namespace: None,
+                    };
+                    self.push(ContentBlock::ToolCall(call), index, sender);
                 }
             }
             "contentBlockDelta" => self.delta(event, sender),
@@ -1081,37 +1015,14 @@ impl State {
                     return Ok(());
                 };
                 self.open[position].index = None;
-                let update = match &self.output.content[position] {
-                    ContentBlock::Text(text) => AssistantMessageEvent::TextEnd {
-                        content_index: position,
-                        content: text.text.clone(),
-                    },
-                    ContentBlock::Thinking(_) => {
-                        self.flush_redacted(position);
-                        let ContentBlock::Thinking(thinking) = &self.output.content[position]
-                        else {
-                            return Ok(());
-                        };
-                        AssistantMessageEvent::ThinkingEnd {
-                            content_index: position,
-                            content: thinking.thinking.clone(),
-                        }
+                match &mut self.output.content[position] {
+                    ContentBlock::Thinking(_) => self.flush_redacted(position),
+                    ContentBlock::ToolCall(call) => {
+                        call.arguments = parse_streaming_json(&self.open[position].partial_json);
                     }
-                    ContentBlock::ToolCall(_) => {
-                        let arguments = parse_streaming_json(&self.open[position].partial_json);
-                        let ContentBlock::ToolCall(call) = &mut self.output.content[position]
-                        else {
-                            return Ok(());
-                        };
-                        call.arguments = arguments;
-                        AssistantMessageEvent::ToolcallEnd {
-                            content_index: position,
-                            tool_call: call.clone(),
-                        }
-                    }
-                    ContentBlock::Image(_) => return Ok(()),
-                };
-                sender.update(&self.output, update);
+                    _ => {}
+                }
+                sender.end(&self.output, position);
             }
             "messageStop" => {
                 let reason = event["stopReason"].as_str();
@@ -1160,30 +1071,12 @@ impl State {
     fn delta(&mut self, event: &Value, sender: &EventSender) {
         let index = event["contentBlockIndex"].as_u64().unwrap_or_default();
         let delta = &event["delta"];
-        let mut position = self.position(index);
+        let position = self.position(index);
         if let Some(text) = delta["text"].as_str() {
-            let position = match position {
-                Some(position) => position,
-                None => {
-                    let position = self.push(ContentBlock::text(""), index);
-                    sender.update(
-                        &self.output,
-                        AssistantMessageEvent::TextStart {
-                            content_index: position,
-                        },
-                    );
-                    position
-                }
-            };
-            if let ContentBlock::Text(block) = &mut self.output.content[position] {
-                block.text.push_str(text);
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::TextDelta {
-                        content_index: position,
-                        delta: text.to_owned(),
-                    },
-                );
+            let position =
+                position.unwrap_or_else(|| self.push(ContentBlock::text(""), index, sender));
+            if let ContentBlock::Text(_) = self.output.content[position] {
+                sender.delta(&mut self.output, position, text);
             }
         } else if delta["toolUse"].is_object() {
             let Some(position) = position else {
@@ -1194,48 +1087,23 @@ impl State {
             let arguments = parse_streaming_json(&self.open[position].partial_json);
             if let ContentBlock::ToolCall(call) = &mut self.output.content[position] {
                 call.arguments = arguments;
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallDelta {
-                        content_index: position,
-                        delta: piece.to_owned(),
-                    },
-                );
+                sender.delta(&mut self.output, position, piece);
             }
         } else if delta["reasoningContent"].is_object() {
             let reasoning = &delta["reasoningContent"];
-            let position = match position.take() {
-                Some(position) => position,
-                None => {
-                    let position = self.push(
-                        ContentBlock::Thinking(ThinkingContent {
-                            thinking: String::new(),
-                            thinking_signature: Some(String::new()),
-                            redacted: None,
-                        }),
-                        index,
-                    );
-                    sender.update(
-                        &self.output,
-                        AssistantMessageEvent::ThinkingStart {
-                            content_index: position,
-                        },
-                    );
-                    position
-                }
-            };
-            let ContentBlock::Thinking(thinking) = &mut self.output.content[position] else {
+            let position = position.unwrap_or_else(|| {
+                let block = ContentBlock::Thinking(ThinkingContent {
+                    thinking: String::new(),
+                    thinking_signature: Some(String::new()),
+                    redacted: None,
+                });
+                self.push(block, index, sender)
+            });
+            let ContentBlock::Thinking(_) = self.output.content[position] else {
                 return;
             };
             if let Some(text) = reasoning["text"].as_str().filter(|text| !text.is_empty()) {
-                thinking.thinking.push_str(text);
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ThinkingDelta {
-                        content_index: position,
-                        delta: text.to_owned(),
-                    },
-                );
+                sender.delta(&mut self.output, position, text);
             }
             let ContentBlock::Thinking(thinking) = &mut self.output.content[position] else {
                 return;
@@ -1256,14 +1124,7 @@ impl State {
                 if thinking.redacted != Some(true) {
                     thinking.redacted = Some(true);
                     thinking.thinking_signature = Some(String::new());
-                    thinking.thinking.push_str(REDACTED_THINKING);
-                    sender.update(
-                        &self.output,
-                        AssistantMessageEvent::ThinkingDelta {
-                            content_index: position,
-                            delta: REDACTED_THINKING.to_owned(),
-                        },
-                    );
+                    sender.delta(&mut self.output, position, REDACTED_THINKING);
                 }
                 self.open[position].redacted.extend(redacted);
             }
@@ -1287,13 +1148,7 @@ async fn consume(
     sender: &EventSender,
     options: &StreamOptions,
 ) -> Result<(), Failure> {
-    let plain = |message: String| Failure {
-        message,
-        status: None,
-        code: None,
-        request_id: None,
-        retryable: false,
-    };
+    let plain = Failure::plain;
     let mut decoder = eventstream::Decoder::default();
     loop {
         let chunk =
@@ -1347,66 +1202,30 @@ async fn consume(
             }
         }
     }
-    if options.cancel.is_cancelled() {
-        return Err(plain(http::ABORTED_DURING_STREAM.into()));
-    }
-    match state.output.stop_reason {
-        StopReason::Pending => Err(plain("Bedrock stream ended without a stop reason".into())),
-        StopReason::Error | StopReason::Aborted => Err(plain(
-            state
-                .output
-                .error_message
-                .clone()
-                .unwrap_or_else(|| "An unknown error occurred".into()),
-        )),
-        _ => Ok(()),
-    }
+    check_complete(
+        &state.output,
+        &options.cancel,
+        "Bedrock stream ended without a stop reason",
+    )
+    .map_err(plain)
 }
 
-async fn run(request: Request, sender: EventSender) {
+pub(super) async fn run(request: Request, sender: EventSender) {
     let Request {
         model,
         messages,
         options,
     } = request;
-    let output = new_output(&model, now_ms());
-    let configured_region = provider_env_value("AWS_REGION", options.env.as_ref())
-        .or_else(|| provider_env_value("AWS_DEFAULT_REGION", options.env.as_ref()));
-    let thinking = thinking(&model, &messages, &options);
-    let body = build_body(
-        &model,
-        &messages,
-        &options,
-        &thinking,
-        configured_region.as_deref(),
-    )
-    .and_then(|body| yapi_types::json::to_string(&body).map_err(|err| err.to_string()));
     let fail = |mut output: AssistantMessage, failure: Failure, request_id: Option<&str>| {
         if !options.cancel.is_cancelled() {
             append_diagnostic(&mut output, &failure, request_id);
         }
         send_error(&sender, output, &options.cancel, failure.message);
     };
-    let body = match body {
-        Ok(body) => body,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-    let target = match target(&model, &options).await {
-        Ok(target) => target,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-    let response = match send(&target, &body, &options).await {
+    let output = new_output(&model, now_ms());
+    let response = match connect(&model, &messages, &options).await {
         Ok(response) => response,
-        Err(failure) => {
-            fail(output, failure, None);
-            return;
-        }
+        Err(failure) => return fail(output, failure, None),
     };
     let request_id = response
         .headers()
@@ -1424,6 +1243,28 @@ async fn run(request: Request, sender: EventSender) {
         Ok(()) => sender.send(StreamEvent::Done(state.output)),
         Err(failure) => fail(state.output, failure, request_id.as_deref()),
     }
+}
+
+/// Builds and sends the request; the response once its status is a success.
+async fn connect(
+    model: &Model,
+    messages: &[Message],
+    options: &StreamOptions,
+) -> Result<reqwest::Response, Failure> {
+    let configured_region = provider_env_value("AWS_REGION", options.env.as_ref())
+        .or_else(|| provider_env_value("AWS_DEFAULT_REGION", options.env.as_ref()));
+    let thinking = thinking(model, messages, options);
+    let body = build_body(
+        model,
+        messages,
+        options,
+        &thinking,
+        configured_region.as_deref(),
+    )
+    .and_then(|body| yapi_types::json::to_string(&body).map_err(|err| err.to_string()))
+    .map_err(Failure::plain)?;
+    let target = target(model, options).await.map_err(Failure::plain)?;
+    send(&target, &body, options).await
 }
 
 #[cfg(test)]

@@ -15,25 +15,9 @@ use crate::credentials::provider_env_value;
 use crate::http;
 use crate::json_parse::parse_streaming_json;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, new_output, now_ms,
+    send_error,
 };
-
-/// The `pi-messages` wire API.
-#[derive(Debug, Default)]
-pub struct PiMessages;
-
-impl Provider for PiMessages {
-    fn api(&self) -> &str {
-        "pi-messages"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
-        stream
-    }
-}
 
 /// The request's cache retention: the option, else the legacy
 /// `PI_CACHE_RETENTION=long`; the backend's default otherwise.
@@ -345,27 +329,22 @@ fn event_data(raw: &str) -> Option<&str> {
     (!data.is_empty() && data != "[DONE]").then_some(data)
 }
 
-fn error_message(model: &Model, options: &StreamOptions, message: String) -> StreamEvent {
-    let mut output = new_output(model, now_ms());
-    output.stop_reason = if options.cancel.is_cancelled() {
-        StopReason::Aborted
-    } else {
-        StopReason::Error
-    };
-    output.error_message = Some(message);
-    StreamEvent::Error(output)
-}
-
-async fn run(request: Request, sender: EventSender) {
+pub(super) async fn run(request: Request, sender: EventSender) {
     let model = request.model.clone();
     let options = request.options.clone();
+    let fail = |message: String| {
+        send_error(
+            &sender,
+            new_output(&model, now_ms()),
+            &options.cancel,
+            message,
+        );
+    };
     let Some(api_key) = options.api_key.clone().filter(|key| !key.is_empty()) else {
-        sender.send(error_message(
-            &model,
-            &options,
-            format!("No API key provided for provider \"{}\"", model.provider),
+        return fail(format!(
+            "No API key provided for provider \"{}\"",
+            model.provider
         ));
-        return;
     };
     let url = format!("{}/messages", model.base_url.trim_end_matches('/'));
     let body = yapi_types::json::to_string(&payload(&model, &request)).unwrap_or_default();
@@ -380,31 +359,21 @@ async fn run(request: Request, sender: EventSender) {
         }
     }
     let response = tokio::select! {
-        () = options.cancel.cancelled() => {
-            sender.send(error_message(&model, &options, http::ABORTED_READ.into()));
-            return;
-        }
+        () = options.cancel.cancelled() => return fail(http::ABORTED_READ.into()),
         response = builder.body(body).send() => response,
     };
-    let mut response = match response {
-        Ok(response) => response,
-        Err(_) => {
-            sender.send(error_message(&model, &options, "fetch failed".into()));
-            return;
-        }
+    let Ok(mut response) = response else {
+        return fail("fetch failed".into());
     };
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         let (message, diagnostic) = response_failure(&model, &url, status, &text);
-        let StreamEvent::Error(mut output) = error_message(&model, &options, message) else {
-            return;
-        };
+        let mut output = new_output(&model, now_ms());
         if !options.cancel.is_cancelled() {
             output.diagnostics = Some(vec![diagnostic]);
         }
-        sender.send(StreamEvent::Error(output));
-        return;
+        return send_error(&sender, output, &options.cancel, message);
     }
     let mut converter = Converter {
         partial: new_output(&model, now_ms()),
@@ -416,23 +385,11 @@ async fn run(request: Request, sender: EventSender) {
         let chunk = match http::read_chunk(&mut response, &options.cancel, http::ABORTED_READ).await
         {
             Ok(chunk) => chunk,
-            Err(message) => {
-                sender.send(error_message(&model, &options, message));
-                return;
-            }
+            Err(message) => return fail(message),
         };
         let done = chunk.is_none();
         if let Some(bytes) = chunk {
-            pending.extend_from_slice(&bytes);
-            let valid = match std::str::from_utf8(&pending) {
-                Ok(text) => text.len(),
-                Err(err) => err.valid_up_to(),
-            };
-            let rest = pending.split_off(valid);
-            buffer.push_str(&String::from_utf8_lossy(&std::mem::replace(
-                &mut pending,
-                rest,
-            )));
+            buffer.push_str(&yapi_types::js::decode_utf8_stream(&mut pending, &bytes));
         }
         buffer = buffer.replace("\r\n", "\n");
         let mut events: Vec<String> = Vec::new();
@@ -449,10 +406,7 @@ async fn run(request: Request, sender: EventSender) {
             };
             let event: Value = match serde_json::from_str(data) {
                 Ok(event) => event,
-                Err(err) => {
-                    sender.send(error_message(&model, &options, err.to_string()));
-                    return;
-                }
+                Err(err) => return fail(err.to_string()),
             };
             if let Some(update) = converter.apply(&event) {
                 let terminal = matches!(update, StreamEvent::Done(_) | StreamEvent::Error(_));
@@ -466,10 +420,9 @@ async fn run(request: Request, sender: EventSender) {
             break;
         }
     }
-    sender.send(error_message(
-        &model,
-        &options,
-        format!("{} stream ended without a terminal event", model.provider),
+    fail(format!(
+        "{} stream ended without a terminal event",
+        model.provider
     ));
 }
 

@@ -4,9 +4,7 @@
 //! Port of `packages/ai/src/api/openai-completions.ts` in pi `v1.0.0`. Not yet
 //! ported: grammar-constrained custom tools and GitHub Copilot dynamic headers.
 
-use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
     AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel, ToolCall,
     ToolDeclaration, Usage,
@@ -15,33 +13,17 @@ use yapi_types::model::{Model, OpenAiCompletionsCompat};
 
 use super::sanitize_id_part;
 use crate::cost::calculate_cost;
-use crate::http::{self, Failure, SseReader};
+use crate::http::{self, Failure, Headers, SseReader};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms, send_error,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, new_output, now_ms,
+    send_error,
 };
 use crate::thinking::{
     MIN_ANSWER_TOKENS, budget_for_level, clamp_level, clamp_max_tokens_to_context,
 };
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
-
-/// The `openai-completions` wire API.
-#[derive(Debug, Default)]
-pub struct OpenAiCompletions;
-
-impl Provider for OpenAiCompletions {
-    fn api(&self) -> &str {
-        "openai-completions"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
-        stream
-    }
-}
 
 /// Compat flags with detected defaults applied.
 #[derive(Clone, Debug)]
@@ -990,117 +972,17 @@ fn map_stop_reason(reason: &str) -> (StopReason, Option<String>) {
     }
 }
 
-async fn run(request: Request, sender: EventSender) {
+pub(super) async fn run(request: Request, sender: EventSender) {
     let Request {
         model,
         messages,
         options,
     } = request;
     let compat = Compat::new(&model);
-    let normalized = resolve_transcript(&messages, compat.supports_mid_convo_system_messages);
     let output = new_output(&model, now_ms());
-    let api_key = match options.api_key.clone().filter(|key| !key.is_empty()) {
-        Some(key) => key,
-        None if options.has_header("authorization")
-            || options.has_header("cf-aig-authorization") =>
-        {
-            "unused".to_owned()
-        }
-        None => {
-            send_error(
-                &sender,
-                output,
-                &options.cancel,
-                format!("No API key for provider: {}", model.provider),
-            );
-            return;
-        }
-    };
-    // streamSimple: clamp output to the context and the level to the model.
-    let max_tokens = clamp_max_tokens_to_context(
-        &model,
-        &messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(&model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
-    let retention = options.resolved_cache_retention();
-    let params = match build_params(
-        &model,
-        &normalized,
-        &options,
-        &compat,
-        retention,
-        max_tokens,
-        effort,
-    ) {
-        Ok(params) => params,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-
-    let mut headers: IndexMap<String, Option<String>> = IndexMap::new();
-    let mut set = |name: &str, value: Option<String>| {
-        headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
-        headers.insert(name.to_owned(), value);
-    };
-    set("authorization", Some(format!("Bearer {api_key}")));
-    set("content-type", Some("application/json".into()));
-    set("accept", Some("application/json".into()));
-    for (key, value) in model.headers.iter().flatten() {
-        set(key, Some(value.clone()));
-    }
-    if model.provider == "github-copilot" {
-        for (key, value) in super::copilot_headers(&messages) {
-            set(key, Some(value));
-        }
-    }
-    if let Some(session) = options
-        .session_id
-        .as_ref()
-        .filter(|_| retention != CacheRetention::None && compat.send_session_affinity_headers)
-    {
-        if compat.session_affinity_format == "openrouter" {
-            set("x-session-id", Some(session.clone()));
-        } else {
-            if compat.session_affinity_format == "openai" {
-                set("session_id", Some(session.clone()));
-            }
-            set("x-client-request-id", Some(session.clone()));
-            set("x-session-affinity", Some(session.clone()));
-        }
-    }
-    for (key, value) in &options.headers {
-        set(key, value.clone());
-    }
-
-    let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
-    let body = match yapi_types::json::to_string(&params) {
-        Ok(body) => body,
-        Err(err) => {
-            send_error(&sender, output, &options.cancel, err.to_string());
-            return;
-        }
-    };
-    let build = || {
-        let mut request = http::client().post(&url).body(body.clone());
-        for (name, value) in headers.iter() {
-            if let Some(value) = value {
-                request = request.header(name.as_str(), value.as_str());
-            }
-        }
-        request
-    };
-    let response = match http::send(build, &options).await {
+    let response = match connect(&model, &compat, &messages, &options).await {
         Ok(response) => response,
-        Err(failure) => {
-            send_error(&sender, output, &options.cancel, failure_message(failure));
-            return;
-        }
+        Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
 
     sender.send(StreamEvent::Start(output.clone()));
@@ -1124,31 +1006,96 @@ async fn run(request: Request, sender: EventSender) {
     }
 }
 
-fn failure_message(failure: Failure) -> String {
-    match failure {
-        Failure::Status { status, body } => match serde_json::from_str::<Value>(&body) {
-            Ok(json) => {
-                let error = json.get("error");
-                let message = http::sdk_status_message(status, error, None);
-                let mut message = http::provider_error_message(&message, Some(status), error, None);
-                if let Some(raw) = error
-                    .and_then(|error| error.get("metadata"))
-                    .and_then(|metadata| metadata.get("raw"))
-                {
-                    let raw = raw
-                        .as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| raw.to_string());
-                    if !message.contains(&raw) {
-                        message += &format!("\n{raw}");
-                    }
-                }
-                message
-            }
-            Err(_) => http::sdk_status_message(status, None, Some(&body)),
-        },
-        other => other.plain_message().unwrap_or_default(),
+/// Sends the request; the response once its status is a success.
+async fn connect(
+    model: &Model,
+    compat: &Compat,
+    messages: &[Message],
+    options: &StreamOptions,
+) -> Result<reqwest::Response, String> {
+    let normalized = resolve_transcript(messages, compat.supports_mid_convo_system_messages);
+    let api_key = match options.api_key.clone().filter(|key| !key.is_empty()) {
+        Some(key) => key,
+        None if options.has_header("authorization")
+            || options.has_header("cf-aig-authorization") =>
+        {
+            "unused".to_owned()
+        }
+        None => return Err(format!("No API key for provider: {}", model.provider)),
+    };
+    // streamSimple: clamp output to the context and the level to the model.
+    let max_tokens = clamp_max_tokens_to_context(
+        model,
+        messages,
+        options.max_tokens.unwrap_or(model.max_tokens),
+    );
+    let effort = options
+        .reasoning
+        .map(|level| clamp_level(model, level))
+        .filter(|level| *level != ThinkingLevel::Off);
+    let retention = options.resolved_cache_retention();
+    let params = build_params(
+        model,
+        &normalized,
+        options,
+        compat,
+        retention,
+        max_tokens,
+        effort,
+    )?;
+
+    let mut headers = Headers::default();
+    headers.set("authorization", Some(format!("Bearer {api_key}")));
+    headers.set("content-type", Some("application/json"));
+    headers.set("accept", Some("application/json"));
+    headers.extend_model(model.headers.as_ref());
+    if model.provider == "github-copilot" {
+        for (key, value) in super::copilot_headers(messages) {
+            headers.set(key, Some(value));
+        }
     }
+    if let Some(session) = options
+        .session_id
+        .as_deref()
+        .filter(|_| retention != CacheRetention::None && compat.send_session_affinity_headers)
+    {
+        if compat.session_affinity_format == "openrouter" {
+            headers.set("x-session-id", Some(session));
+        } else {
+            if compat.session_affinity_format == "openai" {
+                headers.set("session_id", Some(session));
+            }
+            headers.set("x-client-request-id", Some(session));
+            headers.set("x-session-affinity", Some(session));
+        }
+    }
+    headers.extend(&options.headers);
+
+    let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
+    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let build = || headers.apply(http::client().post(&url).body(body.clone()));
+    http::send(build, options).await.map_err(failure_message)
+}
+
+fn failure_message(failure: Failure) -> String {
+    let Failure::Status { status, body } = failure else {
+        return failure.plain_message().unwrap_or_default();
+    };
+    let mut message = http::openai_status_message(status, &body, None);
+    let json = serde_json::from_str::<Value>(&body).ok();
+    if let Some(raw) = json
+        .as_ref()
+        .and_then(|json| json.pointer("/error/metadata/raw"))
+    {
+        let raw = raw
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| raw.to_string());
+        if !message.contains(&raw) {
+            message += &format!("\n{raw}");
+        }
+    }
+    message
 }
 
 struct CallState {
@@ -1180,15 +1127,8 @@ impl State {
         if let Some(position) = self.text {
             return position;
         }
-        self.output.content.push(ContentBlock::text(""));
-        let position = self.output.content.len() - 1;
+        let position = sender.start(&mut self.output, ContentBlock::text(""));
         self.text = Some(position);
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::TextStart {
-                content_index: position,
-            },
-        );
         position
     }
 
@@ -1196,21 +1136,13 @@ impl State {
         if let Some(position) = self.thinking {
             return position;
         }
-        self.output
-            .content
-            .push(ContentBlock::Thinking(ThinkingContent {
-                thinking: String::new(),
-                thinking_signature: Some(signature.to_owned()),
-                redacted: None,
-            }));
-        let position = self.output.content.len() - 1;
+        let block = ContentBlock::Thinking(ThinkingContent {
+            thinking: String::new(),
+            thinking_signature: Some(signature.to_owned()),
+            redacted: None,
+        });
+        let position = sender.start(&mut self.output, block);
         self.thinking = Some(position);
-        sender.update(
-            &self.output,
-            AssistantMessageEvent::ThinkingStart {
-                content_index: position,
-            },
-        );
         position
     }
 
@@ -1232,28 +1164,20 @@ impl State {
         let index = match existing {
             Some(index) => index,
             None => {
-                self.output.content.push(ContentBlock::ToolCall(ToolCall {
+                let block = ContentBlock::ToolCall(ToolCall {
                     id: id.to_owned(),
                     name: name.to_owned(),
                     arguments: Map::new(),
                     thought_signature: None,
                     namespace: None,
-                }));
-                let position = self.output.content.len() - 1;
+                });
+                let position = sender.start(&mut self.output, block);
                 self.calls.push(CallState {
                     position,
                     stream_index,
                     id: id.to_owned(),
                     partial_args: String::new(),
                 });
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallStart {
-                        content_index: position,
-                        id: id.to_owned(),
-                        tool_name: name.to_owned(),
-                    },
-                );
                 self.calls.len() - 1
             }
         };
@@ -1278,28 +1202,12 @@ impl State {
     fn finish_blocks(&mut self, sender: &EventSender) {
         self.apply_details();
         for position in 0..self.output.content.len() {
-            let event = match &mut self.output.content[position] {
-                ContentBlock::Text(text) => AssistantMessageEvent::TextEnd {
-                    content_index: position,
-                    content: text.text.clone(),
-                },
-                ContentBlock::Thinking(thinking) => AssistantMessageEvent::ThinkingEnd {
-                    content_index: position,
-                    content: thinking.thinking.clone(),
-                },
-                ContentBlock::ToolCall(call) => {
-                    if let Some(state) = self.calls.iter().find(|state| state.position == position)
-                    {
-                        call.arguments = parse_streaming_json(&state.partial_args);
-                    }
-                    AssistantMessageEvent::ToolcallEnd {
-                        content_index: position,
-                        tool_call: call.clone(),
-                    }
-                }
-                ContentBlock::Image(_) => continue,
-            };
-            sender.update(&self.output, event);
+            if let ContentBlock::ToolCall(call) = &mut self.output.content[position]
+                && let Some(state) = self.calls.iter().find(|state| state.position == position)
+            {
+                call.arguments = parse_streaming_json(&state.partial_args);
+            }
+            sender.end(&self.output, position);
         }
     }
 
@@ -1385,16 +1293,7 @@ impl State {
         }
         if let Some(text) = delta["content"].as_str().filter(|text| !text.is_empty()) {
             let position = self.ensure_text(sender);
-            if let ContentBlock::Text(block) = &mut self.output.content[position] {
-                block.text.push_str(text);
-            }
-            sender.update(
-                &self.output,
-                AssistantMessageEvent::TextDelta {
-                    content_index: position,
-                    delta: text.to_owned(),
-                },
-            );
+            sender.delta(&mut self.output, position, text);
         }
         if let Some((field, text)) = ["reasoning_content", "reasoning", "reasoning_text"]
             .into_iter()
@@ -1411,40 +1310,23 @@ impl State {
                 field
             };
             let position = self.ensure_thinking(signature, sender);
-            if let ContentBlock::Thinking(block) = &mut self.output.content[position] {
-                block.thinking.push_str(text);
-            }
-            sender.update(
-                &self.output,
-                AssistantMessageEvent::ThinkingDelta {
-                    content_index: position,
-                    delta: text.to_owned(),
-                },
-            );
+            sender.delta(&mut self.output, position, text);
         }
         if let Some(calls) = delta["tool_calls"].as_array() {
             for call in calls {
                 let index = self.ensure_call(call, sender);
                 let position = self.calls[index].position;
-                let mut piece = String::new();
-                if let Some(arguments) = call["function"]["arguments"]
+                let arguments = call["function"]["arguments"]
                     .as_str()
-                    .filter(|a| !a.is_empty())
-                {
-                    piece = arguments.to_owned();
+                    .filter(|a| !a.is_empty());
+                if let Some(arguments) = arguments {
                     self.calls[index].partial_args.push_str(arguments);
                     let parsed = parse_streaming_json(&self.calls[index].partial_args);
                     if let ContentBlock::ToolCall(block) = &mut self.output.content[position] {
                         block.arguments = parsed;
                     }
                 }
-                sender.update(
-                    &self.output,
-                    AssistantMessageEvent::ToolcallDelta {
-                        content_index: position,
-                        delta: piece,
-                    },
-                );
+                sender.delta(&mut self.output, position, arguments.unwrap_or_default());
             }
         }
         if let Some(details) = delta["reasoning_details"].as_array() {

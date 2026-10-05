@@ -7,20 +7,19 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use indexmap::IndexMap;
+use regex_lite::{Captures, Regex};
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::{ApiKeyCredential, Credential, OAuthCredential};
-use yapi_types::classify::{
-    AssistantImages, ClassifierContext, ClassifierResult, ImagesContext, OutcomeReason,
-};
+use yapi_types::classify::{AssistantImages, ClassifierContext, ClassifierResult, ImagesContext};
 use yapi_types::model::{ClassifierModel, ImageModel, Model, Pricing};
 use yapi_types::models::{ModelDefinition, ModelOverride, ModelsConfig, ProviderConfig};
 
-use crate::api::classify::ClassifyOptions;
+use crate::api::classify::{ClassifyOptions, failure_reason};
 use crate::api::images::ImagesOptions;
 use crate::auth::{
     AuthError, AuthPrompt, CredentialKind, CredentialStore, Interaction, LoginOptions, OAuthAuth,
@@ -64,6 +63,25 @@ impl Auth {
         if resolved.base_url.is_some() {
             self.base_url = resolved.base_url;
         }
+    }
+
+    /// Applies the credentials beneath a classifier or image request's own:
+    /// the caller's key and headers win, and the account's base URL replaces
+    /// `base_url`.
+    fn apply_under(
+        self,
+        base_url: &mut String,
+        api_key: &mut Option<String>,
+        headers: &mut IndexMap<String, Option<String>>,
+    ) {
+        if let Some(url) = self.base_url {
+            *base_url = url;
+        }
+        if api_key.is_none() {
+            *api_key = self.api_key;
+        }
+        let caller = std::mem::replace(headers, self.headers);
+        headers.extend(caller);
     }
 
     /// Applies the credentials to a request: the key when there is one,
@@ -200,66 +218,35 @@ impl std::fmt::Debug for ModelRegistry {
     }
 }
 
-/// Removes `//` comments and trailing commas outside strings, as pi does for
-/// `models.json`.
+/// Removes `//` comments and trailing commas outside strings, as pi's
+/// `stripJsonComments` does for `models.json`.
 pub fn strip_json_comments(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let chars: Vec<char> = input.chars().collect();
-    let mut index = 0;
-    while index < chars.len() {
-        let c = chars[index];
-        if c == '"' {
-            out.push(c);
-            index += 1;
-            while index < chars.len() {
-                let d = chars[index];
-                out.push(d);
-                index += 1;
-                if d == '\\' && index < chars.len() {
-                    out.push(chars[index]);
-                    index += 1;
-                } else if d == '"' {
-                    break;
-                }
-            }
-        } else if c == '/' && chars.get(index + 1) == Some(&'/') {
-            while index < chars.len() && chars[index] != '\n' {
-                index += 1;
-            }
+    // pi's two regular expressions, with JavaScript's `\s` spelled out.
+    static PATTERNS: LazyLock<[Regex; 2]> = LazyLock::new(|| {
+        [
+            r#""(?:\\.|[^"\\])*"|//[^\n]*"#,
+            r#""(?:\\.|[^"\\])*"|,([\t\n\x0B\f\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]*[}\]])"#,
+        ]
+        .map(|pattern| {
+            Regex::new(pattern).expect("constant pattern; `strips_comments_and_trailing_commas`")
+        })
+    });
+    let [comments, commas] = &*PATTERNS;
+    let stripped = comments.replace_all(input, |found: &Captures| {
+        if found[0].starts_with('"') {
+            found[0].to_owned()
         } else {
-            out.push(c);
-            index += 1;
+            String::new()
         }
-    }
-    // Trailing commas: a comma followed only by whitespace and a closing bracket.
-    let chars: Vec<char> = out.chars().collect();
-    let mut result = String::with_capacity(out.len());
-    let mut index = 0;
-    let mut in_string = false;
-    while index < chars.len() {
-        let c = chars[index];
-        if in_string {
-            result.push(c);
-            if c == '\\' && index + 1 < chars.len() {
-                result.push(chars[index + 1]);
-                index += 1;
-            } else if c == '"' {
-                in_string = false;
-            }
-        } else if c == '"' {
-            in_string = true;
-            result.push(c);
-        } else if c == ',' {
-            let next = chars[index + 1..].iter().find(|c| !c.is_whitespace());
-            if !matches!(next, Some('}' | ']')) {
-                result.push(c);
-            }
-        } else {
-            result.push(c);
-        }
-        index += 1;
-    }
-    result
+    });
+    commas
+        .replace_all(&stripped, |found: &Captures| {
+            found
+                .get(1)
+                .map_or(&found[0], |tail| tail.as_str())
+                .to_owned()
+        })
+        .into_owned()
 }
 
 fn merge_compat(
@@ -764,26 +751,23 @@ impl ModelRegistry {
 
     /// Classifier models whose providers are configured.
     pub fn available_classifiers(&self) -> Vec<&ClassifierModel> {
-        let mut configured: HashMap<&str, bool> = HashMap::new();
-        self.classifiers
-            .iter()
-            .filter(|model| {
-                *configured
-                    .entry(model.provider.as_str())
-                    .or_insert_with(|| self.has_auth(&model.provider))
-            })
-            .collect()
+        self.configured(&self.classifiers, |model| &model.provider)
     }
 
     /// Image models whose providers are configured.
     pub fn available_image_models(&self) -> Vec<&ImageModel> {
+        self.configured(&self.images, |model| &model.provider)
+    }
+
+    /// The `models` whose providers are configured.
+    fn configured<'a, T>(&self, models: &'a [T], provider: fn(&T) -> &String) -> Vec<&'a T> {
         let mut configured: HashMap<&str, bool> = HashMap::new();
-        self.images
+        models
             .iter()
             .filter(|model| {
                 *configured
-                    .entry(model.provider.as_str())
-                    .or_insert_with(|| self.has_auth(&model.provider))
+                    .entry(provider(model))
+                    .or_insert_with(|| self.has_auth(provider(model)))
             })
             .collect()
     }
@@ -822,6 +806,7 @@ impl ModelRegistry {
         context: &ClassifierContext,
         mut options: ClassifyOptions,
     ) -> ClassifierResult {
+        let mut model = model.clone();
         let auth = self
             .model_auth(
                 &model.provider,
@@ -831,33 +816,25 @@ impl ModelRegistry {
                 model.headers.as_ref(),
             )
             .await;
-        let auth = match auth {
-            Ok(auth) => auth,
+        match auth {
+            Ok(auth) => auth.apply_under(
+                &mut model.base_url,
+                &mut options.api_key,
+                &mut options.headers,
+            ),
             Err(message) => {
                 return ClassifierResult {
-                    api: model.api.clone(),
-                    provider: model.provider.clone(),
-                    model: model.id.clone(),
+                    api: model.api,
+                    provider: model.provider,
+                    model: model.id,
                     answers: IndexMap::new(),
                     usage: None,
-                    stop_reason: if options.cancel.is_cancelled() {
-                        OutcomeReason::Aborted
-                    } else {
-                        OutcomeReason::Error
-                    },
+                    stop_reason: failure_reason(&options.cancel),
                     error_message: Some(message),
                     timestamp: crate::stream::now_ms(),
                 };
             }
-        };
-        let mut model = model.clone();
-        if let Some(base_url) = auth.base_url {
-            model.base_url = base_url;
         }
-        options.api_key = options.api_key.or(auth.api_key);
-        let mut headers = auth.headers;
-        headers.extend(options.headers);
-        options.headers = headers;
         crate::api::classify::classify(&model, context, &options).await
     }
 
@@ -869,6 +846,7 @@ impl ModelRegistry {
         context: &ImagesContext,
         mut options: ImagesOptions,
     ) -> AssistantImages {
+        let mut model = model.clone();
         let auth = self
             .model_auth(
                 &model.provider,
@@ -878,34 +856,26 @@ impl ModelRegistry {
                 model.headers.as_ref(),
             )
             .await;
-        let auth = match auth {
-            Ok(auth) => auth,
+        match auth {
+            Ok(auth) => auth.apply_under(
+                &mut model.base_url,
+                &mut options.api_key,
+                &mut options.headers,
+            ),
             Err(message) => {
                 return AssistantImages {
-                    api: model.api.clone(),
-                    provider: model.provider.clone(),
-                    model: model.id.clone(),
+                    api: model.api,
+                    provider: model.provider,
+                    model: model.id,
                     output: Vec::new(),
                     response_id: None,
                     usage: None,
-                    stop_reason: if options.cancel.is_cancelled() {
-                        OutcomeReason::Aborted
-                    } else {
-                        OutcomeReason::Error
-                    },
+                    stop_reason: failure_reason(&options.cancel),
                     error_message: Some(message),
                     timestamp: crate::stream::now_ms(),
                 };
             }
-        };
-        let mut model = model.clone();
-        if let Some(base_url) = auth.base_url {
-            model.base_url = base_url;
         }
-        options.api_key = options.api_key.or(auth.api_key);
-        let mut headers = auth.headers;
-        headers.extend(options.headers);
-        options.headers = headers;
         crate::api::images::generate_images(&model, context, &options).await
     }
 
@@ -1460,6 +1430,11 @@ mod tests {
         assert_eq!(
             strip_json_comments("{\"a\": \"x//y\", // note\n \"b\": [1, 2,],\n}"),
             "{\"a\": \"x//y\", \n \"b\": [1, 2]\n}"
+        );
+        // JavaScript's `\s` before the bracket; an escaped quote stays in the string.
+        assert_eq!(
+            strip_json_comments("[1,\u{a0}\u{feff}] \"a\\\"// b\""),
+            "[1\u{a0}\u{feff}] \"a\\\"// b\""
         );
     }
 

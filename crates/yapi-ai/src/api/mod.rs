@@ -17,21 +17,91 @@ use yapi_types::message::{Content, ContentBlock, Message};
 
 use crate::stream::{EventStream, Provider, Request, new_output, now_ms, send_error};
 
+/// The built-in wire APIs. Each streams from a task that runs its module's
+/// `run`.
+#[derive(Clone, Copy, Debug)]
+enum Builtin {
+    Anthropic,
+    Completions,
+    Responses,
+    AzureResponses,
+    CodexResponses,
+    Gemini,
+    Vertex,
+    Mistral,
+    Bedrock,
+    PiMessages,
+}
+
+impl Builtin {
+    const ALL: [Builtin; 10] = [
+        Builtin::Anthropic,
+        Builtin::Completions,
+        Builtin::Responses,
+        Builtin::AzureResponses,
+        Builtin::CodexResponses,
+        Builtin::Gemini,
+        Builtin::Vertex,
+        Builtin::Mistral,
+        Builtin::Bedrock,
+        Builtin::PiMessages,
+    ];
+}
+
+impl Provider for Builtin {
+    fn api(&self) -> &str {
+        match self {
+            Builtin::Anthropic => "anthropic-messages",
+            Builtin::Completions => "openai-completions",
+            Builtin::Responses => "openai-responses",
+            Builtin::AzureResponses => "azure-openai-responses",
+            Builtin::CodexResponses => "openai-codex-responses",
+            Builtin::Gemini => "google-generative-ai",
+            Builtin::Vertex => "google-vertex",
+            Builtin::Mistral => "mistral-conversations",
+            Builtin::Bedrock => "bedrock-converse-stream",
+            Builtin::PiMessages => "pi-messages",
+        }
+    }
+
+    fn stream(&self, request: Request) -> EventStream {
+        use google::Flavor as Google;
+        use openai_responses::Flavor as Responses;
+        let (sender, stream) = EventStream::channel();
+        match self {
+            Builtin::Anthropic => tokio::spawn(anthropic::run(request, sender)),
+            Builtin::Completions => tokio::spawn(openai_completions::run(request, sender)),
+            Builtin::Responses => {
+                tokio::spawn(openai_responses::run(request, sender, Responses::OpenAi))
+            }
+            Builtin::AzureResponses => {
+                tokio::spawn(openai_responses::run(request, sender, Responses::Azure))
+            }
+            Builtin::CodexResponses => {
+                tokio::spawn(openai_responses::run(request, sender, Responses::Codex))
+            }
+            Builtin::Gemini => tokio::spawn(google::run(request, sender, Google::Gemini)),
+            Builtin::Vertex => tokio::spawn(google::run(request, sender, Google::Vertex)),
+            Builtin::Mistral => tokio::spawn(mistral::run(request, sender)),
+            Builtin::Bedrock => tokio::spawn(bedrock::run(request, sender)),
+            Builtin::PiMessages => tokio::spawn(pi_messages::run(request, sender)),
+        };
+        stream
+    }
+}
+
 /// The built-in implementation of a wire API id.
 pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
-    match api {
-        "anthropic-messages" => Some(Arc::new(anthropic::AnthropicMessages)),
-        "openai-completions" => Some(Arc::new(openai_completions::OpenAiCompletions)),
-        "openai-responses" => Some(Arc::new(openai_responses::OpenAiResponses)),
-        "azure-openai-responses" => Some(Arc::new(openai_responses::AzureOpenAiResponses)),
-        "openai-codex-responses" => Some(Arc::new(openai_responses::OpenAiCodexResponses)),
-        "google-generative-ai" => Some(Arc::new(google::GoogleGenerativeAi)),
-        "google-vertex" => Some(Arc::new(google::GoogleVertex)),
-        "mistral-conversations" => Some(Arc::new(mistral::MistralConversations)),
-        "bedrock-converse-stream" => Some(Arc::new(bedrock::BedrockConverseStream)),
-        "pi-messages" => Some(Arc::new(pi_messages::PiMessages)),
-        _ => None,
-    }
+    let builtin = Builtin::ALL
+        .into_iter()
+        .find(|builtin| builtin.api() == api)?;
+    Some(Arc::new(builtin))
+}
+
+/// pi's `normalizeToolCallId` for Anthropic, Bedrock and Google:
+/// [`sanitize_id_part`], at most 64 characters.
+pub(crate) fn normalize_tool_call_id(id: &str) -> String {
+    sanitize_id_part(id).chars().take(64).collect()
 }
 
 /// Replaces every UTF-16 unit outside `[a-zA-Z0-9_-]` with `_`, as pi's id
@@ -136,5 +206,17 @@ impl Apis {
                 failed_stream(&request.model, &request.options.cancel, message)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_tool_call_ids_in_utf16_units() {
+        // pi's regex replaces each half of a surrogate pair.
+        assert_eq!(normalize_tool_call_id("call|a😀b"), "call_a__b");
+        assert_eq!(normalize_tool_call_id(&"x".repeat(70)), "x".repeat(64));
     }
 }

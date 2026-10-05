@@ -1,8 +1,8 @@
 //! PKCE (RFC 7636) verifier and S256 challenge. Port of `oauth/pkce.ts`.
 
+use aws_lc_rs::digest::{SHA256, digest};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use sha2::{Digest, Sha256};
 
 /// A code verifier and its challenge.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub fn generate() -> Pkce {
 
 /// The S256 challenge of a verifier.
 pub fn challenge(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+    URL_SAFE_NO_PAD.encode(digest(&SHA256, verifier.as_bytes()))
 }
 
 #[cfg(test)]

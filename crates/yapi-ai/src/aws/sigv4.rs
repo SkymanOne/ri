@@ -1,8 +1,8 @@
 //! AWS Signature Version 4 for JSON requests, as `@smithy/signature-v4`
 //! signs them for services other than S3.
 
-use aws_lc_rs::hmac;
-use sha2::{Digest, Sha256};
+use aws_lc_rs::{digest, hmac};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use yapi_types::time::hex;
 
 use super::Credentials;
@@ -28,7 +28,7 @@ const UNSIGNABLE: &[&str] = &[
 
 /// Hex SHA-256 of `data`.
 pub fn sha256_hex(data: &[u8]) -> String {
-    hex(&Sha256::digest(data))
+    hex(digest::digest(&digest::SHA256, data).as_ref())
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -40,15 +40,12 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 /// RFC 3986 escaping of everything outside the unreserved set, as Smithy's
 /// `escapeUri` (`encodeURIComponent` plus `!'()*`).
 pub fn escape(text: &str) -> String {
-    let mut out = String::new();
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            out.push(byte as char);
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
+    const RESERVED: &AsciiSet = &NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'_')
+        .remove(b'.')
+        .remove(b'~');
+    utf8_percent_encode(text, RESERVED).to_string()
 }
 
 /// The canonical form of an already-encoded path: each segment escaped again.
@@ -151,6 +148,34 @@ pub fn sign(
         "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
         credentials.access_key_id
     )
+}
+
+/// Signs a POST of `body` to `url` for `service` in `region` at the current
+/// time: adds the signing headers and `authorization` to `headers`. `host` is
+/// signed but left for the HTTP client to send.
+pub fn sign_request(
+    url: &url::Url,
+    headers: &mut Vec<(String, String)>,
+    body: &[u8],
+    credentials: &Credentials,
+    region: &str,
+    service: &str,
+) {
+    let host = url.host_str().unwrap_or_default();
+    let host = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    headers.push(("host".to_owned(), host));
+    let amz_date = amz_date(yapi_types::time::now_ms());
+    let scope = Scope {
+        region,
+        service,
+        amz_date: &amz_date,
+    };
+    let authorization = sign("POST", url.path(), "", headers, body, credentials, &scope);
+    headers.retain(|(name, _)| name != "host");
+    headers.push(("authorization".to_owned(), authorization));
 }
 
 /// `YYYYMMDDTHHMMSSZ` for Unix time in milliseconds.

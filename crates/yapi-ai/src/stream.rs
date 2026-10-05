@@ -4,7 +4,9 @@ use indexmap::IndexMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use yapi_types::event::AssistantMessageEvent;
-use yapi_types::message::{AssistantMessage, Message, StopReason, ThinkingLevel, Usage};
+use yapi_types::message::{
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingLevel, Usage,
+};
 use yapi_types::model::Model;
 
 use crate::credentials::ProviderEnv;
@@ -178,6 +180,77 @@ impl EventSender {
             usage: message.usage.clone(),
         });
     }
+
+    /// Appends `block` to `output` and sends its start event; returns its index.
+    pub(crate) fn start(&self, output: &mut AssistantMessage, block: ContentBlock) -> usize {
+        let content_index = output.content.len();
+        let event = match &block {
+            ContentBlock::Text(_) => Some(AssistantMessageEvent::TextStart { content_index }),
+            ContentBlock::Thinking(_) => {
+                Some(AssistantMessageEvent::ThinkingStart { content_index })
+            }
+            ContentBlock::ToolCall(call) => Some(AssistantMessageEvent::ToolcallStart {
+                content_index,
+                id: call.id.clone(),
+                tool_name: call.name.clone(),
+            }),
+            ContentBlock::Image(_) => None,
+        };
+        output.content.push(block);
+        if let Some(event) = event {
+            self.update(output, event);
+        }
+        content_index
+    }
+
+    /// Sends the delta event of the block at `content_index`, first appending
+    /// `delta` to a text or thinking block. A tool call's arguments are left to
+    /// the caller.
+    pub(crate) fn delta(&self, output: &mut AssistantMessage, content_index: usize, delta: &str) {
+        let event = match output.content.get_mut(content_index) {
+            Some(ContentBlock::Text(text)) => {
+                text.text.push_str(delta);
+                AssistantMessageEvent::TextDelta {
+                    content_index,
+                    delta: delta.to_owned(),
+                }
+            }
+            Some(ContentBlock::Thinking(thinking)) => {
+                thinking.thinking.push_str(delta);
+                AssistantMessageEvent::ThinkingDelta {
+                    content_index,
+                    delta: delta.to_owned(),
+                }
+            }
+            Some(ContentBlock::ToolCall(_)) => AssistantMessageEvent::ToolcallDelta {
+                content_index,
+                delta: delta.to_owned(),
+            },
+            Some(ContentBlock::Image(_)) | None => return,
+        };
+        self.update(output, event);
+    }
+
+    /// Sends the end event of the block at `content_index`, with its final
+    /// content.
+    pub(crate) fn end(&self, output: &AssistantMessage, content_index: usize) {
+        let event = match output.content.get(content_index) {
+            Some(ContentBlock::Text(text)) => AssistantMessageEvent::TextEnd {
+                content_index,
+                content: text.text.clone(),
+            },
+            Some(ContentBlock::Thinking(thinking)) => AssistantMessageEvent::ThinkingEnd {
+                content_index,
+                content: thinking.thinking.clone(),
+            },
+            Some(ContentBlock::ToolCall(call)) => AssistantMessageEvent::ToolcallEnd {
+                content_index,
+                tool_call: call.clone(),
+            },
+            Some(ContentBlock::Image(_)) | None => return,
+        };
+        self.update(output, event);
+    }
 }
 
 /// An empty assistant message for `model`, as providers start one.
@@ -219,6 +292,28 @@ pub fn send_error(
     };
     output.error_message = Some(message);
     sender.send(StreamEvent::Error(output));
+}
+
+/// pi's end-of-stream check: an error when `cancel` fired, `pending` when no
+/// stop reason arrived, and the message's error, or a generic one, when it
+/// stopped with `error` or `aborted`.
+pub(crate) fn check_complete(
+    output: &AssistantMessage,
+    cancel: &CancellationToken,
+    pending: &str,
+) -> Result<(), String> {
+    if cancel.is_cancelled() {
+        return Err(crate::http::ABORTED_DURING_STREAM.to_owned());
+    }
+    match output.stop_reason {
+        StopReason::Pending => Err(pending.to_owned()),
+        StopReason::Aborted | StopReason::Error => Err(output
+            .error_message
+            .clone()
+            .filter(|message| !message.is_empty())
+            .unwrap_or_else(|| "An unknown error occurred".to_owned())),
+        _ => Ok(()),
+    }
 }
 
 pub use yapi_types::time::now_ms;

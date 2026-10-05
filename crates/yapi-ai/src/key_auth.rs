@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use yapi_types::auth::ApiKeyCredential;
 
-use crate::auth::{AuthError, AuthEvent, AuthPrompt, Interaction, Link, SelectOption};
+use crate::auth::{AuthError, AuthEvent, AuthPrompt, Interaction, Link};
 use crate::credentials::ProviderEnv;
 
 /// Request credentials from a stored credential or the environment.
@@ -305,19 +305,6 @@ pub fn anthropic_federation(ambient: &Ambient<'_>) -> Option<Resolved> {
     })
 }
 
-fn select(message: &str, options: &[(&str, &str)]) -> AuthPrompt {
-    AuthPrompt::Select {
-        message: message.to_owned(),
-        options: options
-            .iter()
-            .map(|(id, label)| SelectOption {
-                id: (*id).to_owned(),
-                label: (*label).to_owned(),
-            })
-            .collect(),
-    }
-}
-
 fn text(message: &str) -> AuthPrompt {
     AuthPrompt::Text {
         message: message.to_owned(),
@@ -406,7 +393,7 @@ async fn llama_login(interaction: &Interaction) -> Result<ApiKeyCredential, Auth
 async fn bedrock_login(interaction: &Interaction) -> Result<ApiKeyCredential, AuthError> {
     interaction.check()?;
     let method = interaction
-        .prompt(select(
+        .prompt(AuthPrompt::select(
             "Select Amazon Bedrock authentication method:",
             &[
                 ("bearer-token", "Bearer token"),
@@ -459,7 +446,7 @@ async fn bedrock_login(interaction: &Interaction) -> Result<ApiKeyCredential, Au
 async fn vertex_login(interaction: &Interaction) -> Result<ApiKeyCredential, AuthError> {
     interaction.check()?;
     let method = interaction
-        .prompt(select(
+        .prompt(AuthPrompt::select(
             "Select Google Vertex AI authentication method:",
             &[
                 ("api-key", "Google Cloud API key"),

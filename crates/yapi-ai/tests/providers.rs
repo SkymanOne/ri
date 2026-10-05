@@ -5,7 +5,6 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -34,8 +33,7 @@ fn cassette(path: &str, chunks_from: &str) -> Cassette {
 }
 
 async fn mock(cassette: Cassette) -> MockServer {
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    MockServer::start(addr, cassette).await.unwrap()
+    MockServer::local(cassette).await.unwrap()
 }
 
 fn user(text: &str) -> Message {
@@ -147,29 +145,12 @@ async fn cloudflare_gateway_sends_its_key_in_the_gateway_header() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-fn json_exchange(path: &str, status: u16, body: &Value) -> Interaction {
-    Interaction {
-        request: RequestMatch {
-            method: "POST".into(),
-            path: path.into(),
-        },
-        response: Response {
-            status,
-            headers: [("content-type".to_owned(), "application/json".to_owned())]
-                .into_iter()
-                .collect(),
-            chunks: vec![body.to_string()],
-            body_base64: None,
-            chunk_delay_ms: 0,
-        },
-    }
-}
-
 #[tokio::test]
 async fn anthropic_federation_exchanges_the_identity_token_and_retries_a_401() {
     let text = cassette("/v1/messages", "anthropic-messages/text.json");
     let token = |access: &str| {
-        json_exchange(
+        Interaction::json(
+            "POST",
             "/v1/oauth/token",
             200,
             &json!({"access_token": access, "token_type": "Bearer", "expires_in": 3600}),
@@ -177,7 +158,8 @@ async fn anthropic_federation_exchanges_the_identity_token_and_retries_a_401() {
     };
     let mut interactions = vec![
         token("fed-1"),
-        json_exchange(
+        Interaction::json(
+            "POST",
             "/v1/messages",
             401,
             &json!({"type": "error", "error": {"type": "authentication_error", "message": "expired"}}),
@@ -253,7 +235,8 @@ fn rsa_pem() -> String {
 
 #[tokio::test]
 async fn vertex_signs_in_with_a_service_account() {
-    let mut interactions = vec![json_exchange(
+    let mut interactions = vec![Interaction::json(
+        "POST",
         "/token",
         200,
         &json!({"access_token": "ya29.sa", "expires_in": 3599, "token_type": "Bearer"}),
@@ -326,17 +309,19 @@ async fn vertex_signs_in_with_a_service_account() {
 async fn google_adc_refreshes_users_and_impersonates() {
     let server = mock(Cassette {
         interactions: vec![
-            json_exchange(
+            Interaction::json(
+                "POST",
                 "/token",
                 200,
                 &json!({"access_token": "ya29.user", "expires_in": 3599}),
             ),
-            json_exchange(
+            Interaction::json(
+                "POST",
                 "/v1/projects/-/serviceAccounts/sa@p.iam.gserviceaccount.com:generateAccessToken",
                 200,
                 &json!({"accessToken": "ya29.sa", "expireTime": "2099-01-01T00:00:00Z"}),
             ),
-            json_exchange("/token", 400, &json!({"error": "invalid_grant"})),
+            Interaction::json("POST", "/token", 400, &json!({"error": "invalid_grant"})),
         ],
     })
     .await;
@@ -765,18 +750,11 @@ async fn bedrock_reports_errors_like_pi() {
     }
 }
 
-fn get_exchange(path: &str, body: &Value) -> Interaction {
-    let mut exchange = json_exchange(path, 200, body);
-    exchange.request.method = "GET".into();
-    exchange
-}
-
 #[tokio::test]
 async fn aws_chain_assumes_roles_and_reads_sso_and_container_credentials() {
-    use sha1::Digest as _;
     use yapi_ai::aws::{AwsEnv, default_credentials};
     let sts_xml = "<AssumeRoleResponse><AssumeRoleResult><Credentials><AccessKeyId>ASIAROLE</AccessKeyId><SecretAccessKey>role-secret</SecretAccessKey><SessionToken>role-token</SessionToken><Expiration>2099-01-01T00:00:00Z</Expiration></Credentials></AssumeRoleResult></AssumeRoleResponse>";
-    let mut sts = json_exchange("/", 200, &Value::Null);
+    let mut sts = Interaction::json("POST", "/", 200, &Value::Null);
     sts.response
         .headers
         .insert("content-type".into(), "text/xml".into());
@@ -784,12 +762,16 @@ async fn aws_chain_assumes_roles_and_reads_sso_and_container_credentials() {
     let server = mock(Cassette {
         interactions: vec![
             sts,
-            get_exchange(
+            Interaction::json(
+                "GET",
                 "/federation/credentials",
+                200,
                 &json!({"roleCredentials": {"accessKeyId": "ASIASSO", "secretAccessKey": "s", "sessionToken": "t", "expiration": 4_070_908_800_000_u64}}),
             ),
-            get_exchange(
+            Interaction::json(
+                "GET",
                 "/creds",
+                200,
                 &json!({"AccessKeyId": "ASIAECS", "SecretAccessKey": "s", "Token": "t", "Expiration": "2099-01-01T00:00:00Z"}),
             ),
         ],
@@ -807,10 +789,8 @@ async fn aws_chain_assumes_roles_and_reads_sso_and_container_credentials() {
         "[profile role]\nrole_arn = arn:aws:iam::123:role/dev\nsource_profile = base\nrole_session_name = yapi-test\n\n[profile sso]\nsso_session = corp\nsso_account_id = 123\nsso_role_name = Dev\n\n[sso-session corp]\nsso_region = us-east-1\nsso_start_url = https://corp.awsapps.com/start\n",
     )
     .unwrap();
-    let cache_name: String = sha1::Sha1::digest(b"corp")
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    // SHA-1 of the session name `corp`.
+    let cache_name = "ee0bfd2552fbd840c02cc48b6e823320543c450f";
     std::fs::write(
         home.join(".aws/sso/cache")
             .join(format!("{cache_name}.json")),

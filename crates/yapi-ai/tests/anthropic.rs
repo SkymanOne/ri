@@ -4,14 +4,13 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use std::net::SocketAddr;
 use std::path::Path;
 
 use serde_json::Value;
-use yapi_ai::api::anthropic::AnthropicMessages;
+use yapi_ai::api::builtin;
 use yapi_ai::catalog::builtin_models;
-use yapi_ai::stream::{Provider, Request, StreamEvent, StreamOptions};
-use yapi_mock::{Cassette, Interaction, MockServer, RequestMatch, Response};
+use yapi_ai::stream::{Request, StreamEvent, StreamOptions};
+use yapi_mock::{Cassette, Interaction, MockServer};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{Content, Message, StopReason, ThinkingLevel, UserMessage};
 use yapi_types::model::Model;
@@ -49,7 +48,7 @@ async fn run(server: &MockServer, reasoning: Option<ThinkingLevel>) -> Vec<Strea
             ..StreamOptions::default()
         },
     };
-    let mut stream = AnthropicMessages.stream(request);
+    let mut stream = builtin("anthropic-messages").unwrap().stream(request);
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
         events.push(event);
@@ -57,15 +56,9 @@ async fn run(server: &MockServer, reasoning: Option<ThinkingLevel>) -> Vec<Strea
     events
 }
 
-fn any_port() -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], 0))
-}
-
 #[tokio::test]
 async fn streams_text() {
-    let server = MockServer::start(any_port(), cassette("text.json"))
-        .await
-        .unwrap();
+    let server = MockServer::local(cassette("text.json")).await.unwrap();
     let events = run(&server, Some(ThinkingLevel::Medium)).await;
 
     let StreamEvent::Start(start) = &events[0] else {
@@ -128,26 +121,13 @@ async fn streams_text() {
 #[tokio::test]
 async fn reports_http_errors_like_the_sdk() {
     let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}"#;
-    let server = MockServer::start(
-        any_port(),
-        Cassette {
-            interactions: vec![Interaction {
-                request: RequestMatch {
-                    method: "POST".into(),
-                    path: "/v1/messages".into(),
-                },
-                response: Response {
-                    status: 400,
-                    headers: Default::default(),
-                    chunks: vec![body.into()],
-                    body_base64: None,
-                    chunk_delay_ms: 0,
-                },
-            }],
-        },
-    )
-    .await
-    .unwrap();
+    let interactions = vec![Interaction::json(
+        "POST",
+        "/v1/messages",
+        400,
+        &serde_json::from_str(body).unwrap(),
+    )];
+    let server = MockServer::local(Cassette { interactions }).await.unwrap();
     let events = run(&server, None).await;
     assert_eq!(events.len(), 1);
     let StreamEvent::Error(error) = &events[0] else {
@@ -164,15 +144,18 @@ async fn reports_http_errors_like_the_sdk() {
 
 #[tokio::test]
 async fn missing_key_fails_before_sending() {
-    let server = MockServer::start(any_port(), Cassette::default())
-        .await
-        .unwrap();
+    let server = MockServer::local(Cassette::default()).await.unwrap();
     let request = Request {
         model: model(&server.url()),
         messages: vec![user("hi")],
         options: StreamOptions::default(),
     };
-    let message = AnthropicMessages.stream(request).result().await.unwrap();
+    let message = builtin("anthropic-messages")
+        .unwrap()
+        .stream(request)
+        .result()
+        .await
+        .unwrap();
     assert_eq!(
         message.error_message.as_deref(),
         Some("No API key for provider: anthropic")

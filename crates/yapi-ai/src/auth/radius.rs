@@ -7,11 +7,11 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 use yapi_types::auth::OAuthCredential;
 
-use super::callback::{Reply, Server, error_page, success_page};
-use super::device::{Poll, poll_device_code};
+use super::callback::{Reply, Server, error_page, query, success_page};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code};
 use super::{
-    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    SelectOption, form, now_ms, pkce, send,
+    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider, form,
+    now_ms, pkce, send,
 };
 
 const CALLBACK_HOST: &str = "127.0.0.1";
@@ -19,7 +19,6 @@ const CALLBACK_PATH: &str = "/oauth/callback";
 const TOKEN_EXPIRY_SKEW_MS: u64 = 60_000;
 const CLIENT_ID: &str = "pi-gateway";
 const SCOPE: &str = "gateway offline_access";
-const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 /// The default gateway.
 pub const DEFAULT_GATEWAY: &str = "https://radius.pi.dev";
@@ -176,16 +175,11 @@ impl RadiusOAuth {
             if method != "GET" || url.path() != CALLBACK_PATH {
                 return Reply::page(404, error_page("Callback route not found.", None));
             }
-            let query = |name: &str| {
-                url.query_pairs()
-                    .find(|(key, _)| key == name)
-                    .map(|(_, value)| value.into_owned())
-            };
-            if query("state").as_deref() != Some(expected_state.as_str()) {
+            if query(url, "state").as_deref() != Some(expected_state.as_str()) {
                 return Reply::page(400, error_page("State mismatch.", None));
             }
-            if let Some(error) = query("error") {
-                let description = query("error_description").unwrap_or(error);
+            if let Some(error) = query(url, "error") {
+                let description = query(url, "error_description").unwrap_or(error);
                 return Reply {
                     status: 400,
                     html: error_page("Radius authorization failed.", Some(&description)),
@@ -194,7 +188,7 @@ impl RadiusOAuth {
                     )))),
                 };
             }
-            match query("code").filter(|code| !code.is_empty()) {
+            match query(url, "code").filter(|code| !code.is_empty()) {
                 Some(code) => Reply {
                     status: 200,
                     html: success_page("Signed in to Radius. You may now close this page."),
@@ -296,20 +290,16 @@ impl RadiusOAuth {
 
     async fn login_radius(&self, interaction: &Interaction) -> Result<OAuthCredential, AuthError> {
         let method = interaction
-            .prompt(AuthPrompt::Select {
-                message: format!("Sign in to {}:", self.name),
-                options: vec![
-                    SelectOption {
-                        id: "browser".into(),
-                        label: "Sign in with browser (recommended)".into(),
-                    },
-                    SelectOption {
-                        id: "device-code".into(),
-                        label: "Sign in with device code (when signing in from another device)"
-                            .into(),
-                    },
+            .prompt(AuthPrompt::select(
+                format!("Sign in to {}:", self.name),
+                &[
+                    ("browser", "Sign in with browser (recommended)"),
+                    (
+                        "device-code",
+                        "Sign in with device code (when signing in from another device)",
+                    ),
                 ],
-            })
+            ))
             .await?;
         match method.as_str() {
             "device-code" => self.login_device(interaction).await,

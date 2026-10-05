@@ -91,6 +91,22 @@ pub enum AuthPrompt {
     },
 }
 
+impl AuthPrompt {
+    /// A [`AuthPrompt::Select`] of `(id, label)` options.
+    pub(crate) fn select(message: impl Into<String>, options: &[(&str, &str)]) -> AuthPrompt {
+        AuthPrompt::Select {
+            message: message.into(),
+            options: options
+                .iter()
+                .map(|(id, label)| SelectOption {
+                    id: (*id).to_owned(),
+                    label: (*label).to_owned(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// A labelled link in an info event.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -308,12 +324,10 @@ pub(crate) fn parse_authorization_input(input: &str) -> (Option<String>, Option<
         return (None, None);
     }
     if let Ok(url) = url::Url::parse(value) {
-        let get = |name: &str| {
-            url.query_pairs()
-                .find(|(key, _)| key == name)
-                .map(|(_, value)| value.into_owned())
-        };
-        return (get("code"), get("state"));
+        return (
+            callback::query(&url, "code"),
+            callback::query(&url, "state"),
+        );
     }
     if let Some((code, state)) = value.split_once('#') {
         let state = state.split('#').next().unwrap_or_default();
@@ -336,26 +350,14 @@ pub(crate) fn parse_authorization_input(input: &str) -> (Option<String>, Option<
 
 /// An `application/x-www-form-urlencoded` body.
 pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    for (key, value) in pairs {
-        serializer.append_pair(key, value);
-    }
-    serializer.finish()
+    url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish()
 }
 
 /// A JSON object of string fields, in order.
 pub(crate) fn object(pairs: &[(&str, &str)]) -> serde_json::Value {
-    serde_json::Value::Object(
-        pairs
-            .iter()
-            .map(|(key, value)| {
-                (
-                    (*key).to_owned(),
-                    serde_json::Value::String((*value).to_owned()),
-                )
-            })
-            .collect(),
-    )
+    pairs.iter().copied().collect()
 }
 
 /// The body parsed as JSON; `null` when it is not JSON.

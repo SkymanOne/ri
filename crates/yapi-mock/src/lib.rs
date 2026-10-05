@@ -130,6 +130,12 @@ impl MockServer {
         Self::listen(addr, Mode::Replay(cassette.interactions.into())).await
     }
 
+    /// Starts serving `cassette` on a free port of 127.0.0.1. Must be called
+    /// inside a Tokio runtime.
+    pub async fn local(cassette: Cassette) -> Result<Self, Error> {
+        Self::start(SocketAddr::from(([127, 0, 0, 1], 0)), cassette).await
+    }
+
     /// Starts a recording proxy on `addr` that forwards every request to `upstream`,
     /// a base URL such as `https://api.anthropic.com`. See [`Self::recording`].
     pub async fn record(addr: SocketAddr, upstream: &str) -> Result<Self, Error> {
