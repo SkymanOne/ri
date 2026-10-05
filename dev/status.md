@@ -242,22 +242,22 @@ Measured with `cargo xtask bench --pi` and Pi `1.0.0` installed from npm with `-
 
 | Measure | yapi, Linux | Pi, Linux | yapi, macOS | Pi, macOS |
 |---|---|---|---|---|
-| `--version` | 2.6 ms | 307.7 ms | 6.7 ms | 182.2 ms |
-| Print mode, start to first request byte | 17.2 ms | 451.1 ms | 12.1 ms | 259.4 ms |
-| Interactive first paint | 12.0 ms | 410.9 ms | 15.8 ms | 271.1 ms |
-| Keystroke to paint, p99 | 4.7 ms | 11.7 ms | 10.6 ms | 10.4 ms |
-| Memory, idle | 18.9 MB | 112.5 MB | 16.3 MB | 125.9 MB |
-| Memory, 10,000-line session open | 33.0 MB | 147.2 MB | | |
-| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB | | |
-| Memory with 10 small JS extensions | 31.4 MB | 115.7 MB | 26.8 MB | 129.8 MB |
-| Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB | | |
-| Stripped release binary | 32.3 MB | 245.2 MB installed | 26.3 MB | 233.9 MB installed |
+| `--version` | 2.6 ms | 307.7 ms | 9.9 ms | 251.8 ms |
+| Print mode, start to first request byte | 17.2 ms | 451.1 ms | 15.0 ms | 332.3 ms |
+| Interactive first paint | 12.0 ms | 410.9 ms | 21.7 ms | 355.4 ms |
+| Keystroke to paint, p99 | 4.7 ms | 11.7 ms | 6.5 ms | 10.5 ms |
+| Memory, idle | 18.9 MB | 112.5 MB | 16.3 MB | 126.1 MB |
+| Memory, 10,000-line session open | 33.0 MB | 147.2 MB | 32.1 MB | 151.7 MB |
+| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB | 39.8 MB | 208.4 MB |
+| Memory with 10 small JS extensions | 31.4 MB | 115.7 MB | 27.0 MB | 128.8 MB |
+| Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB | 34.0 MB | 130.3 MB |
+| Stripped release binary | 32.3 MB | 245.2 MB installed | 26.4 MB | 233.9 MB installed |
 
 Against the budgets in AGENTS.md, Linux meets every one, and macOS every one but `--version`.
 
 The providers of PR A had pushed the binary to 37.0 MB and print mode to 21 ms. The binary now embeds the JS runtime deflated (1.7 MB less) and builds Cranelift's code generator for size (3.1 MB less, and about 0.2 s more for the one compile per runtime version). Print mode lost 8 ms: enabling the llama.cpp provider no longer rebuilds the model list when it has no stored catalog, and the provider sort computes each key once.
 
-On macOS, `--version` takes 6.7 ms (6.1 to 9.0), 5.0 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The other 2.9 ms is not traced yet. Keystroke p99 on that runner is close to Pi's (10.6 ms and 10.4 ms), and single startup samples there reach 463 ms.
+On macOS, `--version` takes 9.9 ms (6.9 to 23.7), 7.9 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. The run before measured 6.7 ms (6.1 to 9.0), 5.0 ms above `true`, so the runners vary from run to run. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The rest is not traced yet. The hosted Linux runner met every budget.
 
 The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
