@@ -41,9 +41,19 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
     -out cert.pem -days 1 -extfile server.ext 2>/dev/null
 
 cat >serve.py <<'EOF'
-import functools, http.server, ssl, sys
+import functools, http.server, socketserver, ssl
+
+
+class Server(http.server.ThreadingHTTPServer):
+    # HTTPServer.server_bind looks up the address's host name, which can take
+    # many seconds on macOS. Nothing here uses the name.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory="site")
-httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+httpd = Server(("127.0.0.1", 0), handler)
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain("cert.pem", "key.pem")
 httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
@@ -52,11 +62,16 @@ httpd.serve_forever()
 EOF
 python3 serve.py >port 2>server.log &
 server=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    [ -s port ] && break
+waited=0
+while [ ! -s port ] && [ "$waited" -lt 60 ]; do
     sleep 1
+    waited=$((waited + 1))
 done
-[ -s port ] || { cat server.log >&2; exit 1; }
+if [ ! -s port ]; then
+    echo "The HTTPS server did not start within 60 s. $(python3 --version 2>&1), log:" >&2
+    cat server.log >&2
+    exit 1
+fi
 repo="https://127.0.0.1:$(cat port)/SkymanOne/ri"
 version=${tag#v}
 
