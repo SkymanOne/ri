@@ -19,6 +19,42 @@ Linux, measured on an x86_64 virtual machine (Intel Xeon at 2.1 GHz, 4 hardware 
 
 On the same machine, starting the system's `true` takes 1.1 ms and starting Node.js with an empty script takes 22.4 ms. Those are the floors for each program's startup.
 
+## GitHub's hosted runners
+
+The Bench workflow runs the same benchmark on GitHub's hosted runners, which are shared virtual machines.
+
+Linux, on `ubuntu-latest` (AMD EPYC 9V45, 4 hardware threads), against Pi `1.0.0` on Node.js 22.23.3:
+
+| Measure | Budget | yapi | Pi | Pi / yapi |
+|---|---|---|---|---|
+| `--version` | < 5 ms | 1.3 ms (1.0 to 1.4) | 138.9 ms (132.4 to 176.9) | 106× |
+| Print mode, start to first request byte | < 25 ms | 9.5 ms (9.2 to 10.0) | 204.6 ms (197.4 to 263.8) | 22× |
+| Interactive first paint | < 40 ms | 6.1 ms (5.7 to 6.3) | 191.0 ms (182.2 to 226.0) | 32× |
+| Keystroke to paint, p50, 10,000-line session | | 0.4 ms | 1.0 ms | 2.4× |
+| Keystroke to paint, p99, 10,000-line session | < 16 ms | 0.8 ms | 2.6 ms | 3.1× |
+| Idle memory | < 30 MB | 17.4 MB (17.4 to 17.7) | 115.5 MB (114.2 to 116.5) | 6.6× |
+| Idle memory with 10 JS extensions | < 70 MB | 35.4 MB (35.3 to 35.9) | 119.3 MB (118.5 to 120.3) | 3.4× |
+| Install size | < 35 MB | 32.3 MB | 246.6 MB | 7.6× |
+
+macOS, on `macos-latest` (Apple M1 virtual machine, 3 hardware threads), against Pi `1.0.0` on Node.js 22.23.2:
+
+| Measure | Budget | yapi | Pi | Pi / yapi |
+|---|---|---|---|---|
+| `--version` | < 5 ms | 6.7 ms (6.1 to 9.0) | 182.2 ms (167.6 to 269.8) | 27× |
+| Print mode, start to first request byte | < 25 ms | 12.1 ms (9.5 to 81.4) | 259.4 ms (219.9 to 337.3) | 21× |
+| Interactive first paint | < 40 ms | 15.8 ms (11.9 to 462.9) | 271.1 ms (223.4 to 373.2) | 17× |
+| Keystroke to paint, p50, 10,000-line session | | 3.0 ms | 4.6 ms | 1.5× |
+| Keystroke to paint, p99, 10,000-line session | < 16 ms | 10.6 ms | 10.4 ms | 1.0× |
+| Idle memory | < 30 MB | 16.3 MB (16.3 to 16.3) | 125.9 MB (124.2 to 127.6) | 7.7× |
+| Idle memory with 10 JS extensions | < 70 MB | 26.8 MB (26.8 to 26.9) | 129.8 MB (129.1 to 129.9) | 4.8× |
+| Install size | < 35 MB | 26.3 MB | 233.9 MB | 8.9× |
+
+The start floors were 0.3 ms for `true` and 14.6 ms for Node.js on Linux, and 1.7 ms and 36.7 ms on macOS.
+
+On macOS, `--version` misses its 5 ms budget, taking 5.0 ms more than `true` where Linux takes 1.0 ms more. Part of the difference is the system loading the Security and CoreFoundation frameworks before yapi's code runs. yapi links them to check certificates against the system's trust store, and a probe on the same runner type measured 2.1 ms for loading them. The rest has not been traced yet.
+
+Keystroke latency on the macOS runner is close to Pi's at p99 (10.6 ms and 10.4 ms) and inside the budget for both. Single samples there reach 463 ms for a first paint and 81 ms in print mode, which is why the tables report medians.
+
 ## What each measure means
 
 - **`--version`**: wall time of `--version` until the process exits.
