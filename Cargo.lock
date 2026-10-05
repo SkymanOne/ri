@@ -4220,6 +4220,7 @@ dependencies = [
  "md-5",
  "oxc",
  "oxc_resolver",
+ "percent-encoding",
  "reqwest",
  "rustix",
  "serde",

@@ -131,18 +131,23 @@ fn compile(
         .precompile_component(&wasm()?)
         .map_err(Error::compile)?;
     // A missing cache only costs the next start a compile.
-    if std::fs::create_dir_all(dir).is_ok() {
-        let partial = path.with_extension(format!("{}.tmp", std::process::id()));
-        if std::fs::write(&partial, &compiled).is_ok()
-            && std::fs::rename(&partial, &path).is_ok()
-            && name == "yapi-js"
-        {
-            remove_stale(dir, &path);
-        }
+    if write_cache(&path, &compiled) && name == "yapi-js" {
+        remove_stale(dir, &path);
     }
     // SAFETY: `compiled` was produced by `precompile_component` on this engine
     // just above.
     unsafe { Component::deserialize(engine, &compiled) }.map_err(Error::compile)
+}
+
+/// Writes a cache file whole: through a partial file that is renamed into
+/// place, so a concurrent reader sees the old file or the new one. Whether the
+/// file was written.
+pub(crate) fn write_cache(path: &Path, contents: impl AsRef<[u8]>) -> bool {
+    let partial = path.with_extension(format!("{}.tmp", std::process::id()));
+    path.parent()
+        .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
+        && std::fs::write(&partial, contents).is_ok()
+        && std::fs::rename(&partial, path).is_ok()
 }
 
 /// Removes runtimes compiled from other versions of `YAPI_JS` or by other

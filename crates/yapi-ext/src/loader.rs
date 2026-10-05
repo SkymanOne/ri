@@ -215,12 +215,7 @@ impl Loader {
             "//esm"
         };
         // A missing cache only costs the next load a transpile.
-        if std::fs::create_dir_all(dir).is_ok() {
-            let partial = cached.with_extension(format!("{}.tmp", std::process::id()));
-            if std::fs::write(&partial, format!("{tag}\n{}", prepared.source)).is_ok() {
-                let _ = std::fs::rename(&partial, &cached);
-            }
-        }
+        crate::engine::write_cache(&cached, format!("{tag}\n{}", prepared.source));
         Ok(prepared)
     }
 }

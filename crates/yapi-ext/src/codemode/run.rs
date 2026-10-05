@@ -509,44 +509,25 @@ impl ScriptBridge {
                 .acquire()
                 .await
                 .map_err(|err| err.to_string())?;
-            let cancel = self.calls.child_token();
-            if kind == "classifier" {
-                let model = registry
-                    .classifiers()
-                    .iter()
-                    .find(|model| model.provider == provider && model.id == id)
-                    .cloned()
-                    .ok_or_else(|| format!("Unknown classifier model \"{provider}/{id}\""))?;
-                let context: yapi_types::classify::ClassifierContext =
-                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
-                let options = yapi_ai::api::classify::ClassifyOptions {
-                    cancel,
-                    ..Default::default()
-                };
-                serde_json::to_value(registry.classify(&model, &context, options).await)
-            } else {
-                let model = registry
-                    .image_models()
-                    .iter()
-                    .find(|model| model.provider == provider && model.id == id)
-                    .cloned()
-                    .ok_or_else(|| format!("Unknown image model \"{provider}/{id}\""))?;
-                let context: yapi_types::classify::ImagesContext =
-                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
-                let options = yapi_ai::api::images::ImagesOptions {
-                    cancel,
-                    ..Default::default()
-                };
-                let result = registry.generate_images(&model, &context, options).await;
-                let images = result
-                    .output
-                    .iter()
-                    .filter(|block| matches!(block, yapi_types::classify::ImagesContent::Image(_)))
-                    .count();
+            let result = models::run_model(
+                registry,
+                kind,
+                (&provider, &id),
+                context,
+                None,
+                self.calls.child_token(),
+            )
+            .await?;
+            if kind == "image" {
+                let images = result["output"].as_array().map_or(0, |output| {
+                    output
+                        .iter()
+                        .filter(|block| block["type"] == "image")
+                        .count()
+                });
                 self.generated_images.fetch_add(images, Ordering::Relaxed);
-                serde_json::to_value(result)
             }
-            .map_err(|err| err.to_string())?
+            result
         };
         let usage: Option<Usage> = result
             .get("usage")

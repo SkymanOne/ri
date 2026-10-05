@@ -94,6 +94,48 @@ fn to_value(model: &impl serde::Serialize) -> Value {
     serde_json::to_value(model).unwrap_or(Value::Null)
 }
 
+/// pi's `classify` (for a `"classifier"`) or `generateImages` on the model of
+/// `kind` named by `provider` and `id`: the result as JSON.
+pub(crate) async fn run_model(
+    registry: &ModelRegistry,
+    kind: &str,
+    (provider, id): (&str, &str),
+    context: &Value,
+    temperature: Option<f64>,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<Value, String> {
+    let context = context.clone();
+    let result = if kind == "classifier" {
+        let model = registry
+            .classifiers()
+            .iter()
+            .find(|model| model.provider == provider && model.id == id)
+            .cloned()
+            .ok_or_else(|| format!("Unknown classifier model \"{provider}/{id}\""))?;
+        let context = serde_json::from_value(context).map_err(|err| err.to_string())?;
+        let options = yapi_ai::api::classify::ClassifyOptions {
+            temperature,
+            cancel,
+            ..Default::default()
+        };
+        serde_json::to_value(registry.classify(&model, &context, options).await)
+    } else {
+        let model = registry
+            .image_models()
+            .iter()
+            .find(|model| model.provider == provider && model.id == id)
+            .cloned()
+            .ok_or_else(|| format!("Unknown image model \"{provider}/{id}\""))?;
+        let context = serde_json::from_value(context).map_err(|err| err.to_string())?;
+        let options = yapi_ai::api::images::ImagesOptions {
+            cancel,
+            ..Default::default()
+        };
+        serde_json::to_value(registry.generate_images(&model, &context, options).await)
+    };
+    result.map_err(|err| err.to_string())
+}
+
 /// Every model of `kind`, optionally of one provider.
 pub(crate) fn models_of_type(
     registry: &ModelRegistry,
@@ -101,45 +143,27 @@ pub(crate) fn models_of_type(
     provider: Option<&str>,
     available: bool,
 ) -> Vec<Value> {
-    let wanted = |model_provider: &str| provider.is_none_or(|provider| provider == model_provider);
-    match kind {
-        "chat" => {
-            let models: Vec<&yapi_types::model::Model> = if available {
-                registry.available()
-            } else {
-                registry.models().iter().collect()
-            };
-            models
-                .into_iter()
-                .filter(|model| wanted(&model.provider))
-                .map(|model| info(to_value(model)))
-                .collect()
-        }
-        "classifier" => {
-            let models: Vec<&yapi_types::model::ClassifierModel> = if available {
-                registry.available_classifiers()
-            } else {
-                registry.classifiers().iter().collect()
-            };
-            models
-                .into_iter()
-                .filter(|model| wanted(&model.provider))
-                .map(|model| info(to_value(model)))
-                .collect()
-        }
-        _ => {
-            let models: Vec<&yapi_types::model::ImageModel> = if available {
-                registry.available_image_models()
-            } else {
-                registry.image_models().iter().collect()
-            };
-            models
-                .into_iter()
-                .filter(|model| wanted(&model.provider))
-                .map(|model| info(to_value(model)))
-                .collect()
-        }
-    }
+    let models: Vec<Value> = match (kind, available) {
+        ("chat", true) => registry.available().into_iter().map(to_value).collect(),
+        ("chat", false) => registry.models().iter().map(to_value).collect(),
+        ("classifier", true) => registry
+            .available_classifiers()
+            .into_iter()
+            .map(to_value)
+            .collect(),
+        ("classifier", false) => registry.classifiers().iter().map(to_value).collect(),
+        (_, true) => registry
+            .available_image_models()
+            .into_iter()
+            .map(to_value)
+            .collect(),
+        (_, false) => registry.image_models().iter().map(to_value).collect(),
+    };
+    models
+        .into_iter()
+        .filter(|model| provider.is_none_or(|provider| model["provider"] == provider))
+        .map(info)
+        .collect()
 }
 
 /// One catalog entry of `kind`.
