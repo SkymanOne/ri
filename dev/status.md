@@ -83,13 +83,13 @@ Done for the slice below.
 
 Exit criterion. Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. 23 terminal scenarios, recorded from pi and run by `cargo test`, match pi's screens: startup, command autocomplete, a tool-call turn, `/session`, `!` and `!!`, `/tree` with its summary dialog and navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, the model and thinking selectors, `/model <ref>`, `/thinking <level>`, `@` and Tab completion, double escape and regular mode. `--resume` was compared by hand.
 
-Budgets, from `cargo xtask bench` on this machine (release build, 100×40 terminal, a session of about 10,000 transcript lines for keystrokes):
+Measured with `cargo xtask bench` on this machine (release build, 100×40 terminal, a session of about 10,000 transcript lines for keystrokes):
 
-| Metric | Budget | yapi | pi |
-|---|---|---|---|
-| First paint | < 40 ms | 10 ms | 399 ms |
-| Keystroke to paint, p50 | | 1.4 ms | 3.9 ms |
-| Keystroke to paint, p99 | < 16 ms | 2.2 ms | 8.7 ms |
+| Metric | yapi | pi |
+|---|---|---|
+| First paint | 10 ms | 399 ms |
+| Keystroke to paint, p50 | 1.4 ms | 3.9 ms |
+| Keystroke to paint, p99 | 2.2 ms | 8.7 ms |
 
 Not yet done:
 
@@ -238,21 +238,26 @@ Done for the slice below.
 - `yapi import pi` copies pi's agent directory (settings, credentials, models, keybindings, MCP servers, trust, system prompt files, sessions, prompts, skills, themes, extensions and packages) and the current project's `.pi` into yapi's, keeping files yapi already has.
 - A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64, with checksums.
 
-Budgets, from `cargo xtask bench --pi` with Pi `1.0.0` installed from npm with `--ignore-scripts` (release build, 100×40 terminal; medians of 20 alternating startups and 5 memory samples; 200 keystrokes in a session of about 10,000 transcript lines; memory sampled 2 s after first paint; the 10 extensions each register a tool, a command and an event handler). Linux is an x86_64 VM (Xeon at 2.1 GHz, 4 threads). macOS is GitHub's hosted `macos-latest` runner (Apple M1 VM, 3 threads), measured by the Bench workflow. Its `ubuntu-latest` run met every budget too. [docs/performance.md](../docs/performance.md) has the ranges and the hosted Linux results. MB means 10^6 bytes.
+Measured with `cargo xtask bench --pi` and Pi `1.0.0` installed from npm with `--ignore-scripts` (release build, 100×40 terminal; medians of 20 alternating startups and 5 memory samples; 200 keystrokes in a session of about 10,000 transcript lines; memory is the resident set size of the process and its children 2 s after first paint or after the last turn). [docs/performance.md](../docs/performance.md) describes each memory scenario and has the ranges and the hosted Linux results. Linux is an x86_64 VM (Xeon at 2.1 GHz, 4 threads). Its startup times vary from day to day: an earlier run measured both programs about 25% faster, so compare ratios within one run. macOS is GitHub's hosted `macos-latest` runner (Apple M1 VM, 3 threads), measured by the Bench workflow. MB means 10^6 bytes.
 
-| Metric | Budget | yapi, Linux | Pi, Linux | yapi, macOS | Pi, macOS |
-|---|---|---|---|---|---|
-| `--version` | < 5 ms | 2.2 ms | 240.5 ms | 6.7 ms | 182.2 ms |
-| Print mode, start to first request byte | < 25 ms | 13.2 ms | 332.5 ms | 12.1 ms | 259.4 ms |
-| Interactive first paint | < 40 ms | 9.1 ms | 308.4 ms | 15.8 ms | 271.1 ms |
-| Keystroke to paint, p99 | < 16 ms | 2.3 ms | 6.5 ms | 10.6 ms | 10.4 ms |
-| Idle memory, no extensions | < 30 MB | 19.5 MB | 115.0 MB | 16.3 MB | 125.9 MB |
-| Idle memory, 10 JS extensions | < 70 MB | 32.2 MB | 118.3 MB | 26.8 MB | 129.8 MB |
-| Stripped release binary | < 35 MB | 32.2 MB | 245.2 MB installed | 26.3 MB | 233.9 MB installed |
+| Measure | yapi, Linux | Pi, Linux | yapi, macOS | Pi, macOS |
+|---|---|---|---|---|
+| `--version` | 2.6 ms | 307.7 ms | 6.7 ms | 182.2 ms |
+| Print mode, start to first request byte | 17.2 ms | 451.1 ms | 12.1 ms | 259.4 ms |
+| Interactive first paint | 12.0 ms | 410.9 ms | 15.8 ms | 271.1 ms |
+| Keystroke to paint, p99 | 4.7 ms | 11.7 ms | 10.6 ms | 10.4 ms |
+| Memory, idle | 18.9 MB | 112.5 MB | 16.3 MB | 125.9 MB |
+| Memory, 10,000-line session open | 33.0 MB | 147.2 MB | | |
+| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB | | |
+| Memory with 10 small JS extensions | 31.4 MB | 115.7 MB | 26.8 MB | 129.8 MB |
+| Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB | | |
+| Stripped release binary | 32.3 MB | 245.2 MB installed | 26.3 MB | 233.9 MB installed |
+
+Against the budgets in AGENTS.md, Linux meets every one, and macOS every one but `--version`.
 
 The providers of PR A had pushed the binary to 37.0 MB and print mode to 21 ms. The binary now embeds the JS runtime deflated (1.7 MB less) and builds Cranelift's code generator for size (3.1 MB less, and about 0.2 s more for the one compile per runtime version). Print mode lost 8 ms: enabling the llama.cpp provider no longer rebuilds the model list when it has no stored catalog, and the provider sort computes each key once.
 
-On macOS, `--version` misses its budget: 6.7 ms (6.1 to 9.0), 5.0 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The other 2.9 ms is not traced yet. Keystroke p99 on that runner is close to Pi's (10.6 ms and 10.4 ms), and single startup samples there reach 463 ms.
+On macOS, `--version` takes 6.7 ms (6.1 to 9.0), 5.0 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The other 2.9 ms is not traced yet. Keystroke p99 on that runner is close to Pi's (10.6 ms and 10.4 ms), and single startup samples there reach 463 ms.
 
 The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
@@ -277,7 +282,7 @@ Run on Linux x86_64 after the rename to yapi, at the head of this branch.
 | pi's example extensions | `crates/yapi-ext/tests/examples.rs` | 79 of 79 register as in pi. |
 | Top 500 npm Pi packages | `cargo xtask package-registrations` | 443 of the 475 that Pi loads in the sandbox register as in Pi (93%), and 349 of the 367 whose extensions load cleanly in Pi (95%); see M5. |
 | Codemode sandbox | `crates/yapi-ext/tests/codemode.rs` | Scripts see exactly pi's globals and reach no files, processes, network, environment, modules or host natives. |
-| Budgets | `cargo xtask bench --pi`, here and in the Bench workflow on `ubuntu-latest` and `macos-latest` | All met on Linux. On macOS all but `--version`; see M7. |
+| Performance | `cargo xtask bench --pi`, here and in the Bench workflow on `ubuntu-latest` and `macos-latest` | Startup, keystroke latency and memory in five scenarios, next to Pi; see M7. |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
 Deferred work is listed under each milestone; intentional differences are in [compat.md](../docs/compat.md).

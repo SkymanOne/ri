@@ -1,8 +1,9 @@
-//! `cargo xtask bench`: the performance budgets of AGENTS.md for yapi, and
-//! optionally pi on the same machine: `--version` time, print mode's time to
-//! the first request byte, interactive first paint, keystroke-to-paint latency
-//! in a pseudo-terminal, idle memory with and without JS extensions, and
-//! install size.
+//! `cargo xtask bench`: the measures behind the performance budgets of
+//! AGENTS.md for yapi, and optionally pi on the same machine: `--version`
+//! time, print mode's time to the first request byte, interactive first
+//! paint, keystroke-to-paint latency in a pseudo-terminal, memory when idle,
+//! with a large session open, after a session of turns with tool calls and
+//! with JS extensions loaded, and install size.
 //!
 //! Startup measurements alternate between the programs run by run, so drift
 //! on the machine (thermal throttling, background work) affects both alike.
@@ -16,6 +17,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use serde_json::json;
 use yapi_mock::pty::Pty;
+use yapi_mock::{Cassette, MockServer};
 
 /// Measure yapi (and pi with `--pi`).
 #[derive(clap::Args)]
@@ -28,7 +30,8 @@ pub struct Args {
     pi: Option<PathBuf>,
     /// A directory holding only a pi installation, such as the prefix of
     /// `npm install --prefix <dir> --ignore-scripts @earendil-works/pi-coding-agent`,
-    /// whose size is reported as pi's install size.
+    /// whose size is reported as pi's install size. Its example extensions
+    /// are loaded for one memory measure.
     #[arg(long)]
     pi_install: Option<PathBuf>,
     /// Startups to time, per program and measure.
@@ -138,23 +141,38 @@ fn write_session(path: &Path, cwd: &Path, lines: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The resident set size of process `pid`, in bytes.
-fn rss(pid: u32) -> Option<u64> {
-    if cfg!(target_os = "linux") {
-        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
-        let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
-        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-        return Some(kb * 1024);
-    }
+/// The resident set size of process `pid` and its descendants, in bytes, as
+/// `ps` reports it.
+fn tree_rss(pid: u32) -> Option<u64> {
     let output = std::process::Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .args(["-A", "-o", "pid=,ppid=,rss="])
         .output()
         .ok()?;
-    let kb: u64 = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .ok()?;
-    Some(kb * 1024)
+    let table: Vec<[u64; 3]> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<u64> = line
+                .split_whitespace()
+                .filter_map(|field| field.parse().ok())
+                .collect();
+            fields.try_into().ok()
+        })
+        .collect();
+    let mut members = vec![u64::from(pid)];
+    let mut kb = 0;
+    let mut found = false;
+    while let Some(member) = members.pop() {
+        for &[process, parent, size] in &table {
+            if process == member {
+                kb += size;
+                found = true;
+            }
+            if parent == member {
+                members.push(process);
+            }
+        }
+    }
+    found.then_some(kb * 1024)
 }
 
 /// Wall time of running `executable` with `args` to completion.
@@ -326,31 +344,232 @@ fn first_paint(program: &Program) -> anyhow::Result<Duration> {
     Ok(paint)
 }
 
-/// The idle memory of an interactive run, sampled 2 s after first paint.
-fn idle_rss(program: &Program) -> anyhow::Result<u64> {
-    let pty = Pty::spawn(
+/// The memory of an interactive run started with `args`: the resident set
+/// size of the program and its child processes, 2 s after `drive` returns.
+/// `drive` starts at the first paint.
+fn memory(
+    program: &Program,
+    args: &[String],
+    drive: impl FnOnce(&mut Pty) -> anyhow::Result<()>,
+) -> anyhow::Result<u64> {
+    let mut pty = Pty::spawn(
         &program.path,
-        &model_args(),
+        args,
         &program.cwd,
         &program.env,
         (100, 40),
         true,
     )?;
-    pty.wait_for(Duration::from_secs(60), ready)
-        .context("no first paint")?;
+    let started = pty.wait_for(Duration::from_secs(60), ready).is_some();
+    let driven = if started {
+        drive(&mut pty)
+    } else {
+        Err(anyhow::anyhow!("no first paint"))
+    };
+    if let Err(err) = driven {
+        let screen = pty.rows().join("\n");
+        pty.finish()?;
+        return Err(err.context(format!("{}, screen:\n{screen}", program.name)));
+    }
     std::thread::sleep(Duration::from_secs(2));
-    let bytes = pty.pid().and_then(rss).context("cannot read memory use")?;
+    let bytes = pty
+        .pid()
+        .and_then(tree_rss)
+        .context("cannot read memory use")?;
     pty.finish()?;
     Ok(bytes)
 }
 
+/// The memory of an interactive run 2 s after first paint.
+fn idle_rss(program: &Program) -> anyhow::Result<u64> {
+    memory(program, &model_args(), |_| Ok(()))
+}
+
+/// Arguments that open a fresh copy of a session of about `lines` transcript
+/// lines.
+fn large_session(program: &Program, root: &Path, lines: usize) -> anyhow::Result<Vec<String>> {
+    let session = root.join(format!("{}-session.jsonl", program.name));
+    write_session(&session, &program.cwd, lines)?;
+    let mut args = model_args();
+    args.truncate(2);
+    args.extend(["--session".to_owned(), session.display().to_string()]);
+    Ok(args)
+}
+
+/// Turns in the active-session measure.
+const TURNS: usize = 20;
+
+/// The provider's side of the active-session measure. Each turn calls a tool,
+/// reading a 1,000-line file or running a command that prints 3,000 lines,
+/// then answers in Markdown, ending with "Finished task N.".
+fn conversation() -> anyhow::Result<Cassette> {
+    let reply = |events: Vec<serde_json::Value>| {
+        let body: String = events
+            .iter()
+            .map(|event| {
+                let kind = event["type"].as_str().unwrap_or_default();
+                format!("event: {kind}\ndata: {event}\n\n")
+            })
+            .collect();
+        json!({"request": {"method": "POST", "path": "/v1/messages"},
+            "response": {"headers": {"content-type": "text/event-stream"}, "chunks": [body]}})
+    };
+    let start = |id: String| {
+        json!({"type": "message_start", "message": {"id": id, "type": "message", "role": "assistant",
+            "model": "claude-sonnet-4-5", "content": [], "stop_reason": null, "stop_sequence": null,
+            "usage": {"input_tokens": 1000, "output_tokens": 1}}})
+    };
+    let end = |reason: &str| {
+        [
+            json!({"type": "message_delta", "delta": {"stop_reason": reason, "stop_sequence": null},
+                "usage": {"output_tokens": 100}}),
+            json!({"type": "message_stop"}),
+        ]
+    };
+    let mut interactions = Vec::new();
+    for turn in 0..TURNS {
+        let (tool, input) = if turn % 2 == 0 {
+            ("read", json!({"path": "sample.txt"}))
+        } else {
+            ("bash", json!({"command": "seq 1 3000"}))
+        };
+        let mut events = vec![
+            start(format!("msg_{turn}_tool")),
+            json!({"type": "content_block_start", "index": 0, "content_block":
+                {"type": "tool_use", "id": format!("toolu_{turn}"), "name": tool, "input": {}}}),
+            json!({"type": "content_block_delta", "index": 0, "delta":
+                {"type": "input_json_delta", "partial_json": input.to_string()}}),
+            json!({"type": "content_block_stop", "index": 0}),
+        ];
+        events.extend(end("tool_use"));
+        interactions.push(reply(events));
+        let text = format!(
+            "Step {turn} is done. Here is what the output shows.\n\n## Findings\n\n\
+             - The output has the expected structure.\n\
+             - Every line follows the same pattern.\n\
+             - Nothing needs to change.\n\n\
+             ```rust\nfn step_{turn}() -> usize {{\n    {turn}\n}}\n```\n\n\
+             Finished task {turn}."
+        );
+        let mut events = vec![
+            start(format!("msg_{turn}_text")),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}),
+            json!({"type": "content_block_stop", "index": 0}),
+        ];
+        events.extend(end("end_turn"));
+        interactions.push(reply(events));
+    }
+    Ok(serde_json::from_value(
+        json!({ "interactions": interactions }),
+    )?)
+}
+
+/// Types [`TURNS`] prompts, each once the previous turn has finished. pi
+/// keeps a prompt submitted before its startup completes in the editor and
+/// adds a notice to the transcript; Enter then submits it again.
+fn work(pty: &mut Pty) -> anyhow::Result<()> {
+    let early = |rows: &[String]| {
+        rows.iter()
+            .filter(|row| row.contains("Startup is still in progress"))
+            .count()
+    };
+    pty.settle();
+    for turn in 0..TURNS {
+        let notices = early(&pty.rows());
+        pty.write(&format!("Task {turn}\r"))?;
+        let marker = format!("Finished task {turn}.");
+        let finished = |rows: &[String]| {
+            rows.iter().any(|row| row.contains(&marker))
+                && !rows.iter().any(|row| row.contains("Working"))
+        };
+        let started = Instant::now();
+        loop {
+            let left = Duration::from_secs(60).saturating_sub(started.elapsed());
+            pty.wait_for(left, |rows| finished(rows) || early(rows) > notices)
+                .with_context(|| format!("turn {turn} did not finish"))?;
+            if finished(&pty.rows()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+            pty.write("\r")?;
+        }
+    }
+    Ok(())
+}
+
+/// The memory of an interactive session after [`TURNS`] turns with tool
+/// calls, against a mock provider that checks each program made the same
+/// requests.
+fn active_rss(program: &Program, runtime: &tokio::runtime::Runtime) -> anyhow::Result<u64> {
+    let server = runtime.block_on(MockServer::start(
+        std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+        conversation()?,
+    ))?;
+    let models = program.agent.join("models.json");
+    std::fs::write(
+        &models,
+        json!({"providers": {"anthropic": {"baseUrl": server.url()}}}).to_string(),
+    )?;
+    let mut args = model_args();
+    args.truncate(2);
+    let bytes = memory(program, &args, work);
+    std::fs::remove_file(&models)?;
+    let bytes = bytes?;
+    server
+        .finish()
+        .with_context(|| format!("{} made other requests", program.name))?;
+    Ok(bytes)
+}
+
+/// pi's example extensions that the memory measure leaves out: those that
+/// replace the footer, header or editor, where the benchmark looks for the
+/// first paint; those that start commands, timers or file watchers when a
+/// session starts; one that commits to the working directory's repository on
+/// exit; and those that override a built-in tool `built-in-tool-renderer.ts`
+/// also overrides, which pi refuses to load together.
+const SKIPPED_EXAMPLES: [&str; 13] = [
+    "border-status-editor.ts",
+    "custom-footer.ts",
+    "custom-header.ts",
+    "modal-editor.ts",
+    "rainbow-editor.ts",
+    "github-issue-autocomplete.ts",
+    "mac-system-theme.ts",
+    "file-trigger.ts",
+    "auto-commit-on-exit.ts",
+    "bash-spawn-hook.ts",
+    "minimal-mode.ts",
+    "ssh.ts",
+    "tool-override.ts",
+];
+
+/// Copies pi's single-file example extensions from a pi installation into
+/// `dir`, except [`SKIPPED_EXAMPLES`]; the number copied.
+fn copy_examples(pi_install: &Path, dir: &Path) -> anyhow::Result<usize> {
+    let examples =
+        pi_install.join("node_modules/@earendil-works/pi-coding-agent/examples/extensions");
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir)?;
+    let mut count = 0;
+    for entry in std::fs::read_dir(&examples)
+        .with_context(|| format!("pi's examples in {}", examples.display()))?
+    {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.ends_with(".ts") && !SKIPPED_EXAMPLES.contains(&name) {
+            std::fs::copy(&path, dir.join(name))?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 /// Keystroke-to-paint latencies in a session of about `lines` lines.
 fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec<Duration>> {
-    let session = root.join(format!("{}-session.jsonl", program.name));
-    write_session(&session, &program.cwd, args.lines)?;
-    let mut session_args = model_args();
-    session_args.truncate(2);
-    session_args.extend(["--session".to_owned(), session.display().to_string()]);
+    let session_args = large_session(program, root, args.lines)?;
     let mut pty = Pty::spawn(
         &program.path,
         &session_args,
@@ -498,6 +717,9 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     println!(
         "- Values: medians with the range of the samples in parentheses, except the keystroke percentiles"
     );
+    println!(
+        "- Memory: resident set size of the program and its child processes, 2 s after first paint or the last turn"
+    );
 
     let mut rows = Vec::new();
     let floor_env = [("PATH", std::env::var_os("PATH").unwrap_or_default())];
@@ -579,10 +801,41 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
 
     let idle = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row {
-        measure: "Idle memory (RSS 2 s after first paint)".to_owned(),
+        measure: "Memory, idle after first paint".to_owned(),
         percent: 50.0,
         samples: idle.into_iter().map(Samples::Bytes).collect(),
     });
+
+    let opened = alternate(&programs, args.memory_runs, |_, program| {
+        memory(program, &large_session(program, &root, args.lines)?, |_| {
+            Ok(())
+        })
+    })?;
+    rows.push(Row {
+        measure: format!("Memory, {}-line session open", args.lines),
+        percent: 50.0,
+        samples: opened.into_iter().map(Samples::Bytes).collect(),
+    });
+
+    let sample: String = (1..=1000)
+        .map(|line| {
+            format!("{line:>4}: a line of the file the session reads on every other turn\n")
+        })
+        .collect();
+    std::fs::write(cwd.join("sample.txt"), sample)?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()?;
+    let active = alternate(&programs, args.memory_runs, |_, program| {
+        active_rss(program, &runtime)
+    })?;
+    rows.push(Row {
+        measure: format!("Memory after {TURNS} turns with tool calls"),
+        percent: 50.0,
+        samples: active.into_iter().map(Samples::Bytes).collect(),
+    });
+
     for program in &programs {
         write_extensions(&program.agent.join("extensions"), 10)?;
         // The first start with extensions fills compilation caches.
@@ -590,10 +843,24 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
     let extended = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row {
-        measure: "Idle memory with 10 JS extensions".to_owned(),
+        measure: "Memory with 10 small JS extensions".to_owned(),
         percent: 50.0,
         samples: extended.into_iter().map(Samples::Bytes).collect(),
     });
+
+    if let Some(install) = &args.pi_install {
+        let mut count = 0;
+        for program in &programs {
+            count = copy_examples(install, &program.agent.join("extensions"))?;
+            idle_rss(program)?;
+        }
+        let examples = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
+        rows.push(Row {
+            measure: format!("Memory with {count} of pi's example extensions"),
+            percent: 50.0,
+            samples: examples.into_iter().map(Samples::Bytes).collect(),
+        });
+    }
 
     print_report(&programs, &rows);
 

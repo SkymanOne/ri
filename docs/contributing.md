@@ -28,7 +28,7 @@ cargo deny check
 ```sh
 cargo xtask e2e --differential         # run pi and yapi side by side on every scenario
 cargo xtask e2e --record-pi            # rewrite the goldens from pi
-cargo xtask bench --pi <path-to-pi>    # the performance budgets
+cargo xtask bench --pi <path-to-pi>    # time and memory against pi
 ```
 
 Pi installs from `tests/fixtures/pi/generator` with `npm ci`, which needs Node.js 22.19 or newer.
