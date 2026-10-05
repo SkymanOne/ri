@@ -33,7 +33,7 @@ impl Command {
             Command::Install => "ri install <source> [-l] [--approve|--no-approve]",
             Command::Remove => "ri remove <source> [-l] [--approve|--no-approve]",
             Command::Update => {
-                "ri update [source|self|ri] [--self|--extensions|--all] [--extension <source>] [--approve|--no-approve]"
+                "ri update [source|self|ri] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve]"
             }
             Command::List => "ri list [--approve|--no-approve]",
         }
@@ -49,7 +49,7 @@ impl Command {
                 "Usage:\n  {usage}\n\nRemove a package and its source from settings.\nAlias: ri uninstall <source> [-l]\n\nOptions:\n  -l, --local       Remove from project settings (.ri/settings.json)\n  -a, --approve     Trust project-local files for this command\n  -na, --no-approve Ignore project-local files for this command\n\nExamples:\n  ri remove npm:@foo/bar\n  ri uninstall npm:@foo/bar\n"
             ),
             Command::Update => format!(
-                "Usage:\n  {usage}\n\nUpdate installed packages.\n\nOptions:\n  --self                  Update ri only (default when no target is given)\n  --extensions            Update installed packages only\n  --all                   Update ri and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n"
+                "Usage:\n  {usage}\n\nUpdate installed packages or model catalogs.\n\nOptions:\n  --self                  Update ri only (default when no target is given)\n  --extensions            Update installed packages only\n  --models                Refresh model catalogs only\n  --all                   Update ri and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n"
             ),
             Command::List => format!(
                 "Usage:\n  {usage}\n\nList installed packages from user and project settings.\n\nOptions:\n  -a, --approve      Trust project-local files for this command\n  -na, --no-approve  Ignore project-local files for this command\n"
@@ -67,6 +67,8 @@ enum Update {
     Packages(Option<String>),
     /// Both.
     All,
+    /// Model catalogs.
+    Models,
 }
 
 #[derive(Debug, Default)]
@@ -81,7 +83,10 @@ struct Options {
     self_flag: bool,
     extensions_flag: bool,
     all_flag: bool,
+    models_flag: bool,
     extension: Option<String>,
+    /// pi's `conflictingOptions`: the first conflict between flags.
+    conflict: Option<String>,
 }
 
 fn parse(command: Command, args: &[String]) -> Options {
@@ -97,9 +102,16 @@ fn parse(command: Command, args: &[String]) -> Options {
             "--self" if command == Command::Update => options.self_flag = true,
             "--extensions" if command == Command::Update => options.extensions_flag = true,
             "--all" if command == Command::Update => options.all_flag = true,
+            "--models" if command == Command::Update => options.models_flag = true,
             "-a" | "--approve" => options.trust = Some(true),
             "-na" | "--no-approve" => options.trust = Some(false),
             "--extension" if command == Command::Update => match args.get(index) {
+                Some(_) if options.extension.is_some() => {
+                    options
+                        .conflict
+                        .get_or_insert_with(|| "--extension can only be provided once".into());
+                    index += 1;
+                }
                 Some(value) if !value.starts_with('-') => {
                     options.extension = Some(value.clone());
                     index += 1;
@@ -119,10 +131,55 @@ fn parse(command: Command, args: &[String]) -> Options {
             }
         }
     }
+    if command == Command::Update {
+        let conflict = update_conflict(&options);
+        if options.conflict.is_none() {
+            options.conflict = conflict;
+        }
+    }
     options
 }
 
+/// pi's checks for update flags that cannot be combined.
+fn update_conflict(options: &Options) -> Option<String> {
+    let source = options.source.is_some();
+    let extension = options.extension.is_some();
+    let (myself, extensions, all, models) = (
+        options.self_flag,
+        options.extensions_flag,
+        options.all_flag,
+        options.models_flag,
+    );
+    let conflict = if all && (myself || extensions || models || extension) {
+        "--all cannot be combined with --self, --extensions, --models, or --extension"
+    } else if all && source {
+        "--all cannot be combined with a positional source"
+    } else if models && (myself || extensions || all || extension) {
+        "--models cannot be combined with --self, --extensions, --all, or --extension"
+    } else if models && source {
+        "--models cannot be combined with a positional source"
+    } else if models {
+        return None;
+    } else if extension && (myself || extensions || all) {
+        "--extension cannot be combined with --self, --extensions, or --all"
+    } else if extension && source {
+        "--extension cannot be combined with a positional source"
+    } else if !extension
+        && source
+        && !matches!(options.source.as_deref(), Some("self" | "ri" | "pi"))
+        && (extensions || myself || all)
+    {
+        "positional update targets cannot be combined with --self, --extensions, or --all"
+    } else {
+        return None;
+    };
+    Some(conflict.to_owned())
+}
+
 fn update_target(options: &Options) -> Update {
+    if options.models_flag {
+        return Update::Models;
+    }
     if let Some(source) = &options.extension {
         return Update::Packages(Some(source.clone()));
     }
@@ -202,6 +259,11 @@ pub async fn run(args: &[String]) -> Option<u8> {
         err(&format!("Usage: {usage}"));
         return Some(1);
     }
+    if let Some(conflict) = &options.conflict {
+        err(conflict);
+        err(&format!("Usage: {usage}"));
+        return Some(1);
+    }
     if matches!(command, Command::Install | Command::Remove)
         && options.source.as_deref().is_none_or(str::is_empty)
     {
@@ -209,7 +271,57 @@ pub async fn run(args: &[String]) -> Option<u8> {
         err(&format!("Usage: {usage}"));
         return Some(1);
     }
+    if command == Command::Update && update_target(&options) == Update::Models {
+        return Some(refresh_models().await);
+    }
     Some(execute(command, options).await)
+}
+
+/// `ri update --models`: pi's `refreshModelCatalogs`, which fetches every
+/// configured catalog, offline setting or not, within 15 seconds.
+async fn refresh_models() -> u8 {
+    let registry = ri_ai::registry::ModelRegistry::load(&agent_dir());
+    let Some(store) = registry.models_store().cloned() else {
+        return 0;
+    };
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let options = ri_ai::model_catalog::RefreshOptions {
+        force: true,
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+    let timer = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+        cancel.cancel();
+    });
+    let targets = registry.catalog_targets().await;
+    let refreshed = ri_ai::model_catalog::refresh(&targets, &store, &options).await;
+    timer.abort();
+    let failure = if refreshed.aborted {
+        Some("Model catalog refresh timed out.".to_owned())
+    } else if !refreshed.errors.is_empty() {
+        let details: Vec<String> = refreshed
+            .errors
+            .iter()
+            .map(|(provider, error)| format!("{provider}: {error}"))
+            .collect();
+        Some(format!(
+            "Could not refresh model catalogs: {}",
+            details.join("; ")
+        ))
+    } else {
+        None
+    };
+    match failure {
+        Some(message) => {
+            err(&format!("Error: {message}"));
+            1
+        }
+        None => {
+            out("Model catalogs refreshed");
+            0
+        }
+    }
 }
 
 async fn execute(command: Command, options: Options) -> u8 {
@@ -272,7 +384,7 @@ async fn execute(command: Command, options: Options) -> u8 {
                     .update(None)
                     .await
                     .map(|()| out("Updated packages")),
-                Update::Myself => Ok(()),
+                Update::Myself | Update::Models => Ok(()),
             };
             if packages_result.is_ok() && matches!(target, Update::Myself | Update::All) {
                 err("ri cannot update itself; install the latest release instead.");

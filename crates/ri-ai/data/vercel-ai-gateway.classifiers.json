@@ -1,0 +1,4 @@
+[
+{"type":"classifier","id":"liquid/d1","name":"Liquid d1","api":"typesafe-system-one","provider":"vercel-ai-gateway","baseUrl":"https://ai-gateway.vercel.sh/typesafe/v1","input":["text"],"cost":{"input":0.04,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":65536},
+{"type":"classifier","id":"typesafe-ai/jev","name":"Jev","api":"typesafe-system-one","provider":"vercel-ai-gateway","baseUrl":"https://ai-gateway.vercel.sh/typesafe/v1","input":["text"],"cost":{"input":0.042,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":32000}
+]

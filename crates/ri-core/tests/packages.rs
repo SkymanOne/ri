@@ -307,7 +307,7 @@ async fn local_packages_are_stored_relative_to_the_scope() {
 #[tokio::test(flavor = "multi_thread")]
 async fn installs_native_extensions() {
     const WASM: &str = "\0asm\u{1}\0\0\0";
-    let dir = scratch("native");
+    let dir = scratch("native-extensions");
     let shout = tarball(&[
         (
             "package.json",

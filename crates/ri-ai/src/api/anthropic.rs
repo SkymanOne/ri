@@ -1,8 +1,7 @@
 //! `anthropic-messages`: the Anthropic Messages API and compatible endpoints.
 //!
 //! Port of `packages/ai/src/api/anthropic-messages.ts` in pi `v1.0.0`. Not yet
-//! ported: workload identity federation, input-transformation diagnostics and
-//! the GitHub Copilot dynamic headers.
+//! ported: input-transformation diagnostics.
 
 use indexmap::IndexMap;
 use ri_types::event::AssistantMessageEvent;
@@ -13,6 +12,7 @@ use ri_types::message::{
 use ri_types::model::{AnthropicMessagesCompat, Model};
 use serde_json::{Map, Value, json};
 
+use crate::auth::federation;
 use crate::cost::calculate_cost;
 use crate::http::{self, Failure, SseReader};
 use crate::json_parse::{parse_json_with_repair, parse_streaming_json};
@@ -244,11 +244,14 @@ async fn run(request: Request, sender: EventSender) {
             model_headers.insert(key.to_owned(), Some(value));
         }
     }
-    if api_key.is_none()
-        && !options.has_header("authorization")
-        && !options.has_header("x-api-key")
-        && !options.has_header("cf-aig-authorization")
-    {
+    let header_auth = options.has_header("authorization")
+        || options.has_header("x-api-key")
+        || options.has_header("cf-aig-authorization");
+    // Workload identity federation stands in for a key on Anthropic itself.
+    let federation = (model.provider == "anthropic" && api_key.is_none() && !header_auth)
+        .then(|| federation::Config::from_env(&model.base_url, options.env.as_ref()))
+        .flatten();
+    if api_key.is_none() && !header_auth && federation.is_none() {
         send_error(
             &sender,
             output,
@@ -351,7 +354,16 @@ async fn run(request: Request, sender: EventSender) {
             return;
         }
     };
-    let build = || {
+    if let Some(config) = &federation {
+        match federation::token(config, false, &options.cancel).await {
+            Ok(token) => federated_headers(&mut headers, &token),
+            Err(message) => {
+                send_error(&sender, output, &options.cancel, message);
+                return;
+            }
+        }
+    }
+    let build = |headers: &IndexMap<String, Option<String>>| {
         let mut request = http::client().post(&url).body(body.clone());
         for (name, value) in headers.iter() {
             if let Some(value) = value {
@@ -360,7 +372,24 @@ async fn run(request: Request, sender: EventSender) {
         }
         request
     };
-    let response = match http::send(build, &options).await {
+    let mut result = http::send(|| build(&headers), &options).await;
+    // A 401 on a federated token: exchange again and retry once, as the SDK.
+    if let Some(config) = &federation
+        && matches!(result, Err(Failure::Status { status: 401, .. }))
+    {
+        federation::invalidate(config);
+        match federation::token(config, true, &options.cancel).await {
+            Ok(token) => {
+                federated_headers(&mut headers, &token);
+                result = http::send(|| build(&headers), &options).await;
+            }
+            Err(message) => {
+                send_error(&sender, output, &options.cancel, message);
+                return;
+            }
+        }
+    }
+    let response = match result {
         Ok(response) => response,
         Err(failure) => {
             let message = match failure {
@@ -393,6 +422,28 @@ async fn run(request: Request, sender: EventSender) {
             sender.send(StreamEvent::Done(output));
         }
         Err(message) => send_error(&sender, state.output, &options.cancel, message),
+    }
+}
+
+/// Bearer auth with a federated token, adding the OAuth beta to any others.
+fn federated_headers(headers: &mut IndexMap<String, Option<String>>, token: &str) {
+    headers.retain(|key, _| !key.eq_ignore_ascii_case("authorization"));
+    headers.insert("authorization".into(), Some(format!("Bearer {token}")));
+    let beta = headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("anthropic-beta"))
+        .and_then(|(_, value)| value.clone());
+    let has_oauth = beta.as_deref().is_some_and(|beta| {
+        beta.split(',')
+            .any(|value| value.trim() == federation::OAUTH_API_BETA)
+    });
+    if !has_oauth {
+        let value = match beta.filter(|beta| !beta.is_empty()) {
+            Some(beta) => format!("{beta}, {}", federation::OAUTH_API_BETA),
+            None => federation::OAUTH_API_BETA.to_owned(),
+        };
+        headers.retain(|key, _| !key.eq_ignore_ascii_case("anthropic-beta"));
+        headers.insert("anthropic-beta".into(), Some(value));
     }
 }
 

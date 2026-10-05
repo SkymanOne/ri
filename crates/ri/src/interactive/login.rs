@@ -61,6 +61,10 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
             ids.push(model.provider.clone());
         }
     }
+    let llama = ri_ai::llama::PROVIDER_ID;
+    if registry.llama_enabled() && !ids.iter().any(|id| id == llama) {
+        ids.push(llama.to_owned());
+    }
     let mut options = Vec::new();
     for id in ids {
         let name = registry.provider_name(&id);
@@ -93,6 +97,7 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
             Some(info) => info
                 .api_key
                 .map(|method| (method.name.to_owned(), method.login)),
+            None if id == llama => Some(("llama.cpp server".to_owned(), true)),
             None => Some(("API key".to_owned(), true)),
         };
         if kind.is_none_or(|kind| kind == LoginKind::ApiKey)
@@ -539,6 +544,15 @@ impl LoginDialog {
         }
     }
 
+    /// Replaces the content with detail lines, as pi's `showDetails`.
+    pub fn show_details(&mut self, lines: Vec<StyledLine>) {
+        self.rows.clear();
+        self.rows.push(Row::Spacer);
+        for line in lines {
+            self.text(line);
+        }
+    }
+
     /// Shows provider information, as pi's `showInfo`.
     pub fn show_info(&mut self, message: &str, ui: &Ui<'_>) {
         self.rows.push(Row::Spacer);
@@ -673,7 +687,20 @@ pub(super) struct LoginRun {
     had_model: bool,
 }
 
+/// pi's `defaultModelPerProvider` entry for `provider`.
+fn default_model(provider: &str) -> Option<&'static str> {
+    ri_core::model_resolver::DEFAULT_MODEL_PER_PROVIDER
+        .iter()
+        .find(|(id, _)| *id == provider)
+        .map(|(_, id)| *id)
+}
+
 const ACCOUNT: &str = "Sign in with an account";
+/// pi's `RADIUS_PROVIDER_ID`.
+const RADIUS: &str = "radius";
+/// pi's `RADIUS_LOGIN_INTRO`, under the title of Radius's method picker.
+const RADIUS_LOGIN_INTRO: &str =
+    "Radius is a service crafted for Pi by the builders of Pi, Earendil Works";
 const API_KEY: &str = "Sign in with an API key";
 
 impl super::App {
@@ -724,21 +751,38 @@ impl super::App {
             self.start_login(options[0].clone(), Back::Editor);
             return;
         }
-        let labels: Vec<&str> = kinds
+        // The top-level menu offers Radius directly, as its last option.
+        let radius = options
+            .is_none()
+            .then(|| {
+                login_options(&self.session.registry(), Some(LoginKind::OAuth))
+                    .into_iter()
+                    .find(|option| option.id == RADIUS)
+            })
+            .flatten();
+        let radius_text = radius
+            .as_ref()
+            .map(|option| format!("Sign in with {}", option.name));
+        let mut labels: Vec<&str> = kinds
             .iter()
             .map(|kind| match kind {
                 LoginKind::OAuth => account.as_str(),
                 LoginKind::ApiKey => API_KEY,
             })
             .collect();
+        labels.extend(radius_text.as_deref());
         let title = match options.as_ref().and_then(|options| options.first()) {
             Some(option) => format!("Select authentication method for {}:", option.name),
             None => "Select authentication method:".to_owned(),
         };
-        self.dialog = Some(super::Dialog::LoginMenu(options, kinds.clone()));
-        self.selector = Some(super::selectors::Selector::Choice(
-            super::selectors::ChoiceDialog::new(&title, &labels),
-        ));
+        let mut dialog = super::selectors::ChoiceDialog::new(&title, &labels);
+        if let Some(option) = &radius {
+            let ui = self.ui();
+            dialog.suffix = Some((kinds.len(), status_spans(option, &ui)));
+            dialog.shimmer = Some((kinds.len(), std::time::Instant::now()));
+        }
+        self.dialog = Some(super::Dialog::LoginMenu(options, kinds.clone(), radius));
+        self.selector = Some(super::selectors::Selector::Choice(dialog));
     }
 
     /// A choice in the method menu.
@@ -814,7 +858,7 @@ impl super::App {
 
     /// pi's `startProviderLogin`: the login dialog, or the setup notice for
     /// providers configured outside ri.
-    fn start_login(&mut self, option: ProviderOption, back: Back) {
+    pub(super) fn start_login(&mut self, option: ProviderOption, back: Back) {
         let ui = super::selectors::Ui {
             theme: &self.theme,
             keys: &self.keys,
@@ -837,7 +881,21 @@ impl super::App {
         }
         self.next_login += 1;
         let id = self.next_login;
-        let dialog = LoginDialog::new(&option.name, None);
+        let mut dialog = LoginDialog::new(&option.name, None);
+        if option.id == "amazon-bedrock" && option.kind == LoginKind::ApiKey {
+            let theme = &self.theme;
+            dialog.show_details(vec![
+                styled(
+                    "You can also use an AWS profile, IAM keys, or role-based credentials.",
+                    theme.fg("text"),
+                ),
+                styled("See:", theme.fg("muted")),
+                styled(
+                    format!("  {}", ri_core::auth_guidance::PROVIDER_DOCS),
+                    theme.fg("accent"),
+                ),
+            ]);
+        }
         let (interaction, mut requests) = ri_ai::auth::Interaction::new(dialog.cancel.clone());
         let tx = self.tx.clone();
         tokio::spawn(async move {
@@ -935,10 +993,12 @@ impl super::App {
                         reply,
                         options.iter().map(|option| option.id.clone()).collect(),
                     ));
+                    let mut choice = super::selectors::ChoiceDialog::new(message, &labels);
+                    if run.option.id == RADIUS {
+                        choice.description = Some(RADIUS_LOGIN_INTRO.into());
+                    }
                     self.dialog = Some(super::Dialog::LoginSelect);
-                    self.selector = Some(super::selectors::Selector::Choice(
-                        super::selectors::ChoiceDialog::new(message, &labels),
-                    ));
+                    self.selector = Some(super::selectors::Selector::Choice(choice));
                     return;
                 }
                 if let Some(super::selectors::Selector::Login(dialog)) = &mut self.selector {
@@ -1010,35 +1070,77 @@ impl super::App {
         }
     }
 
-    /// pi's `completeProviderAuthentication`, without the catalog refresh ri
-    /// does not need.
+    /// pi's `completeProviderAuthentication`: selects the provider's default
+    /// model when the session had none, then refreshes its catalog. When the
+    /// default model is not listed yet, selecting it waits for the refresh.
     fn complete_login(&mut self, run: &LoginRun) {
         let option = &run.option;
         let label = match option.kind {
             LoginKind::OAuth => format!("Logged in to {}", option.name),
             LoginKind::ApiKey => format!("Saved API key for {}", option.name),
         };
-        let registry = self.session.registry();
-        let path = registry
-            .auth_path()
-            .map(|path| path.display().to_string())
-            .unwrap_or_default();
-        if run.had_model {
+        let default = default_model(&option.id);
+        let defer = !run.had_model
+            && default.is_some_and(|default| {
+                !self
+                    .session
+                    .available_models()
+                    .iter()
+                    .any(|model| model.provider == option.id && model.id == default)
+            });
+        if defer {
+            let path = self.auth_path();
+            self.status(format!(
+                "{label}. Credentials saved to {path}. Refreshing model catalog…"
+            ));
+        } else if run.had_model {
+            let path = self.auth_path();
             self.status(format!("{label}. Credentials saved to {path}"));
             self.warn_anthropic_subscription(None);
-            return;
+        } else {
+            self.finish_login(option, &label);
         }
-        let default = ri_core::model_resolver::DEFAULT_MODEL_PER_PROVIDER
-            .iter()
-            .find(|(provider, _)| *provider == option.id)
-            .map(|(_, id)| *id);
-        let models: Vec<ri_types::model::Model> = registry
-            .available()
+        self.refresh_catalogs(
+            Some(vec![option.id.clone()]),
+            super::catalogs::Refresh::Login {
+                option: Box::new(option.clone()),
+                label,
+                defer,
+            },
+        );
+    }
+
+    fn auth_path(&self) -> String {
+        self.session
+            .registry()
+            .auth_path()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Selects the signed-in provider's default model, as pi's
+    /// `finishAuthentication`; a Radius catalog without its default gives
+    /// its first model.
+    pub(super) fn finish_login(&mut self, option: &ProviderOption, label: &str) {
+        let path = self.auth_path();
+        let default = default_model(&option.id);
+        let models: Vec<ri_types::model::Model> = self
+            .session
+            .available_models()
             .into_iter()
             .filter(|model| model.provider == option.id)
-            .cloned()
             .collect();
         let selection = match default {
+            // pi's `llamaCppPostLoginGuidance`.
+            None if option.id == ri_ai::llama::PROVIDER_ID => Err(if models.is_empty() {
+                format!(
+                    "{label}. No llama.cpp models are loaded. Use /llama to load a model, then /model to select it."
+                )
+            } else {
+                format!(
+                    "{label}. Use /model to select a loaded llama.cpp model, or /llama to manage models."
+                )
+            }),
             None => Err(format!(
                 "{label}, but no default model is configured for provider \"{}\". Use /model to select a model.",
                 option.id
@@ -1046,28 +1148,35 @@ impl super::App {
             Some(_) if models.is_empty() => Err(format!(
                 "{label}, but no models are available for that provider. Use /model to select a model."
             )),
-            Some(default) => match models.into_iter().find(|model| model.id == default) {
-                None => Err(format!(
-                    "{label}, but its default model \"{default}\" is not available. Use /model to select a model."
-                )),
-                Some(model) => self
-                    .session
-                    .set_model(model.clone())
-                    .map(|()| {
-                        let _ = self.session.set_global_setting(
-                            "defaultProvider",
-                            Some(serde_json::Value::String(model.provider.clone())),
-                        );
-                        let _ = self.session.set_global_setting(
-                            "defaultModel",
-                            Some(serde_json::Value::String(model.id.clone())),
-                        );
-                        model
-                    })
-                    .map_err(|error| {
-                        format!("{label}, but selecting its default model failed: {error}. Use /model to select a model.")
-                    }),
-            },
+            Some(default) => {
+                let found = models
+                    .iter()
+                    .find(|model| model.id == default)
+                    .or_else(|| models.first().filter(|_| option.id == "radius"))
+                    .cloned();
+                match found {
+                    None => Err(format!(
+                        "{label}, but its default model \"{default}\" is not available. Use /model to select a model."
+                    )),
+                    Some(model) => self
+                        .session
+                        .set_model(model.clone())
+                        .map(|()| {
+                            let _ = self.session.set_global_setting(
+                                "defaultProvider",
+                                Some(serde_json::Value::String(model.provider.clone())),
+                            );
+                            let _ = self.session.set_global_setting(
+                                "defaultModel",
+                                Some(serde_json::Value::String(model.id.clone())),
+                            );
+                            model
+                        })
+                        .map_err(|error| {
+                            format!("{label}, but selecting its default model failed: {error}. Use /model to select a model.")
+                        }),
+                }
+            }
         };
         match selection {
             Ok(model) => {
@@ -1170,8 +1279,13 @@ mod tests {
             [
                 "Anthropic",
                 "GitHub Copilot",
+                "Kimi For Coding",
+                "Meta",
                 "OpenAI",
-                "OpenAI Codex (legacy)"
+                "OpenAI Codex (legacy)",
+                "OpenRouter",
+                "Radius",
+                "xAI"
             ]
         );
         let anthropic = find_options(&registry, "ANTHROPIC");

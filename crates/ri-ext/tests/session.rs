@@ -159,3 +159,69 @@ async fn commands_input_and_new_sessions() {
         [json!({"count": 1, "flag": "calm"})]
     );
 }
+
+const MODELS_EXTENSION: &str = r#"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	pi.registerCommand("probe", {
+		description: "Reads the model registry",
+		handler: async (_args, ctx) => {
+			const registry = ctx.modelRegistry;
+			const refreshed = await registry.refresh({ allowNetwork: false });
+			let classifyError;
+			try {
+				await registry.classify({ provider: "nope", id: "x" }, { questions: [] });
+			} catch (error) {
+				classifyError = error.message;
+			}
+			pi.appendEntry("probe", {
+				classifiers: registry.getModelsOfType("classifier", "typesafe").map((model) => model.id),
+				image: registry.findOfType("image", "openrouter", "black-forest-labs/flux.2-flex")?.name,
+				missing: registry.getModelOfType("image", "openrouter", "nope") ?? null,
+				name: registry.getProviderDisplayName("anthropic"),
+				error: registry.getError() ?? null,
+				available: Array.isArray(await registry.getAvailableOfType("classifier")),
+				aborted: refreshed.aborted,
+				errors: refreshed.errors.size,
+				classifyError,
+			});
+		},
+	});
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn model_registry_reads_typed_models() {
+    let dir = scratch("models");
+    let path = dir.join("models.ts");
+    std::fs::write(&path, MODELS_EXTENSION).unwrap();
+    let js = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    assert!(js.errors().is_empty(), "{:?}", js.errors());
+    let session = session(&Faux::new([]), &dir, js.for_session());
+    session.bind_extensions(Arc::new(NoUi), Mode::Print).await;
+    session.prompt("/probe", Vec::new()).await.unwrap();
+    // The command runs on the runtime; wait for its entry.
+    for _ in 0..200 {
+        if !custom_entries(&session, "probe").is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        custom_entries(&session, "probe"),
+        [json!({
+            "classifiers": ["jev-latest"],
+            "image": "Black Forest Labs: FLUX.2 Flex",
+            "missing": null,
+            "name": "Anthropic",
+            "error": null,
+            "available": true,
+            "aborted": false,
+            "errors": 0,
+            "classifyError": "Unknown classifier model \"nope/x\"",
+        })]
+    );
+}

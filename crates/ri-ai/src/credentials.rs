@@ -78,7 +78,9 @@ fn parse_template(config: &str) -> Vec<Part> {
     parts
 }
 
-fn env_value(name: &str, env: Option<&ProviderEnv>) -> Option<String> {
+/// A provider setting: `env`'s value, else the process environment's. Empty
+/// values count as unset. Port of `getProviderEnvValue`.
+pub fn provider_env_value(name: &str, env: Option<&ProviderEnv>) -> Option<String> {
     env.and_then(|env| env.get(name))
         .filter(|value| !value.is_empty())
         .cloned()
@@ -110,7 +112,7 @@ pub fn env_var_names(config: &str) -> Vec<String> {
 pub fn missing_env_vars(config: &str, env: Option<&ProviderEnv>) -> Vec<String> {
     env_var_names(config)
         .into_iter()
-        .filter(|name| env_value(name, env).is_none())
+        .filter(|name| provider_env_value(name, env).is_none())
         .collect()
 }
 
@@ -134,7 +136,7 @@ pub fn unresolved_message(config: &str, description: &str, env: Option<&Provider
 pub fn is_configured(config: &str, env: Option<&ProviderEnv>) -> bool {
     env_var_names(config)
         .iter()
-        .all(|name| env_value(name, env).is_some())
+        .all(|name| provider_env_value(name, env).is_some())
 }
 
 /// Resolves a value: `!command` runs through the shell (cached when `cache`),
@@ -156,7 +158,7 @@ pub fn resolve_template(config: &str, env: Option<&ProviderEnv>) -> Option<Strin
     for part in parse_template(config) {
         match part {
             Part::Literal(text) => resolved.push_str(&text),
-            Part::Env(name) => resolved.push_str(&env_value(&name, env)?),
+            Part::Env(name) => resolved.push_str(&provider_env_value(&name, env)?),
         }
     }
     Some(resolved)
@@ -214,7 +216,7 @@ pub const AMBIENT_CREDENTIALS: &str = "<authenticated>";
 /// Whether Google Application Default Credentials exist: the file named by
 /// `GOOGLE_APPLICATION_CREDENTIALS`, or gcloud's default file.
 fn has_vertex_adc_credentials(env: Option<&ProviderEnv>) -> bool {
-    match env_value("GOOGLE_APPLICATION_CREDENTIALS", env) {
+    match provider_env_value("GOOGLE_APPLICATION_CREDENTIALS", env) {
         Some(path) => std::path::Path::new(&path).exists(),
         None => std::env::var_os("HOME").is_some_and(|home| {
             std::path::Path::new(&home)
@@ -228,7 +230,7 @@ fn has_vertex_adc_credentials(env: Option<&ProviderEnv>) -> bool {
 /// profiles, keys, tokens and roles for Bedrock; ADC with a project and location
 /// for Vertex. Returns the variable that makes it so.
 fn ambient_credentials(provider: &str, env: Option<&ProviderEnv>) -> Option<&'static str> {
-    let set = |name: &str| env_value(name, env).is_some();
+    let set = |name: &str| provider_env_value(name, env).is_some();
     match provider {
         "google-vertex" => (has_vertex_adc_credentials(env)
             && (set("GOOGLE_CLOUD_PROJECT") || set("GCLOUD_PROJECT"))
@@ -260,7 +262,7 @@ fn ambient_credentials(provider: &str, env: Option<&ProviderEnv>) -> Option<&'st
 pub fn env_api_key(provider: &str, env: Option<&ProviderEnv>) -> Option<(&'static str, String)> {
     api_key_env_vars(provider)
         .iter()
-        .find_map(|name| env_value(name, env).map(|value| (*name, value)))
+        .find_map(|name| provider_env_value(name, env).map(|value| (*name, value)))
         .or_else(|| {
             ambient_credentials(provider, env).map(|name| (name, AMBIENT_CREDENTIALS.to_owned()))
         })

@@ -1,7 +1,7 @@
 //! Request cost from token usage.
 
 use ri_types::message::Usage;
-use ri_types::model::Model;
+use ri_types::model::{Model, Pricing};
 
 /// Prices `usage` with the model's rates and stores the result in `usage.cost`.
 ///
@@ -10,8 +10,12 @@ use ri_types::model::Model;
 /// twice the base input rate. Arithmetic follows pi operation by operation, so costs
 /// print identically.
 pub fn calculate_cost(model: &Model, usage: &mut Usage) {
+    calculate_cost_with(&model.cost, usage);
+}
+
+/// [`calculate_cost`] with a model's `pricing`, for any model type.
+pub fn calculate_cost_with(pricing: &Pricing, usage: &mut Usage) {
     let input_tokens = usage.input + usage.cache_read + usage.cache_write;
-    let pricing = &model.cost;
     let (mut input, mut output, mut cache_read, mut cache_write) = (
         pricing.input,
         pricing.output,

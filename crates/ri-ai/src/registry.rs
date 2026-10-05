@@ -12,17 +12,24 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use ri_types::auth::{ApiKeyCredential, Credential, OAuthCredential};
-use ri_types::model::{Model, Pricing};
+use ri_types::classify::{
+    AssistantImages, ClassifierContext, ClassifierResult, ImagesContext, OutcomeReason,
+};
+use ri_types::model::{ClassifierModel, ImageModel, Model, Pricing};
 use ri_types::models::{ModelDefinition, ModelOverride, ModelsConfig, ProviderConfig};
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
+use crate::api::classify::ClassifyOptions;
+use crate::api::images::ImagesOptions;
 use crate::auth::{
     AuthError, AuthPrompt, CredentialKind, CredentialStore, Interaction, LoginOptions, OAuthAuth,
     OAuthProvider, builtin_oauth, copilot,
 };
 use crate::catalog;
 use crate::credentials::{self, BEARER_TOKEN_ENV, ProviderEnv};
+use crate::key_auth::{self, Ambient};
+use crate::model_catalog::{self, ModelsStore, ProviderModels, Source, Target};
 use crate::providers;
 
 /// Tokens with less validity left than this are refreshed before use.
@@ -42,9 +49,23 @@ pub struct Auth {
     pub base_url: Option<String>,
     /// Why credentials could not be resolved; a request with it fails.
     pub error: Option<String>,
+    /// Provider settings from the credential, such as a Cloudflare account
+    /// id, that the request reads ahead of the process environment.
+    pub env: Option<ProviderEnv>,
 }
 
 impl Auth {
+    /// Takes the credentials of a provider-specific resolution.
+    fn use_resolved(&mut self, resolved: key_auth::Resolved) {
+        self.api_key = resolved.api_key;
+        self.headers.extend(resolved.headers);
+        self.env = resolved.env;
+        self.source = Some(resolved.source);
+        if resolved.base_url.is_some() {
+            self.base_url = resolved.base_url;
+        }
+    }
+
     /// Applies the credentials to a request: the key when there is one,
     /// headers over the request's, and the account's base URL. Fails
     /// with [`Auth::error`] when credentials could not be resolved.
@@ -59,8 +80,78 @@ impl Auth {
         if let Some(base_url) = self.base_url {
             request.model.base_url = base_url;
         }
+        if self.env.is_some() {
+            request.options.env = self.env;
+        }
         Ok(())
     }
+}
+
+/// Where `provider`'s credential comes from when nothing is stored or
+/// configured: its key variables, else the provider's ambient sources.
+fn environment_source(provider: &str) -> Option<String> {
+    if key_auth::is_custom(provider) {
+        return key_auth::resolve(provider, None, &Ambient::process()).map(|r| r.source);
+    }
+    credentials::env_api_key(provider, None)
+        .map(|(name, _)| name.to_owned())
+        .or_else(|| {
+            (provider == "anthropic")
+                .then(|| key_auth::anthropic_federation(&Ambient::process()))
+                .flatten()
+                .map(|resolved| resolved.source)
+        })
+}
+
+/// A model that stands for a provider in provider-level auth.
+/// Replaces the models `key` matches by id with `refreshed` ones, and
+/// appends the new ones; pi's `mergeModels`.
+fn overlay<T: Clone>(models: &mut Vec<T>, refreshed: &[T], key: impl Fn(&T) -> Option<&str>) {
+    for model in refreshed {
+        let Some(id) = key(model) else {
+            continue;
+        };
+        match models.iter().position(|existing| key(existing) == Some(id)) {
+            Some(index) => models[index] = model.clone(),
+            None => models.push(model.clone()),
+        }
+    }
+}
+
+fn placeholder_model(provider: &str) -> Option<Model> {
+    serde_json::from_value(serde_json::json!({
+        "id": "",
+        "name": "",
+        "api": "pi-messages",
+        "provider": provider,
+        "baseUrl": "",
+        "reasoning": false,
+        "input": ["text"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+        "contextWindow": 0,
+        "maxTokens": 0,
+    }))
+    .ok()
+}
+
+/// The models of a Radius gateway config that sign-ins before the models
+/// store kept in their credential.
+fn legacy_radius_models(provider: &str, config: &Value) -> Vec<Model> {
+    let Some(base_url) = config["baseUrl"].as_str() else {
+        return Vec::new();
+    };
+    config["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| {
+            let mut model = model.clone();
+            model["api"] = Value::String("pi-messages".into());
+            model["provider"] = Value::String(provider.to_owned());
+            model["baseUrl"] = Value::String(base_url.to_owned());
+            serde_json::from_value(model).ok()
+        })
+        .collect()
 }
 
 /// How `/login` authenticates a provider.
@@ -73,7 +164,7 @@ pub enum LoginKind {
 }
 
 /// All known models with their configuration.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ModelRegistry {
     models: Vec<Model>,
     config: ModelsConfig,
@@ -83,6 +174,19 @@ pub struct ModelRegistry {
     /// Providers whose `apiKey` an extension configures.
     extension_keys: HashSet<String>,
     error: Option<String>,
+    /// Classifier models, built-in and refreshed.
+    classifiers: Vec<ClassifierModel>,
+    /// Image-generation models, built-in and refreshed.
+    images: Vec<ImageModel>,
+    /// Models from refreshed catalogs, by provider, over the built-in ones.
+    dynamic: IndexMap<String, ProviderModels>,
+    /// Whether pi's built-in `llama.cpp` extension runs, which provides the
+    /// llama.cpp provider.
+    llama: bool,
+    /// Models extension providers register, by provider.
+    extension_models: IndexMap<String, Vec<Model>>,
+    /// Where refreshed catalogs persist.
+    models_store: Option<ModelsStore>,
 }
 
 impl std::fmt::Debug for ModelRegistry {
@@ -355,8 +459,191 @@ impl ModelRegistry {
                 registry.error = Some(format!("Failed to load models.json: {err}\n\nFile: {file}"));
             }
         }
+        registry.models_store = Some(ModelsStore::new(agent_dir.join("models-store.json")));
+        registry.restore_catalogs();
         registry.rebuild();
         registry
+    }
+
+    /// Restores the catalogs earlier refreshes stored, and catalogs older
+    /// Radius sign-ins kept in their credential.
+    fn restore_catalogs(&mut self) {
+        let Some(store) = &self.models_store else {
+            return;
+        };
+        let stored = store.read_all();
+        for (provider, source) in self.catalog_sources() {
+            if let Some(entry) = stored.get(&provider) {
+                self.dynamic.insert(
+                    provider.clone(),
+                    model_catalog::restore(&provider, &source, entry),
+                );
+            } else if matches!(source, Source::Radius { .. })
+                && let Some(Credential::OAuth(credential)) = self.store.get(&provider)
+                && let Some(config) = credential.extra.get("gatewayConfig")
+            {
+                let models = legacy_radius_models(&provider, config);
+                if !models.is_empty() {
+                    self.dynamic.insert(provider, ProviderModels::chat(models));
+                }
+            }
+        }
+    }
+
+    /// Providers whose catalogs refresh, and from where: pi.dev for the
+    /// built-ins, the gateway for Radius and `models.json` Radius gateways.
+    fn catalog_sources(&self) -> Vec<(String, Source)> {
+        let mut sources: Vec<(String, Source)> = catalog::builtin_providers()
+            .filter(|provider| *provider != "radius")
+            .map(|provider| (provider.to_owned(), Source::Remote))
+            .collect();
+        sources.push((
+            "radius".into(),
+            Source::Radius {
+                gateway: crate::auth::radius::DEFAULT_GATEWAY.into(),
+            },
+        ));
+        for provider in self.config.providers.keys() {
+            if let Some(gateway) = self.radius_gateway(provider) {
+                let gateway = crate::auth::radius::normalize_gateway(&gateway);
+                sources.retain(|(id, _)| id != provider);
+                sources.push((provider.clone(), Source::Radius { gateway }));
+            }
+        }
+        if self.llama {
+            // pi refreshes llama.cpp only for a stored server.
+            let server = match self.store.get(crate::llama::PROVIDER_ID) {
+                Some(Credential::ApiKey(credential)) => credential
+                    .env
+                    .as_ref()
+                    .and_then(|env| env.get(crate::llama::BASE_URL_ENV))
+                    .and_then(|url| crate::llama::normalize_server_url(url).ok()),
+                _ => None,
+            };
+            sources.push((
+                crate::llama::PROVIDER_ID.into(),
+                Source::Llama {
+                    server: server.unwrap_or_default(),
+                },
+            ));
+        }
+        sources
+    }
+
+    /// Provides pi's llama.cpp provider, as its built-in extension does.
+    pub fn enable_llama(&mut self) {
+        if self.llama {
+            return;
+        }
+        self.llama = true;
+        // Without a stored catalog the provider has no models yet, so the
+        // model list stays as it is.
+        if let Some(store) = &self.models_store
+            && let Some(entry) = store.read(crate::llama::PROVIDER_ID)
+        {
+            let source = Source::Llama {
+                server: String::new(),
+            };
+            self.dynamic.insert(
+                crate::llama::PROVIDER_ID.into(),
+                model_catalog::restore(crate::llama::PROVIDER_ID, &source, &entry),
+            );
+            self.rebuild();
+        }
+    }
+
+    /// Whether the llama.cpp provider is present.
+    pub fn llama_enabled(&self) -> bool {
+        self.llama
+    }
+
+    /// The llama.cpp server and its key, when the provider is configured.
+    pub async fn llama_server(&self) -> Option<(String, Option<String>)> {
+        if !self.llama {
+            return None;
+        }
+        let credential = match self.store.get(crate::llama::PROVIDER_ID) {
+            Some(Credential::ApiKey(credential)) => Some(credential),
+            _ => None,
+        };
+        let resolved = key_auth::resolve(
+            crate::llama::PROVIDER_ID,
+            credential.as_ref(),
+            &Ambient::process(),
+        )?;
+        let server = resolved
+            .env
+            .as_ref()
+            .and_then(|env| env.get(crate::llama::BASE_URL_ENV))
+            .cloned()?;
+        // A stored key, or the environment's; pi sends no "local" placeholder.
+        let key = credential
+            .and_then(|credential| credential.key)
+            .or_else(|| std::env::var("LLAMA_API_KEY").ok());
+        Some((server, key))
+    }
+
+    /// What a catalog refresh needs: each refreshable provider, whether it
+    /// is configured, and its token for gateways that require one.
+    pub async fn catalog_targets(&self) -> Vec<Target> {
+        let mut targets = Vec::new();
+        for (provider, source) in self.catalog_sources() {
+            let configured = self.has_auth(&provider);
+            let token = match (&source, configured) {
+                (Source::Radius { .. }, true) => self.provider_token(&provider).await,
+                // pi sends the stored key only.
+                (Source::Llama { .. }, true) => match self.store.get(&provider) {
+                    Some(Credential::ApiKey(credential)) => credential.key,
+                    _ => None,
+                },
+                _ => None,
+            };
+            let configured =
+                configured && !matches!(&source, Source::Llama { server } if server.is_empty());
+            targets.push(Target {
+                provider,
+                source,
+                token,
+                configured,
+            });
+        }
+        targets
+    }
+
+    /// Where refreshed catalogs persist, when the registry was loaded from an
+    /// agent directory.
+    pub fn models_store(&self) -> Option<&ModelsStore> {
+        self.models_store.as_ref()
+    }
+
+    /// Replaces the refreshed catalogs of the providers in `models`.
+    pub fn apply_catalogs(&mut self, models: IndexMap<String, ProviderModels>) {
+        self.dynamic.extend(models);
+        self.rebuild();
+    }
+
+    /// A token for provider-level calls such as catalog refreshes: the API key
+    /// or bearer token a request would send, refreshed first when it is an
+    /// expiring OAuth token.
+    pub async fn provider_token(&self, provider: &str) -> Option<String> {
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.provider == provider)
+            .cloned()
+            .or_else(|| placeholder_model(provider))?;
+        let auth = self.auth(&model).await;
+        if auth.error.is_some() {
+            return None;
+        }
+        auth.api_key.or_else(|| {
+            auth.headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                .and_then(|(_, value)| value.as_deref())
+                .and_then(|value| value.strip_prefix("Bearer "))
+                .map(str::to_owned)
+        })
     }
 
     /// The catalog alone, with no files.
@@ -368,11 +655,29 @@ impl ModelRegistry {
 
     fn rebuild(&mut self) {
         let mut models = catalog::all_builtin_models();
+        let mut classifiers = catalog::all_builtin_classifiers();
+        let mut images = catalog::all_builtin_image_models();
+        for (provider, refreshed) in &self.dynamic {
+            overlay(&mut models, &refreshed.chat, |model| {
+                (model.provider == *provider).then_some(model.id.as_str())
+            });
+            overlay(&mut classifiers, &refreshed.classifiers, |model| {
+                (model.provider == *provider).then_some(model.id.as_str())
+            });
+            overlay(&mut images, &refreshed.images, |model| {
+                (model.provider == *provider).then_some(model.id.as_str())
+            });
+        }
+        self.classifiers = classifiers;
+        self.images = images;
         let mut providers: Vec<String> = catalog::builtin_providers().map(str::to_owned).collect();
         for id in self.config.providers.keys() {
             if !providers.contains(id) {
                 providers.push(id.clone());
             }
+        }
+        if self.llama && !providers.iter().any(|id| id == crate::llama::PROVIDER_ID) {
+            providers.push(crate::llama::PROVIDER_ID.into());
         }
         let mut errors = Vec::new();
         for (provider, config) in self.config.providers.clone() {
@@ -418,8 +723,12 @@ impl ModelRegistry {
             }
             models.extend(own);
         }
+        for (provider, registered) in &self.extension_models {
+            models.retain(|model| model.provider != *provider);
+            models.extend(registered.iter().cloned());
+        }
         // Keep provider order: built-ins in catalog order, then custom providers.
-        models.sort_by_key(|model| providers.iter().position(|p| *p == model.provider));
+        models.sort_by_cached_key(|model| providers.iter().position(|p| *p == model.provider));
         self.models = models;
         if !errors.is_empty() && self.error.is_none() {
             self.error = Some(errors.join("\n"));
@@ -443,6 +752,163 @@ impl ModelRegistry {
             .find(|model| model.provider == provider && model.id == id)
     }
 
+    /// Every classifier model, built-in and refreshed.
+    pub fn classifiers(&self) -> &[ClassifierModel] {
+        &self.classifiers
+    }
+
+    /// Every image-generation model, built-in and refreshed.
+    pub fn image_models(&self) -> &[ImageModel] {
+        &self.images
+    }
+
+    /// Classifier models whose providers are configured.
+    pub fn available_classifiers(&self) -> Vec<&ClassifierModel> {
+        let mut configured: HashMap<&str, bool> = HashMap::new();
+        self.classifiers
+            .iter()
+            .filter(|model| {
+                *configured
+                    .entry(model.provider.as_str())
+                    .or_insert_with(|| self.has_auth(&model.provider))
+            })
+            .collect()
+    }
+
+    /// Image models whose providers are configured.
+    pub fn available_image_models(&self) -> Vec<&ImageModel> {
+        let mut configured: HashMap<&str, bool> = HashMap::new();
+        self.images
+            .iter()
+            .filter(|model| {
+                *configured
+                    .entry(model.provider.as_str())
+                    .or_insert_with(|| self.has_auth(&model.provider))
+            })
+            .collect()
+    }
+
+    /// Credentials for a provider-level request with `base_url`, `api` and
+    /// static `headers`: pi's `applyAuth` for any model type. Fails with pi's
+    /// message when the provider is not configured.
+    async fn model_auth(
+        &self,
+        provider: &str,
+        id: &str,
+        api: &str,
+        base_url: &str,
+        headers: Option<&IndexMap<String, String>>,
+    ) -> Result<Auth, String> {
+        let mut model = placeholder_model(provider).ok_or("invalid model")?;
+        model.id = id.to_owned();
+        model.api = api.to_owned();
+        model.base_url = base_url.to_owned();
+        model.headers = headers.cloned();
+        let auth = self.auth(&model).await;
+        if let Some(error) = auth.error {
+            return Err(error);
+        }
+        if auth.api_key.is_none() && auth.source.is_none() {
+            return Err(format!("Provider is not configured: {provider}"));
+        }
+        Ok(auth)
+    }
+
+    /// Classifies `context` with `model`, resolving the provider's
+    /// credentials; pi's `Models.classify`. Failures are in the result.
+    pub async fn classify(
+        &self,
+        model: &ClassifierModel,
+        context: &ClassifierContext,
+        mut options: ClassifyOptions,
+    ) -> ClassifierResult {
+        let auth = self
+            .model_auth(
+                &model.provider,
+                &model.id,
+                &model.api,
+                &model.base_url,
+                model.headers.as_ref(),
+            )
+            .await;
+        let auth = match auth {
+            Ok(auth) => auth,
+            Err(message) => {
+                return ClassifierResult {
+                    api: model.api.clone(),
+                    provider: model.provider.clone(),
+                    model: model.id.clone(),
+                    answers: IndexMap::new(),
+                    usage: None,
+                    stop_reason: if options.cancel.is_cancelled() {
+                        OutcomeReason::Aborted
+                    } else {
+                        OutcomeReason::Error
+                    },
+                    error_message: Some(message),
+                    timestamp: crate::stream::now_ms(),
+                };
+            }
+        };
+        let mut model = model.clone();
+        if let Some(base_url) = auth.base_url {
+            model.base_url = base_url;
+        }
+        options.api_key = options.api_key.or(auth.api_key);
+        let mut headers = auth.headers;
+        headers.extend(options.headers);
+        options.headers = headers;
+        crate::api::classify::classify(&model, context, &options).await
+    }
+
+    /// Generates images with `model`, resolving the provider's credentials;
+    /// pi's `Models.generateImages`. Failures are in the result.
+    pub async fn generate_images(
+        &self,
+        model: &ImageModel,
+        context: &ImagesContext,
+        mut options: ImagesOptions,
+    ) -> AssistantImages {
+        let auth = self
+            .model_auth(
+                &model.provider,
+                &model.id,
+                &model.api,
+                &model.base_url,
+                model.headers.as_ref(),
+            )
+            .await;
+        let auth = match auth {
+            Ok(auth) => auth,
+            Err(message) => {
+                return AssistantImages {
+                    api: model.api.clone(),
+                    provider: model.provider.clone(),
+                    model: model.id.clone(),
+                    output: Vec::new(),
+                    response_id: None,
+                    usage: None,
+                    stop_reason: if options.cancel.is_cancelled() {
+                        OutcomeReason::Aborted
+                    } else {
+                        OutcomeReason::Error
+                    },
+                    error_message: Some(message),
+                    timestamp: crate::stream::now_ms(),
+                };
+            }
+        };
+        let mut model = model.clone();
+        if let Some(base_url) = auth.base_url {
+            model.base_url = base_url;
+        }
+        options.api_key = options.api_key.or(auth.api_key);
+        let mut headers = auth.headers;
+        headers.extend(options.headers);
+        options.headers = headers;
+        crate::api::images::generate_images(&model, context, &options).await
+    }
+
     /// Adds a provider an extension configures, as a `models.json` entry
     /// that replaces any of the same name; pi's `registerProvider`.
     pub fn register_config(&mut self, provider: &str, config: ProviderConfig) {
@@ -455,6 +921,8 @@ impl ModelRegistry {
 
     /// Adds models from an extension provider, replacing the provider's models.
     pub fn register_provider(&mut self, provider: &str, models: Vec<Model>) {
+        self.extension_models
+            .insert(provider.to_owned(), models.clone());
         self.models.retain(|model| model.provider != provider);
         self.models.extend(models);
     }
@@ -464,12 +932,30 @@ impl ModelRegistry {
         self.oauth.insert(provider.to_owned(), flow);
     }
 
-    /// The sign-in for `provider`: a registered one, else ri's built-in.
+    /// The sign-in for `provider`: a registered one, a `models.json` Radius
+    /// gateway's, else ri's built-in.
     pub fn oauth_flow(&self, provider: &str) -> Option<Arc<dyn OAuthProvider>> {
-        self.oauth
-            .get(provider)
-            .cloned()
-            .or_else(|| builtin_oauth(provider))
+        if let Some(flow) = self.oauth.get(provider) {
+            return Some(Arc::clone(flow));
+        }
+        if let Some(gateway) = self.radius_gateway(provider) {
+            let name = self.provider_name(provider);
+            return Some(Arc::new(crate::auth::radius::RadiusOAuth::new(
+                &name, &gateway,
+            )));
+        }
+        builtin_oauth(provider)
+    }
+
+    /// The gateway of a `models.json` provider with `"oauth": "radius"`: its
+    /// base URL without a trailing `/v1`.
+    pub fn radius_gateway(&self, provider: &str) -> Option<String> {
+        let config = self.config.providers.get(provider)?;
+        if config.oauth.as_deref() != Some("radius") {
+            return None;
+        }
+        let base = config.base_url.as_deref()?.trim_end_matches('/');
+        Some(base.strip_suffix("/v1").unwrap_or(base).to_owned())
     }
 
     /// Uses `key` for `provider` for this process, ahead of every stored credential.
@@ -533,6 +1019,17 @@ impl ModelRegistry {
         }
         match self.credential(provider) {
             Some(Credential::ApiKey(credential)) => {
+                if key_auth::is_custom(provider) {
+                    // Whether the key resolves is unknown without running its
+                    // command, so a command counts as a key here.
+                    let key = credential.key.clone().filter(|key| {
+                        credentials::is_command(key)
+                            || credentials::is_configured(key, credential.env.as_ref())
+                    });
+                    let credential = ApiKeyCredential { key, ..credential };
+                    return key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                        .map(|_| "stored credential".into());
+                }
                 // An empty stored key counts as none, as in pi.
                 if let Some(key) = credential.key.as_ref().filter(|key| !key.is_empty())
                     && (credentials::is_command(key)
@@ -550,7 +1047,7 @@ impl ModelRegistry {
             return (credentials::is_command(key) || credentials::is_configured(key, None))
                 .then(|| "configured API key".into());
         }
-        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+        environment_source(provider)
     }
 
     /// How `provider` is configured, as pi's `getProviderAuthStatus` labels
@@ -584,7 +1081,7 @@ impl ModelRegistry {
             };
             return Some(source.into());
         }
-        credentials::env_api_key(provider, None).map(|(name, _)| name.to_owned())
+        environment_source(provider)
     }
 
     /// The `apiKey` that `models.json` configures for `provider`, if any.
@@ -641,6 +1138,15 @@ impl ModelRegistry {
         }
         let mut env = None;
         match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) if key_auth::is_custom(provider) => {
+                let key = credential
+                    .key
+                    .as_deref()
+                    .and_then(|key| credentials::resolve_template(key, credential.env.as_ref()));
+                let credential = ApiKeyCredential { key, ..credential };
+                return key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                    .and_then(|resolved| resolved.api_key);
+            }
             Some(Credential::ApiKey(credential)) => {
                 if let Some(value) = credential
                     .key
@@ -657,6 +1163,10 @@ impl ModelRegistry {
         }
         if let Some(key) = self.configured_key(provider) {
             return credentials::resolve_template(key, None).filter(|value| !value.is_empty());
+        }
+        if key_auth::is_custom(provider) {
+            return key_auth::resolve(provider, None, &Ambient::process())
+                .and_then(|resolved| resolved.api_key);
         }
         credentials::env_api_key(provider, env.as_ref()).map(|(_, value)| value)
     }
@@ -686,6 +1196,21 @@ impl ModelRegistry {
         }
         let mut env: Option<ProviderEnv> = None;
         match self.credential(provider) {
+            Some(Credential::ApiKey(credential)) if key_auth::is_custom(provider) => {
+                // The stored credential owns the provider: an unresolved key
+                // leaves the provider's own fallbacks, not other sources.
+                let key = match &credential.key {
+                    Some(key) => credentials::resolve(key, credential.env.as_ref(), true).await,
+                    None => None,
+                };
+                let credential = ApiKeyCredential { key, ..credential };
+                if let Some(resolved) =
+                    key_auth::resolve(provider, Some(&credential), &Ambient::process())
+                {
+                    auth.use_resolved(resolved);
+                }
+                return auth;
+            }
             Some(Credential::ApiKey(credential)) => {
                 env = credential.env.clone();
                 if let Some(key) = &credential.key
@@ -701,7 +1226,8 @@ impl ModelRegistry {
             Some(Credential::OAuth(credential)) => {
                 match self.oauth_auth(provider, credential, min_validity_ms).await {
                     Ok(Some(oauth)) => {
-                        auth.api_key = Some(oauth.api_key);
+                        auth.api_key = oauth.api_key;
+                        auth.headers.extend(oauth.headers);
                         auth.base_url = oauth.base_url;
                         auth.source = Some("OAuth".into());
                     }
@@ -730,6 +1256,12 @@ impl ModelRegistry {
             }
             return auth;
         }
+        if key_auth::is_custom(provider) {
+            if let Some(resolved) = key_auth::resolve(provider, None, &Ambient::process()) {
+                auth.use_resolved(resolved);
+            }
+            return auth;
+        }
         if let Some((name, value)) = credentials::env_api_key(provider, env.as_ref()) {
             if name == BEARER_TOKEN_ENV {
                 auth.headers
@@ -738,6 +1270,10 @@ impl ModelRegistry {
                 auth.api_key = Some(value);
             }
             auth.source = Some(name.to_owned());
+        } else if provider == "anthropic"
+            && let Some(resolved) = key_auth::anthropic_federation(&Ambient::process())
+        {
+            auth.use_resolved(resolved);
         }
         auth
     }
@@ -755,8 +1291,8 @@ impl ModelRegistry {
         let Some(flow) = self.oauth_flow(provider) else {
             // ri has no sign-in for this provider: use the token as stored.
             return Ok(Some(OAuthAuth {
-                api_key: stored.access,
-                base_url: None,
+                api_key: Some(stored.access),
+                ..OAuthAuth::default()
             }));
         };
         let expires_soon = |credential: &OAuthCredential| {
@@ -831,6 +1367,11 @@ impl ModelRegistry {
                 })?;
                 Credential::OAuth(flow.login(interaction, options).await?)
             }
+            LoginKind::ApiKey if key_auth::is_custom(provider) => Credential::ApiKey(
+                key_auth::login(provider, interaction)
+                    .await
+                    .unwrap_or_else(|| Err(AuthError::failed("No login for provider")))?,
+            ),
             LoginKind::ApiKey => {
                 let name = providers::info(provider)
                     .and_then(|info| info.api_key)

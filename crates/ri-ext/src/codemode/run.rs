@@ -6,6 +6,7 @@
 //! QuickJS context; nested tool calls and discovery globals are operations
 //! this module answers, so the script reaches nothing else.
 
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -16,12 +17,13 @@ use ri_core::extensions::ToolInfo;
 use ri_core::extensions::tool_search;
 use ri_core::tools::RegisteredTool;
 use ri_types::event::ToolResult;
-use ri_types::message::ContentBlock;
+use ri_types::message::{ContentBlock, Usage};
 use ri_types::session::FileEntry;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::declarations::{Declaration, identifier, sample};
+use super::models;
 use crate::{Bridge, Engine, Grants, Instance, Options};
 
 /// The custom entry type of `store()` writes.
@@ -185,6 +187,8 @@ struct CallRecord {
     status: &'static str,
     duration_ms: Option<f64>,
     error: Option<String>,
+    /// Cost in USD of a `models.*` call that reported usage.
+    cost: Option<f64>,
 }
 
 impl CallRecord {
@@ -196,6 +200,9 @@ impl CallRecord {
         }
         if let Some(error) = &self.error {
             out["error"] = json!(error);
+        }
+        if let Some(cost) = self.cost {
+            out["cost"] = json!(cost);
         }
         out
     }
@@ -225,6 +232,16 @@ struct ScriptBridge {
     updates: UpdateSink,
     /// Cancelled when the script ends, cancelling the calls still running.
     calls: CancellationToken,
+    /// The codemode reference, when scripts reach `models`.
+    docs: Option<String>,
+    /// Slots for `models.classify()` and `models.generateImages()` calls.
+    model_slots: tokio::sync::Semaphore,
+    /// `models.*` calls so far, numbering their rows.
+    model_calls: AtomicU64,
+    /// Usage of the script's `models.*` calls.
+    model_usage: Mutex<Option<Usage>>,
+    /// Images `models.generateImages()` returned.
+    generated_images: AtomicUsize,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -398,6 +415,7 @@ impl ScriptBridge {
                 status: "running",
                 duration_ms: None,
                 error: None,
+                cost: None,
             });
             progress.calls.len() - 1
         };
@@ -451,6 +469,146 @@ impl ScriptBridge {
     }
 }
 
+impl ScriptBridge {
+    /// `models.*`: pi's `createModelGlobals`.
+    async fn model_global(self: Arc<Self>, name: String, args: Value) -> Result<Value, String> {
+        let docs = self.docs.clone().ok_or("models is not available")?;
+        let session = self.session.clone().ok_or("models needs a session")?;
+        let registry = session.registry();
+        let items = models::args(&args);
+        let arg = |index: usize| items.get(index).unwrap_or(&Value::Null);
+        match name.as_str() {
+            "models.getModelsOfType" | "models.getAvailableOfType" => {
+                let kind = models::model_type(arg(0))?;
+                let provider = models::provider(arg(1))?;
+                let available = name == "models.getAvailableOfType";
+                let list = models::models_of_type(&registry, kind, provider, available);
+                Ok(script_value(Some(&Value::Array(list))))
+            }
+            "models.getModelOfType" => {
+                let (provider, id) = models::model_of_type_args(&items)?;
+                let kind = models::model_type(arg(0))?;
+                let found = models::model_of_type(&registry, kind, provider, id);
+                Ok(script_value(found.as_ref()))
+            }
+            "models.classify" => {
+                self.model_call(&registry, &name, "classifier", arg(0), arg(1), &docs)
+                    .await
+            }
+            "models.generateImages" => {
+                self.model_call(&registry, &name, "image", arg(0), arg(1), &docs)
+                    .await
+            }
+            other => Err(format!("Unknown global \"{other}\"")),
+        }
+    }
+
+    /// A classifier or image call: resolved by provider and id only, its
+    /// context checked, and run as a nested call row that shows the model,
+    /// never the prompt or image data.
+    async fn model_call(
+        &self,
+        registry: &ri_ai::registry::ModelRegistry,
+        name: &str,
+        kind: &str,
+        model: &Value,
+        context: &Value,
+        docs: &str,
+    ) -> Result<Value, String> {
+        let (provider, id) = models::resolve_model(registry, name, kind, model)?;
+        if kind == "classifier" {
+            models::check_classifier_context(context, docs)?;
+        } else {
+            models::check_images_context(context, docs)?;
+        }
+        let number = self.model_calls.fetch_add(1, Ordering::Relaxed) + 1;
+        let index = {
+            let mut progress = lock(&self.progress);
+            progress.calls.push(CallRecord {
+                id: format!("{}/{name}/{number}", self.call_id),
+                name: name.to_owned(),
+                args: format!("{provider}/{id}"),
+                status: "running",
+                duration_ms: None,
+                error: None,
+                cost: None,
+            });
+            progress.calls.len() - 1
+        };
+        self.publish();
+        let started = Instant::now();
+        let result = {
+            let _slot = self
+                .model_slots
+                .acquire()
+                .await
+                .map_err(|err| err.to_string())?;
+            let cancel = self.calls.child_token();
+            if kind == "classifier" {
+                let model = registry
+                    .classifiers()
+                    .iter()
+                    .find(|model| model.provider == provider && model.id == id)
+                    .cloned()
+                    .ok_or_else(|| format!("Unknown classifier model \"{provider}/{id}\""))?;
+                let context: ri_types::classify::ClassifierContext =
+                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
+                let options = ri_ai::api::classify::ClassifyOptions {
+                    cancel,
+                    ..Default::default()
+                };
+                serde_json::to_value(registry.classify(&model, &context, options).await)
+            } else {
+                let model = registry
+                    .image_models()
+                    .iter()
+                    .find(|model| model.provider == provider && model.id == id)
+                    .cloned()
+                    .ok_or_else(|| format!("Unknown image model \"{provider}/{id}\""))?;
+                let context: ri_types::classify::ImagesContext =
+                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
+                let options = ri_ai::api::images::ImagesOptions {
+                    cancel,
+                    ..Default::default()
+                };
+                let result = registry.generate_images(&model, &context, options).await;
+                let images = result
+                    .output
+                    .iter()
+                    .filter(|block| matches!(block, ri_types::classify::ImagesContent::Image(_)))
+                    .count();
+                self.generated_images.fetch_add(images, Ordering::Relaxed);
+                serde_json::to_value(result)
+            }
+            .map_err(|err| err.to_string())?
+        };
+        let usage: Option<Usage> = result
+            .get("usage")
+            .and_then(|usage| serde_json::from_value(usage.clone()).ok());
+        {
+            let mut progress = lock(&self.progress);
+            let record = &mut progress.calls[index];
+            record.duration_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            record.status = result.as_object().map_or("error", models::status);
+            if let Some(error) = result["errorMessage"].as_str() {
+                record.error = Some(truncate_text(error, ERROR_PREVIEW_CHARS));
+            }
+            if let Some(usage) = &usage {
+                record.cost = Some(usage.cost.total);
+            }
+        }
+        if let Some(usage) = usage {
+            let mut total = lock(&self.model_usage);
+            *total = Some(match total.as_ref() {
+                Some(previous) => ri_core::compaction::combine_usage(previous, &usage),
+                None => usage,
+            });
+        }
+        self.publish();
+        Ok(script_value(Some(&result)))
+    }
+}
+
 /// The bridge an instance holds: dropped with the run, so late operations
 /// find nothing.
 struct WeakBridge(Weak<ScriptBridge>);
@@ -481,6 +639,9 @@ impl Bridge for WeakBridge {
                     .as_deref()
                     .and_then(|args| serde_json::from_str(args).ok())
                     .unwrap_or(Value::Null);
+                if name.starts_with("models.") {
+                    return Box::pin(bridge.model_global(name, args));
+                }
                 let result = bridge.global(&name, &args);
                 Box::pin(async move { result })
             }
@@ -607,23 +768,27 @@ fn store_entry(writes: &str) -> Option<Value> {
 pub(crate) struct Runner {
     cache_dir: Option<std::path::PathBuf>,
     engine: Arc<tokio::sync::OnceCell<Engine>>,
+    /// The codemode reference; scripts with a session reach `models` when set.
+    docs: Option<String>,
 }
 
 impl Runner {
     /// A runner that compiles the runtime on first use, caching it in
-    /// `cache_dir`.
-    pub fn new(cache_dir: Option<std::path::PathBuf>) -> Runner {
+    /// `cache_dir`. With `docs`, scripts reach `models`.
+    pub fn new(cache_dir: Option<std::path::PathBuf>, docs: Option<String>) -> Runner {
         Runner {
             cache_dir,
             engine: Arc::new(tokio::sync::OnceCell::new()),
+            docs,
         }
     }
 
-    /// A runner on `engine`.
-    pub fn with_engine(engine: Engine) -> Runner {
+    /// A runner on `engine`, with `models` when `docs` is set.
+    pub fn with_engine(engine: Engine, docs: Option<String>) -> Runner {
         Runner {
             cache_dir: None,
             engine: Arc::new(tokio::sync::OnceCell::new_with(Some(engine))),
+            docs,
         }
     }
 
@@ -687,6 +852,19 @@ impl Runner {
             })
             .collect();
         let store = read_store(session.as_ref());
+        // pi's models need the session's registry.
+        let docs = self.docs.clone().filter(|_| session.is_some());
+        let mut globals: Vec<Value> = ["searchTools", "describeTool", "describeNamespace"]
+            .iter()
+            .map(|name| json!({"name": name, "spread": true}))
+            .collect();
+        if docs.is_some() {
+            globals.extend(
+                models::GLOBALS
+                    .iter()
+                    .map(|name| json!({"name": name, "spread": true})),
+            );
+        }
         let bridge = Arc::new(ScriptBridge {
             session: session.clone(),
             call_id,
@@ -694,11 +872,16 @@ impl Runner {
             progress: Mutex::default(),
             updates,
             calls: CancellationToken::new(),
+            docs,
+            model_slots: tokio::sync::Semaphore::new(models::MAX_CONCURRENT_MODEL_CALLS),
+            model_calls: AtomicU64::new(0),
+            model_usage: Mutex::default(),
+            generated_images: AtomicUsize::new(0),
         });
         let payload = json!({
             "code": code,
             "tools": ri_types::json::to_string(&tools_json).unwrap_or_default(),
-            "globals": "[{\"name\":\"searchTools\",\"spread\":true},{\"name\":\"describeTool\",\"spread\":true},{\"name\":\"describeNamespace\",\"spread\":true}]",
+            "globals": ri_types::json::to_string(&globals).unwrap_or_default(),
             "store": ri_types::json::to_string(&store).unwrap_or_default(),
         });
         let ending = self
@@ -740,6 +923,10 @@ impl Runner {
                 false
             }
         };
+        let generated = bridge.generated_images.load(Ordering::Relaxed);
+        if generated > 0 && !items.iter().any(|item| item["type"] == "image") {
+            items.push(models::unshown_images_note(generated));
+        }
         let (items, full_output_path) = truncate_output(
             items,
             options
@@ -768,9 +955,11 @@ impl Runner {
         if let Some(path) = full_output_path {
             details["fullOutputPath"] = json!(path);
         }
+        let usage = lock(&bridge.model_usage).take();
         Ok(ToolResult {
             content,
             details: Some(details),
+            usage,
             is_error: (!ok).then_some(true),
             ..ToolResult::default()
         })
@@ -854,7 +1043,7 @@ mod tests {
     /// timeout does, leaves the load running for the next script.
     #[tokio::test(flavor = "multi_thread")]
     async fn engine_load_outlives_a_script_that_gives_up() {
-        let runner = Runner::new(None);
+        let runner = Runner::new(None, None);
         assert!(
             tokio::time::timeout(Duration::from_millis(1), runner.engine())
                 .await

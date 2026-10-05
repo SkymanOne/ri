@@ -702,7 +702,10 @@ fn not_bound() -> String {
 impl SessionBridge {
     fn new(engine: &Engine) -> Arc<SessionBridge> {
         Arc::new(SessionBridge {
-            codemode: Arc::new(crate::codemode::Runner::with_engine(engine.clone())),
+            codemode: Arc::new(crate::codemode::Runner::with_engine(
+                engine.clone(),
+                crate::codemode::docs(),
+            )),
             runtime_id: RUNTIMES.fetch_add(1, Ordering::Relaxed),
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
@@ -1030,6 +1033,19 @@ impl Bridge for SessionBridge {
                     .registry()
                     .is_using_oauth(&text(&payload["provider"])),
             )),
+            "models.error" => Ok(to_json(session.registry().error())),
+            "models.providerName" => Ok(Value::String(
+                session.registry().provider_name(&text(&payload["provider"])),
+            )),
+            "models.ofType" => {
+                let kind = crate::codemode::model_type(&payload["type"])?;
+                Ok(Value::Array(crate::codemode::models_of_type(
+                    &session.registry(),
+                    kind,
+                    payload["provider"].as_str(),
+                    false,
+                )))
+            }
             "agent.isIdle" => Ok(Value::Bool(!session.is_streaming())),
             "agent.abort" => {
                 session.abort();
@@ -1098,6 +1114,81 @@ impl Bridge for SessionBridge {
                     Ok(
                         json!({"toolCall": outcome.call, "result": outcome.result, "isError": outcome.is_error}),
                     )
+                }
+                "models.availableOfType" => {
+                    let kind = crate::codemode::model_type(&payload["type"])?;
+                    Ok(Value::Array(crate::codemode::models_of_type(
+                        &session.registry(),
+                        kind,
+                        payload["provider"].as_str(),
+                        true,
+                    )))
+                }
+                "models.classify" => {
+                    let registry = session.registry();
+                    let (provider, id) = (text(&payload["provider"]), text(&payload["id"]));
+                    let Some(model) = registry
+                        .classifiers()
+                        .iter()
+                        .find(|model| model.provider == provider && model.id == id)
+                        .cloned()
+                    else {
+                        return Err(format!("Unknown classifier model \"{provider}/{id}\""));
+                    };
+                    let context = serde_json::from_value(payload["context"].clone())
+                        .map_err(|error| error.to_string())?;
+                    let options = ri_ai::api::classify::ClassifyOptions {
+                        temperature: payload["temperature"].as_f64(),
+                        cancel: caller_cancel,
+                        ..Default::default()
+                    };
+                    Ok(to_json(registry.classify(&model, &context, options).await))
+                }
+                "models.generateImages" => {
+                    let registry = session.registry();
+                    let (provider, id) = (text(&payload["provider"]), text(&payload["id"]));
+                    let Some(model) = registry
+                        .image_models()
+                        .iter()
+                        .find(|model| model.provider == provider && model.id == id)
+                        .cloned()
+                    else {
+                        return Err(format!("Unknown image model \"{provider}/{id}\""));
+                    };
+                    let context = serde_json::from_value(payload["context"].clone())
+                        .map_err(|error| error.to_string())?;
+                    let options = ri_ai::api::images::ImagesOptions {
+                        cancel: caller_cancel,
+                        ..Default::default()
+                    };
+                    Ok(to_json(
+                        registry.generate_images(&model, &context, options).await,
+                    ))
+                }
+                "models.refresh" => {
+                    let providers = payload["providers"].as_array().map(|providers| {
+                        providers
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    });
+                    let options = ri_ai::model_catalog::RefreshOptions {
+                        providers,
+                        allow_network: payload["allowNetwork"]
+                            .as_bool()
+                            .unwrap_or_else(|| std::env::var_os("PI_OFFLINE").is_none()),
+                        force: payload["force"].as_bool().unwrap_or(false),
+                        cancel: caller_cancel,
+                        ..Default::default()
+                    };
+                    let result = session.refresh_model_catalogs(options).await;
+                    let errors: serde_json::Map<String, Value> = result
+                        .errors
+                        .into_iter()
+                        .map(|(provider, error)| (provider, Value::String(error)))
+                        .collect();
+                    Ok(json!({"aborted": result.aborted, "errors": errors}))
                 }
                 "model.set" => {
                     let registry = session.registry();

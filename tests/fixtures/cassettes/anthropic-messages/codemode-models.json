@@ -1,0 +1,34 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock_cmm_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5-20250929\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1500,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":1}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_mock_cmm_1\",\"name\":\"codemode\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"code\\\": \\\"const list = await models.getModelsOfType(\\\\\\\"classifier\\\\\\\", \\\\\\\"typesafe\\\\\\\");\\\\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\\\\\\\"headers\\\\\\\" in m}`).join(\\\\\\\"\\\\\\\\n\\\\\\\"));\\\\ntext(String((await models.getModelsOfType(\\\\\\\"image\\\\\\\")).length > 0));\\\\ntext(JSON.stringify(await models.getAvailableOfType(\\\\\\\"classifier\\\\\\\")));\\\\nconst jev = await models.getModelOfType(\\\\\\\"classifier\\\\\\\", \\\\\\\"typesafe\\\\\\\", \\\\\\\"jev-latest\\\\\\\");\\\\ntext(JSON.stringify(await models.getModelOfType(\\\\\\\"chat\\\\\\\", \\\\\\\"typesafe\\\\\\\", \\\\\\\"jev-latest\\\\\\\")));\\\\nconst errors = [];\\\\nfor (const call of [\\\\n  () => models.getModelsOfType(\\\\\\\"video\\\\\\\"),\\\\n  () => models.getModelsOfType(\\\\\\\"chat\\\\\\\", 3),\\\\n  () => models.getModelOfType(\\\\\\\"classifier\\\\\\\", \\\\\\\"typesafe\\\\\\\"),\\\\n  () => models.classify(undefined, {}),\\\\n  () => models.classify(\\\\\\\"typesafe/jev-latest\\\\\\\", {}),\\\\n  () => models.classify({ provider: \\\\\\\"typesafe\\\\\\\", id: \\\\\\\"nope\\\\\\\" }, {}),\\\\n  () => models.classify({ provider: \\\\\\\"openrouter\\\\\\\", id: \\\\\\\"google/gemini-2.5-flash-image\\\\\\\" }, {}),\\\\n  () => models.classify(jev, []),\\\\n  () => models.classify(jev, { state: {}, questions: {} }),\\\\n  () => models.classify(jev, { state: {}, questions: { q: { type: \\\\\\\"bool\\\\\\\", instructions: \\\\\\\"x\\\\\\\", criteria: { true: \\\\\\\"y\\\\\\\" } } } }),\\\\n  () => models.classify(jev, { state: {}, questions: { q: { type: \\\\\\\"rank\\\\\\\", instructions: \\\\\\\"x\\\\\\\" } } }),\\\\n  () => models.generateImages(jev, { input: [] }),\\\\n  () => models.generateImages({ provider: \\\\\\\"openrouter\\\\\\\", id: \\\\\\\"google/gemini-2.5-flash-image\\\\\\\" }, { prompt: \\\\\\\"a cat\\\\\\\" }),\\\\n  () => models.generateImages({ provider: \\\\\\\"openrouter\\\\\\\", id: \\\\\\\"google/gemini-2.5-flash-image\\\\\\\" }, { input: [{ type: \\\\\\\"image\\\\\\\", data: 1 }] }),\\\\n]) {\\\\n  try { await call(); errors.push(\\\\\\\"no error\\\\\\\"); } catch (error) { errors.push(error.message); }\\\\n}\\\\ntext(errors.join(\\\\\\\"\\\\\\\\n\\\\\\\"));\\\\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \\\\\\\"bool\\\\\\\", instructions: \\\\\\\"x\\\\\\\", criteria: { true: \\\\\\\"y\\\\\\\", false: \\\\\\\"n\\\\\\\" } } } });\\\\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":64}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock_cmm_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5-20250929\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":40,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":1500,\"output_tokens\":1}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Done.\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    }
+  ]
+}

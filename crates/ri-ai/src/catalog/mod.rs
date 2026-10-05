@@ -2,7 +2,10 @@
 
 mod data;
 
-use ri_types::model::Model;
+pub(crate) use data::GENERATED_AT;
+
+use ri_types::model::{ClassifierModel, ImageModel, Model};
+use serde::de::DeserializeOwned;
 
 /// Built-in provider ids, in catalog order.
 pub fn builtin_providers() -> impl Iterator<Item = &'static str> {
@@ -27,7 +30,23 @@ pub fn all_builtin_models() -> Vec<Model> {
         .collect()
 }
 
-fn parse(json: &str) -> Vec<Model> {
+/// Every built-in classifier model, in catalog order.
+pub fn all_builtin_classifiers() -> Vec<ClassifierModel> {
+    data::CLASSIFIERS
+        .iter()
+        .flat_map(|(_, json)| parse(json))
+        .collect()
+}
+
+/// Every built-in image-generation model, in catalog order.
+pub fn all_builtin_image_models() -> Vec<ImageModel> {
+    data::IMAGES
+        .iter()
+        .flat_map(|(_, json)| parse(json))
+        .collect()
+}
+
+fn parse<T: DeserializeOwned>(json: &str) -> Vec<T> {
     // The data is generated and checked by the catalog test below.
     serde_json::from_str(json).unwrap_or_default()
 }
@@ -41,9 +60,29 @@ mod tests {
         for (provider, json) in data::PROVIDERS {
             let models: Vec<Model> = serde_json::from_str(json)
                 .unwrap_or_else(|err| panic!("catalog data for {provider}: {err}"));
-            assert!(!models.is_empty(), "{provider} has no models");
+            let others = data::CLASSIFIERS
+                .iter()
+                .chain(data::IMAGES)
+                .any(|(id, _)| id == provider);
+            assert!(!models.is_empty() || others, "{provider} has no models");
             assert!(models.iter().all(|model| model.provider == *provider));
         }
+        for (provider, json) in data::CLASSIFIERS {
+            let models: Vec<ClassifierModel> = serde_json::from_str(json)
+                .unwrap_or_else(|err| panic!("classifier data for {provider}: {err}"));
+            assert!(models.iter().all(|model| model.provider == *provider));
+        }
+        for (provider, json) in data::IMAGES {
+            let models: Vec<ImageModel> = serde_json::from_str(json)
+                .unwrap_or_else(|err| panic!("image data for {provider}: {err}"));
+            assert!(models.iter().all(|model| model.provider == *provider));
+        }
+        assert!(
+            all_builtin_classifiers()
+                .iter()
+                .any(|model| model.provider == "typesafe" && model.id == "jev-latest")
+        );
+        assert!(!all_builtin_image_models().is_empty());
     }
 
     #[test]

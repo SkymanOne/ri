@@ -619,8 +619,35 @@
 			getProviderAuth: (provider) => ri.op("models.auth", { provider }),
 			isUsingOAuth: (model) => !!ri.request("models.usingOAuth", { provider: model.provider }),
 			hasConfiguredAuth: (model) => !!ri.request("models.hasAuth", { provider: model.provider }),
-			refresh: () => Promise.resolve({ aborted: false, errors: new Map() }),
+			getError: () => ri.request("models.error", {}) ?? undefined,
+			getProviderDisplayName: (provider) => ri.request("models.providerName", { provider }) ?? provider,
+			getModelsOfType: (type, provider) => ri.request("models.ofType", { type, provider }) ?? [],
+			getModelOfType: (type, provider, id) => ofType(type, provider, id),
+			findOfType: (type, provider, id) => ofType(type, provider, id),
+			getAvailableOfType: (type, provider) => ri.op("models.availableOfType", { type, provider }),
+			// Only the provider and id cross: the host runs its own catalog entry with its credentials.
+			classify: (model, context, options) =>
+				ri.op("models.classify", {
+					provider: model?.provider,
+					id: model?.id,
+					context,
+					temperature: options?.temperature,
+				}),
+			generateImages: (model, context) =>
+				ri.op("models.generateImages", { provider: model?.provider, id: model?.id, context }),
+			refresh: async (options) => {
+				const result = await ri.op("models.refresh", {
+					providers: options?.providers,
+					allowNetwork: options?.allowNetwork,
+					force: options?.force,
+				});
+				const errors = new Map(Object.entries(result?.errors ?? {}).map(([id, message]) => [id, new Error(message)]));
+				return { aborted: !!result?.aborted, errors };
+			},
 		};
+	}
+	function ofType(type, provider, id) {
+		return (ri.request("models.ofType", { type, provider }) ?? []).find((model) => model.id === id);
 	}
 	function createContext(data = {}, extra = {}) {
 		const controller = new AbortController();

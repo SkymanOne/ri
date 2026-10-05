@@ -11,6 +11,7 @@ use ri_tui::lines::{self, StyledLine, styled};
 use ri_tui::text_input::TextInput;
 use ri_types::model::Model;
 
+use super::catalogs::RefreshStatus;
 use super::keybindings::keys_display;
 use super::selectors::{Action, Outcome, Ui};
 
@@ -121,6 +122,11 @@ pub struct ScopedModelsSelector {
     selected: usize,
     input: TextInput,
     dirty: bool,
+    /// The selection changed since the selector opened.
+    touched: bool,
+    /// The catalog refresh this selector waits on.
+    pub refresh_id: u64,
+    catalogs: RefreshStatus,
 }
 
 const MAX_VISIBLE: usize = 8;
@@ -142,9 +148,46 @@ impl ScopedModelsSelector {
             selected: 0,
             input,
             dirty: false,
+            touched: false,
+            refresh_id: 0,
+            catalogs: RefreshStatus::Running,
         };
         selector.refresh();
         selector
+    }
+
+    /// Whether the selection changed since the selector opened.
+    pub fn touched(&self) -> bool {
+        self.touched
+    }
+
+    /// The enabled model ids; `None` enables every model.
+    pub fn enabled(&self) -> &Enabled {
+        &self.enabled
+    }
+
+    /// The catalog refresh finished: pi's `updateModels` with the refreshed
+    /// `models`, and `enabled` when the selection follows the settings.
+    pub fn refreshed(
+        &mut self,
+        models: Vec<Model>,
+        enabled: Option<Enabled>,
+        status: RefreshStatus,
+    ) {
+        let selected = self.rows.get(self.selected).map(|row| row.id.clone());
+        if let Some(enabled) = enabled {
+            self.enabled = enabled;
+        }
+        self.all = models
+            .iter()
+            .map(|model| format!("{}/{}", model.provider, model.id))
+            .collect();
+        self.models = models;
+        self.catalogs = status;
+        self.refresh();
+        if let Some(index) = selected.and_then(|id| self.rows.iter().position(|row| row.id == id)) {
+            self.selected = index;
+        }
     }
 
     fn model(&self, id: &str) -> Option<&Model> {
@@ -293,11 +336,12 @@ impl ScopedModelsSelector {
             out.extend(row(styled(name, muted)));
         }
         out.extend(lines::spacer(1));
-        // ri's catalog is built in, so a refresh has nothing to fetch.
-        out.extend(row(styled(
-            "  Model catalogs refreshed.",
-            theme.fg("success"),
-        )));
+        let (text, color) = match &self.catalogs {
+            RefreshStatus::Running => (RefreshStatus::RUNNING, "muted"),
+            RefreshStatus::Done => (RefreshStatus::DONE, "success"),
+            RefreshStatus::Failed(message) => (message.as_str(), "warning"),
+        };
+        out.extend(row(styled(format!("  {text}"), theme.fg(color))));
         out.extend(row(self.footer(ui)));
         out.push(ui.border(width));
         (out, cursor)
@@ -305,6 +349,7 @@ impl ScopedModelsSelector {
 
     fn changed(&mut self) -> Outcome {
         self.dirty = true;
+        self.touched = true;
         self.refresh();
         Outcome::Side(Action::ScopedModels {
             enabled: self.enabled.clone(),
@@ -435,7 +480,7 @@ fn model_id(model: &Model) -> String {
 
 /// The ids the `enabledModels` patterns select, then the patterns that
 /// select nothing; `None` without patterns.
-fn configured_ids(patterns: &[String], models: &[Model]) -> Enabled {
+pub(super) fn configured_ids(patterns: &[String], models: &[Model]) -> Enabled {
     if patterns.is_empty() {
         return None;
     }
@@ -464,8 +509,11 @@ impl super::App {
         } else {
             Some(scoped.iter().map(|entry| model_id(&entry.model)).collect())
         };
-        let selector = ScopedModelsSelector::new(models, enabled);
+        let mut selector = ScopedModelsSelector::new(models, enabled);
+        selector.refresh_id = self.next_refresh_id();
+        let refresh = super::catalogs::Refresh::Selector(selector.refresh_id);
         self.selector = Some(super::Selector::ScopedModels(Box::new(selector)));
+        self.refresh_catalogs(None, refresh);
     }
 
     /// Scopes the session to `enabled`, or with `save` writes it to the

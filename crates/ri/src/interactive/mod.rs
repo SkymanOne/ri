@@ -5,6 +5,7 @@
 //! lines for a width, and a renderer writes the frame.
 
 mod bash_view;
+mod catalogs;
 mod chat;
 mod clipboard;
 mod commands;
@@ -109,6 +110,11 @@ enum Event {
     Rendered(u64, (u64, u32), usize, Vec<String>),
     /// The first session's extensions started.
     Bound,
+    /// A model catalog refresh finished.
+    Catalogs(
+        Box<catalogs::Refresh>,
+        ri_core::agent_session::CatalogRefresh,
+    ),
     /// A component an extension built for a transcript item, answering the
     /// request with this sequence number.
     Component(
@@ -146,6 +152,7 @@ enum Dialog {
     LoginMenu(
         Option<Vec<login::ProviderOption>>,
         Vec<ri_ai::registry::LoginKind>,
+        Option<login::ProviderOption>,
     ),
     /// The `/login` provider selector, of one kind or all, with its search.
     LoginProviders(Option<ri_ai::registry::LoginKind>, String),
@@ -194,6 +201,8 @@ pub struct Options {
     pub use_theme: Option<String>,
     /// Why the startup model differs from the session's, or that there is none.
     pub model_fallback: Option<String>,
+    /// Whether model catalogs may be fetched; pi's `PI_OFFLINE` unset.
+    pub model_network: bool,
 }
 
 fn true_color() -> bool {
@@ -305,6 +314,10 @@ struct App {
     ext: extension_ui::ExtensionState,
     /// Providers with models available, as the footer last counted them.
     provider_count: usize,
+    /// Whether catalog refreshes may fetch: no `--offline` and no `PI_OFFLINE`.
+    model_network: bool,
+    /// The last selector catalog refresh id.
+    next_refresh: u64,
     /// The current session's extensions wait to start, after the session
     /// they replace (if any) shuts down.
     binding: Option<Option<AgentSession>>,
@@ -1205,6 +1218,9 @@ impl App {
     /// How often animations advance: the spinner's interval, or a faster
     /// custom working indicator's.
     fn animation_interval(&self) -> Duration {
+        if matches!(&self.selector, Some(Selector::Choice(dialog)) if dialog.shimmering()) {
+            return selectors::SHIMMER_FRAME;
+        }
         match (&self.indicator, &self.ext.working_indicator) {
             (Some((Indicator::Working, _)), Some(custom)) => custom
                 .interval_ms
@@ -1314,6 +1330,7 @@ impl App {
             || self.pending_bash.iter().any(BashView::running)
             || matches!(&self.selector, Some(Selector::Session(selector)) if selector.has_timed_status())
             || self.countdown().is_some()
+            || matches!(&self.selector, Some(Selector::Choice(dialog)) if dialog.shimmering())
     }
 
     // Agent events
@@ -2350,11 +2367,14 @@ impl App {
                     self.status("Import cancelled");
                 }
             }
-            Some(Dialog::LoginMenu(options, kinds)) => {
-                if let Some(kind) = kinds.get(index) {
-                    self.login_menu_chosen(options, *kind);
+            Some(Dialog::LoginMenu(options, kinds, radius)) => match kinds.get(index) {
+                Some(kind) => self.login_menu_chosen(options, *kind),
+                None => {
+                    if let Some(radius) = radius {
+                        self.start_login(radius, login::Back::Menu(None));
+                    }
                 }
-            }
+            },
             Some(Dialog::LoginSelect) => self.login_select_done(Some(index)),
             Some(Dialog::ResumeMissingCwd(path)) => {
                 if index == 0 {
@@ -2396,13 +2416,17 @@ impl App {
             .into_iter()
             .map(|entry| entry.model)
             .collect();
-        self.selector = Some(Selector::Model(Box::new(selectors::ModelSelector::new(
+        let mut selector = selectors::ModelSelector::new(
             self.session.available_models(),
             scoped,
             self.session.model(),
             default,
             search,
-        ))));
+        );
+        selector.refresh_id = self.next_refresh_id();
+        let refresh = catalogs::Refresh::Selector(selector.refresh_id);
+        self.selector = Some(Selector::Model(Box::new(selector)));
+        self.refresh_catalogs(None, refresh);
     }
 
     fn open_thinking_selector(&mut self) {
@@ -3136,6 +3160,8 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         ext: extension_ui::ExtensionState::default(),
         initial: options.initial,
         provider_count: 0,
+        model_network: options.model_network,
+        next_refresh: 0,
         binding: None,
         overlay: None,
         overlays_below: Vec::new(),
@@ -3213,6 +3239,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     app.binding = Some(None);
     app.start_binding();
     app.draw();
+    if app.model_network {
+        app.refresh_catalogs(None, catalogs::Refresh::Startup);
+    }
 
     #[cfg(unix)]
     let mut resize =
@@ -3485,6 +3514,7 @@ impl App {
             }
             Event::Auth(id, request) => self.on_auth_request(id, request),
             Event::LoginDone(id, result) => self.on_login_done(id, result),
+            Event::Catalogs(purpose, result) => self.on_catalogs(*purpose, result),
             Event::LogoutDone(option, result) => self.on_logout_done(&option, result),
             Event::Notify(epoch, message, kind) if epoch == self.epoch => match kind {
                 NotifyKind::Error => self.error(message),

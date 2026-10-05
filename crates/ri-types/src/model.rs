@@ -50,6 +50,65 @@ pub struct Model {
     pub kind: Option<String>,
 }
 
+/// An image-generation model, usable with `generateImages()` only. Fields
+/// follow pi's catalog order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageModel {
+    /// Always `"image"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+    pub api: String,
+    pub provider: String,
+    pub base_url: String,
+    pub input: Vec<InputKind>,
+    /// Output modalities; always includes `image`.
+    pub output: Vec<InputKind>,
+    pub cost: Pricing,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_limits: Option<InputLimits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<IndexMap<String, String>>,
+}
+
+/// A structured classifier model, usable with `classify()` only. Fields
+/// follow pi's catalog order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassifierModel {
+    /// Always `"classifier"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+    pub api: String,
+    pub provider: String,
+    pub base_url: String,
+    pub input: Vec<InputKind>,
+    pub cost: Pricing,
+    pub context_window: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_limits: Option<InputLimits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<IndexMap<String, String>>,
+}
+
+impl ImageModel {
+    /// `provider/id`.
+    pub fn reference(&self) -> String {
+        format!("{}/{}", self.provider, self.id)
+    }
+}
+
+impl ClassifierModel {
+    /// `provider/id`.
+    pub fn reference(&self) -> String {
+        format!("{}/{}", self.provider, self.id)
+    }
+}
+
 impl Model {
     /// `provider/id`, the reference pi prints and accepts.
     pub fn reference(&self) -> String {

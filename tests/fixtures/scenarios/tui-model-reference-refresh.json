@@ -1,0 +1,27 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    " Refreshing model catalogs…",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "Only showing models from configured providers. Use /login to add providers.",
+    "",
+    "> no-such-model",
+    "",
+    "  No matching models",
+    "",
+    "  Model catalogs refreshed.",
+    "",
+    "  Enter to select · Ctrl+S to set as default · Escape/Ctrl+C to cancel",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                              (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

@@ -1,10 +1,14 @@
 //! Wire API implementations, one per API id, and dispatch by model.
 
 pub mod anthropic;
+pub mod bedrock;
+pub mod classify;
 pub mod google;
+pub mod images;
 pub mod mistral;
 pub mod openai_completions;
 pub mod openai_responses;
+pub mod pi_messages;
 
 use std::sync::Arc;
 
@@ -22,7 +26,10 @@ pub fn builtin(api: &str) -> Option<Arc<dyn Provider>> {
         "azure-openai-responses" => Some(Arc::new(openai_responses::AzureOpenAiResponses)),
         "openai-codex-responses" => Some(Arc::new(openai_responses::OpenAiCodexResponses)),
         "google-generative-ai" => Some(Arc::new(google::GoogleGenerativeAi)),
+        "google-vertex" => Some(Arc::new(google::GoogleVertex)),
         "mistral-conversations" => Some(Arc::new(mistral::MistralConversations)),
+        "bedrock-converse-stream" => Some(Arc::new(bedrock::BedrockConverseStream)),
+        "pi-messages" => Some(Arc::new(pi_messages::PiMessages)),
         _ => None,
     }
 }
@@ -112,6 +119,15 @@ impl Apis {
                 .options
                 .headers
                 .insert("x-opencode-session".into(), Some(session_id));
+        }
+        if matches!(
+            request.model.provider.as_str(),
+            "cloudflare-ai-gateway" | "cloudflare-workers-ai"
+        ) {
+            request.model.base_url = crate::key_auth::cloudflare_base_url(
+                &request.model.base_url,
+                request.options.env.as_ref(),
+            );
         }
         match self.get(&request.model.api) {
             Some(provider) => provider.stream(request),

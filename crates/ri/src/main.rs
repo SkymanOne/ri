@@ -148,6 +148,12 @@ static PANIC_MESSAGE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 /// Runs the interactive session so that a panic leaves the terminal usable,
 /// as pi's crash handler does: the terminal modes are reset and the message
 /// printed after them. Raw mode is restored as the session unwinds.
+/// Whether model catalogs may be fetched: pi's model runtime fetches only
+/// while `PI_OFFLINE` is unset, which `--offline` sets.
+fn model_network(args: &args::Args) -> bool {
+    !args.offline && std::env::var_os("PI_OFFLINE").is_none()
+}
+
 async fn survive_crash(run: impl std::future::Future<Output = u8>) -> u8 {
     use std::task::Poll;
     let previous = std::panic::take_hook();
@@ -328,6 +334,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 }),
                 use_theme: parsed.use_theme.clone(),
                 model_fallback: startup.model_fallback,
+                model_network: model_network(parsed),
             },
         );
         return survive_crash(run).await;
@@ -342,6 +349,23 @@ async fn run(parsed: &mut args::Args) -> u8 {
         };
         for error in startup.session.settings_errors() {
             eprintln!("Warning: {error}");
+        }
+        // pi refreshes model catalogs in the background for RPC.
+        if model_network(parsed) {
+            let session = startup.session.clone();
+            tokio::spawn(async move {
+                let cancel = tokio_util::sync::CancellationToken::new();
+                let options = ri_ai::model_catalog::RefreshOptions {
+                    cancel: cancel.clone(),
+                    ..Default::default()
+                };
+                let timer = tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                    cancel.cancel();
+                });
+                session.refresh_model_catalogs(options).await;
+                timer.abort();
+            });
         }
         // pi's RPC mode starts without a model, on a placeholder; prompts
         // then fail with the missing-key message.

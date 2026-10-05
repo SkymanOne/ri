@@ -1,0 +1,1221 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "session",
+      "version": 3
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- codemode: Run JavaScript that calls other tools\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to a string.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "type": "number",
+                  "description": "Timeout in seconds (optional, no default timeout)"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "codemode",
+            "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read <codemode docs> first.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Raw JavaScript source."
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "grammar",
+              "variants": {
+                "openai_lark": "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- codemode: Run JavaScript that calls other tools\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to a string.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "type": "number",
+                  "description": "Timeout in seconds (optional, no default timeout)"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "codemode",
+            "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read <codemode docs> first.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Raw JavaScript source."
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "grammar",
+              "variants": {
+                "openai_lark": "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Use codemode"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Use codemode"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 0,
+        "id": "<id-1>",
+        "toolName": "codemode"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 0,
+        "delta": "{\"code\": \"const list = await models.getModelsOfType(\\\"classifier\\\", \\\"typesafe\\\");\\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\\\"headers\\\" in m}`).join(\\\"\\\\n\\\"));\\ntext(String((await models.getModelsOfType(\\\"image\\\")).length > 0));\\ntext(JSON.stringify(await models.getAvailableOfType(\\\"classifier\\\")));\\nconst jev = await models.getModelOfType(\\\"classifier\\\", \\\"typesafe\\\", \\\"jev-latest\\\");\\ntext(JSON.stringify(await models.getModelOfType(\\\"chat\\\", \\\"typesafe\\\", \\\"jev-latest\\\")));\\nconst errors = [];\\nfor (const call of [\\n  () => models.getModelsOfType(\\\"video\\\"),\\n  () => models.getModelsOfType(\\\"chat\\\", 3),\\n  () => models.getModelOfType(\\\"classifier\\\", \\\"typesafe\\\"),\\n  () => models.classify(undefined, {}),\\n  () => models.classify(\\\"typesafe/jev-latest\\\", {}),\\n  () => models.classify({ provider: \\\"typesafe\\\", id: \\\"nope\\\" }, {}),\\n  () => models.classify({ provider: \\\"openrouter\\\", id: \\\"google/gemini-2.5-flash-image\\\" }, {}),\\n  () => models.classify(jev, []),\\n  () => models.classify(jev, { state: {}, questions: {} }),\\n  () => models.classify(jev, { state: {}, questions: { q: { type: \\\"bool\\\", instructions: \\\"x\\\", criteria: { true: \\\"y\\\" } } } }),\\n  () => models.classify(jev, { state: {}, questions: { q: { type: \\\"rank\\\", instructions: \\\"x\\\" } } }),\\n  () => models.generateImages(jev, { input: [] }),\\n  () => models.generateImages({ provider: \\\"openrouter\\\", id: \\\"google/gemini-2.5-flash-image\\\" }, { prompt: \\\"a cat\\\" }),\\n  () => models.generateImages({ provider: \\\"openrouter\\\", id: \\\"google/gemini-2.5-flash-image\\\" }, { input: [{ type: \\\"image\\\", data: 1 }] }),\\n]) {\\n  try { await call(); errors.push(\\\"no error\\\"); } catch (error) { errors.push(error.message); }\\n}\\ntext(errors.join(\\\"\\\\n\\\"));\\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \\\"bool\\\", instructions: \\\"x\\\", criteria: { true: \\\"y\\\", false: \\\"n\\\" } } } });\\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 0,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-1>",
+          "name": "codemode",
+          "arguments": {
+            "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-1>",
+            "name": "codemode",
+            "arguments": {
+              "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 1500,
+          "output": 64,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1564,
+          "cost": {
+            "input": 0.0045000000000000005,
+            "output": 0.00096,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0054600000000000004
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-2>",
+        "responseModel": "claude-sonnet-4-5-20250929",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-1>",
+      "toolName": "codemode",
+      "args": {
+        "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-1>",
+      "toolName": "codemode",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Script completed\nWall time <seconds> seconds\nOutput:\n"
+          },
+          {
+            "type": "text",
+            "text": "typesafe/jev-latest typesafe-system-one 64000 false"
+          },
+          {
+            "type": "text",
+            "text": "true"
+          },
+          {
+            "type": "text",
+            "text": "[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]"
+          },
+          {
+            "type": "text",
+            "text": "undefined"
+          },
+          {
+            "type": "text",
+            "text": "Unknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>."
+          },
+          {
+            "type": "text",
+            "text": "{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}"
+          }
+        ],
+        "details": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "models.classify",
+              "args": "typesafe/jev-latest",
+              "status": "error",
+              "durationMs": "<durationMs>",
+              "error": "Provider is not configured: typesafe"
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-1>",
+      "toolName": "codemode",
+      "args": {
+        "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+      },
+      "partialResult": {
+        "content": [],
+        "details": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "models.classify",
+              "args": "typesafe/jev-latest",
+              "status": "error",
+              "durationMs": "<durationMs>",
+              "error": "Provider is not configured: typesafe"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-1>",
+      "toolName": "codemode",
+      "args": {
+        "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+      },
+      "partialResult": {
+        "content": [],
+        "details": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "models.classify",
+              "args": "typesafe/jev-latest",
+              "status": "running"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-1>",
+        "toolName": "codemode",
+        "content": [
+          {
+            "type": "text",
+            "text": "Script completed\nWall time <seconds> seconds\nOutput:\n"
+          },
+          {
+            "type": "text",
+            "text": "typesafe/jev-latest typesafe-system-one 64000 false"
+          },
+          {
+            "type": "text",
+            "text": "true"
+          },
+          {
+            "type": "text",
+            "text": "[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]"
+          },
+          {
+            "type": "text",
+            "text": "undefined"
+          },
+          {
+            "type": "text",
+            "text": "Unknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>."
+          },
+          {
+            "type": "text",
+            "text": "{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}"
+          }
+        ],
+        "details": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "models.classify",
+              "args": "typesafe/jev-latest",
+              "status": "error",
+              "durationMs": "<durationMs>",
+              "error": "Provider is not configured: typesafe"
+            }
+          ]
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-1>",
+        "toolName": "codemode",
+        "content": [
+          {
+            "type": "text",
+            "text": "Script completed\nWall time <seconds> seconds\nOutput:\n"
+          },
+          {
+            "type": "text",
+            "text": "typesafe/jev-latest typesafe-system-one 64000 false"
+          },
+          {
+            "type": "text",
+            "text": "true"
+          },
+          {
+            "type": "text",
+            "text": "[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]"
+          },
+          {
+            "type": "text",
+            "text": "undefined"
+          },
+          {
+            "type": "text",
+            "text": "Unknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>."
+          },
+          {
+            "type": "text",
+            "text": "{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}"
+          }
+        ],
+        "details": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "models.classify",
+              "args": "typesafe/jev-latest",
+              "status": "error",
+              "durationMs": "<durationMs>",
+              "error": "Provider is not configured: typesafe"
+            }
+          ]
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-1>",
+            "name": "codemode",
+            "arguments": {
+              "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 1500,
+          "output": 64,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 1564,
+          "cost": {
+            "input": 0.0045000000000000005,
+            "output": 0.00096,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0054600000000000004
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-2>",
+        "responseModel": "claude-sonnet-4-5-20250929",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-1>",
+          "toolName": "codemode",
+          "content": [
+            {
+              "type": "text",
+              "text": "Script completed\nWall time <seconds> seconds\nOutput:\n"
+            },
+            {
+              "type": "text",
+              "text": "typesafe/jev-latest typesafe-system-one 64000 false"
+            },
+            {
+              "type": "text",
+              "text": "true"
+            },
+            {
+              "type": "text",
+              "text": "[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]"
+            },
+            {
+              "type": "text",
+              "text": "undefined"
+            },
+            {
+              "type": "text",
+              "text": "Unknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>."
+            },
+            {
+              "type": "text",
+              "text": "{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}"
+            }
+          ],
+          "details": {
+            "calls": [
+              {
+                "id": "<id-3>",
+                "name": "models.classify",
+                "args": "typesafe/jev-latest",
+                "status": "error",
+                "durationMs": "<durationMs>",
+                "error": "Provider is not configured: typesafe"
+              }
+            ]
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Done."
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Done."
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done."
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 40,
+          "output": 8,
+          "cacheRead": 1500,
+          "cacheWrite": 0,
+          "totalTokens": 1548,
+          "cost": {
+            "input": 0.00012,
+            "output": 0.00012,
+            "cacheRead": 0.00045,
+            "cacheWrite": 0,
+            "total": 0.00069
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-4>",
+        "responseModel": "claude-sonnet-4-5-20250929",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done."
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 40,
+          "output": 8,
+          "cacheRead": 1500,
+          "cacheWrite": 0,
+          "totalTokens": 1548,
+          "cost": {
+            "input": 0.00012,
+            "output": 0.00012,
+            "cacheRead": 0.00045,
+            "cacheWrite": 0,
+            "total": 0.00069
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-4>",
+        "responseModel": "claude-sonnet-4-5-20250929",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": []
+    },
+    {
+      "type": "agent_end",
+      "messages": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+            "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- codemode: Run JavaScript that calls other tools\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+            "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+            "cwd": "<cwd>\n<cwd>\n</cwd>"
+          },
+          "timestamp": "<timestamp>",
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to a string.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read (relative or absolute)"
+                  },
+                  "offset": {
+                    "type": "number",
+                    "description": "Line number to start reading from (1-indexed)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of lines to read"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "bash",
+              "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command to execute"
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds (optional, no default timeout)"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "codemode",
+              "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read <codemode docs> first.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "Raw JavaScript source."
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "grammar",
+                "variants": {
+                  "openai_lark": "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use codemode"
+            }
+          ],
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "<id-1>",
+              "name": "codemode",
+              "arguments": {
+                "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+              }
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "usage": {
+            "input": 1500,
+            "output": 64,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1564,
+            "cost": {
+              "input": 0.0045000000000000005,
+              "output": 0.00096,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0054600000000000004
+            },
+            "cacheWrite1h": 0
+          },
+          "stopReason": "toolUse",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-2>",
+          "responseModel": "claude-sonnet-4-5-20250929",
+          "rawStopReason": "tool_use",
+          "thinkingLevel": "medium"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-1>",
+          "toolName": "codemode",
+          "content": [
+            {
+              "type": "text",
+              "text": "Script completed\nWall time <seconds> seconds\nOutput:\n"
+            },
+            {
+              "type": "text",
+              "text": "typesafe/jev-latest typesafe-system-one 64000 false"
+            },
+            {
+              "type": "text",
+              "text": "true"
+            },
+            {
+              "type": "text",
+              "text": "[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]"
+            },
+            {
+              "type": "text",
+              "text": "undefined"
+            },
+            {
+              "type": "text",
+              "text": "Unknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>."
+            },
+            {
+              "type": "text",
+              "text": "{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}"
+            }
+          ],
+          "details": {
+            "calls": [
+              {
+                "id": "<id-3>",
+                "name": "models.classify",
+                "args": "typesafe/jev-latest",
+                "status": "error",
+                "durationMs": "<durationMs>",
+                "error": "Provider is not configured: typesafe"
+              }
+            ]
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done."
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "usage": {
+            "input": 40,
+            "output": 8,
+            "cacheRead": 1500,
+            "cacheWrite": 0,
+            "totalTokens": 1548,
+            "cost": {
+              "input": 0.00012,
+              "output": 0.00012,
+              "cacheRead": 0.00045,
+              "cacheWrite": 0,
+              "total": 0.00069
+            },
+            "cacheWrite1h": 0
+          },
+          "stopReason": "stop",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-4>",
+          "responseModel": "claude-sonnet-4-5-20250929",
+          "rawStopReason": "end_turn",
+          "thinkingLevel": "medium"
+        }
+      ],
+      "willRetry": false
+    },
+    {
+      "type": "agent_settled"
+    }
+  ],
+  "stderr": "",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "body": {
+        "model": "claude-sonnet-4-5",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use codemode",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 64000,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- codemode: Run JavaScript that calls other tools\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to a string.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "offset",
+                "limit"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "limit": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeout"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "codemode",
+            "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read <codemode docs> first.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Raw JavaScript source."
+                }
+              },
+              "required": [
+                "code"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "body": {
+        "model": "claude-sonnet-4-5",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use codemode"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "<id-1>",
+                "name": "codemode",
+                "input": {
+                  "code": "const list = await models.getModelsOfType(\"classifier\", \"typesafe\");\ntext(list.map((m) => `${m.provider}/${m.id} ${m.api} ${m.contextWindow} ${\"headers\" in m}`).join(\"\\n\"));\ntext(String((await models.getModelsOfType(\"image\")).length > 0));\ntext(JSON.stringify(await models.getAvailableOfType(\"classifier\")));\nconst jev = await models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\");\ntext(JSON.stringify(await models.getModelOfType(\"chat\", \"typesafe\", \"jev-latest\")));\nconst errors = [];\nfor (const call of [\n  () => models.getModelsOfType(\"video\"),\n  () => models.getModelsOfType(\"chat\", 3),\n  () => models.getModelOfType(\"classifier\", \"typesafe\"),\n  () => models.classify(undefined, {}),\n  () => models.classify(\"typesafe/jev-latest\", {}),\n  () => models.classify({ provider: \"typesafe\", id: \"nope\" }, {}),\n  () => models.classify({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, {}),\n  () => models.classify(jev, []),\n  () => models.classify(jev, { state: {}, questions: {} }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\" } } } }),\n  () => models.classify(jev, { state: {}, questions: { q: { type: \"rank\", instructions: \"x\" } } }),\n  () => models.generateImages(jev, { input: [] }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { prompt: \"a cat\" }),\n  () => models.generateImages({ provider: \"openrouter\", id: \"google/gemini-2.5-flash-image\" }, { input: [{ type: \"image\", data: 1 }] }),\n]) {\n  try { await call(); errors.push(\"no error\"); } catch (error) { errors.push(error.message); }\n}\ntext(errors.join(\"\\n\"));\nconst result = await models.classify(jev, { state: { t: 1 }, questions: { q: { type: \"bool\", instructions: \"x\", criteria: { true: \"y\", false: \"n\" } } } });\nreturn { stopReason: result.stopReason, errorMessage: result.errorMessage, answers: result.answers };"
+                }
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_mock_cmm_1",
+                "content": "Script completed\nWall time <seconds> seconds\nOutput:\n\ntypesafe/jev-latest typesafe-system-one 64000 false\ntrue\n[{\"type\":\"classifier\",\"id\":\"jev-1.13\",\"name\":\"Jev 1.13\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0.042,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000},{\"type\":\"classifier\",\"id\":\"jev-1.13-free\",\"name\":\"Jev 1.13 Free\",\"api\":\"typesafe-system-one\",\"provider\":\"opencode\",\"baseUrl\":\"https://opencode.ai/zen/v1\",\"input\":[\"text\"],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":32000}]\nundefined\nUnknown model type \"video\". Use \"chat\", \"image\", or \"classifier\".\nprovider must be a string\nmodels.getModelOfType(type, provider, id) expects three strings, got (a string, a string). The provider and the id are separate arguments, for example models.getModelOfType(\"classifier\", \"typesafe\", \"jev-latest\").\nmodels.classify() expects a classifier model as its first argument, got null. models.getModelOfType() returns undefined for an unknown provider or id. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a classifier model as its first argument, got a string. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nUnknown classifier model \"typesafe/nope\". List the classifier models you can use with models.getAvailableOfType(\"classifier\").\n\"openrouter/google/gemini-2.5-flash-image\" is an image model, not a classifier model. List the classifier models you can use with models.getAvailableOfType(\"classifier\").\nmodels.classify() expects a context object as its second argument, got an empty array. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions must map question IDs to questions, got {}. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q is a \"bool\" question, so criteria must be { true: string, false: string }. Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\nmodels.classify() context.questions.q.type must be \"choice\", \"score\", or \"bool\", got \"rank\". Expected context: { state: { ... }, questions: { <id>: { type: \"choice\", instructions, criteria: { <label>: <meaning> } } | { type: \"score\", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: \"bool\", instructions, criteria: { true: <meaning>, false: <meaning> } } } }. See \"Classify\" in <codemode docs>.\n\"typesafe/jev-latest\" is a classifier model, not an image model. List the image models you can use with models.getAvailableOfType(\"image\").\nmodels.generateImages() context.input must be a non-empty array of blocks, got undefined. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\nmodels.generateImages() context.input[0] must be a text or image block, got { type, data }. Expected context: { input: [{ type: \"text\", text: <prompt> }, ...optional { type: \"image\", data: <base64>, mimeType } references] }. See \"Generate images\" in <codemode docs>.\n{\"stopReason\":\"error\",\"errorMessage\":\"Provider is not configured: typesafe\",\"answers\":{}}",
+                "is_error": false,
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 64000,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- codemode: Run JavaScript that calls other tools\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to a string.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "offset",
+                "limit"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "limit": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeout"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "codemode",
+            "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, `describeTool(name)`, `describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read <codemode docs> first.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Raw JavaScript source."
+                }
+              },
+              "required": [
+                "code"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ pub mod config;
 pub mod extensions;
 pub mod glob;
 pub mod import;
+pub mod llama;
 pub mod mcp;
 pub mod messages;
 pub mod model_resolver;
