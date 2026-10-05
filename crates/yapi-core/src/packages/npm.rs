@@ -97,6 +97,13 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                         {
                             last.push_str(token);
                         }
+                        // A bare version is exact in npm and a caret range in
+                        // `semver`. Wildcards such as `1.x` mean the same in both.
+                        _ if token.starts_with(|c: char| c.is_ascii_digit())
+                            && !token.contains(['x', 'X', '*']) =>
+                        {
+                            parts.push(format!("={token}"));
+                        }
                         _ => parts.push(token.to_owned()),
                     }
                 }
@@ -544,5 +551,17 @@ mod tests {
         assert!(satisfies("0.1.0", "*"));
         assert!(satisfies("1.3.0", "1.2.0 - 1.4.0"));
         assert!(!satisfies("1.0.0-beta.1", "^1.0.0"));
+        // A bare version is exact, and a partial one fixes what it names.
+        assert!(satisfies("0.35.0", "0.35.0"));
+        assert!(!satisfies("0.35.1", "0.35.0"));
+        assert!(!satisfies("1.3.0", "1.2.3"));
+        assert!(satisfies("1.2.9", "1.2"));
+        assert!(!satisfies("1.3.0", "1.2"));
+        assert!(satisfies("1.9.0", "1"));
+        assert!(!satisfies("2.0.0", "1"));
+        assert!(satisfies("1.2.3", "1.2.3 || 2"));
+        assert!(!satisfies("1.2.4", "1.2.3 || 2"));
+        assert!(satisfies("1.2.9", "1.2.x"));
+        assert!(!satisfies("1.3.0", "1.2.x"));
     }
 }
