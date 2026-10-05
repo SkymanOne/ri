@@ -27727,11 +27727,11 @@
 								},
 								"repo": {
 									"type": "string",
-									"description": "worktree.cleanup repo; default cwd."
+									"description": "Cleanup repo; apply requires it."
 								},
 								"planId": {
 									"type": "string",
-									"description": "Reserved; cleanup is plan-only."
+									"description": "Reviewed cleanup plan for apply."
 								},
 								"laneId": {
 									"type": "string",
@@ -27794,7 +27794,7 @@
 										"plan",
 										"apply"
 									],
-									"description": "steer delivery mode; worktree.cleanup supports plan only, no apply/removal."
+									"description": "steer delivery; worktree.cleanup plan/apply (reviewed planId)."
 								},
 								"steeringRecovery": {
 									"type": "boolean",
@@ -27840,11 +27840,11 @@
 								},
 								"at": {
 									"type": "string",
-									"description": "schedule.create: delay (+10m) or zoned ISO timestamp."
+									"description": "Delay/ISO or local HH:mm."
 								},
 								"every": {
 									"type": "string",
-									"description": "schedule.create interval, e.g. 30m/6h/2d/2w."
+									"description": "Duration or day/week."
 								},
 								"sessionOnly": {
 									"type": "boolean"
@@ -27853,18 +27853,25 @@
 									"type": "boolean"
 								},
 								"on": {
-									"anyOf": [
-										{
-											"type": "string"
-										},
-										{
-											"type": "integer"
-										}
-									],
-									"description": "Reserved calendar selector."
+									"type": "array",
+									"items": {
+										"type": "string",
+										"enum": [
+											"mon",
+											"tue",
+											"wed",
+											"thu",
+											"fri",
+											"sat",
+											"sun"
+										]
+									},
+									"minItems": 1,
+									"description": "Weekly."
 								},
 								"timezone": {
-									"type": "string"
+									"type": "string",
+									"description": "IANA/UTC."
 								},
 								"overlap": {
 									"type": "string",
@@ -27878,7 +27885,7 @@
 										"none",
 										"latest"
 									],
-									"description": "Missed schedule occurrences; default latest."
+									"description": "Missed; default latest."
 								},
 								"missionId": {
 									"type": "string",
@@ -28480,7 +28487,7 @@
 					{
 						"name": "web_search",
 						"label": "Web Search",
-						"description": "Search the web with OpenAI, Brave, Parallel, Parallel MCP, TinyFish, Search1API, Searchinfinity, Querit, Tavily, You.com, Firecrawl, Jina, SearXNG, DuckDuckGo, Perplexity, Gemini, Kimi, Exa, SERPdive, Kagi, Ollama, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, Bocha, XCrawl, Baizhi, Z.ai. Provider arrays run simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai) remain excluded. The default workflow is none: it returns bounded source-linked search results or provider answers without a curator or generated summary, identifies the providers used, and stores full results for retrieval by responseId. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Set workflow to \"summary-review\" to open the curator with an auto-generated summary draft or \"auto-summary\" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.",
+						"description": "Search the web with OpenAI, Brave, Parallel, Parallel MCP, TinyFish, Search1API, Searchinfinity, Querit, Tavily, You.com, Firecrawl, Jina, SearXNG, DuckDuckGo, Perplexity, Gemini, Kimi, Exa, SERPdive, Kagi, Ollama, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, Bocha, XCrawl, Baizhi, Z.ai, Keenable. Provider arrays run simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai, Keenable) remain excluded. The default workflow is none: it returns bounded source-linked search results or provider answers without a curator or generated summary, identifies the providers used, and stores full results for retrieval by responseId. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Set workflow to \"summary-review\" to open the curator with an auto-generated summary draft or \"auto-summary\" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.",
 						"parameters": {
 							"type": "object",
 							"properties": {
@@ -28522,6 +28529,10 @@
 									},
 									"description": "Limit to domains (prefix with - to exclude)"
 								},
+								"category": {
+									"type": "string",
+									"description": "Exa only: result category, e.g. news, research paper"
+								},
 								"provider": {
 									"anyOf": [
 										{
@@ -28562,7 +28573,8 @@
 												"bocha",
 												"xcrawl",
 												"baizhi",
-												"zai"
+												"zai",
+												"keenable"
 											]
 										},
 										{
@@ -28603,13 +28615,14 @@
 													"bocha",
 													"xcrawl",
 													"baizhi",
-													"zai"
+													"zai",
+													"keenable"
 												]
 											},
 											"minItems": 1
 										}
 									],
-									"description": "Search provider or non-empty list of allowed providers to search simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai) remain excluded; omit this field to use the configured provider, or use auto when none is configured"
+									"description": "Search provider or non-empty list of allowed providers to search simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai, Keenable) remain excluded; omit this field to use the configured provider, or use auto when none is configured"
 								},
 								"workflow": {
 									"type": "string",
@@ -28715,7 +28728,8 @@
 												"bocha",
 												"xcrawl",
 												"baizhi",
-												"zai"
+												"zai",
+												"keenable"
 											]
 										},
 										{
@@ -28756,13 +28770,14 @@
 													"bocha",
 													"xcrawl",
 													"baizhi",
-													"zai"
+													"zai",
+													"keenable"
 												]
 											},
 											"minItems": 1
 										}
 									],
-									"description": "Search provider or non-empty list of allowed providers to search simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai) remain excluded"
+									"description": "Search provider or non-empty list of allowed providers to search simultaneously; all searches eligible allowed providers (OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SearXNG, Perplexity, Gemini, Exa, SERPdive, Kagi, Ollama, Bocha); explicit-only allowed providers (Parallel MCP, You.com, DuckDuckGo, Kimi, Anysearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, Valyu, XCrawl, Baizhi, Z.ai, Keenable) remain excluded"
 								},
 								"proxy": {
 									"type": "string",
@@ -97547,6 +97562,4902 @@
 				"shortcuts": [],
 				"events": [
 					"resources_discover"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@ludi-uni/ludi-agent-kit": {
+		"version": "0.3.0",
+		"entries": [
+			"<agent>/npm/node_modules/@ludi-uni/ludi-agent-kit/adapters/pi/loop-guard/index.js",
+			"<agent>/npm/node_modules/@ludi-uni/ludi-agent-kit/adapters/pi/orchestrator-ext/index.js"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"input",
+					"model_select",
+					"session_start",
+					"tool_call",
+					"tool_result"
+				]
+			},
+			{
+				"tools": [
+					{
+						"name": "ludi_orchestrate",
+						"label": "Ludi orchestrate",
+						"description": "Persistent ludi orchestrator: start, list, status, children, result, decisions, resume, answer, or clean up run history (prune/delete/clear).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"type": "string",
+									"description": "start | list | status | children | result | decisions | resume | answer | prune | delete | clear"
+								},
+								"request": {
+									"type": "string",
+									"description": "High-level request for action=start"
+								},
+								"runId": {
+									"type": "string",
+									"description": "Run id for status, children, result, decisions, resume, answer, or delete"
+								},
+								"decisionId": {
+									"type": "string",
+									"description": "Pending decision id for action=answer"
+								},
+								"answer": {
+									"type": "string",
+									"description": "User answer text for action=answer"
+								},
+								"status": {
+									"type": "string",
+									"description": "Filter for action=list"
+								},
+								"olderThan": {
+									"type": "string",
+									"description": "Duration for action=prune, e.g. \"7d\", \"12h\", \"30m\", \"2w\""
+								},
+								"force": {
+									"type": "boolean",
+									"description": "Actually delete for action=delete/clear (otherwise preview only)"
+								},
+								"includeActive": {
+									"type": "boolean",
+									"description": "For action=clear with force=true: also delete active and resumable runs"
+								},
+								"repo": {
+									"type": "string",
+									"description": "Repository root the agents should read"
+								},
+								"store": {
+									"type": "string",
+									"description": "Override path to the orchestration sqlite file"
+								},
+								"clientContext": {
+									"type": "object",
+									"required": [
+										"kind"
+									],
+									"properties": {
+										"kind": {
+											"type": "string"
+										},
+										"sessionId": {
+											"type": "string"
+										}
+									},
+									"description": "Client binding request; pi-web session UUID is obtained from the current pi session"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "orchestrate",
+						"description": "Start, list, resume, or answer a persistent ludi orchestration run"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"pi-browser-harness": {
+		"version": "0.11.0",
+		"entries": [
+			"<agent>/npm/node_modules/pi-browser-harness/src/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "browser-status",
+						"description": "Show browser connection status and current page"
+					},
+					{
+						"name": "browser-reload-daemon",
+						"description": "Restart the browser client"
+					}
+				],
+				"flags": [
+					{
+						"name": "browser-namespace",
+						"type": "string",
+						"default": null,
+						"description": "Browser daemon namespace. Default: auto-generated"
+					},
+					{
+						"name": "browser-debug-clicks",
+						"type": "boolean",
+						"default": false,
+						"description": "Enable debug click overlay (saves annotated screenshots to /tmp)"
+					}
+				],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"session_shutdown",
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@arhen/pi-core-subagent": {
+		"version": "1.3.64",
+		"entries": [
+			"<agent>/npm/node_modules/@arhen/pi-core-subagent/src/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "subagent_models",
+						"label": "Subagent Models",
+						"description": "List the models a subagent task may name: the exact `model` value to pass, the thinking levels the runtime honors, the context window and catalog price. Scoped to this session's models when scoping is configured, else every usable model; ambiguous references are called out.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "subagent",
+						"label": "Subagent",
+						"description": "Run isolated subagents (own context/session) in the background; returns a runId and completion notifies you. One call = one agent (`agent`+`task`) or many (`tasks`, `chain`, or `needs` edges that gate tasks and prepend upstream output). Write tasks use an isolated git worktree and report a branch; a matching agent file is authoritative (matched by description, body/model win).",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"agent": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Name you invent for this subagent (single mode)"
+								},
+								"task": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Task (single mode)"
+								},
+								"prompt": {
+									"type": "string",
+									"description": "System prompt for this agent (single mode)"
+								},
+								"write": {
+									"type": "boolean",
+									"description": "true = write toolset; default false = read-only (single mode)"
+								},
+								"tools": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Explicit tool allowlist (overrides the toolset) (single mode)"
+								},
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"agent",
+											"task"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Optional stable task id"
+											},
+											"agent": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Agent name you invent (defined inline via `prompt`)"
+											},
+											"task": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Task for this agent"
+											},
+											"prompt": {
+												"type": "string",
+												"description": "System prompt defining this agent's behavior"
+											},
+											"write": {
+												"type": "boolean",
+												"description": "true = write toolset (adds bash, edit, write); default false = read-only (read, grep, find, ls, codemode)"
+											},
+											"model": {
+												"type": "string",
+												"description": "Model override (provider/model-id). Omit to inherit the session model; call subagent_models for the exact references this session accepts."
+											},
+											"thinking": {
+												"type": "string",
+												"enum": [
+													"off",
+													"minimal",
+													"low",
+													"medium",
+													"high",
+													"xhigh",
+													"max"
+												],
+												"description": "Thinking level override"
+											},
+											"cwd": {
+												"type": "string",
+												"description": "Working directory (default: current project)"
+											},
+											"tools": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Explicit tool allowlist (overrides the toolset)"
+											},
+											"maxRuntimeMs": {
+												"type": "number",
+												"description": "Per-task timeout (ms)"
+											},
+											"needs": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Ids of tasks this one waits for; their outputs are prepended to this prompt."
+											}
+										}
+									},
+									"description": "Parallel tasks"
+								},
+								"chain": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"agent",
+											"task"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Optional stable task id"
+											},
+											"agent": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Agent name you invent (defined inline via `prompt`)"
+											},
+											"task": {
+												"type": "string",
+												"minLength": 1,
+												"description": "Task for this agent"
+											},
+											"prompt": {
+												"type": "string",
+												"description": "System prompt defining this agent's behavior"
+											},
+											"write": {
+												"type": "boolean",
+												"description": "true = write toolset (adds bash, edit, write); default false = read-only (read, grep, find, ls, codemode)"
+											},
+											"model": {
+												"type": "string",
+												"description": "Model override (provider/model-id). Omit to inherit the session model; call subagent_models for the exact references this session accepts."
+											},
+											"thinking": {
+												"type": "string",
+												"enum": [
+													"off",
+													"minimal",
+													"low",
+													"medium",
+													"high",
+													"xhigh",
+													"max"
+												],
+												"description": "Thinking level override"
+											},
+											"cwd": {
+												"type": "string",
+												"description": "Working directory (default: current project)"
+											},
+											"tools": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Explicit tool allowlist (overrides the toolset)"
+											},
+											"maxRuntimeMs": {
+												"type": "number",
+												"description": "Per-task timeout (ms)"
+											},
+											"needs": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Ids of tasks this one waits for; their outputs are prepended to this prompt."
+											}
+										}
+									},
+									"description": "Sequential tasks; {previous} = prior output"
+								},
+								"model": {
+									"type": "string",
+									"description": "Model override (single mode). Omit to inherit the session model; call subagent_models for the exact references this session accepts."
+								},
+								"thinking": {
+									"type": "string",
+									"enum": [
+										"off",
+										"minimal",
+										"low",
+										"medium",
+										"high",
+										"xhigh",
+										"max"
+									],
+									"description": "Thinking level override (single mode)"
+								},
+								"cwd": {
+									"type": "string",
+									"description": "Working directory (single mode). Default: current project."
+								},
+								"concurrency": {
+									"type": "number",
+									"description": "Parallel concurrency (default 3, max 8)"
+								},
+								"maxRuntimeMs": {
+									"type": "number",
+									"description": "Per-task timeout, ms. Omit unless a hard bound is genuinely required — a ceiling always applies (6 h, or 1 h with `/subagents auto-limit on`)."
+								},
+								"autoAwait": {
+									"type": "boolean",
+									"description": "Park this call until the run finishes and return the result inline. Default false."
+								},
+								"notifyPerTask": {
+									"type": "boolean",
+									"description": "Wake you (queued follow-up turn) as each task completes. Default true.",
+									"default": true
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_status",
+						"label": "Subagent Status",
+						"description": "Live per-task status of a subagent run (non-blocking), incl. each child's session file path to `tail -f`. Call once right after spawning to verify children actually started.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId"
+							],
+							"properties": {
+								"runId": {
+									"type": "string",
+									"description": "Run id from subagent()"
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_result",
+						"label": "Subagent Result",
+						"description": "Full result (finalText + usage) of a run or one task. Non-blocking.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId"
+							],
+							"properties": {
+								"runId": {
+									"type": "string"
+								},
+								"taskId": {
+									"type": "string",
+									"description": "Specific task id; defaults to all"
+								}
+							}
+						}
+					},
+					{
+						"name": "await_subagent",
+						"label": "Await Subagent",
+						"description": "Block until a run finishes (or timeoutMs elapses). Only when you have your own work to sync; otherwise end your turn. Child messages that arrive while parked wake the wait and are returned.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId"
+							],
+							"properties": {
+								"runId": {
+									"type": "string"
+								},
+								"timeoutMs": {
+									"type": "number",
+									"description": "Max wait (ms); default: until finished"
+								}
+							}
+						}
+					},
+					{
+						"name": "reply_subagent",
+						"label": "Reply Subagent",
+						"description": "Answer a child's ask_parent question; resumes its run.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId",
+								"taskId",
+								"message"
+							],
+							"properties": {
+								"runId": {
+									"type": "string"
+								},
+								"taskId": {
+									"type": "string"
+								},
+								"message": {
+									"type": "string",
+									"description": "Answer for the child"
+								}
+							}
+						}
+					},
+					{
+						"name": "steer_subagent",
+						"label": "Steer Subagent",
+						"description": "Inject a steering message into a running subagent's session (queues as steer if the child is mid-turn; delivered at its next model boundary).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId",
+								"message"
+							],
+							"properties": {
+								"runId": {
+									"type": "string"
+								},
+								"taskId": {
+									"type": "string",
+									"description": "Specific task id; defaults to all still-running tasks"
+								},
+								"message": {
+									"type": "string",
+									"description": "Steering message to inject into the child's session"
+								}
+							}
+						}
+					},
+					{
+						"name": "resume_subagent",
+						"label": "Resume Subagent",
+						"description": "Revive a failed/aborted task in its original session (full context + worktree branch preserved). Optional `model` swaps provider after e.g. a rate limit; `thinking` is clamped to the target model; `message` replaces the default recap prompt. Refuses tasks that never started — respawn those.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId",
+								"taskId"
+							],
+							"properties": {
+								"runId": {
+									"type": "string"
+								},
+								"taskId": {
+									"type": "string",
+									"description": "Failed/aborted task to revive"
+								},
+								"message": {
+									"type": "string",
+									"description": "Prompt delivered on resume (default: recap state, then continue the original task)"
+								},
+								"model": {
+									"type": "string",
+									"description": "Model override for the resumed session (provider/model-id) — use when the original provider is rate-limited"
+								},
+								"thinking": {
+									"type": "string",
+									"enum": [
+										"off",
+										"minimal",
+										"low",
+										"medium",
+										"high",
+										"xhigh",
+										"max"
+									],
+									"description": "Thinking level for the resumed session. Default: the task's stored level, clamped to what the target model accepts"
+								}
+							}
+						}
+					},
+					{
+						"name": "subagent_cancel",
+						"label": "Subagent Cancel",
+						"description": "Abort a running/queued subagent run. Children are killed; run becomes aborted.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"runId"
+							],
+							"properties": {
+								"runId": {
+									"type": "string",
+									"description": "Run id from subagent()"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "subagents",
+						"description": "List subagent runs. `/subagents peek` opens the browsable pane; `/subagents mode [auto|direct|codemode]` reports or switches the tool exposure profile; `/subagents auto-limit on|off` toggles the 1 h default runtime ceiling (default off = 6 h)."
+					}
+				],
+				"flags": [],
+				"shortcuts": [
+					{
+						"shortcut": "ctrl+shift+a",
+						"description": "Peek at running subagents"
+					}
+				],
+				"events": [
+					"agent_start",
+					"before_agent_start",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"turn_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@spences10/pi-context": {
+		"version": "0.1.16",
+		"entries": [
+			"<agent>/npm/node_modules/@spences10/pi-context/dist/index.js"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "context_search",
+						"label": "Context Search",
+						"description": "Search large tool output stored in the local SQLite context sidecar. Use this snippet-first before retrieving chunks; reserve full_content:true for small matched chunks, not broad retrieval.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"query"
+							],
+							"properties": {
+								"query": {
+									"type": "string",
+									"description": "FTS search query"
+								},
+								"source_id": {
+									"type": "string",
+									"description": "Limit to one indexed source id"
+								},
+								"tool_name": {
+									"type": "string",
+									"description": "Limit to one tool name"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum chunks to return, default 5"
+								},
+								"full_content": {
+									"type": "boolean",
+									"description": "Return full matched chunks instead of concise snippets. Last resort for small matches only; prefer context_get before/after or context_export for large outputs."
+								},
+								"global": {
+									"type": "boolean",
+									"description": "Search all indexed sources instead of current project/session scope"
+								}
+							}
+						}
+					},
+					{
+						"name": "context_get",
+						"label": "Context Get",
+						"description": "Retrieve focused chunks from the local SQLite context sidecar. Normally pass source_id plus chunk_id and use before/after neighbors; omitting chunk_id retrieves the full source into chat.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"source_id"
+							],
+							"properties": {
+								"source_id": {
+									"type": "string",
+									"description": "Indexed source id"
+								},
+								"chunk_id": {
+									"type": "string",
+									"description": "Exact chunk id or ordinal. Recommended for normal focused retrieval; omit only for exceptional full-source chat retrieval."
+								},
+								"before": {
+									"type": "number",
+									"description": "When chunk_id is set, include up to this many chunks before it (max 3). Prefer 1 first; use context_export for broad ranges."
+								},
+								"after": {
+									"type": "number",
+									"description": "When chunk_id is set, include up to this many chunks after it (max 3). Prefer 1 first; use context_export for broad ranges."
+								},
+								"global": {
+									"type": "boolean",
+									"description": "Retrieve across all scopes instead of current project/session scope"
+								}
+							}
+						}
+					},
+					{
+						"name": "context_export",
+						"label": "Context Export",
+						"description": "Export stored chunks from the local SQLite context sidecar to a file without returning chunk content. Prefer this for broad/full JSON/log/script processing; omit chunk_id when intentionally processing the full source offline.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"source_id"
+							],
+							"properties": {
+								"source_id": {
+									"type": "string",
+									"description": "Indexed source id"
+								},
+								"file_path": {
+									"type": "string",
+									"description": "Destination file path. Relative paths resolve from the current working directory. Defaults to the managed context export directory."
+								},
+								"chunk_id": {
+									"type": "string",
+									"description": "Optional exact chunk id or ordinal. Omit only when intentionally exporting the full source for offline processing."
+								},
+								"before": {
+									"type": "number",
+									"description": "When chunk_id is set, include up to this many chunks before it (max 3). Prefer 1 first; omit chunk_id to export the full source."
+								},
+								"after": {
+									"type": "number",
+									"description": "When chunk_id is set, include up to this many chunks after it (max 3). Prefer 1 first; omit chunk_id to export the full source."
+								},
+								"global": {
+									"type": "boolean",
+									"description": "Export across all scopes instead of current project/session scope"
+								}
+							}
+						}
+					},
+					{
+						"name": "context_list",
+						"label": "Context List",
+						"description": "List indexed sources in the local SQLite context sidecar.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"source_id": {
+									"type": "string",
+									"description": "Limit to one source id"
+								},
+								"tool_name": {
+									"type": "string",
+									"description": "Limit to one tool name"
+								},
+								"project_path": {
+									"type": "string",
+									"description": "Limit to one project path"
+								},
+								"session_id": {
+									"type": "string",
+									"description": "Limit to one session id"
+								},
+								"newer_than_days": {
+									"type": "number",
+									"description": "Only sources newer than N days"
+								},
+								"older_than_days": {
+									"type": "number",
+									"description": "Only sources older than N days"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum sources, default 10"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Pagination offset, default 0"
+								},
+								"global": {
+									"type": "boolean",
+									"description": "List all scopes instead of current project/session scope"
+								}
+							}
+						}
+					},
+					{
+						"name": "context_stats",
+						"label": "Context Stats",
+						"description": "Show byte accounting for the local SQLite context sidecar.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"global": {
+									"type": "boolean",
+									"description": "Show stats across all indexed sources instead of current project/session scope."
+								}
+							}
+						}
+					},
+					{
+						"name": "context_purge",
+						"label": "Context Purge",
+						"description": "Delete indexed context-sidecar output by age, source, project, session, or active retention policy.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"expired": {
+									"type": "boolean",
+									"description": "Run active retention cleanup now instead of manual age purge"
+								},
+								"older_than_days": {
+									"type": "number",
+									"description": "Delete sources older than this many days; defaults to active retention days or 14"
+								},
+								"source_id": {
+									"type": "string",
+									"description": "Delete one source id"
+								},
+								"project_path": {
+									"type": "string",
+									"description": "Limit purge to one project path"
+								},
+								"session_id": {
+									"type": "string",
+									"description": "Limit purge to one session id"
+								},
+								"global": {
+									"type": "boolean",
+									"description": "Purge all scopes instead of current project/session scope"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "context",
+						"description": "Inspect and manage the context sidecar"
+					},
+					{
+						"name": "context-stats",
+						"description": "Show context sidecar byte accounting"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown",
+					"session_start",
+					"tool_result"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@agntn/puzzles": {
+		"version": "0.28.2",
+		"entries": [
+			"<agent>/npm/node_modules/@agntn/puzzles/packages/pi/extensions/puzzles.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "puzzles_stats",
+						"label": "Puzzle Statistics",
+						"description": "Report totals, status counts, prize sums, and how many puzzles use each technique across every puzzle collection.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "puzzles_collections",
+						"label": "Puzzle Collections",
+						"description": "List every puzzle collection with its author and its puzzle count per status.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "puzzles_authors",
+						"label": "Puzzle Authors",
+						"description": "List every puzzle author with its kind, the collections it published and its puzzle count.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "puzzles_author",
+						"label": "Show Author",
+						"description": "Show one author's record: name, kind, aliases, collections, profiles, addresses, the sourced facts public pages state about them, and how many of their puzzles use each technique.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"key"
+							],
+							"properties": {
+								"key": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 50,
+									"description": "Author key, for example peter-todd, or a collection key such as hash-collision"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_solvers",
+						"label": "Puzzle Solvers",
+						"description": "List every named puzzle solver with its kind, the puzzles credited to it and the collections it also published.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "puzzles_solver",
+						"label": "Show Solver",
+						"description": "Show one solver's record: name, kind, every solve with its date and prize, profiles, addresses and the sourced facts public pages state about them.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"key"
+							],
+							"properties": {
+								"key": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Solver key, for example retired-coder, or a puzzle identifier such as b1000/135"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_show",
+						"label": "Show Puzzle",
+						"description": "Show one puzzle's address, status, key material, techniques, hints, and explorer links.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_hints",
+						"label": "Puzzle Hints",
+						"description": "List a puzzle's own and inherited hints with sources, optional confirmations, separately labeled published answers, and hint files.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_stages",
+						"label": "Puzzle Stages",
+						"description": "List the stages of a puzzle that runs in several, in the author's order: what each one shows, the pages and files the author published for it, the repository copies, and the published answer when somebody solved it.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_assets",
+						"label": "Puzzle Files",
+						"description": "List the files a puzzle ships, its image, hint files, solution and stage artifacts, with the size and SHA-256 its record pins, and the repository's reading copies of the pages it cites, or read one of them by path: text comes back as text, an image as an image, and a pinned file only with the bytes the record pins.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								},
+								"file": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 200,
+									"description": "Path of one file to read, as the listing prints it, for example assets/gsmg/phase3.txt. Leave it out to list them"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_list",
+						"label": "List Puzzles",
+						"description": "List puzzles filtered by target address, collection, chain, status, technique, and public key availability, in dataset order. When a next offset is returned, pass it as offset with the same filters to continue.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"address": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 128,
+									"description": "The puzzle paying to this address. Case only matters where the chain says it does, so an EIP-55 Ethereum address and an uppercased bech32 one both resolve"
+								},
+								"collection": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 50,
+									"description": "Collection key, for example b1000"
+								},
+								"chain": {
+									"enum": [
+										"arweave",
+										"base",
+										"bitcoin",
+										"bitcoincash",
+										"decred",
+										"dogecoin",
+										"ecash",
+										"ethereum",
+										"litecoin",
+										"monero"
+									],
+									"description": "Only puzzles on one blockchain"
+								},
+								"status": {
+									"enum": [
+										"claimed",
+										"expired",
+										"solved",
+										"swept",
+										"unsolved"
+									],
+									"description": "Lifecycle status: unsolved, solved, claimed (prize taken, key unpublished), swept (taken after the public key leaked), or expired (the author took it back)"
+								},
+								"technique": {
+									"enum": [
+										"aes",
+										"ascii-private-key",
+										"atbash",
+										"base64",
+										"beaufort",
+										"binary",
+										"bip38",
+										"hash-collision",
+										"hidden-seed-words",
+										"masked-key-range",
+										"md5-to-bip39-entropy",
+										"morse",
+										"openssl-salted-sha256",
+										"partial-key",
+										"qr",
+										"scrypt-brainwallet",
+										"sha256-brainwallet",
+										"sha256-to-bip39-entropy",
+										"shamir-shares",
+										"steganography",
+										"straddling-checkerboard",
+										"triple-sha256-brainwallet",
+										"warpwallet",
+										"xor"
+									],
+									"description": "Only puzzles built with this technique, by their collection, their record or one of their stages, for example md5-to-bip39-entropy"
+								},
+								"withPubkey": {
+									"type": "boolean",
+									"description": "Only puzzles with a known public key"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 500,
+									"description": "Maximum puzzles to return (default 50)"
+								},
+								"offset": {
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 9007199254740991,
+									"description": "Number of matching puzzles to skip (default 0). Use the returned next offset."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_verify",
+						"label": "Verify Puzzle Key",
+						"description": "Check that a puzzle's recorded key material derives its stored address.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_balance",
+						"label": "Puzzle Balance",
+						"description": "Fetch the current on-chain balance of a puzzle address.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								},
+								"apiKey": {
+									"type": "string",
+									"maxLength": 200,
+									"description": "Provider API key; Ethereum falls back to ETHERSCAN_API_KEY, Bitcoin Cash, Dogecoin and eCash to BLOCKCHAIR_API_KEY"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_watch",
+						"label": "Watch Puzzle",
+						"description": "Compare one puzzle with its chain, and with its source page when since is given, and list what the record misses: deposits and spends it doesn't record, an unsolved prize the address no longer holds, a source page that changed after since.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"id"
+							],
+							"properties": {
+								"id": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 100,
+									"description": "Universal puzzle identifier, for example b1000/90 or gsmg"
+								},
+								"since": {
+									"type": "string",
+									"minLength": 10,
+									"maxLength": 40,
+									"description": "Also compare the source page's newest Wayback capture with the last one up to this moment, YYYY-MM-DD or ISO 8601, usually the date of the previous check"
+								},
+								"apiKey": {
+									"type": "string",
+									"maxLength": 200,
+									"description": "Provider API key; Ethereum falls back to ETHERSCAN_API_KEY, Bitcoin Cash, Dogecoin and eCash to BLOCKCHAIR_API_KEY"
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "puzzles_eligibility",
+						"label": "Puzzle Eligibility",
+						"description": "Gather what to check before working on a puzzle in one record: identity and source, chain, address and script type, a live read of every prize address with what it received and spent, the status with its evidence, the carriers, what counts as a solution, and every field nobody can fill. Takes an identifier, or an address no record holds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"query"
+							],
+							"properties": {
+								"query": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 128,
+									"description": "Puzzle identifier, for example b1000/71, or an address, whether a record holds it or not"
+								},
+								"chain": {
+									"enum": [
+										"arweave",
+										"base",
+										"bitcoin",
+										"bitcoincash",
+										"decred",
+										"dogecoin",
+										"ecash",
+										"ethereum",
+										"litecoin",
+										"monero"
+									],
+									"description": "Chain of an address whose format fits more than one, for example base"
+								},
+								"apiKey": {
+									"type": "string",
+									"maxLength": 200,
+									"description": "Provider API key; Ethereum falls back to ETHERSCAN_API_KEY, Bitcoin Cash, Dogecoin and eCash to BLOCKCHAIR_API_KEY"
+								}
+							},
+							"additionalProperties": false
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"@pi-unipi/skill-registry": {
+		"version": "3.0.0-alpha.0",
+		"entries": [],
+		"extensions": [],
+		"errors": []
+	},
+	"@pi-unipi/long-horizon": {
+		"version": "3.0.0-alpha.0",
+		"entries": [
+			"<agent>/npm/node_modules/@pi-unipi/long-horizon/index.ts"
+		],
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot find module './src/workspace/identity.js'"
+		]
+	},
+	"@demigodmode/pi-web-agent": {
+		"version": "1.14.1",
+		"entries": [
+			"<agent>/npm/node_modules/@demigodmode/pi-web-agent/dist/extension.js"
+		],
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot read properties of undefined (reading 'join')"
+		]
+	},
+	"@pi-unipi/watchdog": {
+		"version": "3.0.0-alpha.0",
+		"entries": [
+			"<agent>/npm/node_modules/@pi-unipi/watchdog/index.ts"
+		],
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot find module './src/workspace/identity.js'"
+		]
+	},
+	"@aliou/pi-processes": {
+		"version": "0.13.2",
+		"entries": [
+			"<agent>/npm/node_modules/@aliou/pi-processes/extensions/processes/index.ts",
+			"<agent>/npm/node_modules/@aliou/pi-processes/extensions/processes-logs/index.ts",
+			"<agent>/npm/node_modules/@aliou/pi-processes/extensions/processes-dock/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "ps:logs",
+						"description": "Open managed process logs."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown"
+				]
+			},
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "ps:dock",
+						"description": "Expand, collapse, or close the managed process dock."
+					},
+					{
+						"name": "ps:pin",
+						"description": "Pin the process dock to a process."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
+		"errors": [
+			"Failed to load extension: Access to this API has been restricted. Use --allow-fs-read to manage permissions."
+		]
+	},
+	"@kvidzibo/pi-delegate": {
+		"version": "0.15.0",
+		"entries": [
+			"<agent>/npm/node_modules/@kvidzibo/pi-delegate/delegate/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "delegate",
+						"label": "Delegate",
+						"description": "Child agent. recon/implement/review/oracle. Model from config. background returns jobId. jobId waits/peeks/wraps/cancels. timeoutMs is wait budget, never kills. Interactive mode may inject a completion notice. Local models share maxLocalConcurrent. No nesting.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"task": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "Task for the child. Required to spawn. Max 20000 chars."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Task for the child. Required to spawn. Max 20000 chars."
+								},
+								"kind": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "recon, implement, review, or oracle. Required to spawn."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "recon, implement, review, or oracle. Required to spawn."
+								},
+								"cwd": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "Child working directory. Relative paths resolve against parent cwd."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Child working directory. Relative paths resolve against parent cwd."
+								},
+								"timeoutMs": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"description": "Wait budget, never a kill. Spawn/fg: first wait. jobId: max wait (omit = until done or quiet). 0 with jobId = peek."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Wait budget, never a kill. Spawn/fg: first wait. jobId: max wait (omit = until done or quiet). 0 with jobId = peek."
+								},
+								"model": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "Override child model. Any Pi model id (provider/id)."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Override child model. Any Pi model id (provider/id)."
+								},
+								"background": {
+									"anyOf": [
+										{
+											"type": "boolean",
+											"description": "Return jobId now; child runs in the background."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Return jobId now; child runs in the background."
+								},
+								"jobId": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "Wait, peek, wrap, or cancel an existing job."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Wait, peek, wrap, or cancel an existing job."
+								},
+								"wrap": {
+									"anyOf": [
+										{
+											"type": "boolean",
+											"description": "With jobId: steer child to wrap up. Does not interrupt the current tool."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "With jobId: steer child to wrap up. Does not interrupt the current tool."
+								},
+								"cancel": {
+									"anyOf": [
+										{
+											"type": "boolean",
+											"description": "With jobId: abort and kill the child."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "With jobId: abort and kill the child."
+								},
+								"auditId": {
+									"anyOf": [
+										{
+											"type": "string",
+											"description": "ID of the user-approved pending snapshot safety audit. Only with auditResult; no child/job arguments."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "ID of the user-approved pending snapshot safety audit. Only with auditResult; no child/job arguments."
+								},
+								"auditResult": {
+									"anyOf": [
+										{
+											"type": "object",
+											"required": [
+												"verdict",
+												"checked",
+												"issues"
+											],
+											"properties": {
+												"verdict": {
+													"anyOf": [
+														{
+															"type": "string",
+															"const": "passed"
+														},
+														{
+															"type": "string",
+															"const": "blocked"
+														},
+														{
+															"type": "string",
+															"const": "incomplete"
+														}
+													]
+												},
+												"checked": {
+													"type": "array",
+													"items": {
+														"anyOf": [
+															{
+																"type": "string",
+																"const": "source"
+															},
+															{
+																"type": "string",
+																"const": "staged"
+															},
+															{
+																"type": "string",
+																"const": "history"
+															},
+															{
+																"type": "string",
+																"const": "capture-constraints"
+															},
+															{
+																"type": "string",
+																"const": "storage"
+															}
+														]
+													},
+													"maxItems": 5,
+													"uniqueItems": true
+												},
+												"issues": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 500
+													},
+													"maxItems": 32,
+													"description": "Demonstrated secrets or hard capture blockers: redacted paths/categories only, never secret values. Must be empty for passed."
+												},
+												"warnings": {
+													"type": "array",
+													"items": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 500
+													},
+													"maxItems": 32,
+													"description": "Non-blocking privacy/storage risks, unverified secret-like literals and coverage gaps; redacted paths/categories only. Do not prevent passed."
+												}
+											},
+											"additionalProperties": false,
+											"description": "Best-effort safety audit, not a child task. passed means no secret leak was demonstrated after substantive checks; partial coverage and warnings are allowed."
+										},
+										{
+											"type": "null"
+										},
+										{
+											"type": "string",
+											"pattern": "^\\s*$"
+										}
+									],
+									"description": "Best-effort safety audit, not a child task. passed means no secret leak was demonstrated after substantive checks; partial coverage and warnings are allowed."
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "pi-delegate",
+						"description": "Delegate jobs, settings and usage: jobs, models, snapshots, stats."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"session_compact",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"tool_result"
+				]
+			}
+		],
+		"errors": []
+	},
+	"pi-agent-foreman": {
+		"version": "0.5.9",
+		"entries": [
+			"<agent>/npm/node_modules/pi-agent-foreman/src/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "agent-foreman",
+						"description": "Configure Agent Foreman"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"agent_start",
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@cortexkit/pi-openai-auth": {
+		"version": "0.11.1",
+		"entries": [
+			"<agent>/npm/node_modules/@cortexkit/pi-openai-auth/dist/index.js"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "openai-account",
+						"description": "List, add, remove, or reorder OpenAI fallback accounts"
+					},
+					{
+						"name": "openai-quota",
+						"description": "Show persisted OpenAI quota for fallback accounts"
+					},
+					{
+						"name": "openai-routing",
+						"description": "Show or change OpenAI account routing mode"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"oira666_pi-subagent": {
+		"version": "0.5.12",
+		"entries": [
+			"<agent>/npm/node_modules/oira666_pi-subagent/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "subagents",
+						"label": "Subagents",
+						"description": "Run agents in separate processes. Calls block until all tasks finish; put parallel tasks in one array. Pass { tasks: [{ task, max_subagents_allowed }] }.\n\nWhen to launch new subagents:\n1. Launch new subagents for independent review, when parallel work will save substantial time, or when a large task would crowd out your context and force compaction. Every new agent costs money and must learn its task from scratch. The benefit must cover that setup and the work of combining results. Permission to delegate is not a reason to do it.\n2. Before launching, say what each agent will do and why delegation helps. Set max_subagents_allowed on every task: count all descendants, excluding the assigned agent. Use 0 for a direct worker, or 1 for a worker that launches its own reviewer. Each task reserves one slot for the worker plus its descendant cap. Siblings get separate shares; unused shares stay reserved for resumes. Count only workers the planned work needs, not speculative teams. The whole call is rejected if the total exceeds your remaining slots. Respect any tighter user limit.\n3. Prefer a few independent workers, not workers each building teams. Another management layer must save enough attention to pay for itself. Passing your whole task unchanged to another agent just adds a relay. Do not launch new agents merely to read a file, run a command, or make a small edit.\n4. Delegate before deep research. Agents do not inherit your conversation. If you already gathered findings, share them in the task or a handoff file under the project's tmp/ directory, using its absolute path. Include scope, constraints, relevant files, decisions, completed checks, and expected output. Ask agents to check evidence and fill gaps, not repeat your research.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"tasks"
+							],
+							"properties": {
+								"tasks": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"task",
+											"max_subagents_allowed"
+										],
+										"properties": {
+											"task": {
+												"type": "string",
+												"description": "What to do, what to return, constraints, and known findings or a handoff file path. It cannot see your conversation."
+											},
+											"max_subagents_allowed": {
+												"type": "integer",
+												"minimum": 0,
+												"maximum": 9007199254740990,
+												"description": "Maximum descendants this worker may launch, including all nested workers but excluding itself. Required on every task. Use 0 for a direct worker; 1 lets it launch one subagent. Count only the descendants the planned work needs. Each task reserves 1 + max_subagents_allowed slots from your budget. Unused slots stay reserved for that worker's future resumes. The sum of these reservations must fit your remaining budget or no tasks launch."
+											}
+										},
+										"additionalProperties": false
+									},
+									"minItems": 1,
+									"description": "One task runs a single worker; multiple tasks run concurrently. Set max_subagents_allowed on every task."
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "resume_subagents",
+						"label": "Resume subagents",
+						"description": "Continue agents by their returned names, keeping their previous context and original model, thinking, and intelligence label. Resume does not accept an intelligence choice.\nOptional max_subagents_allowed replaces the lifetime descendant cap, excluding the resumed agent. Past launches and assigned slots still count. Increases reserve extra slots from the original launcher; omitting it keeps the current allowance.\nPass { resumes: [{ subagent, task }] }. Resumes in one call run in parallel; wait between dependent tasks.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"resumes"
+							],
+							"properties": {
+								"resumes": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"subagent",
+											"task"
+										],
+										"properties": {
+											"subagent": {
+												"type": "string",
+												"description": "Unique human name returned by a previous subagents run (e.g. John)"
+											},
+											"task": {
+												"type": "string",
+												"description": "New task for the resumed subagent. It keeps its previous context."
+											},
+											"max_subagents_allowed": {
+												"type": "integer",
+												"minimum": 0,
+												"maximum": 9007199254740990,
+												"description": "Optional replacement lifetime descendant cap, excluding the resumed worker but including all nested workers. Use 0 for no descendants. Omit to keep its current allowance. Set only what the remaining work needs, while retaining slots already spent or assigned. Increases reserve extra slots from its original launcher's budget. Decreases do not refund reserved slots. Resuming itself uses no slot; the counter never resets."
+											}
+										},
+										"additionalProperties": false
+									},
+									"minItems": 1,
+									"description": "Array of {subagent, task} objects. Each named subagent is resumed in parallel with its new task."
+								}
+							},
+							"additionalProperties": false
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "subagent-expand",
+						"description": "Show the full work of one named subagent (prompt, tools, children, resumes)"
+					}
+				],
+				"flags": [
+					{
+						"name": "subagent-max-depth",
+						"type": "string",
+						"default": null,
+						"description": "Maximum allowed subagent delegation depth (default: 3)."
+					},
+					{
+						"name": "subagent-prevent-cycles",
+						"type": "boolean",
+						"default": null,
+						"description": "Block delegating to agents already in the current delegation stack (default: true)."
+					}
+				],
+				"shortcuts": [],
+				"events": [
+					"agent_end",
+					"before_agent_start",
+					"input",
+					"message_end",
+					"resources_discover",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"tool_execution_end",
+					"tool_result"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@danmademe/pi-provider-litellm": {
+		"version": "0.14.1",
+		"entries": [
+			"<agent>/npm/node_modules/@danmademe/pi-provider-litellm/src/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"pi-better-sandbox": {
+		"version": "0.11.0",
+		"entries": [
+			"<agent>/npm/node_modules/pi-better-sandbox/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read",
+						"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					},
+					{
+						"name": "write",
+						"label": "write",
+						"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"content"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to write (relative or absolute)"
+								},
+								"content": {
+									"type": "string",
+									"description": "Content to write to the file"
+								}
+							}
+						}
+					},
+					{
+						"name": "edit",
+						"label": "edit",
+						"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"edits"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to edit (relative or absolute)"
+								},
+								"edits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"oldText",
+											"newText"
+										],
+										"properties": {
+											"oldText": {
+												"type": "string",
+												"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+											},
+											"newText": {
+												"type": "string",
+												"description": "Replacement text for this targeted edit."
+											}
+										}
+									},
+									"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+								}
+							}
+						}
+					},
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					},
+					{
+						"name": "process_list",
+						"label": "Process List",
+						"description": "Read current-user process IDs and process names only. Optional literal case-insensitive name filter; no arguments, environment, paths, or process control.",
+						"parameters": {
+							"type": "object",
+							"additionalProperties": false,
+							"properties": {
+								"name": {
+									"type": "string",
+									"maxLength": 128,
+									"description": "Literal case-insensitive process-name substring."
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 200,
+									"default": 100
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "sandbox",
+						"description": "Configure Main and Subagents sandbox permissions, activation defaults, and protected paths"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"tool_call",
+					"user_bash"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@cueloop/pi": {
+		"version": "0.1.0-alpha.98",
+		"entries": [
+			"<agent>/npm/node_modules/@cueloop/pi/extension.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "open_thread",
+						"label": "Open cueloop Thread",
+						"description": "Open or revise a cueloop Thread for plan, reply, prototype, diff, review, or refine. The Thread remains pending until a human sends a Message. For refine, first call refine_corpus.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"workflow": {
+									"type": "string",
+									"enum": [
+										"plan",
+										"reply",
+										"prototype",
+										"diff",
+										"review",
+										"refine"
+									]
+								},
+								"content": {
+									"type": "string"
+								},
+								"proposal": {
+									"type": "string"
+								},
+								"pullRequestReference": {
+									"type": "string"
+								},
+								"title": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"workflow"
+							]
+						}
+					},
+					{
+						"name": "refine_corpus",
+						"label": "Analyze cueloop Threads",
+						"description": "Analyze resolved Threads before drafting a refine proposal.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "cueloop:plan",
+						"description": "Run the cueloop plan workflow"
+					},
+					{
+						"name": "cueloop:reply",
+						"description": "Run the cueloop reply workflow"
+					},
+					{
+						"name": "cueloop:prototype",
+						"description": "Run the cueloop prototype workflow"
+					},
+					{
+						"name": "cueloop:diff",
+						"description": "Run the cueloop diff workflow"
+					},
+					{
+						"name": "cueloop:review",
+						"description": "Run the cueloop review workflow"
+					},
+					{
+						"name": "cueloop:refine",
+						"description": "Run the cueloop refine workflow"
+					},
+					{
+						"name": "cueloop:pair",
+						"description": "Run the cueloop pair workflow"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_fork",
+					"session_shutdown",
+					"session_start",
+					"session_switch",
+					"tool_call"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@leing2021/super-pi": {
+		"version": "0.40.1",
+		"entries": [
+			"<agent>/npm/node_modules/@leing2021/super-pi/extensions/ce-core/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "artifact_helper",
+						"label": "Artifact Helper",
+						"description": "Resolve and optionally create standard Compound Engineering artifact paths.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"repoRoot",
+								"artifactType"
+							],
+							"properties": {
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root where workflow artifacts should be created"
+								},
+								"artifactType": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "brainstorm"
+										},
+										{
+											"type": "string",
+											"const": "plan"
+										},
+										{
+											"type": "string",
+											"const": "solution"
+										},
+										{
+											"type": "string",
+											"const": "run"
+										}
+									],
+									"description": "Artifact type to resolve"
+								},
+								"date": {
+									"type": "string",
+									"description": "Date prefix for dated artifacts"
+								},
+								"topic": {
+									"type": "string",
+									"description": "Topic or slug source for the artifact"
+								},
+								"category": {
+									"type": "string",
+									"description": "Solution category for docs/solutions"
+								},
+								"skillName": {
+									"type": "string",
+									"description": "Skill name for run artifacts"
+								},
+								"runId": {
+									"type": "string",
+									"description": "Run identifier for runtime artifacts"
+								},
+								"ensureDir": {
+									"type": "boolean",
+									"description": "Create the parent directory when true"
+								}
+							}
+						}
+					},
+					{
+						"name": "ask_user_question",
+						"label": "Ask User Question",
+						"description": "Ask the user a structured question with optional choices and custom answers.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"question"
+							],
+							"properties": {
+								"question": {
+									"type": "string",
+									"description": "Question shown to the user"
+								},
+								"options": {
+									"type": "array",
+									"items": {},
+									"description": "Selectable options (strings or {label, description} objects)"
+								},
+								"allowCustom": {
+									"type": "boolean",
+									"description": "Allow a custom answer when options are present"
+								}
+							}
+						}
+					},
+					{
+						"name": "workflow_state",
+						"label": "Workflow State",
+						"description": "Scan repo-local Compound Engineering artifacts and return structured workflow state.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"repoRoot"
+							],
+							"properties": {
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root to scan for workflow artifacts"
+								}
+							}
+						}
+					},
+					{
+						"name": "worktree_manager",
+						"label": "Worktree Manager",
+						"description": "Manage git worktree lifecycle: create, detect, merge, and cleanup worktrees for isolated feature development.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"repoRoot"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "create"
+										},
+										{
+											"type": "string",
+											"const": "detect"
+										},
+										{
+											"type": "string",
+											"const": "merge"
+										},
+										{
+											"type": "string",
+											"const": "cleanup"
+										}
+									],
+									"description": "Worktree operation to perform"
+								},
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"branchName": {
+									"type": "string",
+									"description": "Feature branch name for create/merge/cleanup"
+								},
+								"worktreePath": {
+									"type": "string",
+									"description": "Worktree directory path for cleanup"
+								}
+							}
+						}
+					},
+					{
+						"name": "review_router",
+						"label": "Review Router",
+						"description": "Analyze diff metadata and recommend reviewer personas for structured code review.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"filesChanged",
+								"insertions",
+								"deletions"
+							],
+							"properties": {
+								"filesChanged": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "List of file paths changed in the diff"
+								},
+								"insertions": {
+									"type": "number",
+									"description": "Number of lines added"
+								},
+								"deletions": {
+									"type": "number",
+									"description": "Number of lines removed"
+								}
+							}
+						}
+					},
+					{
+						"name": "isolated_review",
+						"label": "Isolated Review",
+						"description": "Spawn a fresh pi session to run 04-review in isolation (no author bias). Blocks until the reviewer finishes, then returns the findings artifact path. Degrades with a machine-readable isolation: degraded marker when spawn fails.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"repoRoot",
+								"diffBase",
+								"findingsPath"
+							],
+							"properties": {
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"diffBase": {
+									"type": "string",
+									"description": "Diff base ref, e.g. main"
+								},
+								"findingsPath": {
+									"type": "string",
+									"description": "Absolute path where the reviewer session writes its findings artifact"
+								},
+								"promptPath": {
+									"type": "string",
+									"description": "Optional prompt template path override"
+								},
+								"incrementalPreviousFindingsPath": {
+									"type": "string",
+									"description": "Previous findings path for incremental re-review mode"
+								},
+								"timeoutMs": {
+									"type": "number",
+									"description": "Spawn timeout in ms (default 600000)"
+								}
+							}
+						}
+					},
+					{
+						"name": "session_checkpoint",
+						"label": "Session Checkpoint",
+						"description": "Save and load plan execution checkpoints for resume-from-checkpoint behavior.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"repoRoot"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "save"
+										},
+										{
+											"type": "string",
+											"const": "load"
+										},
+										{
+											"type": "string",
+											"const": "list"
+										},
+										{
+											"type": "string",
+											"const": "fail"
+										},
+										{
+											"type": "string",
+											"const": "retry"
+										}
+									],
+									"description": "Checkpoint operation"
+								},
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"planPath": {
+									"type": "string",
+									"description": "Plan artifact path"
+								},
+								"completedUnits": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "List of completed implementation unit names"
+								},
+								"failedUnit": {
+									"type": "string",
+									"description": "Name of the unit that failed"
+								},
+								"error": {
+									"type": "string",
+									"description": "Error message from the failure"
+								}
+							}
+						}
+					},
+					{
+						"name": "task_splitter",
+						"label": "Task Splitter",
+						"description": "Analyze implementation units for file-level dependencies and output parallel-safe execution groups.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"units"
+							],
+							"properties": {
+								"units": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"name",
+											"files"
+										],
+										"properties": {
+											"name": {
+												"type": "string",
+												"description": "Implementation unit name"
+											},
+											"files": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Files this unit touches"
+											}
+										}
+									},
+									"description": "Implementation units to analyze for dependencies"
+								}
+							}
+						}
+					},
+					{
+						"name": "brainstorm_dialog",
+						"label": "Brainstorm Dialog",
+						"description": "Manage multi-round brainstorm conversations with iterative refinement.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"repoRoot",
+								"artifactPath"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "start"
+										},
+										{
+											"type": "string",
+											"const": "refine"
+										},
+										{
+											"type": "string",
+											"const": "summarize"
+										}
+									],
+									"description": "Dialog operation"
+								},
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"artifactPath": {
+									"type": "string",
+									"description": "Brainstorm artifact path"
+								},
+								"analysis": {
+									"type": "string",
+									"description": "Agent's current analysis"
+								},
+								"questions": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Open questions for the user"
+								},
+								"userResponses": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "User's answers from previous round"
+								}
+							}
+						}
+					},
+					{
+						"name": "plan_diff",
+						"label": "Plan Diff",
+						"description": "Compare plan units with new requirements or apply incremental changes to an existing plan.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"existingUnits"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "compare"
+										},
+										{
+											"type": "string",
+											"const": "patch"
+										}
+									],
+									"description": "Diff operation"
+								},
+								"existingUnits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"name",
+											"description",
+											"files"
+										],
+										"properties": {
+											"name": {
+												"type": "string",
+												"description": "Unit name"
+											},
+											"description": {
+												"type": "string",
+												"description": "Unit description"
+											},
+											"files": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Files this unit touches"
+											}
+										}
+									},
+									"description": "Current plan units"
+								},
+								"newRequirements": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"name",
+											"description",
+											"files"
+										],
+										"properties": {
+											"name": {
+												"type": "string",
+												"description": "Unit name"
+											},
+											"description": {
+												"type": "string",
+												"description": "Unit description"
+											},
+											"files": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Files this unit touches"
+											}
+										}
+									},
+									"description": "Updated requirements for compare"
+								},
+								"changes": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"action",
+											"name"
+										],
+										"properties": {
+											"action": {
+												"anyOf": [
+													{
+														"type": "string",
+														"const": "add"
+													},
+													{
+														"type": "string",
+														"const": "remove"
+													},
+													{
+														"type": "string",
+														"const": "modify"
+													}
+												],
+												"description": "Change action"
+											},
+											"name": {
+												"type": "string",
+												"description": "Unit name"
+											},
+											"description": {
+												"type": "string",
+												"description": "Updated description"
+											},
+											"files": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Updated file list"
+											}
+										}
+									},
+									"description": "Changes to apply for patch"
+								}
+							}
+						}
+					},
+					{
+						"name": "session_history",
+						"label": "Session History",
+						"description": "Record and query CE skill execution history.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"repoRoot"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "record"
+										},
+										{
+											"type": "string",
+											"const": "query"
+										},
+										{
+											"type": "string",
+											"const": "latest"
+										}
+									],
+									"description": "History operation"
+								},
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"skill": {
+									"type": "string",
+									"description": "Skill name to filter or record"
+								},
+								"artifactPath": {
+									"type": "string",
+									"description": "Artifact path"
+								},
+								"summary": {
+									"type": "string",
+									"description": "Execution summary"
+								}
+							}
+						}
+					},
+					{
+						"name": "context_handoff",
+						"label": "Context Handoff",
+						"description": "Manage cross-stage context handoffs with evidence-first templates. Supports save (write handoff + state), load (read handoff + state), latest (read latest dated handoff), status (read current state), and validate (check continuation readiness with deterministic probes).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"operation",
+								"repoRoot"
+							],
+							"properties": {
+								"operation": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "save"
+										},
+										{
+											"type": "string",
+											"const": "load"
+										},
+										{
+											"type": "string",
+											"const": "latest"
+										},
+										{
+											"type": "string",
+											"const": "status"
+										},
+										{
+											"type": "string",
+											"const": "validate"
+										}
+									],
+									"description": "Handoff operation"
+								},
+								"repoRoot": {
+									"type": "string",
+									"description": "Repository root"
+								},
+								"currentStage": {
+									"type": "string",
+									"description": "Current pipeline stage (e.g. 02-plan)"
+								},
+								"nextStage": {
+									"type": "string",
+									"description": "Next pipeline stage"
+								},
+								"contextHealth": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "good"
+										},
+										{
+											"type": "string",
+											"const": "watch"
+										},
+										{
+											"type": "string",
+											"const": "heavy"
+										},
+										{
+											"type": "string",
+											"const": "critical"
+										}
+									],
+									"description": "Context health assessment"
+								},
+								"activeFiles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "1-5 must-know active file paths"
+								},
+								"blocker": {
+									"type": "string",
+									"description": "Current blocker description"
+								},
+								"verification": {
+									"type": "string",
+									"description": "Latest verification command + result"
+								},
+								"artifacts": {
+									"type": "object",
+									"patternProperties": {
+										"^.*$": {
+											"type": "string"
+										}
+									},
+									"description": "Artifact paths (requirements, plan, checkpoint, proof)"
+								},
+								"handoffMarkdown": {
+									"type": "string",
+									"description": "Custom handoff markdown content"
+								},
+								"handoffPath": {
+									"type": "string",
+									"description": "Specific handoff file path to load"
+								},
+								"contextUsage": {
+									"type": "object",
+									"required": [
+										"tokens",
+										"contextWindow",
+										"percent"
+									],
+									"properties": {
+										"tokens": {
+											"anyOf": [
+												{
+													"type": "number"
+												},
+												{
+													"type": "null"
+												}
+											],
+											"description": "Estimated context tokens, or null if unknown (e.g. right after compaction)"
+										},
+										"contextWindow": {
+											"type": "number",
+											"description": "Model context window size in tokens"
+										},
+										"percent": {
+											"anyOf": [
+												{
+													"type": "number"
+												},
+												{
+													"type": "null"
+												}
+											],
+											"description": "Usage as percentage of context window, or null if unknown"
+										}
+									},
+									"description": "Measured context usage. Omit — injected automatically from ctx.getContextUsage() when the caller does not supply it"
+								},
+								"currentTruth": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Known true statements validated during session"
+								},
+								"invalidatedAssumptions": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Assumptions proven wrong during session"
+								},
+								"openDecisions": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Pending decisions that affect next steps"
+								},
+								"recentlyAccessedFiles": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Files recently read or edited (defaults to activeFiles)"
+								},
+								"compressionRisk": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Context compression risks to watch for"
+								},
+								"activeRules": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "1-5 must-know rules for continuation (TDD gates, constraints, do-not-repeat)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"input",
+					"session_before_tree",
+					"tool_call",
+					"tool_result"
+				]
+			}
+		],
+		"errors": []
+	},
+	"pi-tool-display": {
+		"version": "0.5.0",
+		"entries": [
+			"<agent>/npm/node_modules/pi-tool-display/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "read",
+						"label": "read",
+						"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to read (relative or absolute)"
+								},
+								"offset": {
+									"type": "number",
+									"description": "Line number to start reading from (1-indexed)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of lines to read"
+								}
+							}
+						}
+					},
+					{
+						"name": "grep",
+						"label": "grep",
+						"description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "Search pattern (regex or literal string)"
+								},
+								"path": {
+									"type": "string",
+									"description": "Directory or file to search (default: current directory)"
+								},
+								"glob": {
+									"type": "string",
+									"description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+								},
+								"ignoreCase": {
+									"type": "boolean",
+									"description": "Case-insensitive search (default: false)"
+								},
+								"literal": {
+									"type": "boolean",
+									"description": "Treat pattern as literal string instead of regex (default: false)"
+								},
+								"context": {
+									"type": "number",
+									"description": "Number of lines to show before and after each match (default: 0)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of matches to return (default: 100)"
+								}
+							}
+						}
+					},
+					{
+						"name": "find",
+						"label": "find",
+						"description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+								},
+								"path": {
+									"type": "string",
+									"description": "Directory to search in (default: current directory)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of results (default: 1000)"
+								}
+							}
+						}
+					},
+					{
+						"name": "ls",
+						"label": "ls",
+						"description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Directory to list (default: current directory)"
+								},
+								"limit": {
+									"type": "number",
+									"description": "Maximum number of entries to return (default: 500)"
+								}
+							}
+						}
+					},
+					{
+						"name": "edit",
+						"label": "edit",
+						"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"edits"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to edit (relative or absolute)"
+								},
+								"edits": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"oldText",
+											"newText"
+										],
+										"properties": {
+											"oldText": {
+												"type": "string",
+												"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+											},
+											"newText": {
+												"type": "string",
+												"description": "Replacement text for this targeted edit."
+											}
+										}
+									},
+									"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+								}
+							}
+						}
+					},
+					{
+						"name": "write",
+						"label": "write",
+						"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"path",
+								"content"
+							],
+							"properties": {
+								"path": {
+									"type": "string",
+									"description": "Path to the file to write (relative or absolute)"
+								},
+								"content": {
+									"type": "string",
+									"description": "Content to write to the file"
+								}
+							}
+						}
+					},
+					{
+						"name": "bash",
+						"label": "bash",
+						"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"description": "Shell command to execute"
+								},
+								"timeout": {
+									"type": "number",
+									"description": "Timeout in seconds (optional, no default timeout)"
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "tool-display",
+						"description": "Configure tool output rendering (OpenCode-style)"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"context",
+					"message_end",
+					"message_update",
+					"session_shutdown",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"pi-xai-oauth": {
+		"version": "1.6.1",
+		"entries": [
+			"<agent>/npm/node_modules/pi-xai-oauth/extensions/xai-oauth.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "xai_grok_read_file",
+						"label": "read_file",
+						"description": "Read a workspace-contained file using Grok's native target_file/offset/limit contract. Relative and in-workspace absolute paths are supported.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"target_file"
+							],
+							"properties": {
+								"target_file": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Workspace-relative path or absolute path inside the workspace. Traversal and symlinks resolving outside are rejected."
+								},
+								"offset": {
+									"type": "integer",
+									"description": "The line number to start reading from."
+								},
+								"limit": {
+									"type": "integer",
+									"description": "The number of lines to read."
+								},
+								"pages": {
+									"type": "string",
+									"description": "Page range for PDF files, such as 1-5, 3, or 10-."
+								},
+								"format": {
+									"type": "string",
+									"description": "PDF output format: image (default) or text."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_grok_search_replace",
+						"label": "search_replace",
+						"description": "Replace exact text in a workspace-contained file. old_string must be unique unless replace_all=true; an empty old_string overwrites an existing file or creates a safe contained leaf.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"file_path",
+								"old_string",
+								"new_string"
+							],
+							"properties": {
+								"file_path": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Workspace-relative path or absolute path inside the workspace. Traversal and symlinks resolving outside are rejected."
+								},
+								"old_string": {
+									"type": "string",
+									"description": "Exact text to replace. An empty string overwrites an existing file or creates a missing leaf under a workspace-contained physical parent."
+								},
+								"new_string": {
+									"type": "string",
+									"description": "Replacement text."
+								},
+								"replace_all": {
+									"type": "boolean",
+									"description": "Replace every non-overlapping occurrence instead of requiring one unique match."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_grok_list_dir",
+						"label": "list_dir",
+						"description": "List a workspace-contained directory using Grok's native target_directory contract. Relative and in-workspace absolute paths are supported.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"target_directory"
+							],
+							"properties": {
+								"target_directory": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Workspace-relative directory or absolute directory inside the workspace. Traversal and symlinks resolving outside are rejected."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_grok_grep",
+						"label": "grep",
+						"description": "Search file contents with a bounded safe regular expression and Grok-compatible path/glob/context arguments.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Regular expression to search for in file contents."
+								},
+								"path": {
+									"type": "string",
+									"description": "File or directory to search; defaults to the workspace."
+								},
+								"glob": {
+									"type": "string",
+									"description": "Glob filter such as *.ts or src/**/*.ts."
+								},
+								"-B": {
+									"type": "integer",
+									"minimum": 0,
+									"description": "Context lines before each match."
+								},
+								"-A": {
+									"type": "integer",
+									"minimum": 0,
+									"description": "Context lines after each match."
+								},
+								"-C": {
+									"type": "integer",
+									"minimum": 0,
+									"description": "Context lines before and after each match."
+								},
+								"-i": {
+									"type": "boolean",
+									"description": "Use case-insensitive matching."
+								},
+								"type": {
+									"type": "string",
+									"description": "Common file type filter: ts, js, py, rust, go, java, json, yaml, and similar."
+								},
+								"head_limit": {
+									"type": "integer",
+									"minimum": 0,
+									"description": "Maximum output lines (default 200)."
+								},
+								"multiline": {
+									"type": "boolean",
+									"description": "Enable multiline mode where . matches newlines."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_grok_run_terminal_command",
+						"label": "run_terminal_command",
+						"description": "Run a foreground shell command through pi bash. Filesystem access is not workspace-contained; timeout is in milliseconds and background=true is rejected.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"command",
+								"description"
+							],
+							"properties": {
+								"command": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Shell command passed to pi bash. Unlike direct file adapters, command filesystem access is not workspace-contained."
+								},
+								"timeout": {
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 300000,
+									"description": "Timeout in milliseconds (default 120000; maximum 300000)."
+								},
+								"description": {
+									"type": "string",
+									"minLength": 1,
+									"description": "One sentence explaining why the command contributes to the goal."
+								},
+								"background": {
+									"type": "boolean",
+									"description": "Must be false: pi has no managed background-task lifecycle for extension tools."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_grok_web_search",
+						"label": "web_search",
+						"description": "Opt-in paid Grok-native web search. Enable via /xai-tools and call only when the user explicitly requests xAI web search.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"query"
+							],
+							"properties": {
+								"query": {
+									"type": "string",
+									"minLength": 1,
+									"description": "The search query to perform."
+								},
+								"allowed_domains": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "Optional domains to restrict the search to."
+								}
+							}
+						}
+					},
+					{
+						"name": "xai_generate_text",
+						"label": "xAI Generate Text",
+						"description": "Opt-in text generation through a separate xAI API request. Enable via /xai-tools and call only when the user explicitly requests it.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"prompt": {
+									"type": "string",
+									"description": "The prompt or question"
+								},
+								"model": {
+									"type": "string",
+									"description": "Entitled OAuth model to use; defaults to the active xAI model"
+								},
+								"reasoning_effort": {
+									"type": "string",
+									"enum": [
+										"none",
+										"low",
+										"medium",
+										"high",
+										"xhigh"
+									],
+									"description": "Reasoning effort. Defaults to high for grok-4.5/grok-4.6/grok-4.7 and medium for other models when omitted."
+								},
+								"response_format": {
+									"type": "string",
+									"description": "Set to 'json' for JSON output"
+								},
+								"previous_response_id": {
+									"type": "string",
+									"description": "Continue conversation"
+								},
+								"image_url": {
+									"type": "string",
+									"description": "Optional image URL for vision/multimodal input (supports image analysis)"
+								}
+							},
+							"required": [
+								"prompt"
+							]
+						}
+					},
+					{
+						"name": "xai_multi_agent",
+						"label": "xAI Multi-Agent Research",
+						"description": "Opt-in paid multi-agent web/X research using Grok. Enable via /xai-tools and call only when the user explicitly requests xAI research.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"query": {
+									"type": "string",
+									"description": "Research topic"
+								},
+								"num_agents": {
+									"type": "number",
+									"enum": [
+										4,
+										16
+									],
+									"default": 4
+								},
+								"reasoning_effort": {
+									"type": "string",
+									"enum": [
+										"medium",
+										"high"
+									],
+									"description": "Override num_agents: medium uses 4 agents, high uses 16 agents"
+								}
+							},
+							"required": [
+								"query"
+							]
+						}
+					},
+					{
+						"name": "xai_x_search",
+						"label": "xAI X Search",
+						"description": "Opt-in paid X search using Grok's native real-time search. Enable via /xai-tools and call only when the user explicitly requests xAI X search.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"query": {
+									"type": "string",
+									"description": "X search query"
+								},
+								"count": {
+									"type": "number",
+									"description": "Max number of posts to return (1-10)",
+									"default": 5
+								},
+								"since": {
+									"type": "string",
+									"description": "Only posts after this date (YYYY-MM-DD)"
+								},
+								"until": {
+									"type": "string",
+									"description": "Only posts before this date (YYYY-MM-DD)"
+								}
+							},
+							"required": [
+								"query"
+							]
+						}
+					},
+					{
+						"name": "xai_code_execution",
+						"label": "xAI Code Execution",
+						"description": "Opt-in execution through xAI's native code interpreter. Enable via /xai-tools and call only when the user explicitly requests it.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"code": {
+									"type": "string",
+									"description": "Python code to execute or analyze"
+								}
+							},
+							"required": [
+								"code"
+							]
+						}
+					},
+					{
+						"name": "xai_generate_image",
+						"label": "xAI Image Generation",
+						"description": "Opt-in paid image generation through xAI. Enable via /xai-tools and call only when the user explicitly requests an image.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"prompt": {
+									"type": "string",
+									"description": "Detailed description of the image to generate"
+								},
+								"model": {
+									"type": "string",
+									"description": "Image model to use",
+									"default": "grok-imagine-image-2.0"
+								},
+								"n": {
+									"type": "number",
+									"minimum": 1,
+									"maximum": 4,
+									"description": "Number of images to generate (1-4)"
+								}
+							},
+							"required": [
+								"prompt"
+							]
+						}
+					},
+					{
+						"name": "xai_edit_image",
+						"label": "xAI Edit Image",
+						"description": "Opt-in paid image editing through xAI Imagine using bounded PNG/JPEG workspace files or data URLs. Enable via /xai-tools and call only when the user explicitly requests an edit.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"prompt": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 4000,
+									"description": "Description of the requested edit or transformation"
+								},
+								"image": {
+									"type": "array",
+									"minItems": 1,
+									"maxItems": 3,
+									"description": "One to three bounded local workspace or data-URL references",
+									"items": {
+										"oneOf": [
+											{
+												"type": "object",
+												"properties": {
+													"path": {
+														"type": "string",
+														"description": "PNG/JPEG path inside the current workspace"
+													}
+												},
+												"required": [
+													"path"
+												],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"data_url": {
+														"type": "string",
+														"description": "Strict bounded PNG/JPEG base64 data URL"
+													}
+												},
+												"required": [
+													"data_url"
+												],
+												"additionalProperties": false
+											}
+										]
+									}
+								},
+								"aspect_ratio": {
+									"type": "string",
+									"enum": [
+										"1:1",
+										"16:9",
+										"9:16",
+										"4:3",
+										"3:4",
+										"3:2",
+										"2:3",
+										"2:1",
+										"1:2",
+										"19.5:9",
+										"9:19.5",
+										"20:9",
+										"9:20",
+										"auto"
+									],
+									"description": "Required for multiple references; omitted on the wire for one reference"
+								}
+							},
+							"required": [
+								"prompt",
+								"image"
+							],
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "xai_image_to_video",
+						"label": "xAI Image to Video",
+						"description": "Opt-in high-cost image-to-video generation using one bounded PNG/JPEG workspace file or data URL. Enable via /xai-tools and call only when explicitly requested.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"image": {
+									"oneOf": [
+										{
+											"type": "object",
+											"properties": {
+												"path": {
+													"type": "string",
+													"description": "PNG/JPEG path inside the current workspace"
+												}
+											},
+											"required": [
+												"path"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"data_url": {
+													"type": "string",
+													"description": "Strict bounded PNG/JPEG base64 data URL"
+												}
+											},
+											"required": [
+												"data_url"
+											],
+											"additionalProperties": false
+										}
+									]
+								},
+								"prompt": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 4000,
+									"description": "Optional motion or animation guidance"
+								},
+								"duration": {
+									"type": "number",
+									"enum": [
+										6,
+										10
+									],
+									"default": 6
+								},
+								"resolution": {
+									"type": "string",
+									"enum": [
+										"480p",
+										"720p"
+									],
+									"default": "480p"
+								}
+							},
+							"required": [
+								"image"
+							],
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "xai_critique",
+						"label": "xAI Critique",
+						"description": "Opt-in critique through a separate high-reasoning xAI API request. Enable via /xai-tools and call only when explicitly requested.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"content": {
+									"type": "string",
+									"description": "The code, text, design, or idea to critique"
+								},
+								"aspect": {
+									"type": "string",
+									"description": "Focus area: code, design, writing, logic, security, performance, etc."
+								},
+								"tone": {
+									"type": "string",
+									"description": "Tone of critique: constructive, strict, balanced",
+									"default": "constructive"
+								}
+							},
+							"required": [
+								"content"
+							]
+						}
+					},
+					{
+						"name": "xai_analyze_image",
+						"label": "xAI Image Analysis",
+						"description": "Opt-in image analysis through a separate xAI API request. Enable via /xai-tools and call only when explicitly requested.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"image": {
+									"type": "string",
+									"description": "Image URL, local file path, or base64 data URL"
+								},
+								"question": {
+									"type": "string",
+									"description": "Question to ask about the image (default: describe in detail)"
+								}
+							},
+							"required": [
+								"image"
+							]
+						}
+					},
+					{
+						"name": "xai_deep_research",
+						"label": "xAI Deep Research",
+						"description": "Opt-in paid multi-step web/X research with Grok. Enable via /xai-tools and call only when the user explicitly requests xAI research.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"topic": {
+									"type": "string",
+									"description": "Research topic or question"
+								},
+								"depth": {
+									"type": "string",
+									"description": "Research depth: low, medium, high",
+									"default": "high"
+								}
+							},
+							"required": [
+								"topic"
+							]
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "xai-usage",
+						"description": "Show xAI subscription usage, export CSV, or manage the optional session status"
+					},
+					{
+						"name": "xai-tools",
+						"description": "Enable or disable network-backed xAI tools for this session"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"input",
+					"model_select",
+					"session_shutdown",
+					"session_start",
+					"turn_end"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@alphazede/bearing-lite": {
+		"version": "1.1.6",
+		"entries": [],
+		"extensions": [],
+		"errors": []
+	},
+	"@indexyz/pi-provider-sub2api": {
+		"version": "0.1.40",
+		"entries": [
+			"<agent>/npm/node_modules/@indexyz/pi-provider-sub2api/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": []
+			}
+		],
+		"errors": []
+	},
+	"@schuettc/pi-auto-review": {
+		"version": "0.22.1-schuettc.1",
+		"entries": [
+			"<agent>/npm/node_modules/@schuettc/pi-auto-review/src/index.ts"
+		],
+		"extensions": [],
+		"errors": [
+			"Failed to load extension: Cannot find module '@gotgenes/pi-permission-system'"
+		]
+	},
+	"@kvidzibo/pi-mem": {
+		"version": "0.17.0",
+		"entries": [
+			"<agent>/npm/node_modules/@kvidzibo/pi-mem/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "memory",
+						"label": "Memory",
+						"description": "Stage new lessons as session-local candidates; evaluation chooses project or global scope and only user-approved promotions become shared memory. Candidates are provisional and recalled only to their originating session. Similar candidates are evaluated through /pi-mem evaluate, not exposed to submitting agents. Active lessons are recalled automatically; no on-demand reads. ID-based actions retain scope and target only current-project or global lessons. add/supersede require text, evidence, and basis: validated_learning for verified discoveries, validated_fix for corrections, or user_request for explicit memory requests. Evidence describes the verification or explicit memory request. supersede requires an active lesson id; it creates a replacement and archives the original atomically. archive requires id. add accepts no scope; evaluation assigns scope at promotion. reason optionally records why a change was made in the retained activity log. Lesson content is retained: supersede rather than edit it; no restore or delete. Repeated candidate submissions do not add independent votes. No secrets or raw transcripts. In ephemeral sessions, writes require basis=user_request.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"add",
+										"supersede",
+										"archive"
+									]
+								},
+								"id": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 9007199254740991,
+									"description": "Stable lesson number from the #id suffix."
+								},
+								"text": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 1200
+								},
+								"evidence": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 600
+								},
+								"reason": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 600
+								},
+								"basis": {
+									"type": "string",
+									"enum": [
+										"validated_learning",
+										"validated_fix",
+										"user_request"
+									]
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "memory_audit",
+						"label": "Memory audit proposal",
+						"description": "Submit the complete structured proposal for a user-requested memory audit. Requires the auditId from the current audit export. Only audited active IDs are allowed. Actions: archive, move_global. One action per ID, with a short reason. Empty changes means no warranted changes. Nothing changes without the user's Apply all choice in the extension UI; Cancel changes nothing. Approval applies the whole batch atomically across audited scopes, rejecting stale lessons or duplicate destinations. Do not apply audit changes through memory or shell commands.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"auditId",
+								"changes"
+							],
+							"properties": {
+								"auditId": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 80
+								},
+								"changes": {
+									"type": "array",
+									"items": {
+										"anyOf": [
+											{
+												"type": "object",
+												"required": [
+													"id",
+													"action",
+													"reason"
+												],
+												"properties": {
+													"id": {
+														"type": "integer",
+														"minimum": 1,
+														"maximum": 9007199254740991
+													},
+													"action": {
+														"type": "string",
+														"const": "archive"
+													},
+													"reason": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 600
+													}
+												},
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"required": [
+													"id",
+													"action",
+													"reason"
+												],
+												"properties": {
+													"id": {
+														"type": "integer",
+														"minimum": 1,
+														"maximum": 9007199254740991
+													},
+													"action": {
+														"type": "string",
+														"const": "move_global"
+													},
+													"reason": {
+														"type": "string",
+														"minLength": 1,
+														"maxLength": 600
+													}
+												},
+												"additionalProperties": false
+											}
+										]
+									},
+									"maxItems": 10000
+								}
+							},
+							"additionalProperties": false
+						}
+					},
+					{
+						"name": "memory_evaluate",
+						"label": "Candidate evaluation proposal",
+						"description": "Submit the complete structured proposal for the current user-requested candidate evaluation. Use evaluationId from the staged export and partition all supplied candidate IDs exactly once into equivalent groups or singletons. Propose clearer combined wording without unsupported claims. Previous similarity judgments are suggestions. No candidates are promoted without individual Yes selections and Finish evaluation in the UI. No keeps candidates pending. Only exported candidates are eligible; configured independent-occurrence and distinct-project thresholds are enforced. Never apply proposals through memory or shell commands.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"evaluationId",
+								"groups"
+							],
+							"properties": {
+								"evaluationId": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 80
+								},
+								"groups": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"candidateIds",
+											"text",
+											"evidence",
+											"scope",
+											"reason",
+											"recommend"
+										],
+										"properties": {
+											"candidateIds": {
+												"type": "array",
+												"items": {
+													"type": "integer",
+													"minimum": 1,
+													"maximum": 9007199254740991
+												},
+												"minItems": 1,
+												"maxItems": 10000
+											},
+											"text": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 1200
+											},
+											"evidence": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 600
+											},
+											"scope": {
+												"type": "string",
+												"enum": [
+													"project",
+													"global"
+												]
+											},
+											"reason": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 600
+											},
+											"recommend": {
+												"type": "boolean"
+											}
+										},
+										"additionalProperties": false
+									},
+									"maxItems": 10000
+								}
+							},
+							"additionalProperties": false
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "pi-mem",
+						"description": "Open the project memory menu, or use lesson subcommands"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"before_agent_start",
+					"context",
+					"input",
+					"session_compact",
+					"session_shutdown",
+					"session_start",
+					"session_tree"
+				]
+			}
+		],
+		"errors": []
+	},
+	"diffing": {
+		"version": "0.21.10",
+		"entries": [
+			"<agent>/npm/node_modules/diffing/extensions/pi/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "diffing_status",
+						"label": "Diffing Status",
+						"description": "Report the active diffing review session for the current repo: server state, mode (web/tui/gh-pr), scope, and base URL. Call this first before other diffing tools.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "diffing_start_review",
+						"label": "Start Review",
+						"description": "Start (or reuse) a diffing web review session for the current repo's working tree, or a GitHub PR with prRef. Returns the human review URL. Use before handing work to a human.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"prRef": {
+									"type": "string",
+									"description": "GitHub PR reference to review instead of the working tree: bare number, owner/repo#N, or full URL."
+								},
+								"reuse": {
+									"type": "boolean",
+									"description": "Reuse the active session if one is running. Default: true.",
+									"default": true
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_comments",
+						"label": "Diffing Comments",
+						"description": "Snapshot the current review comments as XML (or JSON). Use --open to see only unresolved threads. Parse the returned XML to act on feedback.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"open": {
+									"type": "boolean",
+									"description": "Only include open (unresolved) comment threads. Default: true.",
+									"default": true
+								},
+								"format": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "xml"
+										},
+										{
+											"type": "string",
+											"const": "json"
+										},
+										{
+											"type": "string",
+											"const": "md"
+										}
+									],
+									"description": "Output format. Default: xml."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_reply",
+						"label": "Diffing Reply",
+						"description": "Append a reply to an existing comment thread by id. Answers questions; does not resolve.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId",
+								"body"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string",
+									"description": "UUID of the comment thread to reply to."
+								},
+								"body": {
+									"type": "string",
+									"description": "Markdown reply body."
+								},
+								"model": {
+									"type": "string",
+									"description": "Model name to attribute. Defaults to the active model."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_resolve",
+						"label": "Diffing Resolve",
+						"description": "Mark a review comment thread resolved. Use after addressing a change request.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string",
+									"description": "UUID of the comment thread."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_unresolve",
+						"label": "Diffing Unresolve",
+						"description": "Re-open a previously resolved comment thread.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string",
+									"description": "UUID of the comment thread."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_progress",
+						"label": "Diffing Progress",
+						"description": "Post a live progress toast to the review UI so the human sees status while work is underway. Safe to call frequently.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"message"
+							],
+							"properties": {
+								"message": {
+									"type": "string",
+									"description": "Progress message, e.g. 'Addressing L42…'."
+								},
+								"pct": {
+									"type": "number",
+									"description": "Optional 0-100 completion percent."
+								},
+								"model": {
+									"type": "string",
+									"description": "Model name to attribute. Defaults to the active model."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_await_review",
+						"label": "Diffing Await Review",
+						"description": "Synchronously wait (long-poll) until the human releases the review ('Send to agent'), then return the comments XML. Exit code 2 (or a timeout) is an expected park signal — do not silent-loop; resume once the human says the review is ready.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"timeout": {
+									"type": "number",
+									"description": "Max seconds to block. Default: 60 (park beyond that).",
+									"default": 60
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_submit",
+						"label": "Diffing Plan Submit",
+						"description": "Submit (or resubmit) a markdown plan for human review. Pass the plan as file (path) or body (inline text). Returns the plan id and review URL. Default handoff is async: share the URL, end the turn, act on the verdict when the human decides.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"file": {
+									"type": "string",
+									"description": "Path to the plan markdown file. Use the body parameter instead to submit inline text."
+								},
+								"body": {
+									"type": "string",
+									"description": "Inline plan markdown body."
+								},
+								"title": {
+									"type": "string",
+									"description": "Display title. Defaults to the plan's first heading."
+								},
+								"planId": {
+									"type": "string",
+									"description": "Resubmit a revised body for an existing plan id (bumps version, resets verdict)."
+								},
+								"model": {
+									"type": "string",
+									"description": "Authoring model. Defaults to the active model."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_await",
+						"label": "Diffing Plan Await",
+						"description": "Synchronously wait until the human decides on the submitted plan, then return the <plan-review> XML with the verdict. Exit code 2 is an expected park signal — do not silent-loop.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"timeout": {
+									"type": "number",
+									"description": "Max seconds to block. Default: 60 (park beyond that).",
+									"default": 60
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_list",
+						"label": "Diffing Plan List",
+						"description": "List submitted plans for the current repo (id, decision, version, open comments, title).",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON instead of the table."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_show",
+						"label": "Diffing Plan Show",
+						"description": "Show a single plan as <plan-review> XML (or raw JSON) including the verdict and open comments.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"planId": {
+									"type": "string",
+									"description": "Plan id. Omit for the latest plan."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON instead of XML."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_reply",
+						"label": "Diffing Plan Reply",
+						"description": "Reply to an inline plan comment (the owning plan is resolved automatically).",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId",
+								"body"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string",
+									"description": "UUID of the plan comment."
+								},
+								"body": {
+									"type": "string",
+									"description": "Markdown reply body."
+								},
+								"model": {
+									"type": "string",
+									"description": "Model name to attribute. Defaults to the active model."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_plan_resolve",
+						"label": "Diffing Plan Resolve",
+						"description": "Mark a plan comment resolved.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string",
+									"description": "UUID of the plan comment."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_submit",
+						"label": "Diffing Mockup Submit",
+						"description": "Submit HTML mockup screen(s) for visual review. HARD RULE — one state per screen: never tabs/accordions/toggles/modals/JS swaps. Pass html, a file/dir already under ~/.diffing/…/mockup-sources/, or screens [{id, html}]. Call diffing_design show first. Share the URL and park unless asked to wait. Resubmit with mockupId to bump the version. Fix any in-page-state or generic-style hints before parking.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"html": {
+									"type": "string",
+									"description": "Single-screen HTML body."
+								},
+								"file": {
+									"type": "string",
+									"description": "HTML file or directory of screens (never inside the consumer git tree)."
+								},
+								"screens": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"id",
+											"html"
+										],
+										"properties": {
+											"id": {
+												"type": "string",
+												"description": "Screen id (slugified)."
+											},
+											"html": {
+												"type": "string",
+												"description": "Screen HTML body."
+											}
+										}
+									},
+									"description": "Multi-screen: array of {id, html}. Mutually exclusive with html/file."
+								},
+								"title": {
+									"type": "string"
+								},
+								"mockupId": {
+									"type": "string",
+									"description": "Resubmit this id."
+								},
+								"model": {
+									"type": "string"
+								},
+								"source": {
+									"type": "string"
+								},
+								"mode": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "fragment"
+										},
+										{
+											"type": "string",
+											"const": "document"
+										}
+									],
+									"description": "fragment = body contents wrapped by the published design-system shell. document = full HTML, no wrap. Default: server default."
+								},
+								"designSystem": {
+									"type": "string",
+									"description": "Design-system id to bind (default system if omitted)."
+								},
+								"planId": {
+									"type": "string",
+									"description": "Optional plan id this mockup illustrates."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_await",
+						"label": "Diffing Mockup Await",
+						"description": "Sync wait for a mockup verdict. Prefer park after submit unless asked to wait.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"timeout": {
+									"type": "number",
+									"description": "Seconds to wait. Default 25."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_reply",
+						"label": "Diffing Mockup Reply",
+						"description": "Reply to a mockup comment thread.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId",
+								"body"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string"
+								},
+								"body": {
+									"type": "string"
+								},
+								"model": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_resolve",
+						"label": "Diffing Mockup Resolve",
+						"description": "Mark a mockup comment resolved.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"commentId"
+							],
+							"properties": {
+								"commentId": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_list",
+						"label": "Diffing Mockup List",
+						"description": "List submitted HTML mockups for this repo (id, decision, version, screen count, open comments, title).",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON. Default: false."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_show",
+						"label": "Diffing Mockup Show",
+						"description": "Fetch one mockup by id (defaults to the latest), including screens and comments. Prefer diffing_mockup_inspect for bounded reads.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"mockupId": {
+									"type": "string",
+									"description": "Mockup id. Default: latest."
+								},
+								"version": {
+									"type": "number",
+									"description": "Historical version to render."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON. Default: false."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_versions",
+						"label": "Diffing Mockup Versions",
+						"description": "List version snapshots for a mockup.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"mockupId"
+							],
+							"properties": {
+								"mockupId": {
+									"type": "string",
+									"description": "Mockup id."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON. Default: false."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_inspect",
+						"label": "Diffing Mockup Inspect",
+						"description": "Read compact, bounded mockup data without transferring screen HTML. view=summary (headline stats), comments (paged comment list), comment (one thread), screen (screen source), preview (layout report and optional screenshot metadata — never starts AI). Filter by comment scope: status, screenId, viewport (desktop|tablet|mobile), version. context=none|anchor|source controls anchor detail. Prefer this over diffing_mockup_show.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"view"
+							],
+							"properties": {
+								"view": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "summary"
+										},
+										{
+											"type": "string",
+											"const": "comments"
+										},
+										{
+											"type": "string",
+											"const": "comment"
+										},
+										{
+											"type": "string",
+											"const": "screen"
+										},
+										{
+											"type": "string",
+											"const": "preview"
+										}
+									],
+									"description": "What to read. Default: summary.",
+									"default": "summary"
+								},
+								"mockupId": {
+									"type": "string",
+									"description": "Mockup id. Default: latest."
+								},
+								"status": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "open"
+										},
+										{
+											"type": "string",
+											"const": "resolved"
+										}
+									],
+									"description": "Filter comments by status."
+								},
+								"screenId": {
+									"type": "string",
+									"description": "Filter by screen id."
+								},
+								"viewport": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "desktop"
+										},
+										{
+											"type": "string",
+											"const": "tablet"
+										},
+										{
+											"type": "string",
+											"const": "mobile"
+										}
+									],
+									"description": "Filter by viewport."
+								},
+								"version": {
+									"type": "number",
+									"description": "Filter comments by the mockup version they were created on."
+								},
+								"commentId": {
+									"type": "string",
+									"description": "For view=comment: the thread id."
+								},
+								"cursor": {
+									"type": "number",
+									"description": "Pagination cursor."
+								},
+								"limit": {
+									"type": "number",
+									"description": "Max results per page."
+								},
+								"context": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "none"
+										},
+										{
+											"type": "string",
+											"const": "anchor"
+										},
+										{
+											"type": "string",
+											"const": "source"
+										}
+									],
+									"description": "Anchor detail: none, anchor (locators), source (+contextHtml). Default: anchor.",
+									"default": "anchor"
+								},
+								"pretty": {
+									"type": "boolean",
+									"description": "Indent JSON output."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_screen",
+						"label": "Diffing Mockup Screen",
+						"description": "One-screen revision of an HTML mockup. action=upsert adds/replaces a screen (html or file), remove deletes a screen, patch replaces the first exact occurrence of text with replacement, replace-region replaces the inner HTML of the first [data-diffing=region] element (prefer this when the comment has a data-diffing target). Every success bumps the mockup version; pass expectedVersion to guard racing edits (409 version-mismatch, nothing applied). For multi-screen revisions, resubmit via diffing_mockup_submit with the same mockupId.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action",
+								"mockupId",
+								"screenId"
+							],
+							"properties": {
+								"action": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "upsert"
+										},
+										{
+											"type": "string",
+											"const": "remove"
+										},
+										{
+											"type": "string",
+											"const": "patch"
+										},
+										{
+											"type": "string",
+											"const": "replace-region"
+										}
+									],
+									"description": "Revision op."
+								},
+								"mockupId": {
+									"type": "string",
+									"description": "Mockup id."
+								},
+								"screenId": {
+									"type": "string",
+									"description": "Screen id."
+								},
+								"html": {
+									"type": "string",
+									"description": "For upsert: inline screen HTML (alternative to file)."
+								},
+								"file": {
+									"type": "string",
+									"description": "For upsert: HTML file path; '-' for stdin."
+								},
+								"label": {
+									"type": "string",
+									"description": "For upsert: optional screen label."
+								},
+								"text": {
+									"type": "string",
+									"description": "For patch: exact text to replace (first occurrence)."
+								},
+								"region": {
+									"type": "string",
+									"description": "For replace-region: data-diffing attribute value of the block to replace."
+								},
+								"replacement": {
+									"type": "string",
+									"description": "For patch: replacement text. For replace-region: new inner HTML."
+								},
+								"expectedVersion": {
+									"type": "number",
+									"description": "Guard: current mockup version. 409 on mismatch."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_threads",
+						"label": "Diffing Mockup Threads",
+						"description": "Atomic single-op mockup thread mutation: reply (agent answer), edit (comment body or a reply), delete (comment or reply), resolve, unresolve. Thread ops never bump the mockup version. For several ops, call once per op; each call is validated before apply.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action",
+								"commentId"
+							],
+							"properties": {
+								"action": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "reply"
+										},
+										{
+											"type": "string",
+											"const": "edit"
+										},
+										{
+											"type": "string",
+											"const": "delete"
+										},
+										{
+											"type": "string",
+											"const": "resolve"
+										},
+										{
+											"type": "string",
+											"const": "unresolve"
+										}
+									],
+									"description": "Thread op."
+								},
+								"commentId": {
+									"type": "string",
+									"description": "Comment thread id."
+								},
+								"replyId": {
+									"type": "string",
+									"description": "For edit/delete: target a reply instead of the comment."
+								},
+								"body": {
+									"type": "string",
+									"description": "For reply/edit: markdown body."
+								},
+								"model": {
+									"type": "string",
+									"description": "For reply: authoring model. Defaults to the active model."
+								},
+								"mockupId": {
+									"type": "string",
+									"description": "Owning mockup id (auto-detected from commentId when omitted)."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_mockup_handoff",
+						"label": "Diffing Mockup Handoff",
+						"description": "Compact implementation handoff after a mockup is approved: tokens, screens with intent, components used, leftover nits. Prefer this over dumping every screen's HTML. Call after decision=approved, before writing product UI.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"mockupId": {
+									"type": "string",
+									"description": "Mockup id. Default: latest."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON. Default: XML handoff."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_design",
+						"label": "Diffing Design System",
+						"description": "Per-repo design system used before authoring mockup HTML. show/list: read tokens, guidelines, components. extract: scan the consumer repo and write a draft (does not publish). propose: update the draft. publish: human action only — do not publish unless the human asked. Omit id for the default system.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"action"
+							],
+							"properties": {
+								"action": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "show"
+										},
+										{
+											"type": "string",
+											"const": "list"
+										},
+										{
+											"type": "string",
+											"const": "extract"
+										},
+										{
+											"type": "string",
+											"const": "propose"
+										},
+										{
+											"type": "string",
+											"const": "publish"
+										}
+									],
+									"description": "Design-system op. Default: show."
+								},
+								"id": {
+									"type": "string",
+									"description": "System id. Default: default."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON. Default: false."
+								},
+								"from": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "css"
+										},
+										{
+											"type": "string",
+											"const": "text"
+										}
+									],
+									"description": "For extract: scan source. Default: css."
+								},
+								"title": {
+									"type": "string",
+									"description": "For extract/propose: system title."
+								},
+								"guidelines": {
+									"type": "string",
+									"description": "For propose: markdown guidelines to write on the draft."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_url",
+						"label": "Diffing URL",
+						"description": "Print the base URL of the active diffing review server for this repo, or report that none is running.",
+						"parameters": {
+							"type": "object",
+							"properties": {}
+						}
+					},
+					{
+						"name": "diffing_sessions",
+						"label": "Diffing Sessions",
+						"description": "List, select, or stop live diffing review sessions for this repo. use: retarget agent commands to a session id prefix. stop: graceful shutdown of a session.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"action": {
+									"anyOf": [
+										{
+											"type": "string",
+											"const": "list"
+										},
+										{
+											"type": "string",
+											"const": "use"
+										},
+										{
+											"type": "string",
+											"const": "stop"
+										}
+									],
+									"description": "Action. Default: list."
+								},
+								"value": {
+									"type": "string",
+									"description": "Session id prefix (for use/stop), or 'active'/'all'."
+								},
+								"json": {
+									"type": "boolean",
+									"description": "Emit JSON for list. Default: false."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_gh_overview",
+						"label": "Diffing GitHub PR Overview",
+						"description": "Probe the active GitHub PR review session: PR identity, head/base SHAs, patch size, and conversation/draft counts. Fails cleanly when no PR session is active.",
+						"parameters": {
+							"type": "object",
+							"properties": {
+								"json": {
+									"type": "boolean",
+									"description": "Emit raw JSON instead of human-readable output."
+								}
+							}
+						}
+					},
+					{
+						"name": "diffing_cli",
+						"label": "Diffing CLI",
+						"description": "Escape hatch: run any documented `diffing` agent subcommand with raw arguments. Examples: ['inspect','summary'], ['comment','edit',id,'--body','...'], ['gh','threads','--unresolved'], ['gh','reviews'], ['plan','versions',id], ['doctor'], ['mode']. Returns stdout + exit code; exit 3 means no server.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"args"
+							],
+							"properties": {
+								"args": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"description": "Subcommand and arguments, e.g. ['inspect','summary']."
+									}
+								},
+								"stdin": {
+									"type": "string",
+									"description": "Optional text to pipe to the command's stdin (e.g. reply bodies)."
+								}
+							}
+						}
+					}
+				],
+				"commands": [
+					{
+						"name": "diffing",
+						"description": "Open (or reuse) the diffing review UI for the current repo's working tree and print the review URL. Optional arg passthrough, e.g. `/diffing --staged` or `/diffing main..feature`."
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"resources_discover",
+					"session_start"
+				]
+			}
+		],
+		"errors": []
+	},
+	"compact-adviser": {
+		"version": "0.1.12",
+		"entries": [
+			"<agent>/npm/node_modules/compact-adviser/src/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [],
+				"commands": [
+					{
+						"name": "compact-adviser",
+						"description": "Configure persistent compaction advice, experimental auto, and token minimum"
+					}
+				],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"agent_settled",
+					"before_agent_start",
+					"input",
+					"model_select",
+					"session_before_compact",
+					"session_before_fork",
+					"session_before_switch",
+					"session_before_tree",
+					"session_compact",
+					"session_shutdown",
+					"session_start",
+					"session_tree",
+					"turn_end"
+				]
+			}
+		],
+		"errors": []
+	},
+	"@zhushanwen/pi-ask-user": {
+		"version": "7.3.4",
+		"entries": [
+			"<agent>/npm/node_modules/@zhushanwen/pi-ask-user/index.ts"
+		],
+		"extensions": [
+			{
+				"tools": [
+					{
+						"name": "ask_user",
+						"label": "Ask User",
+						"description": "Ask the user to resolve ambiguity you cannot resolve yourself. Use ONLY when ALL hold: (1) the request has ≥2 reasonable approaches, (2) you have already gathered context (read/grep) and the answer is still genuinely ambiguous, and (3) picking wrong means redoing real work. One question = one decision with mutually exclusive options.\n\nDo NOT use this tool to outsource judgment you should make — if you can form a defensible recommendation from the codebase, proceed and state your choice. Do NOT use for trivia answerable by reading code/docs, or for simple confirmations (\"I'll delete X\") where plain text suffices. You cannot use this tool to collect free-form requirements, long-form feedback, or multi-paragraph input — it returns short selections only.\n\nIf you recommend an option, prefix its label with \"(Recommended)\" and list it first. For structured multi-option decisions, prefer this tool over plain-text questions; for everything else, reply in plain text.\n\nExamples:\n{\"questions\":[{\"question\":\"Which DB?\",\"context\":\"Need ACID + JSON columns.\",\"options\":[{\"label\":\"(Recommended) Postgres\",\"description\":\"Mature, strong consistency.\"},{\"label\":\"SQLite\",\"description\":\"Zero-ops, embedded.\"}]}]}\n\n{\"questions\":[{\"header\":\"DB\",\"question\":\"Which database?\",\"options\":[{\"label\":\"Postgres\",\"description\":\"...\"},{\"label\":\"SQLite\",\"description\":\"...\"}]},{\"header\":\"Region\",\"question\":\"Which region?\",\"options\":[{\"label\":\"us-east-1\",\"description\":\"...\"},{\"label\":\"eu-west-1\",\"description\":\"...\"}]}]}\n\nDon't:\n- Passing options as a string array (\"options\":[\"A\",\"B\"]) — each option must be {\"label\",\"description\"}.\n- Forgetting header in multi-question mode (questions.length > 1).\n- Flattening question/header/options to the top level — wrap them in questions:[...].\n- Including an \"Other\" option — it is added automatically.",
+						"parameters": {
+							"type": "object",
+							"required": [
+								"questions"
+							],
+							"properties": {
+								"questions": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"required": [
+											"question",
+											"options"
+										],
+										"properties": {
+											"question": {
+												"type": "string",
+												"description": "Full question text. Must be one self-contained decision; avoid multi-part questions. ≤1000 chars; plain single-line text only (no newlines or control characters)."
+											},
+											"header": {
+												"type": "string",
+												"description": "Tab label, <=12 chars, required when questions.length > 1. Omit for a single question."
+											},
+											"context": {
+												"type": "string",
+												"description": "Short context summary shown above the question. Pass what you learned from read/grep so the user can answer without re-explaining."
+											},
+											"options": {
+												"type": "array",
+												"items": {
+													"anyOf": [
+														{
+															"type": "object",
+															"required": [
+																"label"
+															],
+															"properties": {
+																"label": {
+																	"type": "string",
+																	"description": "Short, mutually exclusive option label (also the answer value returned to the LLM — keep it concise, ≤ ~40 chars). To recommend an option, prefix its label with '(Recommended)' and list it first."
+																},
+																"description": {
+																	"type": "string",
+																	"description": "Short rationale shown under the label and in the split-pane preview. Helps the user decide — explain the tradeoff, don't restate the label."
+																}
+															}
+														},
+														{
+															"type": "string"
+														}
+													]
+												},
+												"minItems": 2,
+												"maxItems": 4,
+												"description": "2-4 mutually exclusive options. Each must be a {label, description} OBJECT, never a bare string; do NOT include an 'Other' option — it is added automatically."
+											},
+											"multiSelect": {
+												"type": "boolean",
+												"description": "Default false. Set true only when more than one option can validly apply simultaneously; otherwise leave false for a single best answer."
+											}
+										}
+									},
+									"minItems": 1,
+									"maxItems": 4,
+									"description": "1-4 questions, each a single decision. Batch only related decisions that the user should resolve together; otherwise ask the most important one alone."
+								}
+							}
+						}
+					}
+				],
+				"commands": [],
+				"flags": [],
+				"shortcuts": [],
+				"events": [
+					"session_start"
 				]
 			}
 		],

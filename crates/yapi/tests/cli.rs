@@ -356,6 +356,6 @@ fn update_self_names_the_installer() {
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/ri/main/install.sh | sh\n"
+        "yapi cannot update itself. Install the latest release the way you installed yapi, such as:\n  curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh\n"
     );
 }

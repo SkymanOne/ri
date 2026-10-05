@@ -183,7 +183,7 @@ fn points_to_a_source_build_without_a_release() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("in the latest release at"), "{stderr}");
     assert!(
-        stderr.contains("cargo install --locked --git https://github.com/SkymanOne/ri yapi"),
+        stderr.contains("cargo install --locked --git https://github.com/SkymanOne/yapi yapi"),
         "{stderr}"
     );
 }

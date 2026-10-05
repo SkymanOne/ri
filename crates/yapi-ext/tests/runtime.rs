@@ -439,6 +439,83 @@ export default function (pi) {
     );
 }
 
+/// `dns.lookup` resolves through the host, as SSRF guards such as
+/// pi-web-access's expect before they fetch, and needs the network grant.
+/// Only `localhost` and address literals resolve here, so the test needs no
+/// network.
+#[tokio::test(flavor = "multi_thread")]
+async fn looks_up_host_names_through_the_host() {
+    let dir = scratch("dns");
+    let main = r#"
+import dns, { lookup } from "node:dns";
+import { lookup as lookupAsync, getDefaultResultOrder } from "node:dns/promises";
+export default async function (pi) {
+	const all = await lookupAsync("localhost", { all: true, verbatim: true });
+	const one = await new Promise((resolve, reject) =>
+		lookup("127.0.0.1", (error, address, family) => (error ? reject(error) : resolve(`${address}/${family}`))),
+	);
+	const literal = await dns.promises.lookup("::1", { family: 4 });
+	let invalid;
+	try {
+		lookup("localhost", { family: 5 }, () => {});
+	} catch (error) {
+		invalid = error.code;
+	}
+	let unsupported;
+	try {
+		dns.resolve4("localhost", () => {});
+	} catch (error) {
+		unsupported = error.code;
+	}
+	pi.registerCommand("probe", {
+		description: [
+			all.length > 0 && all.every(({ address, family }) => (address === "127.0.0.1" && family === 4) || (address === "::1" && family === 6)),
+			one,
+			`${literal.address}/${literal.family}`,
+			invalid,
+			unsupported,
+			getDefaultResultOrder(),
+		].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    let (_instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    assert_eq!(
+        extension["commands"][0]["description"],
+        "true,127.0.0.1/4,::1/6,ERR_INVALID_ARG_VALUE,ERR_NOT_SUPPORTED,verbatim"
+    );
+
+    let denied = r#"
+import { lookup } from "node:dns/promises";
+export default async function (pi) {
+	const message = await lookup("localhost").then(() => "resolved", (error) => error.message);
+	pi.registerCommand("probe", { description: message, handler: async () => {} });
+}
+"#;
+    let dir = scratch("dns-denied");
+    let path = dir.join("main.ts");
+    std::fs::write(&path, denied).unwrap();
+    let mut options = Options::new(dir.clone());
+    options.grants.network = false;
+    let instance = Instance::start(&engine(), options, Arc::new(NoBridge))
+        .await
+        .unwrap();
+    let loaded = instance
+        .call(
+            "load",
+            &json!({"cwd": dir, "extensions": [{"id": 1, "path": path}]}),
+        )
+        .await
+        .unwrap();
+    let description = loaded["extensions"][0]["commands"][0]["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(description.contains("Network access"), "{loaded}");
+}
+
 /// Scripts without module syntax load as CommonJS, imports may carry a
 /// query, and TypeScript grammar checks do not stop a module, as with pi's
 /// loader.

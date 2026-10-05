@@ -1,7 +1,7 @@
 // Lists the most-downloaded npm packages with the `pi-package` keyword, the
 // keyword that puts a package in pi's package gallery.
 //
-//   node top-packages.mjs 500 > ../packages/top500.json
+//   node top-packages.mjs 500 > ../packages/ranked.json
 //
 // npm's search, ranked by popularity, returns its first few thousand matches
 // with their downloads over the last month. They are sorted by those

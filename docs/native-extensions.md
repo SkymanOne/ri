@@ -33,14 +33,14 @@ shout/
 The package takes the directory's name, and `--name` sets another. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
 
 ```sh
-cargo generate --git https://github.com/SkymanOne/ri crates/yapi/templates/extension
+cargo generate --git https://github.com/SkymanOne/yapi crates/yapi/templates/extension
 ```
 
 To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK from the yapi repository:
 
 ```toml
 [dependencies]
-yapi-extension-api = { git = "https://github.com/SkymanOne/ri" }
+yapi-extension-api = { git = "https://github.com/SkymanOne/yapi" }
 ```
 
 An extension registers what it offers in an init function and exports it with `extension!`:

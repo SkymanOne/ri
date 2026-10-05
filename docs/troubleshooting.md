@@ -16,4 +16,4 @@ yapi found no credentials. Set a provider's API key or run `/login`, as describe
 
 ## Reporting a problem
 
-`/debug` writes what yapi rendered and sent to `~/.yapi/agent/yapi-debug.log`. Include it in a report on the [issue tracker](https://github.com/SkymanOne/ri/issues), with the output of `yapi --version` and your operating system.
+`/debug` writes what yapi rendered and sent to `~/.yapi/agent/yapi-debug.log`. Include it in a report on the [issue tracker](https://github.com/SkymanOne/yapi/issues), with the output of `yapi --version` and your operating system.

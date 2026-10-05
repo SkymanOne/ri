@@ -1334,7 +1334,7 @@
 
 	// Modules yapi cannot provide: any use throws. 15-node-exports.js gives them
 	// Node's export names so imports link.
-	for (const name of ["tls", "http2", "dgram", "cluster", "inspector", "vm", "v8", "dns", "dns/promises", "inspector/promises", "repl", "test", "wasi"]) {
+	for (const name of ["tls", "http2", "dgram", "cluster", "inspector", "vm", "v8", "inspector/promises", "repl", "test", "wasi"]) {
 		builtins[name] = new Proxy(
 			{},
 			{
@@ -1435,6 +1435,74 @@
 		isIPv6,
 		BlockList,
 		SocketAddress,
+	};
+	// ----- dns ----------------------------------------------------------------
+	// lookup resolves through the host's resolver, as getaddrinfo does in Node,
+	// which SSRF guards call before fetching. The resolve* queries, reverse
+	// lookups and Resolver throw, through the names 15-node-exports.js adds.
+	let defaultOrder = "verbatim";
+	const lookupOptions = (options) => {
+		const given = typeof options === "number" ? { family: options } : (options ?? {});
+		const family = given.family === "IPv4" ? 4 : given.family === "IPv6" ? 6 : Number(given.family ?? 0);
+		if (![0, 4, 6].includes(family)) {
+			throw Object.assign(new TypeError(`The property 'options.family' must be one of: 0, 4, 6. Received ${given.family}`), { code: "ERR_INVALID_ARG_VALUE" });
+		}
+		const order = given.order ?? (given.verbatim === undefined ? defaultOrder : given.verbatim ? "verbatim" : "ipv4first");
+		return { family, all: given.all === true, order };
+	};
+	// Node's result: one address and its family, or all of them.
+	const lookupResult = async (hostname, options) => {
+		const { family, all, order } = lookupOptions(options);
+		if (typeof hostname !== "string") {
+			throw Object.assign(new TypeError(`The "hostname" argument must be of type string. Received ${typeof hostname}`), { code: "ERR_INVALID_ARG_TYPE" });
+		}
+		const literal = isIPv4(hostname) ? 4 : isIPv6(hostname) ? 6 : 0;
+		let addresses;
+		if (literal) addresses = [{ address: hostname, family: literal }];
+		else if (hostname === "") addresses = [];
+		else {
+			const result = await yapi.op("dns.lookup", { hostname });
+			addresses = (result.addresses ?? []).filter((entry) => family === 0 || entry.family === family);
+			if (result.error !== undefined || addresses.length === 0) {
+				const error = new Error(`getaddrinfo ENOTFOUND ${hostname}`);
+				throw Object.assign(error, { errno: -3008, code: "ENOTFOUND", syscall: "getaddrinfo", hostname });
+			}
+			if (order !== "verbatim") {
+				const first = order === "ipv6first" ? 6 : 4;
+				addresses = [...addresses.filter((entry) => entry.family === first), ...addresses.filter((entry) => entry.family !== first)];
+			}
+		}
+		if (all) return addresses;
+		return addresses[0] ?? { address: null, family: family === 6 ? 6 : 4 };
+	};
+	const dnsPromises = {
+		lookup: (hostname, options) => lookupResult(hostname, options),
+		getDefaultResultOrder: () => defaultOrder,
+		setDefaultResultOrder: (order) => {
+			defaultOrder = order;
+		},
+	};
+	builtins["dns/promises"] = dnsPromises;
+	builtins.dns = {
+		lookup(hostname, options, callback) {
+			if (typeof options === "function") [options, callback] = [undefined, options];
+			// Invalid arguments throw here, as in Node; lookup failures reach the callback.
+			const { all } = lookupOptions(options);
+			if (typeof hostname !== "string") {
+				throw Object.assign(new TypeError(`The "hostname" argument must be of type string. Received ${typeof hostname}`), { code: "ERR_INVALID_ARG_TYPE" });
+			}
+			lookupResult(hostname, options).then(
+				(result) => (all ? callback(null, result) : callback(null, result.address, result.family)),
+				(error) => callback(error),
+			);
+			return {};
+		},
+		promises: dnsPromises,
+		getDefaultResultOrder: dnsPromises.getDefaultResultOrder,
+		setDefaultResultOrder: dnsPromises.setDefaultResultOrder,
+		ADDRCONFIG: 32,
+		V4MAPPED: 8,
+		ALL: 16,
 	};
 	class Agent extends EventEmitter {
 		constructor(options = {}) {

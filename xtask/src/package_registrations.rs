@@ -1,7 +1,13 @@
 //! `cargo xtask package-registrations`: installs the most-downloaded npm pi
-//! packages (`tests/fixtures/pi/packages/top500.json`) with yapi's npm client,
+//! packages (`tests/fixtures/pi/packages/ranked.json`) with yapi's npm client,
 //! loads their extensions, and compares what they register with pi's
 //! (`registrations.json`, from `packages.mjs` in the fixture generator).
+//!
+//! The comparison counts the first [`COUNTED`] packages in the list's order
+//! that pi itself installs and loads in its sandbox, so every counted package
+//! has pi's result to compare with. A package that fails in yapi counts as a
+//! difference. A package works without errors when it matches and neither
+//! side reports a load error.
 //!
 //! Needs network access to the npm registry. Extensions run without network
 //! or process access, see only their scratch directory, and get the same five
@@ -20,6 +26,8 @@ use yapi_ext::{Engine, ExtensionHost, Grants, Options};
 use yapi_types::rpc::SourceInfo;
 
 const FIXTURES: &str = "tests/fixtures/pi/packages";
+/// Packages the comparison counts.
+const COUNTED: usize = 500;
 
 /// Compare yapi's registrations of the top npm pi packages with pi's.
 #[derive(clap::Args)]
@@ -275,7 +283,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
 
     let fixtures = Path::new(FIXTURES);
     let top: Vec<Value> =
-        serde_json::from_str(&std::fs::read_to_string(fixtures.join("top500.json"))?)?;
+        serde_json::from_str(&std::fs::read_to_string(fixtures.join("ranked.json"))?)?;
     let scratch = Path::new("target/package-registrations")
         .canonicalize()
         .or_else(|_| {
@@ -363,12 +371,24 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
         )?,
     )?;
-    let mut actual = BTreeMap::new();
     let mut outcomes: BTreeMap<Outcome, Vec<String>> = BTreeMap::new();
-    for (name, got) in results {
-        let want = without_models_line(expected.get(&name).cloned().unwrap_or(Value::Null));
+    let mut results: BTreeMap<String, Value> = results.into_iter().collect();
+    let mut counted = 0;
+    // Counted packages that work without errors.
+    let mut working = 0;
+    // In the list's order: the first COUNTED packages pi runs count, the
+    // packages pi cannot run are skipped, and the rest are not counted.
+    for package in &top {
+        let name = package["name"].as_str().unwrap_or_default();
+        let Some(got) = results.remove(name) else {
+            continue;
+        };
+        if counted == COUNTED {
+            break;
+        }
+        let want = without_models_line(expected.get(name).cloned().unwrap_or(Value::Null));
         let result = outcome(&got, &want);
-        let version = got["version"].as_str().unwrap_or_default().to_owned();
+        let version = got["version"].as_str().unwrap_or_default();
         eprintln!(
             "{} {name}@{version}",
             match result {
@@ -378,25 +398,37 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                 Outcome::Differs => "DIFFER  ",
             }
         );
-        outcomes.entry(result).or_default().push(name.clone());
-        actual.insert(name, got);
+        if result != Outcome::PiFails {
+            counted += 1;
+            // A match has pi's errors, so neither reports any.
+            working += usize::from(
+                result == Outcome::Match && got["errors"].as_array().is_none_or(Vec::is_empty),
+            );
+        }
+        outcomes.entry(result).or_default().push(name.to_owned());
     }
     let count = |outcome| outcomes.get(&outcome).map_or(0, Vec::len);
-    let comparable = actual.len() - count(Outcome::PiFails);
     eprintln!(
-        "{} packages: {} match pi, {} differ, {} fail to install in yapi, {} fail in pi itself",
-        actual.len(),
+        "{counted} packages: {} match pi, {} differ, {} fail to install in yapi. Skipped {} that fail in pi itself: {}",
         count(Outcome::Match),
         count(Outcome::Differs),
         count(Outcome::RiInstall),
         count(Outcome::PiFails),
+        outcomes
+            .get(&Outcome::PiFails)
+            .map(|names| names.join(", "))
+            .unwrap_or_default(),
     );
-    if comparable > 0 {
+    if counted > 0 {
         eprintln!(
-            "{} of {comparable} comparable packages match ({:.1}%); yapi's registrations are in {}",
+            "{} of {counted} packages match ({:.1}%); yapi's registrations are in {}",
             count(Outcome::Match),
-            100.0 * count(Outcome::Match) as f64 / comparable as f64,
+            100.0 * count(Outcome::Match) as f64 / counted as f64,
             saved.display()
+        );
+        eprintln!(
+            "{working} of {counted} packages work without errors: they load in yapi without errors and register what pi registers ({:.1}%)",
+            100.0 * working as f64 / counted as f64,
         );
     }
     Ok(ExitCode::SUCCESS)

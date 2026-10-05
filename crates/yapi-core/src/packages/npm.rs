@@ -97,6 +97,13 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                         {
                             last.push_str(token);
                         }
+                        // A bare version is exact in npm and a caret range in
+                        // `semver`. Wildcards such as `1.x` mean the same in both.
+                        _ if token.starts_with(|c: char| c.is_ascii_digit())
+                            && !token.contains(['x', 'X', '*']) =>
+                        {
+                            parts.push(format!("={token}"));
+                        }
                         _ => parts.push(token.to_owned()),
                     }
                 }
@@ -120,6 +127,12 @@ pub fn satisfies(version: &str, range: &str) -> bool {
         .is_some_and(|alternatives| alternatives.iter().any(|req| req.matches(&version)))
 }
 
+/// What npm asks a registry for: the abbreviated packument, which holds only
+/// what installs need. Full packuments of long-lived packages run to tens of
+/// megabytes.
+const PACKUMENT_ACCEPT: &str =
+    "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*";
+
 /// A registry client with a per-run packument cache.
 pub struct Npm {
     registry: String,
@@ -135,9 +148,11 @@ impl Npm {
         }
     }
 
-    async fn get(&self, url: &str) -> Result<reqwest::Response, NpmError> {
+    /// GETs `url`, asking for the `accept` media types.
+    async fn get(&self, url: &str, accept: &str) -> Result<reqwest::Response, NpmError> {
         let response = yapi_ai::http::client()
             .get(url)
+            .header(reqwest::header::ACCEPT, accept)
             .send()
             .await
             .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
@@ -156,7 +171,7 @@ impl Npm {
         }
         let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
         let body = self
-            .get(&url)
+            .get(&url, PACKUMENT_ACCEPT)
             .await?
             .bytes()
             .await
@@ -205,7 +220,7 @@ impl Npm {
         let id = format!("{}@{}", text(&manifest["name"]), text(&manifest["version"]));
         let url = manifest["dist"]["tarball"].as_str().unwrap_or_default();
         let bytes = self
-            .get(url)
+            .get(url, "*/*")
             .await?
             .bytes()
             .await
@@ -357,17 +372,26 @@ impl Installer<'_> {
             {
                 return Ok(());
             }
+            // An alias, `npm:<package>@<range>`, installs that package under
+            // `name`.
+            let (package, range) = match range.strip_prefix("npm:") {
+                Some(spec) => {
+                    let (package, range) = super::source::split_npm_spec(spec);
+                    (package, range.unwrap_or_else(|| "*".into()))
+                }
+                None => (name.to_owned(), range.to_owned()),
+            };
             let nested = dependent.join("node_modules").join(name);
-            if installed_version(&nested).is_some_and(|version| satisfies(&version, range)) {
+            if installed_version(&nested).is_some_and(|version| satisfies(&version, &range)) {
                 return Ok(());
             }
             let hoisted = self.root_modules.join(name);
             let target = match installed_version(&hoisted) {
-                Some(version) if satisfies(&version, range) => return Ok(()),
+                Some(version) if satisfies(&version, &range) => return Ok(()),
                 Some(_) => nested,
                 None => hoisted,
             };
-            let manifest = self.npm.pick(name, range).await?;
+            let manifest = self.npm.pick(&package, &range).await?;
             if manifest.get("os").is_some() || manifest.get("cpu").is_some() {
                 // Platform packages carry prebuilt binaries, never JS.
                 return Ok(());
@@ -544,5 +568,17 @@ mod tests {
         assert!(satisfies("0.1.0", "*"));
         assert!(satisfies("1.3.0", "1.2.0 - 1.4.0"));
         assert!(!satisfies("1.0.0-beta.1", "^1.0.0"));
+        // A bare version is exact, and a partial one fixes what it names.
+        assert!(satisfies("0.35.0", "0.35.0"));
+        assert!(!satisfies("0.35.1", "0.35.0"));
+        assert!(!satisfies("1.3.0", "1.2.3"));
+        assert!(satisfies("1.2.9", "1.2"));
+        assert!(!satisfies("1.3.0", "1.2"));
+        assert!(satisfies("1.9.0", "1"));
+        assert!(!satisfies("2.0.0", "1"));
+        assert!(satisfies("1.2.3", "1.2.3 || 2"));
+        assert!(!satisfies("1.2.4", "1.2.3 || 2"));
+        assert!(satisfies("1.2.9", "1.2.x"));
+        assert!(!satisfies("1.3.0", "1.2.x"));
     }
 }
