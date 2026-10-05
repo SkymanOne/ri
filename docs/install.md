@@ -1,19 +1,19 @@
 # Install
 
-ri builds from source with stable Rust. Install Rust with [rustup](https://rustup.rs), then build and install ri:
+yapi builds from source with stable Rust. Install Rust with [rustup](https://rustup.rs), then build and install yapi:
 
 ```sh
-git clone https://github.com/SkymanOne/ri
-cd ri
-cargo install --locked --path crates/ri
+git clone https://github.com/SkymanOne/ri yapi
+cd yapi
+cargo install --locked --path crates/yapi
 ```
 
-Cargo places `ri` in `~/.cargo/bin`. The repository pins its toolchain in `rust-toolchain.toml`, and rustup installs that version on the first build.
+Cargo places `yapi` in `~/.cargo/bin`. The repository pins its toolchain in `rust-toolchain.toml`, and rustup installs that version on the first build.
 
 Check the installation:
 
 ```sh
-ri --version
+yapi --version
 ```
 
 ## Release binaries

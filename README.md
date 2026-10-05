@@ -4,63 +4,66 @@
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" /></a>
 </p>
 
-# ri
+# yapi
 
-ri is a Rust implementation of [pi](https://github.com/earendil-works/pi), a minimal, extensible AI agent for the terminal. It runs pi packages and reads pi's settings, sessions and credentials unchanged, from one native binary that needs no Node.js.
+yapi (Yet Another Pi) is a minimal, extensible agent harness for the terminal, written in Rust. It is a reimplementation of [Pi](https://pi.dev): adapt it to your workflow, not the other way around.
 
-Use ri interactively, automate it in print, JSON or RPC mode, or extend it with pi extensions and native extensions written in Rust.
+yapi reads Pi's settings, sessions and credentials, and runs Pi packages with their extensions, skills, prompt templates and themes unchanged. Use it interactively, automate it in print, JSON or RPC mode, or extend it with Pi extensions and native extensions written in Rust. It ships as one native binary and needs no Node.js.
 
-> ri is pre-release software. It follows pi `v1.0.0`, and [Differences from pi](https://skymanone.github.io/ri/compat.html) lists every intentional difference.
+> yapi is pre-release software. It follows Pi `v1.0.0`. [Differences from Pi](https://skymanone.github.io/ri/compat.html) lists every known difference.
 
 ## Getting started
 
 Build and install the command-line interface with Cargo:
 
 ```bash
-git clone https://github.com/SkymanOne/ri
-cd ri
-cargo install --locked --path crates/ri
+git clone https://github.com/SkymanOne/ri yapi
+cd yapi
+cargo install --locked --path crates/yapi
 ```
 
-This requires a Rust toolchain from [rustup](https://rustup.rs). The version pinned in `rust-toolchain.toml` installs on the first build.
+This requires a Rust toolchain from [rustup](https://rustup.rs). The version pinned in `rust-toolchain.toml` installs on the first build. Linux and macOS are supported.
 
-Start ri in the directory where you want it to work:
+Start yapi in the directory where you want it to work:
 
 ```bash
 cd /path/to/project
-ri
+yapi
 ```
 
-Run `/login` inside ri to connect a subscription or API key. Then give ri a task.
+For a built-in AI provider, run `/login` inside yapi to connect a subscription or API key. Then give yapi a task. yapi supports Pi's providers, from Claude, ChatGPT and GitHub Copilot subscriptions to Amazon Bedrock, Google Vertex AI and a local llama.cpp server.
 
-If you use pi already, `ri import pi` copies your settings, credentials, sessions and packages.
+If you use Pi already, `yapi import pi` copies your settings, credentials, sessions and packages.
 
 See the [documentation](https://skymanone.github.io/ri/) for full setup and usage instructions.
 
-## Models and sign-in
+## How yapi differs from Pi
 
-ri reads the same API key variables as pi, such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. `ri --help` lists every provider.
+yapi keeps Pi's commands, file formats and extension API, so most differences are in how extensions run and how fast the harness is.
 
-`/login` signs in with a Claude Pro or Max, ChatGPT Plus or Pro, or GitHub Copilot subscription, or stores an API key in `~/.ri/agent/auth.json`. [Models and sign-in](https://skymanone.github.io/ri/models.html) covers model selection, custom providers and `ri auth`.
+### Extensions
 
-## Extensions
+Pi runs extensions inside its own Node.js process, with the user's permissions. yapi runs every extension in a WebAssembly sandbox:
 
-ri runs pi extensions unchanged and adds native extensions written in Rust. Both run in WebAssembly sandboxes on one host, load from the same places and ship in the same packages.
+- **Pi extensions run unchanged.** TypeScript and JavaScript extensions run in a QuickJS-NG runtime compiled to WebAssembly. yapi bundles Pi's packages and shims Node's built-in modules, so no Node.js install is needed.
+- **Native extensions are written in Rust.** They build with the `yapi-extension-api` crate for `wasm32-wasip2`, load from the same places as Pi extensions and ship in the same packages.
+- **Limits are enforced by the host.** Each call may compute for 60 seconds and each instance may use 1 GiB of memory. A crashed instance restarts without taking yapi down. File, process, network and environment access goes through grants that the host checks. Packages get Pi's defaults, which allow all four, and per-package restrictions are planned.
+- **Interfaces never wait for an extension.** Custom components render inside the runtime, and yapi paints their last frame.
 
-Compatibility is measured against pi itself:
+What the runtime cannot do: native addons, sockets, threads and SQLite fail when used. Links and images in extension components fall back to text. [Extensions](https://skymanone.github.io/ri/extensions.html) has the details.
+
+Compatibility is measured against Pi itself, with both programs loading the same code:
 
 | Test | Result |
 |---|---|
-| pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in pi |
-| The 500 most-downloaded pi packages on npm | 443 of 475 comparable packages install and register as in pi (93%) |
-| Extension UI | Dialogs, widgets, overlays and custom components match pi's screens row for row |
+| Pi's example extensions | 79 of 79 register the same tools, commands, flags, shortcuts and event handlers as in Pi |
+| The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox give the same registrations and load errors (93%). Of the 367 whose extensions load in Pi without errors, 349 register the same in yapi (95%). |
+| Extension UI | Dialogs, widgets, overlays and custom components match Pi's screens row for row at 80×24 and 120×40 |
 
-pi extensions run in a QuickJS-NG runtime compiled to WebAssembly. ri bundles pi's packages and shims Node's built-in modules, so no Node.js install is needed.
-
-Native extensions build with the `ri-extension-api` crate for `wasm32-wasip2`:
+A native extension:
 
 ```rust
-use ri_extension_api::{Api, Tool, ToolResult, json};
+use yapi_extension_api::{Api, Tool, ToolResult, json};
 
 fn init(api: &mut Api) {
     api.register_tool(Tool::new(
@@ -74,36 +77,41 @@ fn init(api: &mut Api) {
     ));
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);
 ```
-
-Build it and install the result:
 
 ```bash
 cargo build --release --target wasm32-wasip2
-ri install ./target/wasm32-wasip2/release/shout.wasm
+yapi install ./target/wasm32-wasip2/release/shout.wasm
 ```
 
-To share it, put the `.wasm` file in an `extensions` folder of a git repository or npm package. Others then install it like any pi package, with `ri install git:github.com/you/shout` or `ri install npm:shout`. See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.
+See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.
 
-## Performance
+### Performance
 
-| Measure | ri | pi |
+yapi is one native executable, so it does not pay for starting Node.js and loading Pi's JavaScript. Measured on the same Linux machine, as medians:
+
+| Measure | yapi | Pi |
 |---|---|---|
-| `--version` | 2.0 ms | 246 ms |
-| Interactive first paint | 10.0 ms | 330 ms |
-| Idle memory | 15.5 MiB | 106 MiB |
+| `--version` | 2.6 ms | 307.7 ms |
+| Interactive first paint | 12.0 ms | 410.9 ms |
+| Print mode, start to first request byte | 17.2 ms | 451.1 ms |
+| Keystroke to paint, p99, 10,000-line session | 4.7 ms | 11.7 ms |
+| Memory, idle | 18.9 MB | 112.5 MB |
+| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB |
+| Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB |
+| Install size | 32.3 MB | 245.2 MB with Node.js |
 
-Measured on Linux x86_64 with `cargo xtask bench`. [Performance](https://skymanone.github.io/ri/performance.html) has every budget and the macOS results.
+`cargo xtask bench` produces this table, alternating runs of both programs. [Performance](https://skymanone.github.io/ri/performance.html) explains each measure and the method, and shows the ranges, more memory measures and results from GitHub's hosted Linux and macOS runners.
 
 ## Development
 
-Clone the repository and run ri from source:
+Clone the repository and run yapi from source:
 
 ```bash
-git clone https://github.com/SkymanOne/ri
-cd ri
-cargo run -p ri --
+git clone https://github.com/SkymanOne/ri yapi
+cd yapi
+cargo run -p yapi --
 ```
 
 Before submitting changes, run:
@@ -119,4 +127,4 @@ Read [AGENTS.md](AGENTS.md) for the architecture, design decisions and project r
 
 ## License
 
-MIT OR Apache-2.0, at your option. Vendored pi code keeps its MIT notices.
+MIT OR Apache-2.0, at your option. Vendored Pi code keeps its MIT notices.

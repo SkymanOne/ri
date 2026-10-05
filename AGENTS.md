@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Project plan and working rules for `ri`, for human and agent contributors.
+Project plan and working rules for `yapi`, for human and agent contributors.
 
 ## Purpose
 
-`ri` is a Rust reimplementation of the [pi](https://github.com/earendil-works/pi) coding agent. Goals, in priority order:
+`yapi` is a Rust reimplementation of the [pi](https://github.com/earendil-works/pi) coding agent. Goals, in priority order:
 
 1. Run pi packages and read pi's on-disk formats unchanged.
 2. Start faster, use less memory and install smaller than pi.
@@ -39,7 +39,7 @@ License: MIT OR Apache-2.0. Vendored pi JS keeps its MIT notices.
 | Surface | Rule |
 |---|---|
 | `settings.json`, `auth.json`, `models.json`, `keybindings.json`, `mcp.json`, session files | Same formats as pi. Round-trip is byte-identical. |
-| Locations | `~/.ri/agent` (override: `RI_CODING_AGENT_DIR`) and project `.ri/`. `ri import pi` copies pi state. |
+| Locations | `~/.yapi/agent` (override: `YAPI_CODING_AGENT_DIR`) and project `.yapi/`. `yapi import pi` copies pi state. |
 | CLI flags, slash commands, JSON and RPC protocols | Same names and payloads as pi. |
 | Extension API | `ExtensionAPI` as exported by `@earendil-works/pi-coding-agent` 1.0. |
 
@@ -49,25 +49,25 @@ A Cargo workspace whose crates mirror pi's packages, so every behavior traces ba
 
 | Path | Role | pi counterpart |
 |---|---|---|
-| `crates/ri-types` | Serde types for every pi JSON shape: messages, events, session entries, settings, models, extension payloads. | Types across packages |
-| `crates/ri-ai` | Wire APIs, model catalog and registry, cost, credentials, OAuth. | `pi-ai` |
-| `crates/ri-agent` | Agent loop, tool execution, queues, events. | `pi-agent-core` |
-| `crates/ri-tui` | ratatui-based widgets, editor, raw input decoder, ANSI bridge. | `pi-tui` |
-| `crates/ri-core` | Session manager, compaction, settings, resource loading, built-in tools, system prompt, packages, extension runner, MCP. | `pi-coding-agent` core |
-| `crates/ri-ext` | wasmtime host, WIT bindings, capability grants, JS module loader, codemode, embedded `ri-js.wasm`. | Extension loader, `pi-codemode` |
-| `crates/ri` | Binary: CLI, modes, UI adapters. | `pi-coding-agent` CLI and modes |
-| `crates/ri-mock` | Mock provider server: replays HTTP cassettes and records requests. Test support only. | None |
-| `guest/ri-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
-| `guest/ri-extension-api` | Rust SDK for native extensions. | None |
+| `crates/yapi-types` | Serde types for every pi JSON shape: messages, events, session entries, settings, models, extension payloads. | Types across packages |
+| `crates/yapi-ai` | Wire APIs, model catalog and registry, cost, credentials, OAuth. | `pi-ai` |
+| `crates/yapi-agent` | Agent loop, tool execution, queues, events. | `pi-agent-core` |
+| `crates/yapi-tui` | ratatui-based widgets, editor, raw input decoder, ANSI bridge. | `pi-tui` |
+| `crates/yapi-core` | Session manager, compaction, settings, resource loading, built-in tools, system prompt, packages, extension runner, MCP. | `pi-coding-agent` core |
+| `crates/yapi-ext` | wasmtime host, WIT bindings, capability grants, JS module loader, codemode, embedded `yapi-js.wasm`. | Extension loader, `pi-codemode` |
+| `crates/yapi` | Binary: CLI, modes, UI adapters. | `pi-coding-agent` CLI and modes |
+| `crates/yapi-mock` | Mock provider server: replays HTTP cassettes and records requests. Test support only. | None |
+| `guest/yapi-js` | JS runtime component: QuickJS-NG, Node shims, pi API facade, vendored pi JS. | None |
+| `guest/yapi-extension-api` | Rust SDK for native extensions. | None |
 | `wit/` | Versioned WIT packages shared by host and guests. | None |
-| `xtask/` | Developer commands: mock server runner, end-to-end scenarios, benchmarks, model catalog codegen, pi JS vendoring, `ri-js.wasm` build. | Build scripts |
+| `xtask/` | Developer commands: mock server runner, end-to-end scenarios, benchmarks, model catalog codegen, pi JS vendoring, `yapi-js.wasm` build. | Build scripts |
 
 Dependency direction:
-- `ri-types` ← `ri-ai` ← `ri-agent` ← `ri-core` ← `ri-ext` ← `ri`.
-- `ri-tui` ← `ri`.
-- `ri-core` never depends on wasmtime.
+- `yapi-types` ← `yapi-ai` ← `yapi-agent` ← `yapi-core` ← `yapi-ext` ← `yapi`.
+- `yapi-tui` ← `yapi`.
+- `yapi-core` never depends on wasmtime.
 - `guest/` is a separate workspace, so `cargo build` never compiles wasm.
-- `ri-mock` is only ever a dev-dependency.
+- `yapi-mock` is only ever a dev-dependency.
 
 ### Boundary traits
 
@@ -75,14 +75,14 @@ Traits exist only where implementations vary across a crate or plugin boundary. 
 
 | Trait | Crate | Responsibility | Implementors |
 |---|---|---|---|
-| `Provider` | `ri-ai` | Stream an assistant message for a model and context. | One per wire API; extension-registered providers |
-| `OAuthProvider` | `ri-ai` | Log in, refresh, derive an API key from credentials. | Built-in subscriptions; extension-registered providers |
-| `Tool` | `ri-agent` | Declare a schema; execute with progress updates and cancellation. | Built-in, MCP and extension tools |
-| `AgentHooks` | `ri-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `ri-core` session, which dispatches to extensions |
-| `Extension` | `ri-core` | Register capabilities; handle events, tool calls and commands; build components for the transcript items it draws. | Built-ins (MCP); wasm instances in `ri-ext` |
-| `Bridge` | `ri-ext` | Answer an instance's requests and operations that need the session. | The session bridge of loaded extensions; `NoBridge` for headless loading |
-| `ExtensionUi` | `ri-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
-| `ComponentHost` | `ri-core` | Render an extension component for a width; deliver input to it. | Extension runtimes in `ri-ext` |
+| `Provider` | `yapi-ai` | Stream an assistant message for a model and context. | One per wire API; extension-registered providers |
+| `OAuthProvider` | `yapi-ai` | Log in, refresh, derive an API key from credentials. | Built-in subscriptions; extension-registered providers |
+| `Tool` | `yapi-agent` | Declare a schema; execute with progress updates and cancellation. | Built-in, MCP and extension tools |
+| `AgentHooks` | `yapi-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `yapi-core` session, which dispatches to extensions |
+| `Extension` | `yapi-core` | Register capabilities; handle events, tool calls and commands; build components for the transcript items it draws. | Built-ins (MCP); wasm instances in `yapi-ext` |
+| `Bridge` | `yapi-ext` | Answer an instance's requests and operations that need the session. | The session bridge of loaded extensions; `NoBridge` for headless loading |
+| `ExtensionUi` | `yapi-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
+| `ComponentHost` | `yapi-core` | Render an extension component for a width; deliver input to it. | Extension runtimes in `yapi-ext` |
 
 Add a trait only when a second implementation or a plugin boundary exists.
 
@@ -100,43 +100,43 @@ Add a trait only when a second implementation or a plugin boundary exists.
 | TypeScript and resolution | `oxc_transformer`, `oxc_resolver` |
 | MCP | A port of `pi-mcp`, so requests and errors match pi's |
 | Logging, errors | `tracing`; `thiserror`, `anyhow` |
-| Tests | pi goldens, `ri-mock` (on `hyper`), `portable-pty` and `vt100` for terminal scenarios |
+| Tests | pi goldens, `yapi-mock` (on `hyper`), `portable-pty` and `vt100` for terminal scenarios |
 
 ## Extension system
 
 Two tiers share one host, one WIT world and one package format.
 
-- **Native.** WebAssembly components built with `guest/ri-extension-api` for `wasm32-wasip2`, following Zed's model.
-- **pi compat.** Unmodified pi npm extensions run inside `ri-js`, a single QuickJS-NG runtime component. It contains:
+- **Native.** WebAssembly components built with `guest/yapi-extension-api` for `wasm32-wasip2`, following Zed's model.
+- **pi compat.** Unmodified pi npm extensions run inside `yapi-js`, a single QuickJS-NG runtime component. It contains:
   - Node built-in shims;
   - vendored pi JS (`pi-tui`, `typebox`);
   - a facade for `@earendil-works/pi-coding-agent`, `pi-ai` and `pi-agent-core`, including the legacy `@mariozechner/*` names.
 
 ### Packages
 
-- Manifests use the `package.json` `pi` key. An optional `ri` key with the same shape takes precedence in ri.
-- Entries dispatch by file type: `.ts` and `.js` go to `ri-js`, `.wasm` goes to the native host.
+- Manifests use the `package.json` `pi` key. An optional `yapi` key with the same shape takes precedence in yapi.
+- Entries dispatch by file type: `.ts` and `.js` go to `yapi-js`, `.wasm` goes to the native host.
 - Installation uses a built-in npm registry client: semver, integrity checks, nested `node_modules`, no lifecycle scripts. pi's `npmCommand` setting overrides it.
 - Git sources use the `git` CLI.
 - Native addons are installed but never built. An extension fails only when it loads one.
 
 ### Module loading
 
-Module loading runs on the host, in `ri-ext`:
+Module loading runs on the host, in `yapi-ext`:
 - `oxc_resolver` handles Node resolution and `oxc_transformer` handles TypeScript, with a content-hash transpile cache.
 - pi host packages resolve to the vendored modules.
 
 ### WIT
 
 - Typed WIT carries the mechanics: lifecycle, calls and op resolution, render, input, errors.
-- pi API calls and events travel as JSON defined in `ri-types`, the same shapes used by RPC mode and session files.
+- pi API calls and events travel as JSON defined in `yapi-types`, the same shapes used by RPC mode and session files.
 - Each released world is frozen in `wit/since_vX.Y.Z/`, and the host keeps one binding module per version.
 - The target is wasip2. wasip3 async arrives later as a new WIT version.
 
 ### Trust and capabilities
 
 - One wasm instance per trust domain:
-  - all full-trust packages share one `ri-js` instance;
+  - all full-trust packages share one `yapi-js` instance;
   - each package with restricted grants gets its own;
   - codemode gets a fresh instance with no grants.
 - Default grants match pi: filesystem, process, network.
@@ -154,7 +154,7 @@ Module loading runs on the host, in `ri-ext`:
 ### UI bridge
 
 - JS components render ANSI lines inside the guest.
-- The TUI paints a remote component's cached lines, parsed from ANSI by `ri-tui`, and maps pi's cursor marker to the frame cursor.
+- The TUI paints a remote component's cached lines, parsed from ANSI by `yapi-tui`, and maps pi's cursor marker to the frame cursor.
 - The TUI requests renders for dirty handles and paints the last result, so it never waits on JS.
 - Inside the guest, pi-tui reports a terminal without hyperlink or image support, so components use pi-tui's own text fallbacks.
 - Known losses are listed in [docs/compat.md](docs/compat.md).
@@ -167,17 +167,18 @@ Feasibility study, prior art and rejected alternatives: [dev/research/extension-
 |---|---|---|
 | 1 | All extensions are wasm components hosted by wasmtime. | Memory isolation, resource limits and enforceable grants; one host for both tiers. |
 | 2 | One QuickJS-NG runtime component for pi packages. | A wasm build per package is impractical. rquickjs ships wasip2 bindings, and pi already uses QuickJS on WASI for codemode. |
-| 3 | No Node sidecar in v0.1. | ri must not require a Node install. A sidecar can be added later behind `Extension`. |
-| 4 | JSON payloads over typed WIT mechanics. | One schema in `ri-types` serves sessions, RPC and extensions. WIT versions change only when mechanics change. |
+| 3 | No Node sidecar in v0.1. | yapi must not require a Node install. A sidecar can be added later behind `Extension`. |
+| 4 | JSON payloads over typed WIT mechanics. | One schema in `yapi-types` serves sessions, RPC and extensions. WIT versions change only when mechanics change. |
 | 5 | Host-side module loader. | Native-speed transforms, a smaller guest, and codemode carries no compiler. |
 | 6 | Built-in npm client that skips lifecycle scripts. | No Node dependency. Lifecycle scripts mostly build native addons, which the wasm runtime cannot load. |
 | 7 | Instances are trust domains. | Grants cannot be enforced between packages that share one JS realm. |
 | 8 | pi-tui's line model on ratatui text types, with an ANSI bridge. | Components render styled lines for a width, as in pi-tui, so regular mode keeps pi's scrollback redraw and extension components map one to one. ratatui supplies styled text and test buffers. Extension components lose only clickable links and inline images, which fall back to text. |
 | 9 | Raw input decoder ported from pi's `keys.ts`. | JS components expect raw terminal bytes in `handleInput`. crossterm's parser discards them. |
-| 10 | pi formats in ri's own directories. | Package and session compatibility without two tools writing one directory. |
-| 11 | `ri-js.wasm` is committed with an inputs hash. | Plain `cargo build` needs no wasm toolchain. CI rejects stale artifacts. |
+| 10 | pi formats in yapi's own directories. | Package and session compatibility without two tools writing one directory. |
+| 11 | `yapi-js.wasm` is committed with an inputs hash. | Plain `cargo build` needs no wasm toolchain. CI rejects stale artifacts. |
 | 12 | Linux and macOS are tier 1. | Windows specifics (PowerShell tool, console input) follow once the core is stable. |
-| 13 | pi JSON files are order-preserving documents; `ri-types` structs are views over them. | pi's key order depends on the code path and on user edits, so only the document round-trips byte-identically. |
+| 13 | pi JSON files are order-preserving documents; `yapi-types` structs are views over them. | pi's key order depends on the code path and on user edits, so only the document round-trips byte-identically. |
+| 14 | The binary embeds `yapi-js.wasm` deflated, and the release profile optimizes Cranelift's code generator for size. | Both are used only when the component cache has no entry, once per runtime version. Together they save 4.8 MB for about 0.2 s more on that one compile. |
 
 ## Performance budgets
 
@@ -185,15 +186,17 @@ These are initial targets, calibrated against pi in M0–M1.
 - CI fails on a regression above 10%.
 - Benchmark reports state the ratio to pi measured on the same machine.
 
-| Metric | Budget | Measured with |
+| Metric | Budget | Measured with `cargo xtask bench` |
 |---|---|---|
-| `ri --version` | < 5 ms | `hyperfine` |
-| Print mode, start to first request byte | < 25 ms | `hyperfine` against the mock SSE server |
-| Interactive first paint, no extensions | < 40 ms | `cargo xtask bench` |
-| Keystroke to paint, p99, 10k-line session | < 16 ms | `cargo xtask bench` |
-| Idle RSS, no extensions | < 30 MB | RSS sample 2 s after first paint |
-| Idle RSS, 10 JS extensions | < 70 MB | RSS sample 2 s after first paint |
-| Stripped release binary | < 35 MB | `cargo bloat --crates` |
+| `yapi --version` | < 5 ms | Median of 20 runs |
+| Print mode, start to first request byte | < 25 ms | Median of 20 runs against a local listener |
+| Interactive first paint, no extensions | < 40 ms | Median of 20 runs in a pseudo-terminal |
+| Keystroke to paint, p99, 10k-line session | < 16 ms | 200 keystrokes in a pseudo-terminal |
+| Idle RSS, no extensions | < 30 MB | Median of 5 samples, each 2 s after first paint |
+| Idle RSS, 10 JS extensions | < 70 MB | Median of 5 samples, each 2 s after first paint |
+| Stripped release binary | < 35 MB | File size of the release build, which the profile strips |
+
+MB means 10^6 bytes. Runs alternate between yapi and pi, and reports give the range of the samples next to each median.
 
 ## Development guidelines
 
@@ -214,12 +217,12 @@ These are initial targets, calibrated against pi in M0–M1.
 
 - Rust stable, pinned in `rust-toolchain.toml`, edition 2024.
 - KISS: choose the simplest design that matches pi's behavior. No speculative generality.
-- DRY: one definition per concept. pi JSON shapes live only in `ri-types`.
-- Serialize pi JSON only through `ri_types::json`, which matches `JSON.stringify`. Clippy rejects direct `serde_json::to_*` calls.
+- DRY: one definition per concept. pi JSON shapes live only in `yapi-types`.
+- Serialize pi JSON only through `yapi_types::json`, which matches `JSON.stringify`. Clippy rejects direct `serde_json::to_*` calls.
 - Errors:
-  - `thiserror` in libraries; `anyhow` only in `ri` and `xtask`.
+  - `thiserror` in libraries; `anyhow` only in `yapi` and `xtask`.
   - No `unwrap` or `expect` outside tests unless the invariant is stated at the call site.
-- `#![forbid(unsafe_code)]` in every crate except `ri-ext` and `guest/*`.
+- `#![forbid(unsafe_code)]` in every crate except `yapi-ext` and `guest/*`.
 - Log through `tracing`. Stdout belongs to print, JSON and RPC output.
 - Async on tokio:
   - no lock held across `.await`;
@@ -237,19 +240,19 @@ These are initial targets, calibrated against pi in M0–M1.
 
 ### Testing
 
-- No network access and no real providers in tests. Use the faux provider, or `ri-mock` with cassettes from `tests/fixtures/cassettes`.
+- No network access and no real providers in tests. Use the faux provider, or `yapi-mock` with cassettes from `tests/fixtures/cassettes`.
 - pi-produced golden fixtures live in `tests/fixtures/pi`; its README explains how to regenerate them. Formats must round-trip byte-identical.
 - End-to-end scenarios in `tests/fixtures/scenarios` run a program against a cassette in a fresh directory and a cleared environment:
-  - `cargo test` compares ri's normalized output and requests with goldens recorded from pi;
+  - `cargo test` compares yapi's normalized output and requests with goldens recorded from pi;
   - `cargo xtask e2e --record-pi` rewrites the goldens; `cargo xtask e2e --differential` compares live runs;
   - the suite needs `rg` and `fd` on `PATH` for the search tool scenarios;
-  - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `RI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines;
+  - TUI scenarios type into the program in a pseudo-terminal and compare the final screen text, without each product's startup header; `YAPI_SETTLE_MS` lengthens the quiet time that ends each step on slow machines;
   - RPC scenarios send each command once the previous one's response or awaited event has arrived;
   - client scenarios run a Node script from the fixture generator, such as pi's `RpcClient` example, against the program; `cargo test` skips them when the generator's packages are not installed;
   - goldens are recorded on Linux; a scenario whose screen shows text pi chooses by platform, such as macOS's Option key name, sets `"os": "linux"` and runs only there;
   - MCP scenarios and tests connect to the Python test server in `tests/fixtures/mcp`, so they need `python3` on `PATH`.
 - Prefer goldens recorded from pi over hand-written expectations. Components with pi counterparts are tested against pi-tui's output (`tests/fixtures/pi/generator`).
-- A nightly differential suite runs pinned pi (requires Node) and ri on the same inputs and compares:
+- A nightly differential suite runs pinned pi (requires Node) and yapi on the same inputs and compares:
   - event streams;
   - session files;
   - extension registrations;
@@ -259,7 +262,7 @@ These are initial targets, calibrated against pi in M0–M1.
 ### Compatibility
 
 - Behavior follows pi `v1.0.0`. Record every intentional deviation in [docs/compat.md](docs/compat.md) with its reason.
-- For an upstream bump, diff pi's extension `types.ts` and docs between tags. Update `ri-types`, the JS facade and the oracle pin in one change.
+- For an upstream bump, diff pi's extension `types.ts` and docs between tags. Update `yapi-types`, the JS facade and the oracle pin in one change.
 
 ### Docs and git
 
@@ -277,11 +280,11 @@ v0.1 is the completion of M7. Progress, deferred work and pending live checks ar
 
 | Milestone | Scope | Exit criteria |
 |---|---|---|
-| M0 | Workspace, CI on Linux and macOS, `ri-types`, `xtask`, mock SSE server. | pi golden files round-trip byte-identical. |
-| M1 | `ri-ai` with Anthropic Messages, OpenAI Completions, OpenAI Responses and Google; catalog; cost; API keys; print and JSON modes; `ri-mock` record mode. | JSON event streams match pi on recorded cassettes: text, thinking, tools, images, abort. |
+| M0 | Workspace, CI on Linux and macOS, `yapi-types`, `xtask`, mock SSE server. | pi golden files round-trip byte-identical. |
+| M1 | `yapi-ai` with Anthropic Messages, OpenAI Completions, OpenAI Responses and Google; catalog; cost; API keys; print and JSON modes; `yapi-mock` record mode. | JSON event streams match pi on recorded cassettes: text, thinking, tools, images, abort. |
 | M2 | Agent loop, built-in tools, system prompt, context files, session tree, fork and clone, compaction, skills, prompt templates. | Sessions written by either tool open in the other. Scenario suite matches pi. |
 | M3 | Interactive TUI: editor, keybindings, themes, selectors, tree view, regular mode. | Snapshot suite green. First-paint and keystroke budgets met. |
-| M4 | Remaining wire APIs, OAuth subscriptions, RPC mode with extension UI, MCP. | pi's `rpc-client` example drives ri. OAuth checklist passes. MCP fixtures pass. |
-| M5 | `ri-ext`, `ri-js` without UI, module loader, packages, Rust SDK. | At least 90% of pi's 79 example extensions and of the top 50 npm pi packages register the same tools, commands, flags and shortcuts as in pi. |
+| M4 | Remaining wire APIs, OAuth subscriptions, RPC mode with extension UI, MCP. | pi's `rpc-client` example drives yapi. OAuth checklist passes. MCP fixtures pass. |
+| M5 | `yapi-ext`, `yapi-js` without UI, module loader, packages, Rust SDK. | At least 90% of pi's 79 example extensions and of the top 50 npm pi packages register the same tools, commands, flags and shortcuts as in pi. |
 | M6 | Extension UI: dialogs, widgets, overlays, renderers, custom editors. | Per-row visible text matches pi at 80×24 and 120×40, except listed deviations. No frame is blocked by JS. |
-| M7 | Codemode, performance budgets, `ri import pi`, release packaging. | Codemode has no file, process or network access. All budgets met on tier-1 targets. |
+| M7 | Codemode, performance budgets, `yapi import pi`, release packaging. | Codemode has no file, process or network access. All budgets met on tier-1 targets. |

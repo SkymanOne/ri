@@ -34,13 +34,13 @@ jobs:
       - name: Check the committed extension runtime
         run: cargo xtask js-runtime --check
       - name: Build
-        run: cargo build --release --locked -p ri --target ${{ matrix.target }}
+        run: cargo build --release --locked -p yapi --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
-          name="ri-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="yapi-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir "$name"
-          cp "target/${{ matrix.target }}/release/ri" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+          cp "target/${{ matrix.target }}/release/yapi" README.md LICENSE-MIT LICENSE-APACHE "$name/"
           tar -czf "$name.tar.gz" "$name"
           if command -v sha256sum >/dev/null; then
             sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
@@ -49,8 +49,8 @@ jobs:
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ri-${{ matrix.target }}
-          path: ri-*.tar.gz*
+          name: yapi-${{ matrix.target }}
+          path: yapi-*.tar.gz*
 
   publish:
     needs: build
@@ -64,4 +64,4 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes ri-*.tar.gz*
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes yapi-*.tar.gz*

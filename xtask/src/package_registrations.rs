@@ -1,5 +1,5 @@
 //! `cargo xtask package-registrations`: installs the most-downloaded npm pi
-//! packages (`tests/fixtures/pi/packages/top500.json`) with ri's npm client,
+//! packages (`tests/fixtures/pi/packages/top500.json`) with yapi's npm client,
 //! loads their extensions, and compares what they register with pi's
 //! (`registrations.json`, from `packages.mjs` in the fixture generator).
 //!
@@ -13,15 +13,15 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::Context;
-use ri_core::packages::{PackageManager, npm::default_registry};
-use ri_core::settings::SettingsManager;
-use ri_ext::{Engine, ExtensionHost, Grants, Options};
-use ri_types::rpc::SourceInfo;
 use serde_json::{Value, json};
+use yapi_core::packages::{PackageManager, npm::default_registry};
+use yapi_core::settings::SettingsManager;
+use yapi_ext::{Engine, ExtensionHost, Grants, Options};
+use yapi_types::rpc::SourceInfo;
 
 const FIXTURES: &str = "tests/fixtures/pi/packages";
 
-/// Compare ri's registrations of the top npm pi packages with pi's.
+/// Compare yapi's registrations of the top npm pi packages with pi's.
 #[derive(clap::Args)]
 pub struct Args {
     /// Only these packages, separated by commas. A new run's results replace
@@ -196,7 +196,7 @@ async fn load(
     .to_string()
     .replace(&*agent.to_string_lossy(), "<agent>")
     .replace(&*cwd.to_string_lossy(), "<cwd>")
-    .replace(".ri/", ".pi/");
+    .replace(".yapi/", ".pi/");
     Ok(serde_json::from_str(&text)?)
 }
 
@@ -207,8 +207,8 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     runtime.block_on(compare(args))
 }
 
-/// `value` without pi's codemode `models` line, a pointer into pi's docs for
-/// classifier and image models, which ri does not have (docs/compat.md).
+/// `value` without codemode's `models` line, which points into pi's install
+/// for pi and into the agent directory for yapi (docs/compat.md).
 fn without_models_line(value: Value) -> Value {
     const LINE: &str = "\n- `models`: classifiers and image generation. Read ";
     match value {
@@ -235,14 +235,14 @@ fn without_models_line(value: Value) -> Value {
 /// How one package compares.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Outcome {
-    /// ri registers what pi registers.
+    /// yapi registers what pi registers.
     Match,
     /// pi itself fails to install or load the package, or Node's permission
     /// model, which sandboxes pi's side, stops one of its extensions.
     PiFails,
-    /// ri's npm client fails where pi's install succeeds.
+    /// yapi's npm client fails where pi's install succeeds.
     RiInstall,
-    /// The registrations differ, or ri fails to load an installed package.
+    /// The registrations differ, or yapi fails to load an installed package.
     Differs,
 }
 
@@ -291,7 +291,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         })
         .filter(|(_, name, _)| args.only.is_empty() || args.only.contains(name))
         .collect();
-    let saved = scratch.join("registrations-ri.json");
+    let saved = scratch.join("registrations-yapi.json");
     if let Some(index) = args.measure {
         let (_, name, version) = selected
             .iter()
@@ -305,7 +305,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             .unwrap_or_else(|err| json!({"version": version, "crash": err.to_string()}));
         // The installs are large; only the results are kept.
         let _ = std::fs::remove_dir_all(&dir);
-        println!("\n{MARKER}{}", ri_types::json::to_string(&got)?);
+        println!("\n{MARKER}{}", yapi_types::json::to_string(&got)?);
         return Ok(ExitCode::SUCCESS);
     }
     let previous: BTreeMap<String, Value> = std::fs::read_to_string(&saved)
@@ -342,7 +342,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     all.insert(name.clone(), got.clone());
                     // Replaced whole, so a reader never sees half a file.
-                    if let Ok(text) = ri_types::json::to_string_pretty(&*all, "\t") {
+                    if let Ok(text) = yapi_types::json::to_string_pretty(&*all, "\t") {
                         let partial = saved.with_extension("json.partial");
                         if std::fs::write(&partial, text).is_ok() {
                             let _ = std::fs::rename(&partial, saved);
@@ -357,7 +357,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             .collect()
             .await
     };
-    // Read last, so pi's side can be regenerated while ri's runs.
+    // Read last, so pi's side can be regenerated while yapi's runs.
     let expected: BTreeMap<String, Value> = serde_json::from_str(
         &std::fs::read_to_string(fixtures.join("registrations.json")).context(
             "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
@@ -384,7 +384,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     let count = |outcome| outcomes.get(&outcome).map_or(0, Vec::len);
     let comparable = actual.len() - count(Outcome::PiFails);
     eprintln!(
-        "{} packages: {} match pi, {} differ, {} fail to install in ri, {} fail in pi itself",
+        "{} packages: {} match pi, {} differ, {} fail to install in yapi, {} fail in pi itself",
         actual.len(),
         count(Outcome::Match),
         count(Outcome::Differs),
@@ -393,7 +393,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     );
     if comparable > 0 {
         eprintln!(
-            "{} of {comparable} comparable packages match ({:.1}%); ri's registrations are in {}",
+            "{} of {comparable} comparable packages match ({:.1}%); yapi's registrations are in {}",
             count(Outcome::Match),
             100.0 * count(Outcome::Match) as f64 / comparable as f64,
             saved.display()

@@ -1,6 +1,6 @@
 [package]
 name = "hello"
-description = "An example native ri extension: a tool, a command, a flag and an event handler."
+description = "An example native yapi extension: a tool, a command, a flag and an event handler."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,4 +10,4 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-ri-extension-api = { path = "../../ri-extension-api" }
+yapi-extension-api = { path = "../../yapi-extension-api" }

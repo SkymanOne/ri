@@ -31,34 +31,27 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
-      - name: Install pi for comparison
-        working-directory: tests/fixtures/pi/generator
-        run: npm ci
+      - name: Install Pi for comparison
+        # Pi's documented install: its published package, without lifecycle
+        # scripts. The prefix holds nothing else, so its size is Pi's.
+        run: npm install --prefix pi-install --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@1.0.0
       - name: Build
-        run: cargo build --release --locked -p ri
+        run: cargo build --release --locked -p yapi
       - name: Linked libraries
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
-            otool -L target/release/ri
+            otool -L target/release/yapi
           else
-            ldd target/release/ri
+            ldd target/release/yapi
           fi
       - name: Measure
-        run: cargo xtask bench --pi tests/fixtures/pi/generator/node_modules/.bin/pi --runs 20 | tee bench.txt
-      - name: Stripped binary size
-        shell: bash
-        run: |
-          cp target/release/ri ri-stripped
-          strip ri-stripped
-          bytes=$(wc -c < ri-stripped | tr -d ' ')
-          echo "stripped binary: $bytes bytes" | tee -a bench.txt
+        run: cargo xtask bench --pi pi-install/node_modules/.bin/pi --pi-install pi-install | tee bench.txt
       - name: Summary
         shell: bash
         run: |
           {
             echo "### ${{ matrix.os }}"
-            echo '```'
+            echo
             cat bench.txt
-            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

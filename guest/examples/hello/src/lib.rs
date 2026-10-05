@@ -1,7 +1,7 @@
 //! An example native extension: a tool, a command, a flag and an event
 //! handler.
 
-use ri_extension_api::{Api, FlagType, Tool, ToolResult, append_entry, get_flag, json, notify};
+use yapi_extension_api::{Api, FlagType, Tool, ToolResult, append_entry, get_flag, json, notify};
 
 fn init(api: &mut Api) {
     api.register_flag(
@@ -50,4 +50,4 @@ fn init(api: &mut Api) {
     });
 }
 
-ri_extension_api::extension!(init);
+yapi_extension_api::extension!(init);

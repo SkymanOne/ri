@@ -1,6 +1,6 @@
 # Provider cassettes
 
-HTTP exchanges with model providers, replayed by `ri-mock`. Each wire API has a directory and each scenario a file, for example `anthropic-messages/text.json`. The format is defined in `crates/ri-mock/src/cassette.rs`.
+HTTP exchanges with model providers, replayed by `yapi-mock`. Each wire API has a directory and each scenario a file, for example `anthropic-messages/text.json`. The format is defined in `crates/yapi-mock/src/cassette.rs`.
 
 Cassettes are hand-written or recorded. `opencode-go/` holds live recordings of OpenCode Go's Anthropic, Completions and Responses routes, made with pi as the client. To record, run the proxy and point a client at it instead of the provider:
 

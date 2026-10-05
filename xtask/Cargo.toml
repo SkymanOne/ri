@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Development tasks for ri. Run with `cargo xtask <command>`."
+description = "Development tasks for yapi. Run with `cargo xtask <command>`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,10 +12,10 @@ publish.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 futures-util.workspace = true
-ri-core.workspace = true
-ri-ext.workspace = true
-ri-mock.workspace = true
-ri-types.workspace = true
+yapi-core.workspace = true
+yapi-ext.workspace = true
+yapi-mock.workspace = true
+yapi-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

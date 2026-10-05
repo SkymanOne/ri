@@ -1,8 +1,8 @@
 # Native extension examples
 
-The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/ri/tree/main/guest/examples). Four are ports of pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/ri-ext/tests/native.rs`.
+The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/ri/tree/main/guest/examples). Four are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/yapi-ext/tests/native.rs`.
 
-| Example | Shows | pi counterpart |
+| Example | Shows | Pi counterpart |
 |---|---|---|
 | [`hello`](#hello) | A tool, a command, a flag and two event handlers | `hello.ts` |
 | [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, a boolean flag | `permission-gate.ts` |
@@ -17,10 +17,10 @@ Build any example from the `guest` folder of a clone, then load it for one run:
 ```sh
 cd guest
 cargo build --release --target wasm32-wasip2 -p permission-gate
-ri -e target/wasm32-wasip2/release/permission_gate.wasm
+yapi -e target/wasm32-wasip2/release/permission_gate.wasm
 ```
 
-Cargo names the file after the crate with underscores in place of dashes. `ri install` takes the same path to keep the extension.
+Cargo names the file after the crate with underscores in place of dashes. `yapi install` takes the same path to keep the extension.
 
 ## hello
 
@@ -37,7 +37,7 @@ api.on("tool_call", |event, _ctx| {
 
 ## permission-gate
 
-Blocks dangerous `bash` commands: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. Starting ri with `--allow-dangerous` turns the check off.
+Blocks dangerous `bash` commands: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. Starting yapi with `--allow-dangerous` turns the check off.
 
 ```rust
 api.register_flag("allow-dangerous", FlagType::Boolean, json!(false), "Let dangerous bash commands run");
@@ -51,12 +51,12 @@ api.on("tool_call", |event, _ctx| {
     }
     Ok(Some(json!({
         "block": true,
-        "reason": "Dangerous command blocked. Start ri with --allow-dangerous to allow it.",
+        "reason": "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.",
     })))
 });
 ```
 
-pi's version asks for confirmation in a dialog. Native handlers run synchronously, so this one blocks instead.
+Pi's version asks for confirmation in a dialog. Native handlers run synchronously, so this one blocks instead.
 
 ## protected-paths
 

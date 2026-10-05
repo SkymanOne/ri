@@ -13,7 +13,7 @@ const PI_AI_VERSION: &str = "1.0.0";
 /// Where the fixture generator's `npm ci` installs pi-ai.
 const DEFAULT_SOURCE: &str = "tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai";
 
-/// Generate `crates/ri-ai/data/*.json` and `crates/ri-ai/src/catalog/data.rs` from
+/// Generate `crates/yapi-ai/data/*.json` and `crates/yapi-ai/src/catalog/data.rs` from
 /// the chat, classifier and image models pi-ai ships in `dist/providers/data`.
 ///
 /// Install the source first with `npm ci` in `tests/fixtures/pi/generator`.
@@ -45,7 +45,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // By provider id, as pi lists them: `opencode` before `opencode-go`.
     files.sort_by_key(|path| path.file_stem().map(std::ffi::OsStr::to_os_string));
 
-    let out_dir = Path::new("crates/ri-ai/data");
+    let out_dir = Path::new("crates/yapi-ai/data");
     if out_dir.exists() {
         fs::remove_dir_all(out_dir)?;
     }
@@ -115,7 +115,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
          /// Image-generation models as JSON arrays, by provider id.\n\
          pub(crate) const IMAGES: &[(&str, &str)] = &[\n{image_table}];\n"
     );
-    fs::write("crates/ri-ai/src/catalog/data.rs", source)?;
+    fs::write("crates/yapi-ai/src/catalog/data.rs", source)?;
     eprintln!(
         "wrote {total} chat models and {special} classifier and image models from {} providers",
         files.len()
@@ -142,7 +142,7 @@ fn typed_models(groups: &Value, kind: &str) -> Vec<Value> {
 fn json_lines(models: &[Value]) -> anyhow::Result<String> {
     let mut json = String::from("[\n");
     for (index, model) in models.iter().enumerate() {
-        json += &ri_types::json::to_string(model)?;
+        json += &yapi_types::json::to_string(model)?;
         json += if index + 1 < models.len() {
             ",\n"
         } else {

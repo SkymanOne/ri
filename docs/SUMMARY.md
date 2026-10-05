@@ -8,14 +8,14 @@
 - [Quickstart](quickstart.md)
 - [Models and sign-in](models.md)
 
-# Using ri
+# Using yapi
 
 - [Interactive mode](interactive.md)
 - [Sessions](sessions.md)
 - [Print, JSON and RPC modes](automation.md)
 - [Configuration](configuration.md)
 
-# Extending ri
+# Extending yapi
 
 - [Extensions](extensions.md)
 - [Native extensions in Rust](native-extensions.md)
@@ -25,8 +25,8 @@
 
 # Reference
 
-- [Coming from pi](migrating.md)
-- [Differences from pi](compat.md)
+- [Coming from Pi](migrating.md)
+- [Differences from Pi](compat.md)
 - [Performance](performance.md)
 - [Troubleshooting](troubleshooting.md)
 - [Contributing](contributing.md)

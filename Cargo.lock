@@ -2503,169 +2503,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ri"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "futures-util",
- "getrandom 0.4.3",
- "indexmap",
- "ratatui-core",
- "regex-lite",
- "ri-ai",
- "ri-core",
- "ri-ext",
- "ri-mock",
- "ri-tui",
- "ri-types",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "similar",
- "tokio",
- "tokio-util",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "ri-agent"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "ri-ai",
- "ri-types",
- "serde_json",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "ri-ai"
-version = "0.1.0"
-dependencies = [
- "aws-lc-rs",
- "base64",
- "crc32fast",
- "futures-util",
- "getrandom 0.4.3",
- "indexmap",
- "regex-lite",
- "reqwest",
- "ri-mock",
- "ri-types",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.11.0",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "url",
-]
-
-[[package]]
-name = "ri-core"
-version = "0.1.0"
-dependencies = [
- "base64",
- "flate2",
- "futures-util",
- "getrandom 0.4.3",
- "indexmap",
- "regex-lite",
- "reqwest",
- "ri-agent",
- "ri-ai",
- "ri-mock",
- "ri-types",
- "rustix",
- "semver",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.11.0",
- "similar",
- "tar",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "unicode-normalization",
- "url",
-]
-
-[[package]]
-name = "ri-ext"
-version = "0.1.0"
-dependencies = [
- "base64",
- "futures-util",
- "getrandom 0.4.3",
- "md-5",
- "oxc",
- "oxc_resolver",
- "reqwest",
- "ri-agent",
- "ri-ai",
- "ri-core",
- "ri-types",
- "rustix",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.11.0",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
-name = "ri-mock"
-version = "0.1.0"
-dependencies = [
- "base64",
- "bytes",
- "http-body-util",
- "hyper",
- "hyper-util",
- "indexmap",
- "portable-pty",
- "reqwest",
- "ruzstd",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "vt100",
-]
-
-[[package]]
-name = "ri-tui"
-version = "0.1.0"
-dependencies = [
- "pulldown-cmark",
- "ratatui-core",
- "ri-types",
- "rustix",
- "serde_json",
- "thiserror 2.0.21",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "ri-types"
-version = "0.1.0"
-dependencies = [
- "indexmap",
- "ryu-js",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4245,14 +4082,178 @@ dependencies = [
  "anyhow",
  "clap",
  "futures-util",
- "ri-core",
- "ri-ext",
- "ri-mock",
- "ri-types",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tokio",
+ "yapi-core",
+ "yapi-ext",
+ "yapi-mock",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "futures-util",
+ "getrandom 0.4.3",
+ "indexmap",
+ "ratatui-core",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "similar",
+ "tokio",
+ "tokio-util",
+ "unicode-segmentation",
+ "yapi-ai",
+ "yapi-core",
+ "yapi-ext",
+ "yapi-mock",
+ "yapi-tui",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-agent"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "yapi-ai",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-ai"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64",
+ "crc32fast",
+ "futures-util",
+ "getrandom 0.4.3",
+ "indexmap",
+ "regex-lite",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "url",
+ "yapi-mock",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "flate2",
+ "futures-util",
+ "getrandom 0.4.3",
+ "indexmap",
+ "regex-lite",
+ "reqwest",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.0",
+ "similar",
+ "tar",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "unicode-normalization",
+ "url",
+ "yapi-agent",
+ "yapi-ai",
+ "yapi-mock",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-ext"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "flate2",
+ "futures-util",
+ "getrandom 0.4.3",
+ "md-5",
+ "oxc",
+ "oxc_resolver",
+ "reqwest",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "wasmtime",
+ "wasmtime-wasi",
+ "yapi-agent",
+ "yapi-ai",
+ "yapi-core",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-mock"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "indexmap",
+ "portable-pty",
+ "reqwest",
+ "ruzstd",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "vt100",
+]
+
+[[package]]
+name = "yapi-tui"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "ratatui-core",
+ "rustix",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-segmentation",
+ "unicode-width",
+ "yapi-types",
+]
+
+[[package]]
+name = "yapi-types"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "ryu-js",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
