@@ -1,4 +1,4 @@
-// Loads the most-downloaded npm pi packages (../packages/top500.json) in pi
+// Loads the most-downloaded npm pi packages (../packages/ranked.json) in pi
 // and prints what each registers, for crates' comparison in `cargo xtask
 // package-registrations`.
 //
@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const top = JSON.parse(fs.readFileSync(path.join(here, "../packages/top500.json"), "utf8"));
+const top = JSON.parse(fs.readFileSync(path.join(here, "../packages/ranked.json"), "utf8"));
 const scratch = path.join(os.tmpdir(), "ri-pi-packages");
 fs.rmSync(scratch, { recursive: true, force: true });
 
