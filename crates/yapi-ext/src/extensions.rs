@@ -25,6 +25,7 @@ use yapi_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
 };
 use yapi_types::rpc::{SourceInfo, StreamingBehavior};
+use yapi_types::sync::lock;
 
 use crate::{Bridge, Engine, Error, Instance, Options};
 
@@ -48,12 +49,6 @@ pub struct Flag {
     pub description: Option<String>,
     /// The extension that registered it.
     pub extension_path: String,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Extensions loaded into one runtime instance, shared by the sessions of a

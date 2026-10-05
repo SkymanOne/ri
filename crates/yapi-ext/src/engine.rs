@@ -90,12 +90,7 @@ fn cache_path(engine: &wasmtime::Engine, bytes: &[u8], dir: &Path, name: &str) -
     let mut digest = Sha256::new();
     digest.update(bytes);
     digest.update(compatibility.finish().to_le_bytes());
-    let hex: String = digest
-        .finalize()
-        .iter()
-        .take(16)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let hex = yapi_types::time::hex(&digest.finalize()[..16]);
     dir.join(format!("{name}-{hex}.cwasm"))
 }
 

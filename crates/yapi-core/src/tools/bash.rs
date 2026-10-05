@@ -16,7 +16,7 @@ use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, Truncation, format_size, tail_bytes,
     truncate_tail,
 };
-use super::{ToolEnv, declaration, random_hex, text_result};
+use super::{ToolEnv, declaration, text_result};
 
 const MAX_TIMEOUT_MS: f64 = 2_147_483_647.0;
 const STRUCTURED_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
@@ -227,7 +227,8 @@ impl Accumulator {
         if self.file.is_some() {
             return;
         }
-        let path = std::env::temp_dir().join(format!("yapi-bash-{}.log", random_hex(8)));
+        let path =
+            std::env::temp_dir().join(format!("yapi-bash-{}.log", crate::time::random_hex(8)));
         if let Ok(mut file) = std::fs::File::create(&path) {
             let _ = file.write_all(&std::mem::take(&mut self.raw));
             self.file = Some((path, file));
@@ -405,15 +406,21 @@ pub fn kill_tracked_children() {
     }
 }
 
+/// Sends `signal` to the process group of `pid`, or to `pid` alone.
 #[cfg(unix)]
-pub(crate) fn kill_tree(pid: Option<u32>) {
-    use rustix::process::{Pid, Signal, kill_process, kill_process_group};
+pub(crate) fn signal_tree(pid: Option<u32>, signal: rustix::process::Signal) {
+    use rustix::process::{Pid, kill_process, kill_process_group};
     let Some(pid) = pid.and_then(|pid| Pid::from_raw(pid as i32)) else {
         return;
     };
-    if kill_process_group(pid, Signal::KILL).is_err() {
-        let _ = kill_process(pid, Signal::KILL);
+    if kill_process_group(pid, signal).is_err() {
+        let _ = kill_process(pid, signal);
     }
+}
+
+#[cfg(unix)]
+pub(crate) fn kill_tree(pid: Option<u32>) {
+    signal_tree(pid, rustix::process::Signal::KILL);
 }
 
 #[cfg(not(unix))]

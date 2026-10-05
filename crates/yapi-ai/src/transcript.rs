@@ -412,11 +412,6 @@ fn transform_assistant(
 const CHARS_PER_TOKEN: usize = 4;
 const ESTIMATED_IMAGE_CHARS: usize = 4800;
 
-/// Length in UTF-16 code units, as JavaScript counts it.
-fn js_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
 fn tokens(chars: usize) -> u64 {
     chars.div_ceil(CHARS_PER_TOKEN) as u64
 }
@@ -425,7 +420,7 @@ fn content_chars(blocks: &[ContentBlock]) -> usize {
     blocks
         .iter()
         .map(|block| match block {
-            ContentBlock::Text(text) => js_len(&text.text),
+            ContentBlock::Text(text) => yapi_types::js::len(&text.text),
             ContentBlock::Image(_) => ESTIMATED_IMAGE_CHARS,
             _ => 0,
         })
@@ -436,8 +431,9 @@ fn content_chars(blocks: &[ContentBlock]) -> usize {
 pub fn estimate_message_tokens(message: &Message) -> u64 {
     match message {
         Message::System(system) => {
-            let tools = |json: Option<String>| json.map_or(0, |json| tokens(js_len(&json)));
-            tokens(js_len(&system.text()))
+            let tools =
+                |json: Option<String>| json.map_or(0, |json| tokens(yapi_types::js::len(&json)));
+            tokens(yapi_types::js::len(&system.text()))
                 + tools(
                     system
                         .tools_added
@@ -454,7 +450,7 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
                 )
         }
         Message::User(user) => match &user.content {
-            yapi_types::message::Content::Text(text) => tokens(js_len(text)),
+            yapi_types::message::Content::Text(text) => tokens(yapi_types::js::len(text)),
             yapi_types::message::Content::Blocks(blocks) => tokens(content_chars(blocks)),
         },
         Message::ToolResult(result) => tokens(content_chars(&result.content)),
@@ -463,12 +459,12 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
                 .content
                 .iter()
                 .map(|block| match block {
-                    ContentBlock::Text(text) => js_len(&text.text),
-                    ContentBlock::Thinking(thinking) => js_len(&thinking.thinking),
+                    ContentBlock::Text(text) => yapi_types::js::len(&text.text),
+                    ContentBlock::Thinking(thinking) => yapi_types::js::len(&thinking.thinking),
                     ContentBlock::ToolCall(call) => {
-                        js_len(&call.name)
+                        yapi_types::js::len(&call.name)
                             + yapi_types::json::to_string(&call.arguments)
-                                .map_or(0, |json| js_len(&json))
+                                .map_or(0, |json| yapi_types::js::len(&json))
                     }
                     ContentBlock::Image(_) => 0,
                 })

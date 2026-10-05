@@ -506,19 +506,13 @@ fn collect_top_files(dir: &Path, kind: ResourceType) -> Vec<PathBuf> {
         .collect()
 }
 
-/// pi's `resolveExtensionEntries`: the entry points a directory's manifest
-/// declares, else its `index.ts` or `index.js`.
-fn resolve_extension_entries(dir: &Path) -> Option<Vec<PathBuf>> {
-    crate::extensions::discovery::entries(dir)
-}
-
 /// pi's `collectAutoExtensionEntries`: a directory's own entry points, else
 /// its extension files and the entry points of its directories.
 fn collect_auto_extension_entries(dir: &Path) -> Vec<PathBuf> {
     if !dir.exists() {
         return Vec::new();
     }
-    if let Some(entries) = resolve_extension_entries(dir) {
+    if let Some(entries) = crate::extensions::discovery::entries(dir) {
         return entries;
     }
     let mut ignore = Ignore::default();
@@ -536,7 +530,7 @@ fn collect_auto_extension_entries(dir: &Path) -> Vec<PathBuf> {
         if entry.is_file && is_extension_file(&entry.name) {
             entries.push(entry.path);
         } else if entry.is_dir {
-            entries.extend(resolve_extension_entries(&entry.path).unwrap_or_default());
+            entries.extend(crate::extensions::discovery::entries(&entry.path).unwrap_or_default());
         }
     }
     entries
@@ -569,15 +563,17 @@ fn collect_files_from_paths(paths: &[PathBuf], kind: ResourceType) -> Vec<PathBu
     files
 }
 
-/// The `yapi` key of a package's `package.json`, else its `pi` key, with
-/// each list as written: `None` when absent.
+/// pi's `readPiManifest`: the `yapi` key of a package's `package.json`, else
+/// its `pi` key. A list is `None` when absent or not all strings.
 #[derive(Default)]
-struct RawManifest {
+pub(crate) struct Manifest {
     lists: [Option<Vec<String>>; 4],
 }
 
-impl RawManifest {
-    fn read(root: &Path) -> Option<RawManifest> {
+impl Manifest {
+    /// The manifest of the package at `root`; `None` when its `package.json`
+    /// is unreadable or declares neither key.
+    pub(crate) fn read(root: &Path) -> Option<Manifest> {
         let text = std::fs::read_to_string(root.join("package.json")).ok()?;
         let package: serde_json::Value =
             serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
@@ -585,19 +581,19 @@ impl RawManifest {
             .iter()
             .find_map(|key| package.get(*key).filter(|value| value.is_object()))?;
         let list = |kind: ResourceType| {
-            manifest[kind.key()].as_array().map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(|entry| entry.as_str().map(str::to_owned))
-                    .collect()
-            })
+            let entries = manifest[kind.key()].as_array()?;
+            entries
+                .iter()
+                .map(|entry| entry.as_str().map(str::to_owned))
+                .collect()
         };
-        Some(RawManifest {
+        Some(Manifest {
             lists: ResourceType::ALL.map(list),
         })
     }
 
-    fn get(&self, kind: ResourceType) -> Option<&Vec<String>> {
+    /// The entries of `kind`, when listed.
+    pub(crate) fn get(&self, kind: ResourceType) -> Option<&Vec<String>> {
         self.lists[kind as usize].as_ref()
     }
 }
@@ -684,7 +680,7 @@ fn collect_package_resources(
     filter: Option<&FilteredPackage>,
     meta: &SourceInfo,
 ) -> bool {
-    let manifest = RawManifest::read(root);
+    let manifest = Manifest::read(root);
     if let Some(filter) = filter {
         for kind in ResourceType::ALL {
             let patterns = match kind {
@@ -742,7 +738,7 @@ fn collect_package_resources(
 /// pi's `collectDefaultResources`.
 fn default_resources(
     root: &Path,
-    manifest: Option<&RawManifest>,
+    manifest: Option<&Manifest>,
     kind: ResourceType,
     acc: &mut Accumulator,
     meta: &SourceInfo,
@@ -761,7 +757,7 @@ fn default_resources(
 
 /// pi's `collectManifestFiles`: the files the manifest's entries select,
 /// or the conventional directory's.
-fn package_files(root: &Path, manifest: Option<&RawManifest>, kind: ResourceType) -> Vec<PathBuf> {
+fn package_files(root: &Path, manifest: Option<&Manifest>, kind: ResourceType) -> Vec<PathBuf> {
     if let Some(entries) = manifest
         .and_then(|manifest| manifest.get(kind))
         .filter(|entries| !entries.is_empty())
@@ -853,25 +849,10 @@ fn ancestor_agents_skill_dirs(start: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// pi's `addAutoDiscoveredResources`.
+/// pi's `addAutoDiscoveredResources`: the project's resources when it is
+/// trusted, then the user's; for each scope its extensions, skills, `.agents`
+/// skills, prompts and themes.
 fn auto_discovered(input: &ResolveInput<'_>, acc: &mut Accumulator) {
-    let user_base = &input.agent_dir;
-    let project_base = &input.project_dir;
-    let user_meta = metadata("auto", "user", "top-level", Some(user_base));
-    let project_meta = metadata("auto", "project", "top-level", Some(project_base));
-    let add = |acc: &mut Accumulator,
-               kind: ResourceType,
-               paths: Vec<PathBuf>,
-               meta: &SourceInfo,
-               overrides: &[String],
-               base: &Path| {
-        for path in paths {
-            let enabled = is_enabled_by_overrides(&path, overrides, base);
-            acc.add(kind, &path, meta, enabled);
-        }
-    };
-    let [user_ext, user_skills, user_prompts, user_themes] = input.user;
-    let [project_ext, project_skills, project_prompts, project_themes] = input.project;
     let user_agents = input.home.join(".agents").join("skills");
     let project_agents: Vec<PathBuf> = if input.project_trusted {
         ancestor_agents_skill_dirs(&input.cwd)
@@ -881,103 +862,51 @@ fn auto_discovered(input: &ResolveInput<'_>, acc: &mut Accumulator) {
     } else {
         Vec::new()
     };
-    if input.project_trusted {
-        add(
-            acc,
-            ResourceType::Extensions,
-            collect_auto_extension_entries(&project_base.join("extensions")),
-            &project_meta,
-            project_ext,
-            project_base,
-        );
-        let dir = project_base.join("skills");
-        add(
-            acc,
-            ResourceType::Skills,
-            collect_skill_entries(&dir, SkillMode::Pi, &mut Ignore::default(), &dir),
-            &project_meta,
-            project_skills,
-            project_base,
-        );
-    }
-    for dir in &project_agents {
-        let base = dir.parent().unwrap_or(dir);
-        let meta = metadata("auto", "project", "top-level", Some(base));
-        add(
-            acc,
-            ResourceType::Skills,
-            collect_skill_entries(dir, SkillMode::Agents, &mut Ignore::default(), dir),
-            &meta,
-            project_skills,
-            base,
-        );
-    }
-    if input.project_trusted {
-        add(
-            acc,
-            ResourceType::Prompts,
-            collect_top_files(&project_base.join("prompts"), ResourceType::Prompts),
-            &project_meta,
-            project_prompts,
-            project_base,
-        );
-        add(
-            acc,
-            ResourceType::Themes,
-            collect_top_files(&project_base.join("themes"), ResourceType::Themes),
-            &project_meta,
-            project_themes,
-            project_base,
-        );
-    }
-    add(
-        acc,
-        ResourceType::Extensions,
-        collect_auto_extension_entries(&user_base.join("extensions")),
-        &user_meta,
-        user_ext,
-        user_base,
-    );
-    let dir = user_base.join("skills");
-    add(
-        acc,
-        ResourceType::Skills,
-        collect_skill_entries(&dir, SkillMode::Pi, &mut Ignore::default(), &dir),
-        &user_meta,
-        user_skills,
-        user_base,
-    );
-    let agents_base = user_agents.parent().unwrap_or(&user_agents).to_path_buf();
-    let agents_meta = metadata("auto", "user", "top-level", Some(&agents_base));
-    add(
-        acc,
-        ResourceType::Skills,
-        collect_skill_entries(
-            &user_agents,
-            SkillMode::Agents,
-            &mut Ignore::default(),
-            &user_agents,
+    let scopes = [
+        (
+            "project",
+            &input.project_dir,
+            input.project,
+            input.project_trusted,
+            project_agents,
         ),
-        &agents_meta,
-        user_skills,
-        &agents_base,
-    );
-    add(
-        acc,
-        ResourceType::Prompts,
-        collect_top_files(&user_base.join("prompts"), ResourceType::Prompts),
-        &user_meta,
-        user_prompts,
-        user_base,
-    );
-    add(
-        acc,
-        ResourceType::Themes,
-        collect_top_files(&user_base.join("themes"), ResourceType::Themes),
-        &user_meta,
-        user_themes,
-        user_base,
-    );
+        (
+            "user",
+            &input.agent_dir,
+            input.user,
+            true,
+            vec![user_agents],
+        ),
+    ];
+    for (scope, base, overrides, own, agents) in scopes {
+        let mut add = |kind: ResourceType, paths: Vec<PathBuf>, base: &Path| {
+            let meta = metadata("auto", scope, "top-level", Some(base));
+            for path in paths {
+                let enabled = is_enabled_by_overrides(&path, overrides[kind as usize], base);
+                acc.add(kind, &path, &meta, enabled);
+            }
+        };
+        for kind in ResourceType::ALL {
+            let dir = base.join(kind.key());
+            if own {
+                let paths = match kind {
+                    ResourceType::Extensions => collect_auto_extension_entries(&dir),
+                    ResourceType::Skills => {
+                        collect_skill_entries(&dir, SkillMode::Pi, &mut Ignore::default(), &dir)
+                    }
+                    _ => collect_top_files(&dir, kind),
+                };
+                add(kind, paths, base);
+            }
+            if kind == ResourceType::Skills {
+                for dir in &agents {
+                    let paths =
+                        collect_skill_entries(dir, SkillMode::Agents, &mut Ignore::default(), dir);
+                    add(kind, paths, dir.parent().unwrap_or(dir));
+                }
+            }
+        }
+    }
 }
 
 /// pi's `resourcePrecedenceRank`.
@@ -1012,7 +941,7 @@ fn collect_package(
     }
     meta.base_dir = Some(root.to_string_lossy().into_owned());
     if !collect_package_resources(root, acc, filter, &meta) && local {
-        for entry in resolve_extension_entries(root).unwrap_or_default() {
+        for entry in crate::extensions::discovery::entries(root).unwrap_or_default() {
             acc.add(ResourceType::Extensions, &entry, &meta, true);
         }
     }
@@ -1149,12 +1078,7 @@ pub fn package_inputs(
     install_path: impl Fn(&super::source::Source, &str) -> PathBuf,
 ) -> Vec<PackageInput> {
     use super::source::parse;
-    let source_of = |entry: &serde_json::Value| {
-        entry
-            .as_str()
-            .or_else(|| entry["source"].as_str())
-            .map(str::to_owned)
-    };
+    let source_of = |entry: &serde_json::Value| super::entry_source(entry).map(str::to_owned);
     let identity = |source: &str, scope: &str| parse(source).identity(&base(scope));
     let delta = |entry: &serde_json::Value| {
         entry.is_object() && entry["autoload"] == serde_json::Value::Bool(false)

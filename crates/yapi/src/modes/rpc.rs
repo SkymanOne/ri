@@ -16,6 +16,7 @@ use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
 use yapi_core::extensions::{DialogOptions, ExtensionUi, Mode, NotifyKind, Placement, Widget};
 use yapi_core::time::uuid_v4;
+use yapi_types::sync::lock;
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -187,12 +188,6 @@ impl RpcUi {
             let _ = tx.send(response);
         }
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn object(value: Value) -> Map<String, Value> {

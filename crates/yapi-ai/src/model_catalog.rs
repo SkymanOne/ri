@@ -167,7 +167,7 @@ pub fn restore(provider: &str, source: &Source, entry: &Value) -> ProviderModels
 
 /// When the built-in catalog was generated.
 pub fn generated_at_ms() -> u64 {
-    crate::auth::rfc3339_ms(crate::catalog::GENERATED_AT).unwrap_or(0)
+    yapi_types::time::parse_iso(crate::catalog::GENERATED_AT).unwrap_or(0)
 }
 
 /// What a refresh does.
@@ -283,24 +283,14 @@ fn http_date_ms(text: &str) -> Option<u64> {
     // RFC 7231 IMF-fixdate: `Sun, 06 Nov 1994 08:49:37 GMT`.
     let mut parts = text.split_whitespace().skip(1);
     let day: i64 = parts.next()?.parse().ok()?;
-    let month = match parts.next()? {
-        "Jan" => 1,
-        "Feb" => 2,
-        "Mar" => 3,
-        "Apr" => 4,
-        "May" => 5,
-        "Jun" => 6,
-        "Jul" => 7,
-        "Aug" => 8,
-        "Sep" => 9,
-        "Oct" => 10,
-        "Nov" => 11,
-        "Dec" => 12,
-        _ => return None,
-    };
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let month = parts.next()?;
+    let month = MONTHS.iter().position(|name| *name == month)? + 1;
     let year: i64 = parts.next()?.parse().ok()?;
     let time = parts.next()?;
-    crate::auth::rfc3339_ms(&format!("{year:04}-{month:02}-{day:02}T{time}Z"))
+    yapi_types::time::parse_iso(&format!("{year:04}-{month:02}-{day:02}T{time}Z"))
 }
 
 async fn refresh_remote(

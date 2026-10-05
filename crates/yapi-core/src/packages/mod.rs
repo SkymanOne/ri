@@ -54,19 +54,6 @@ pub struct Configured {
     pub extensions: Vec<PathBuf>,
 }
 
-/// An installed package and what it provides.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedPackage {
-    /// The source as written in settings.
-    pub source: String,
-    /// Whose settings list it.
-    pub scope: Scope,
-    /// The package directory, or file for a local file.
-    pub root: PathBuf,
-    /// Its resources.
-    pub resources: PackageResources,
-}
-
 /// Where `source`, written in settings whose directory is `base`, is or
 /// would be installed.
 pub fn install_location(source: &Source, base: &Path) -> PathBuf {
@@ -125,7 +112,7 @@ pub fn resolve_resources(
 }
 
 /// A settings entry: a source string or a filtered package.
-fn entry_source(entry: &Value) -> Option<&str> {
+pub fn entry_source(entry: &Value) -> Option<&str> {
     entry.as_str().or_else(|| entry["source"].as_str())
 }
 
@@ -499,10 +486,7 @@ impl PackageManager {
                     (self.progress)(&format!("Updating {configured}..."));
                     let range = version.as_deref().unwrap_or("latest");
                     let installed = self.install_path(&parse(&configured), scope);
-                    let current = std::fs::read_to_string(installed.join("package.json"))
-                        .ok()
-                        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-                        .and_then(|manifest| manifest["version"].as_str().map(str::to_owned));
+                    let current = npm::installed_version(&installed);
                     let stale = match &current {
                         Some(current) => !npm::satisfies(current, range) || range == "latest",
                         None => true,
@@ -532,16 +516,10 @@ impl PackageManager {
         Ok(())
     }
 
-    /// The configured packages with their resources: the project's first,
-    /// then the user's, each identity once. Missing npm and git packages are
-    /// installed when `install_missing` (pi does at startup, unless offline);
-    /// `on_error` receives the failures.
-    pub async fn resolve(
-        &mut self,
-        install_missing: bool,
-        mut on_error: impl FnMut(String),
-    ) -> Vec<ResolvedPackage> {
-        let mut resolved: Vec<ResolvedPackage> = Vec::new();
+    /// pi's startup install: the configured npm and git packages that are
+    /// missing, the project's first, each identity once. `on_error` receives
+    /// the failures.
+    pub async fn install_missing(&mut self, mut on_error: impl FnMut(String)) {
         let mut identities: Vec<String> = Vec::new();
         for scope in [Scope::Project, Scope::Global] {
             for entry in self.packages(scope) {
@@ -555,70 +533,20 @@ impl PackageManager {
                 }
                 identities.push(identity);
                 let root = self.install_path(&parsed, scope);
-                if !root.exists() {
-                    if !install_missing || matches!(parsed, Source::Local { .. }) {
-                        continue;
+                let installed = match &parsed {
+                    _ if root.exists() => Ok(()),
+                    Source::Npm { name, version, .. } => {
+                        self.install_npm(name, version.as_deref(), scope).await
                     }
-                    let installed = match &parsed {
-                        Source::Npm { name, version, .. } => {
-                            self.install_npm(name, version.as_deref(), scope).await
-                        }
-                        Source::Git {
-                            repo, reference, ..
-                        } => self.install_git(repo, reference.as_deref(), &root).await,
-                        Source::Local { .. } => Ok(()),
-                    };
-                    if let Err(err) = installed {
-                        on_error(format!("Failed to install {configured}: {err}"));
-                        continue;
-                    }
+                    Source::Git {
+                        repo, reference, ..
+                    } => self.install_git(repo, reference.as_deref(), &root).await,
+                    Source::Local { .. } => Ok(()),
+                };
+                if let Err(err) = installed {
+                    on_error(format!("Failed to install {configured}: {err}"));
                 }
-                let filters: Option<FilteredPackage> = entry
-                    .is_object()
-                    .then(|| serde_json::from_value(entry.clone()).ok())
-                    .flatten();
-                resolved.push(ResolvedPackage {
-                    resources: package_resources(
-                        &root,
-                        filters.as_ref(),
-                        matches!(parsed, Source::Local { .. }),
-                    ),
-                    source: configured,
-                    scope,
-                    root,
-                });
             }
         }
-        resolved
-    }
-
-    /// The top-level `extensions` entries of settings, project first, as
-    /// paths resolved against each scope's directory.
-    pub fn settings_extensions(&self) -> Vec<(PathBuf, Scope)> {
-        [Scope::Project, Scope::Global]
-            .into_iter()
-            .flat_map(|scope| {
-                let base = self.base(scope);
-                self.settings
-                    .document(scope)
-                    .get("extensions")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|entry| entry.as_str().map(str::to_owned))
-                    .filter(|entry| !entry.starts_with(['!', '+', '-']))
-                    .flat_map(move |entry| {
-                        let path = source::local_path(&entry, &base);
-                        crate::extensions::discovery::configured(
-                            &[path.to_string_lossy().into_owned()],
-                            &base,
-                        )
-                        .into_iter()
-                        .map(move |path| (path, scope))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
     }
 }

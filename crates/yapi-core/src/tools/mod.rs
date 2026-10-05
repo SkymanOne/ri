@@ -351,9 +351,3 @@ fn capped_output(
 
 /// `Number.MAX_SAFE_INTEGER`, pi's "no line limit".
 const JS_MAX_SAFE_INTEGER: usize = 9_007_199_254_740_991;
-
-pub(crate) fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    let _ = getrandom::fill(&mut buffer);
-    buffer.iter().map(|byte| format!("{byte:02x}")).collect()
-}

@@ -109,7 +109,7 @@ fn parse_headers(mut bytes: &[u8]) -> Result<IndexMap<String, String>, String> {
                 bytes = &bytes[2..];
                 String::from_utf8_lossy(&fixed(len, &mut bytes)?).into_owned()
             }
-            9 => super::sigv4::hex(&fixed(16, &mut bytes)?),
+            9 => yapi_types::time::hex(&fixed(16, &mut bytes)?),
             _ => return Err(format!("Unrecognized event stream header type: {kind}")),
         };
         headers.insert(name, value);

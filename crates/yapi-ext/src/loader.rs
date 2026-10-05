@@ -193,12 +193,7 @@ impl Loader {
             digest.update(part.as_bytes());
             digest.update([0]);
         }
-        let hex: String = digest
-            .finalize()
-            .iter()
-            .take(16)
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let hex = yapi_types::time::hex(&digest.finalize()[..16]);
         let cached = dir.join(format!("{hex}.js"));
         if let Ok(source) = std::fs::read_to_string(&cached)
             && let Some((tag, source)) = source.split_once('\n')

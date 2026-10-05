@@ -12,7 +12,7 @@ use ratatui_core::text::{Line, Span};
 use yapi_core::session::{SessionManager, SessionSummary};
 use yapi_tui::fuzzy::fuzzy_match;
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::text::{truncate_to_width, utf16_len, visible_width};
+use yapi_tui::text::{truncate_to_width, visible_width};
 use yapi_tui::text_input::{InputEvent, TextInput};
 
 use super::selectors::{Action, Outcome, Ui};
@@ -190,7 +190,7 @@ fn match_session(session: &SessionSummary, query: &Query) -> Option<f64> {
         Query::Invalid => None,
         Query::Regex(regex) => regex
             .find(&text)
-            .map(|found| utf16_len(&text[..found.start()]) as f64 * 0.1),
+            .map(|found| yapi_types::js::len(&text[..found.start()]) as f64 * 0.1),
         Query::Tokens(tokens) => {
             let mut total = 0.0;
             let mut normalized: Option<String> = None;
@@ -203,7 +203,7 @@ fn match_session(session: &SessionSummary, query: &Query) -> Option<f64> {
                             continue;
                         }
                         let index = normalized.find(&phrase)?;
-                        total += utf16_len(&normalized[..index]) as f64 * 0.1;
+                        total += yapi_types::js::len(&normalized[..index]) as f64 * 0.1;
                     }
                     Token::Fuzzy(value) => {
                         let result = fuzzy_match(value, &text);

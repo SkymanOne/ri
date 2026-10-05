@@ -11,7 +11,7 @@ use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 use yapi_core::session::{SessionTree, TreeNode};
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::text::{grapheme_width, utf16_len};
+use yapi_tui::text::grapheme_width;
 use yapi_tui::text_input::{InputEvent, TextInput};
 use yapi_types::message::{Content, ContentBlock, Message, StopReason};
 use yapi_types::session::FileEntry;
@@ -788,7 +788,11 @@ impl TreeSelector {
                 let raw = field("command").map(text).unwrap_or_default();
                 let command = normalize(&raw);
                 let cut: String = command.chars().take(50).collect();
-                let more = if utf16_len(&raw) > 50 { "..." } else { "" };
+                let more = if yapi_types::js::len(&raw) > 50 {
+                    "..."
+                } else {
+                    ""
+                };
                 format!("[bash: {cut}{more}]")
             }
             "grep" => format!(
@@ -808,7 +812,11 @@ impl TreeSelector {
             _ => {
                 let json = yapi_types::json::to_string(args).unwrap_or_default();
                 let cut: String = json.chars().take(40).collect();
-                let more = if utf16_len(&json) > 40 { "..." } else { "" };
+                let more = if yapi_types::js::len(&json) > 40 {
+                    "..."
+                } else {
+                    ""
+                };
                 format!("[{name}: {cut}{more}]")
             }
         }

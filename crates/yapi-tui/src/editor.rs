@@ -19,9 +19,7 @@ use crate::segment::{
     paste_marker_spans, segment,
 };
 use crate::select_list::{SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme};
-use crate::text::{
-    has_cjk, has_whitespace, is_autocomplete_separator, take_width, utf16_len, visible_width,
-};
+use crate::text::{has_cjk, has_whitespace, is_autocomplete_separator, take_width, visible_width};
 
 const HISTORY_LIMIT: usize = 100;
 const LARGE_PASTE_LINES: usize = 10;
@@ -270,7 +268,7 @@ fn floor_boundary(text: &str, index: usize) -> usize {
 }
 
 fn to_utf16(text: &str, byte: usize) -> usize {
-    utf16_len(&text[..floor_boundary(text, byte)])
+    yapi_types::js::len(&text[..floor_boundary(text, byte)])
 }
 
 fn from_utf16(text: &str, units: usize) -> usize {
@@ -1072,7 +1070,7 @@ impl Editor {
             filtered.insert(0, ' ');
         }
         let line_count = filtered.split('\n').count();
-        let chars = utf16_len(&filtered);
+        let chars = yapi_types::js::len(&filtered);
         if line_count > LARGE_PASTE_LINES || chars > LARGE_PASTE_CHARS {
             self.paste_counter += 1;
             let id = self.paste_counter;
@@ -1492,14 +1490,14 @@ impl Editor {
         let line = self.state.lines[target.logical].clone();
         // pi's cursor is a UTF-16 index, which may land inside a surrogate
         // pair until it snaps to the grapheme's start below.
-        let target_units = (to_utf16(&line, target.start) + column).min(utf16_len(&line));
+        let target_units = (to_utf16(&line, target.start) + column).min(yapi_types::js::len(&line));
         self.state.cursor_col = from_utf16(&line, target_units);
 
         let ids = self.valid_ids();
         let mut seg_units = 0;
         for seg in segment(&line, Granularity::Grapheme, &ids) {
             let start_units = seg_units;
-            let len_units = utf16_len(seg.text);
+            let len_units = yapi_types::js::len(seg.text);
             seg_units += len_units;
             if start_units > target_units {
                 break;

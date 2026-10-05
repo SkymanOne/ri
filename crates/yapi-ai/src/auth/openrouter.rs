@@ -64,22 +64,6 @@ fn error_detail(body: &Value) -> Option<String> {
         .or_else(|| body["error"]["message"].as_str().map(str::to_owned))
 }
 
-fn random_uuid() -> String {
-    let mut bytes = [0u8; 16];
-    let _ = getrandom::fill(&mut bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    )
-}
-
 impl OpenRouterOAuth {
     async fn exchange(
         &self,
@@ -146,7 +130,7 @@ impl OpenRouterOAuth {
         let pkce = pkce::generate();
         // OpenRouter sends no `state`; the random path keeps stray requests
         // from completing the sign-in.
-        let path = format!("/oauth/callback/{}", random_uuid());
+        let path = format!("/oauth/callback/{}", yapi_types::time::uuid_v4());
         let route = path.clone();
         let handler = move |method: &str, url: &Url| -> Reply<String> {
             if method != "GET" || url.path() != route {

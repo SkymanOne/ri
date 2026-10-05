@@ -125,15 +125,11 @@ pub fn last_assistant_usage(entries: &[&FileEntry]) -> Option<Usage> {
 
 const ESTIMATED_IMAGE_CHARS: usize = 4800;
 
-fn js_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
 fn blocks_chars(blocks: &[ContentBlock]) -> usize {
     blocks
         .iter()
         .map(|block| match block {
-            ContentBlock::Text(text) => js_len(&text.text),
+            ContentBlock::Text(text) => yapi_types::js::len(&text.text),
             ContentBlock::Image(_) => ESTIMATED_IMAGE_CHARS,
             _ => 0,
         })
@@ -142,7 +138,7 @@ fn blocks_chars(blocks: &[ContentBlock]) -> usize {
 
 fn content_chars(content: &Content) -> usize {
     match content {
-        Content::Text(text) => js_len(text),
+        Content::Text(text) => yapi_types::js::len(text),
         Content::Blocks(blocks) => blocks_chars(blocks),
     }
 }
@@ -157,13 +153,13 @@ pub fn estimate_tokens(message: &Message) -> u64 {
                 .iter()
                 .flatten()
                 .filter_map(|(_, text)| text.as_deref())
-                .map(js_len)
+                .map(yapi_types::js::len)
                 .sum();
             let tools = system
                 .tools_added
                 .as_ref()
                 .and_then(|tools| yapi_types::json::to_string(tools).ok())
-                .map_or(0, |json| js_len(&json));
+                .map_or(0, |json| yapi_types::js::len(&json));
             content_chars(&system.content) + sections + tools
         }
         Message::User(user) => content_chars(&user.content),
@@ -171,21 +167,23 @@ pub fn estimate_tokens(message: &Message) -> u64 {
             .content
             .iter()
             .map(|block| match block {
-                ContentBlock::Text(text) => js_len(&text.text),
-                ContentBlock::Thinking(thinking) => js_len(&thinking.thinking),
+                ContentBlock::Text(text) => yapi_types::js::len(&text.text),
+                ContentBlock::Thinking(thinking) => yapi_types::js::len(&thinking.thinking),
                 ContentBlock::ToolCall(call) => {
-                    js_len(&call.name)
+                    yapi_types::js::len(&call.name)
                         + yapi_types::json::to_string(&call.arguments)
-                            .map_or(0, |json| js_len(&json))
+                            .map_or(0, |json| yapi_types::js::len(&json))
                 }
                 ContentBlock::Image(_) => 0,
             })
             .sum(),
         Message::Custom(custom) => content_chars(&custom.content),
         Message::ToolResult(result) => blocks_chars(&result.content),
-        Message::BashExecution(bash) => js_len(&bash.command) + js_len(&bash.output),
-        Message::BranchSummary(summary) => js_len(&summary.summary),
-        Message::CompactionSummary(summary) => js_len(&summary.summary),
+        Message::BashExecution(bash) => {
+            yapi_types::js::len(&bash.command) + yapi_types::js::len(&bash.output)
+        }
+        Message::BranchSummary(summary) => yapi_types::js::len(&summary.summary),
+        Message::CompactionSummary(summary) => yapi_types::js::len(&summary.summary),
     };
     chars.div_ceil(4) as u64
 }

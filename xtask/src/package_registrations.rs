@@ -123,15 +123,16 @@ async fn load(
     let mut packages =
         PackageManager::new(cwd.clone(), agent.clone(), settings, default_registry());
     let mut install_errors = Vec::new();
-    let resolved = packages
-        .resolve(true, |error| install_errors.push(error))
+    packages
+        .install_missing(|error| install_errors.push(error))
         .await;
     if let Some(error) = install_errors.first() {
         return Ok(json!({"version": version, "install": error}));
     }
-    let entries: Vec<PathBuf> = resolved
-        .iter()
-        .flat_map(|package| package.resources.extensions.clone())
+    let entries: Vec<PathBuf> = packages
+        .list()
+        .into_iter()
+        .flat_map(|package| package.extensions)
         .collect();
     let sources: Vec<SourceInfo> = entries
         .iter()

@@ -11,6 +11,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+use yapi_types::sync::lock;
 
 use super::jsonrpc::{Incoming, METHOD_NOT_FOUND, McpError, classify, id_key, is_id};
 use super::transport::{Event, Transport};
@@ -131,12 +132,6 @@ pub struct McpClient {
     inner: Arc<Inner>,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 fn validate_initialize(value: &Value) -> Result<ServerInfo, McpError> {
     let invalid = || McpError::invalid("Invalid MCP initialize result");
     let object = value.as_object().ok_or_else(invalid)?;
@@ -224,6 +219,14 @@ fn with_name(mut item: Value, field: &str) -> Value {
         object.insert("name".into(), fallback);
     }
     item
+}
+
+/// `items` with names from their `field` where they lack one.
+fn named(items: Vec<Value>, field: &str) -> Vec<Value> {
+    items
+        .into_iter()
+        .map(|item| with_name(item, field))
+        .collect()
 }
 
 impl McpClient {
@@ -357,10 +360,7 @@ impl McpClient {
         let items = self
             .list_all("resources/list", "resources", is_resource, options)
             .await?;
-        Ok(items
-            .into_iter()
-            .map(|item| with_name(item, "uri"))
-            .collect())
+        Ok(named(items, "uri"))
     }
 
     /// One page of resources from `cursor`, and the next cursor.
@@ -372,13 +372,7 @@ impl McpClient {
         let (items, next) = self
             .list_page("resources/list", "resources", is_resource, cursor, options)
             .await?;
-        Ok((
-            items
-                .into_iter()
-                .map(|item| with_name(item, "uri"))
-                .collect(),
-            next,
-        ))
+        Ok((named(items, "uri"), next))
     }
 
     /// Every resource template, following pagination.
@@ -394,10 +388,7 @@ impl McpClient {
                 options,
             )
             .await?;
-        Ok(items
-            .into_iter()
-            .map(|item| with_name(item, "uriTemplate"))
-            .collect())
+        Ok(named(items, "uriTemplate"))
     }
 
     /// One page of resource templates from `cursor`, and the next cursor.
@@ -415,13 +406,7 @@ impl McpClient {
                 options,
             )
             .await?;
-        Ok((
-            items
-                .into_iter()
-                .map(|item| with_name(item, "uriTemplate"))
-                .collect(),
-            next,
-        ))
+        Ok((named(items, "uriTemplate"), next))
     }
 
     /// Reads one resource.

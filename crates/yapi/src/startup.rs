@@ -839,9 +839,11 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     );
     let offline = args.offline || yapi_core::tools::external::offline();
     // Installs missing packages; what they provide comes from pi's resolver.
-    packages
-        .resolve(!offline, |message| eprintln!("Warning: {message}"))
-        .await;
+    if !offline {
+        packages
+            .install_missing(|message| eprintln!("Warning: {message}"))
+            .await;
+    }
     // pi's precedence: the project's settings entries and discovered
     // extensions, then the user's, then packages. `--no-extensions` leaves
     // them out; packages still provide their skills, prompts and themes.

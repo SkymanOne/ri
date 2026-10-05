@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use yapi_types::message::{NestedToolCall, NestedToolCallStatus, NestedToolCalls, ToolCall, Usage};
+use yapi_types::sync::lock;
 
 use crate::compaction::combine_usage;
 
@@ -127,12 +128,6 @@ pub(crate) struct NestedCalls {
     scopes: Mutex<HashMap<String, Scope>>,
     /// Serializes nested calls that must not run concurrently.
     pub queue: Arc<tokio::sync::Mutex<()>>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl NestedCalls {

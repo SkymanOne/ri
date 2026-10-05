@@ -10,6 +10,7 @@ use futures_util::future::BoxFuture;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
+use yapi_types::sync::lock;
 
 use super::jsonrpc::{INTERNAL_ERROR, Incoming, McpError, classify};
 use super::transport::{Event, Events, MAX_MESSAGE_BYTES};
@@ -49,12 +50,6 @@ struct Inner {
     started: AtomicBool,
     closed: AtomicBool,
     get_stream_started: AtomicBool,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn network(error: reqwest::Error) -> McpError {

@@ -232,11 +232,7 @@ fn verify(bytes: &[u8], dist: &Value) -> bool {
             .any(|entry| entry.strip_prefix("sha512-") == Some(digest.as_str()));
     }
     if let Some(shasum) = dist["shasum"].as_str() {
-        let digest: String = sha1::Sha1::digest(bytes)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        return digest.eq_ignore_ascii_case(shasum);
+        return crate::time::hex(&sha1::Sha1::digest(bytes)).eq_ignore_ascii_case(shasum);
     }
     false
 }
@@ -287,7 +283,7 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<(), NpmError> {
 }
 
 /// The version of the package installed at `dir`, if any.
-fn installed_version(dir: &Path) -> Option<String> {
+pub(crate) fn installed_version(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("package.json")).ok()?;
     let manifest: Value = serde_json::from_str(&text).ok()?;
     manifest["version"].as_str().map(str::to_owned)

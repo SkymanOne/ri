@@ -178,50 +178,6 @@ pub fn parse_frontmatter(content: &str) -> (Frontmatter, String) {
     (frontmatter, body)
 }
 
-/// The resources a package declares in its `package.json`; pi's `PiManifest`.
-/// yapi reads the `yapi` key when present, else pi's `pi` key.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Manifest {
-    /// Extension entry points, relative to the package.
-    pub extensions: Vec<String>,
-    /// Skill paths.
-    pub skills: Vec<String>,
-    /// Prompt template paths.
-    pub prompts: Vec<String>,
-    /// Theme paths.
-    pub themes: Vec<String>,
-}
-
-impl Manifest {
-    /// The manifest in `package_json`; `None` when the file is unreadable or
-    /// declares neither key. A field that is not a list of strings is empty.
-    pub fn read(package_json: &Path) -> Option<Manifest> {
-        let text = read_text(package_json)?;
-        let package: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let manifest = ["yapi", "pi"]
-            .iter()
-            .find_map(|key| package.get(*key).filter(|value| value.is_object()))?;
-        let field = |name: &str| -> Vec<String> {
-            manifest[name]
-                .as_array()
-                .filter(|entries| entries.iter().all(serde_json::Value::is_string))
-                .map(|entries| {
-                    entries
-                        .iter()
-                        .filter_map(|entry| entry.as_str().map(str::to_owned))
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        Some(Manifest {
-            extensions: field("extensions"),
-            skills: field("skills"),
-            prompts: field("prompts"),
-            themes: field("themes"),
-        })
-    }
-}
-
 fn read_text(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok().map(|text| {
         text.strip_prefix('\u{feff}')

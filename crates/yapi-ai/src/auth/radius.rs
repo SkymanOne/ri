@@ -157,7 +157,7 @@ impl RadiusOAuth {
             AuthError::Failed(format!("Invalid Radius OAuth config from {}", self.gateway))
         })?;
         let pkce = pkce::generate();
-        let state = random_uuid();
+        let state = yapi_types::time::uuid_v4();
         let redirect_uri = self.redirect_uri();
         let mut authorize =
             Url::parse(endpoint).map_err(|err| AuthError::Failed(err.to_string()))?;
@@ -320,22 +320,6 @@ impl RadiusOAuth {
             ))),
         }
     }
-}
-
-fn random_uuid() -> String {
-    let mut bytes = [0u8; 16];
-    let _ = getrandom::fill(&mut bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    )
 }
 
 impl OAuthProvider for RadiusOAuth {

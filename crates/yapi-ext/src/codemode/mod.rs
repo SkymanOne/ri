@@ -27,6 +27,7 @@ use yapi_core::tools::{Exposure, RegisteredTool};
 use yapi_types::event::ToolResult;
 use yapi_types::message::ToolDeclaration;
 use yapi_types::rpc::SourceInfo;
+use yapi_types::sync::lock;
 
 use declarations::Declaration;
 
@@ -80,12 +81,6 @@ fn declaration(tool: &RegisteredTool) -> Declaration {
             .unwrap_or_else(|| json!({"type": "string"})),
         namespace: tool.namespace.clone(),
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 struct CodemodeTool {

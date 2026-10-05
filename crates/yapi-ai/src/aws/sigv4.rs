@@ -3,6 +3,7 @@
 
 use aws_lc_rs::hmac;
 use sha2::{Digest, Sha256};
+use yapi_types::time::hex;
 
 use super::Credentials;
 
@@ -24,11 +25,6 @@ const UNSIGNABLE: &[&str] = &[
     "user-agent",
     "x-amzn-trace-id",
 ];
-
-/// Lowercase hex.
-pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
 
 /// Hex SHA-256 of `data`.
 pub fn sha256_hex(data: &[u8]) -> String {
@@ -159,24 +155,9 @@ pub fn sign(
 
 /// `YYYYMMDDTHHMMSSZ` for Unix time in milliseconds.
 pub fn amz_date(now_ms: u64) -> String {
-    let seconds = now_ms / 1000;
-    let days = i64::try_from(seconds / 86_400).unwrap_or(0);
-    let rest = seconds % 86_400;
-    // Civil date from days, after Howard Hinnant's algorithm.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
     format!(
-        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z",
-        rest / 3600,
-        rest % 3600 / 60,
-        rest % 60
+        "{}Z",
+        yapi_types::time::iso(now_ms)[..19].replace(['-', ':'], "")
     )
 }
 

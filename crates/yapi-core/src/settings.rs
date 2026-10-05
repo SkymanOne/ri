@@ -85,16 +85,12 @@ fn read_document(path: &Path) -> Result<Map<String, Value>, SettingsError> {
     }
 }
 
-fn is_mergeable(value: &Value) -> bool {
-    value.is_object()
-}
-
 /// pi's deep merge: objects merge recursively, anything else replaces.
 fn deep_merge(base: &Map<String, Value>, overrides: &Map<String, Value>) -> Map<String, Value> {
     let mut result = base.clone();
     for (key, value) in overrides {
         let merged = match (base.get(key), value) {
-            (Some(Value::Object(base)), Value::Object(over)) if is_mergeable(value) => {
+            (Some(Value::Object(base)), Value::Object(over)) => {
                 Value::Object(deep_merge(base, over))
             }
             _ => value.clone(),

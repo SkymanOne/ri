@@ -16,7 +16,7 @@ use sha2::Digest as _;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
-use yapi_types::message::{ContentBlock, ToolDeclaration};
+use yapi_types::message::{ContentBlock, ToolDeclaration, blocks_text};
 
 use super::client::RequestOptions;
 use super::connection::Connection;
@@ -51,11 +51,7 @@ pub fn tool_name(server: &str, tool: &str, is_taken: impl Fn(&str) -> bool) -> S
         return name;
     }
     let digest = sha2::Sha256::digest(format!("{server}\0{tool}").as_bytes());
-    let hash: String = digest
-        .iter()
-        .take(4)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let hash = crate::time::hex(&digest[..4]);
     format!(
         "{}_{hash}",
         &name[..name.len().min(MAX_TOOL_NAME_LENGTH - hash.len() - 1)]
@@ -75,15 +71,12 @@ pub fn server_tool_label(tools: &crate::extensions::Tools, name: &str) -> Option
     })
 }
 
-fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    let _ = getrandom::fill(&mut buffer);
-    buffer.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 /// Saves `data` to a temp file only the user can read; its path.
 async fn save_temp(data: &[u8], extension: &str) -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join(format!("yapi-mcp-{}{extension}", random_hex(8)));
+    let path = std::env::temp_dir().join(format!(
+        "yapi-mcp-{}{extension}",
+        crate::time::random_hex(8)
+    ));
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -98,21 +91,10 @@ async fn save_temp(data: &[u8], extension: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn text_of(content: &[ContentBlock]) -> String {
-    content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// Keeps model-facing text within [`OUTPUT_MAX_BYTES`]: longer text becomes
 /// one block in Codex's format with the full text's path; images follow it.
 pub async fn limit_content(content: Vec<ContentBlock>) -> (Vec<ContentBlock>, Option<PathBuf>) {
-    let combined = text_of(&content);
+    let combined = blocks_text(&content, "\n");
     let truncation = truncate_middle(&combined, OUTPUT_MAX_BYTES);
     if !truncation.truncated {
         return (content, None);
@@ -274,7 +256,7 @@ pub async fn convert_result(
         model_content(server, &blocks, readable_resources).await
     };
     let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
-    if is_error && text_of(&converted).is_empty() {
+    if is_error && blocks_text(&converted, "\n").is_empty() {
         converted.push(ContentBlock::text(format!(
             "MCP tool {server}/{tool} returned an error"
         )));

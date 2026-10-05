@@ -221,9 +221,4 @@ pub fn send_error(
     sender.send(StreamEvent::Error(output));
 }
 
-/// Unix time in milliseconds.
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as u64)
-}
+pub use yapi_types::time::now_ms;

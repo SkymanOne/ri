@@ -192,10 +192,6 @@ fn parse_text_signature(signature: Option<&str>) -> Option<(String, Option<Strin
     Some((signature.to_owned(), None))
 }
 
-fn utf16_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
 /// An id part as the Responses API accepts it: sanitized, at most 64 units, no
 /// trailing underscores.
 fn normalize_id_part(part: &str) -> String {
@@ -346,7 +342,7 @@ fn convert_assistant(
                 text_index += 1;
                 let id = match parsed.as_ref().map(|(id, _)| id.as_str()) {
                     None | Some("") => fallback,
-                    Some(id) if utf16_len(id) > 64 => format!("msg_{}", short_hash(id)),
+                    Some(id) if yapi_types::js::len(id) > 64 => format!("msg_{}", short_hash(id)),
                     Some(id) => id.to_owned(),
                 };
                 let mut item = Map::new();

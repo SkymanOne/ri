@@ -212,11 +212,6 @@ pub fn is_autocomplete_separator(c: char) -> bool {
         )
 }
 
-/// Length of `text` in UTF-16 code units, which pi reports as a character count.
-pub fn utf16_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
 #[cfg(test)]
 mod tests {
     /// pi's regexes, as Node 22 evaluates them on these characters.

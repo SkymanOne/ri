@@ -10,6 +10,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::process::ChildStdin;
 use tokio::sync::watch;
+use yapi_types::sync::lock;
 
 use super::jsonrpc::McpError;
 use super::transport::{Event, Events, MAX_MESSAGE_BYTES};
@@ -41,25 +42,6 @@ pub struct StdioTransport {
     exited: Mutex<Option<watch::Receiver<bool>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
     closed: AtomicBool,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Sends `signal` to the server's process group, so wrappers such as `npx`
-/// do not leave the server behind; to the process alone when that fails.
-#[cfg(unix)]
-fn signal_tree(pid: Option<u32>, signal: rustix::process::Signal) {
-    use rustix::process::{Pid, kill_process, kill_process_group};
-    let Some(pid) = pid.and_then(|pid| Pid::from_raw(pid as i32)) else {
-        return;
-    };
-    if kill_process_group(pid, signal).is_err() {
-        let _ = kill_process(pid, signal);
-    }
 }
 
 impl StdioTransport {
@@ -179,18 +161,18 @@ impl StdioTransport {
             .is_err()
         {
             #[cfg(unix)]
-            signal_tree(pid, rustix::process::Signal::TERM);
+            crate::tools::bash::signal_tree(pid, rustix::process::Signal::TERM);
             if tokio::time::timeout(CLOSE_TIMEOUT, &mut wait)
                 .await
                 .is_err()
             {
                 #[cfg(unix)]
-                signal_tree(pid, rustix::process::Signal::KILL);
+                crate::tools::bash::signal_tree(pid, rustix::process::Signal::KILL);
                 wait.await;
             }
         }
         #[cfg(unix)]
-        signal_tree(pid, rustix::process::Signal::TERM);
+        crate::tools::bash::signal_tree(pid, rustix::process::Signal::TERM);
         #[cfg(not(unix))]
         let _ = pid;
     }

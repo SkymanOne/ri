@@ -5,10 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use yapi_types::collate::locale_compare;
+use yapi_types::sync::lock;
 
 use crate::fuzzy::fuzzy_filter;
 use crate::select_list::SelectItem;
-use crate::text::{is_autocomplete_separator, is_js_whitespace, utf16_len};
+use crate::text::{is_autocomplete_separator, is_js_whitespace};
 
 /// Completions for the text before the cursor.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -115,12 +116,6 @@ impl Drop for CombinedProvider {
             search.cancelled.store(true, Ordering::Relaxed);
         }
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 const PATH_WRAPPERS: [(char, char); 5] =
@@ -724,7 +719,7 @@ impl CombinedProvider {
             b_score
                 .cmp(a_score)
                 .then_with(|| depth(&a.path).cmp(&depth(&b.path)))
-                .then_with(|| utf16_len(&a.path).cmp(&utf16_len(&b.path)))
+                .then_with(|| yapi_types::js::len(&a.path).cmp(&yapi_types::js::len(&b.path)))
                 .then_with(|| locale_compare(&a.path, &b.path))
         });
         let items: Vec<SelectItem> = scored

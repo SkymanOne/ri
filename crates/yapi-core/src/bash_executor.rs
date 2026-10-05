@@ -62,7 +62,7 @@ impl Output {
             return;
         }
         let path =
-            std::env::temp_dir().join(format!("yapi-bash-{}.log", crate::tools::random_hex(8)));
+            std::env::temp_dir().join(format!("yapi-bash-{}.log", crate::time::random_hex(8)));
         if let Ok(mut file) = std::fs::File::create(&path) {
             for chunk in &self.chunks {
                 let _ = file.write_all(chunk.as_bytes());

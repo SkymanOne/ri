@@ -21,6 +21,7 @@ use yapi_core::tools::RegisteredTool;
 use yapi_types::event::ToolResult;
 use yapi_types::message::{ContentBlock, Usage};
 use yapi_types::session::FileEntry;
+use yapi_types::sync::lock;
 
 use super::declarations::{Declaration, identifier, sample};
 use super::models;
@@ -242,12 +243,6 @@ struct ScriptBridge {
     model_usage: Mutex<Option<Usage>>,
     /// Images `models.generateImages()` returned.
     generated_images: AtomicUsize,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The successful result of an operation: `undefined` or a JSON value.
@@ -694,9 +689,7 @@ fn summary(calls: &[CallRecord]) -> String {
 
 /// Writes the full text output to a temp file; the path or why not.
 fn spill(text: &str) -> Result<String, String> {
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes).map_err(|err| err.to_string())?;
-    let name: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    let name = yapi_types::time::random_hex(8);
     let path = std::env::temp_dir().join(format!("yapi-codemode-{name}.txt"));
     std::fs::write(&path, text).map_err(|err| err.to_string())?;
     Ok(path.display().to_string())

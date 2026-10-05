@@ -4,7 +4,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 use yapi_ai::registry::Auth;
 use yapi_types::event::{AgentEvent, ToolResult};
-use yapi_types::message::{AssistantMessage, Message, ThinkingLevel, ToolCall, ToolResultMessage};
+use yapi_types::message::{AssistantMessage, Message, ToolCall, ToolResultMessage};
 use yapi_types::model::Model;
 
 /// A tool call about to run.
@@ -61,40 +61,6 @@ pub struct ResultPatch {
     pub terminate: Option<bool>,
 }
 
-/// A completed turn.
-#[derive(Debug)]
-pub struct Turn<'a> {
-    /// The response.
-    pub message: &'a AssistantMessage,
-    /// Results of its tool calls.
-    pub tool_results: &'a [ToolResultMessage],
-    /// The transcript after the turn.
-    pub messages: &'a [Message],
-}
-
-/// What happens after a turn.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum TurnDecision {
-    /// Default: continue while there are tool calls or queued messages.
-    #[default]
-    Default,
-    /// Run another turn even without tool calls.
-    Continue,
-    /// Stop now.
-    End,
-}
-
-/// Changes for the next request.
-#[derive(Clone, Debug, Default)]
-pub struct RequestUpdate {
-    /// Replaces the transcript.
-    pub messages: Option<Vec<Message>>,
-    /// Switches the model.
-    pub model: Option<Model>,
-    /// Switches the thinking level.
-    pub thinking_level: Option<ThinkingLevel>,
-}
-
 /// Hooks into the agent loop. Every method has a no-op default.
 ///
 /// The loop awaits each hook before it continues, so a hook sees a consistent
@@ -136,19 +102,6 @@ pub trait AgentHooks: Send + Sync {
     /// Completes a tool result message before it is emitted, for example
     /// with the calls the tool made.
     fn complete_tool_result(&self, _message: &mut ToolResultMessage) {}
-
-    /// Decides what follows a turn.
-    fn finish_turn<'a>(&'a self, _turn: Turn<'a>) -> BoxFuture<'a, TurnDecision> {
-        Box::pin(async { TurnDecision::Default })
-    }
-
-    /// Adjusts the transcript, model or thinking level before each request.
-    fn prepare_request<'a>(
-        &'a self,
-        _messages: &'a [Message],
-    ) -> BoxFuture<'a, Option<RequestUpdate>> {
-        Box::pin(async { None })
-    }
 
     /// The tools for the next request, read before each turn; `None` keeps
     /// the current ones.
