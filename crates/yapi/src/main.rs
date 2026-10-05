@@ -15,6 +15,7 @@ mod interactive;
 mod list_models;
 mod mcp_command;
 mod modes;
+mod new_command;
 mod packages;
 mod runtime;
 mod startup;
@@ -41,6 +42,9 @@ fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     if raw.first().map(String::as_str) == Some("import") {
         return ExitCode::from(import::run(&raw[1..]));
+    }
+    if raw.first().map(String::as_str) == Some("new") {
+        return ExitCode::from(new_command::run(&raw[1..]));
     }
     if raw.first().map(String::as_str) == Some("config") {
         return ExitCode::from(config_command::run(&raw[1..]));

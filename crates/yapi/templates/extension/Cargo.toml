@@ -1,5 +1,5 @@
 [package]
-name = "hello"
+name = "{{project-name}}"
 version = "0.1.0"
 edition = "2024"
 
@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 yapi-extension-api = { git = "https://github.com/SkymanOne/ri" }
 
 [profile.release]
-opt-level = "s"
+codegen-units = 1
 lto = true
+opt-level = "s"
 strip = true

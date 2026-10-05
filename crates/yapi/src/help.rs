@@ -34,6 +34,7 @@ pub fn text(bold: bool, flags: &[yapi_ext::Flag]) -> String {
   {app} auth <command>            Print credentials or check provider readiness
   {app} mcp <command>             Check MCP servers, sign in to or out of OAuth servers
   {app} import pi                 Copy pi's settings, sessions and resources into {app}
+  {app} new <path> [--name <n>]   Create a Cargo project for a native extension package
   {app} <command> --help          Show help for install/remove/uninstall/update/list/config/auth/mcp
 
 {options}

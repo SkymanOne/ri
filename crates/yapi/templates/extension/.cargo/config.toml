@@ -1,0 +1,3 @@
+# Native extensions are WebAssembly components, so `cargo build` targets WASI.
+[build]
+target = "wasm32-wasip2"

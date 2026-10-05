@@ -60,7 +60,7 @@ Compatibility is measured against Pi itself, with both programs loading the same
 | The 500 most-downloaded Pi packages on npm | 443 of the 475 that Pi loads in the test sandbox give the same registrations and load errors (93%). Of the 367 whose extensions load in Pi without errors, 349 register the same in yapi (95%). |
 | Extension UI | Dialogs, widgets, overlays and custom components match Pi's screens row for row at 80×24 and 120×40 |
 
-A native extension:
+`yapi new shout` creates a native extension as a Cargo project that is also a package. Its `src/lib.rs` registers what the extension offers:
 
 ```rust
 use yapi_extension_api::{Api, Tool, ToolResult, json};
@@ -81,8 +81,10 @@ yapi_extension_api::extension!(init);
 ```
 
 ```bash
-cargo build --release --target wasm32-wasip2
-yapi install ./target/wasm32-wasip2/release/shout.wasm
+cd shout
+cargo build --release
+cp target/wasm32-wasip2/release/shout.wasm extensions/
+yapi install .
 ```
 
 See [Native extensions in Rust](https://skymanone.github.io/ri/native-extensions.html) for the full guide and [the examples](https://skymanone.github.io/ri/native-examples.html) for five complete extensions.

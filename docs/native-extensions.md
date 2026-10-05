@@ -6,29 +6,44 @@ A native extension needs no JavaScript runtime and runs in a WebAssembly instanc
 
 ## Create an extension
 
-Add the `wasm32-wasip2` target to your toolchain:
+Add the `wasm32-wasip2` target to your toolchain once:
 
 ```sh
 rustup target add wasm32-wasip2
 ```
 
-Create a library crate and depend on the SDK from the yapi repository:
+Create a project:
+
+```sh
+yapi new shout
+```
+
+`yapi new` writes a Cargo project that is also a yapi package:
+
+```text
+shout/
+├── .cargo/config.toml   makes wasm32-wasip2 the default target
+├── Cargo.toml           a cdylib crate that depends on yapi-extension-api
+├── README.md
+├── extensions/          where the built extension goes
+├── package.json         names extensions/shout.wasm for yapi
+└── src/lib.rs           the hello example, to replace with your own
+```
+
+The package takes the directory's name, and `--name` sets another. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
+
+```sh
+cargo generate --git https://github.com/SkymanOne/ri crates/yapi/templates/extension
+```
+
+To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK from the yapi repository:
 
 ```toml
-# Cargo.toml
-[package]
-name = "shout"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
 yapi-extension-api = { git = "https://github.com/SkymanOne/ri" }
 ```
 
-Register what the extension offers in an init function and export it with `extension!`:
+An extension registers what it offers in an init function and exports it with `extension!`:
 
 ```rust
 // src/lib.rs
@@ -58,50 +73,47 @@ fn init(api: &mut Api) {
 yapi_extension_api::extension!(init);
 ```
 
-Build it:
+Build it, and copy the build into the package:
 
 ```sh
-cargo build --release --target wasm32-wasip2
+cargo build --release
+cp target/wasm32-wasip2/release/shout.wasm extensions/
 ```
 
-The result is `target/wasm32-wasip2/release/shout.wasm`.
+A crate without the template's `.cargo/config.toml` builds with `cargo build --release --target wasm32-wasip2`.
 
 ## Try it
 
-Load the build for a single run without installing it:
+Load the package for a single run without installing it:
 
 ```sh
-yapi -e target/wasm32-wasip2/release/shout.wasm
+yapi -e .
 ```
+
+`-e` also takes the `.wasm` file itself.
 
 ## Install it
 
-`yapi install` takes the `.wasm` file directly:
+`yapi install` takes the package folder or the `.wasm` file:
 
 ```sh
-yapi install ./target/wasm32-wasip2/release/shout.wasm       # for every project
-yapi install ./target/wasm32-wasip2/release/shout.wasm -l    # for this project only
+yapi install .       # for every project
+yapi install . -l    # for this project only
 ```
 
 yapi records the path in `settings.json` and loads the file from where it is, so a rebuild takes effect the next time yapi starts. `yapi list` shows the installed extension and `yapi remove <path>` uninstalls it. `yapi config` turns it off without removing it.
 
 ## Share it
 
-A native extension is shared as a package that contains the built `.wasm` file. The simplest layout needs no manifest, because yapi loads every `.wasm` file in a package's `extensions` folder:
-
-```text
-shout/
-└── extensions/
-    └── shout.wasm
-```
-
-Push that folder to a git repository, and others install it by its URL:
+A native extension is shared as a package that contains the built `.wasm` file. A project from `yapi new` already is one: commit `extensions/shout.wasm` with the sources, push the repository, and others install it by its URL:
 
 ```sh
 yapi install git:github.com/you/shout
 ```
 
-To publish on npm, add a `package.json` with a name and a version, then install with `yapi install npm:shout`. The manifest can also name the files to load. yapi reads the `yapi` key before the `pi` key, so one package can ship a native build for yapi and a JavaScript build for Pi:
+To publish on npm, run `npm publish`, then install with `yapi install npm:shout`. The template's `package.json` publishes only the `extensions` folder.
+
+A package needs no manifest, because yapi loads every `.wasm` file in a package's `extensions` folder. A manifest names the files, and yapi reads its `yapi` key before the `pi` key, so one package can ship a native build for yapi and a JavaScript build for Pi:
 
 ```json
 {
