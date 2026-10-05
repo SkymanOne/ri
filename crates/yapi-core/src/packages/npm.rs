@@ -100,6 +100,13 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                         _ => parts.push(token.to_owned()),
                     }
                 }
+                // A bare version is exact in npm (`1.2` is `1.2.x`) but a
+                // caret requirement in `semver`.
+                for part in &mut parts {
+                    if part.starts_with(|c: char| c.is_ascii_digit()) {
+                        part.insert(0, '=');
+                    }
+                }
                 if parts.is_empty() {
                     "*".into()
                 } else {
@@ -537,6 +544,14 @@ mod tests {
         assert!(satisfies("1.5.0", ">=1.2 <2"));
         assert!(satisfies("3.0.0", "^1 || ^3"));
         assert!(satisfies("1.9.9", "1.x"));
+        // Bare versions are exact in npm, partial ones are x-ranges.
+        assert!(satisfies("1.2.3", "1.2.3"));
+        assert!(!satisfies("1.3.0", "1.2.3"));
+        assert!(satisfies("1.2.9", "1.2"));
+        assert!(!satisfies("1.3.0", "1.2"));
+        assert!(satisfies("1.9.0", "1"));
+        assert!(!satisfies("2.0.0", "1"));
+        assert!(satisfies("1.2.5", "1.0.0 || 1.2"));
         assert!(satisfies("0.1.0", "*"));
         assert!(satisfies("1.3.0", "1.2.0 - 1.4.0"));
         assert!(!satisfies("1.0.0-beta.1", "^1.0.0"));
