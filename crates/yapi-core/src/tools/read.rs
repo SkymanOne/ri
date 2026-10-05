@@ -1,5 +1,6 @@
 //! `read`: text files with offset and limit, images as attachments.
 
+use base64::Engine as _;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -10,7 +11,7 @@ use yapi_types::message::{ContentBlock, ImageContent, ToolDeclaration};
 use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, format_size, truncate_head,
 };
-use super::{ToolEnv, declaration, js_number, node_error, text, text_result};
+use super::{ToolEnv, declaration, js_number, node_error, text_result};
 
 /// The `read` tool.
 pub struct Read {
@@ -89,7 +90,7 @@ impl Read {
                 .and_then(|images| images.resize.as_ref())
                 .and_then(|resize| resize.max_bytes)
                 .map_or(DEFAULT_MAX_IMAGE_BYTES, |max| max as usize);
-            let data = base64(&bytes);
+            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
             if mime_type == "image/bmp" || data.len() > max_bytes {
                 let reason = if mime_type == "image/bmp" {
                     "[Image omitted: could not be converted to a supported inline image format.]"
@@ -108,7 +109,7 @@ impl Read {
             }
             return Ok(ToolResult {
                 content: vec![
-                    text(note),
+                    ContentBlock::text(note),
                     ContentBlock::Image(ImageContent {
                         data,
                         mime_type: mime_type.to_owned(),
@@ -221,41 +222,4 @@ fn is_animated_png(bytes: &[u8]) -> bool {
         offset = next;
     }
     false
-}
-
-/// Standard base64 with padding.
-pub fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = (u32::from(chunk[0]) << 16)
-            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
-        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 {
-            ALPHABET[(n >> 6) as usize & 63] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            ALPHABET[n as usize & 63] as char
-        } else {
-            '='
-        });
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn encodes_base64() {
-        assert_eq!(base64(b""), "");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
-    }
 }

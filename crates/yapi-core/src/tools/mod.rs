@@ -29,7 +29,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
-use yapi_types::message::{ContentBlock, TextContent, ThinkingLevel, ToolDeclaration};
+use yapi_types::message::{ContentBlock, ThinkingLevel, ToolDeclaration};
 use yapi_types::model::Model;
 
 pub use bash::Bash;
@@ -37,7 +37,7 @@ pub use edit::Edit;
 pub use find::Find;
 pub use grep::Grep;
 pub use ls::Ls;
-pub use read::{Read, base64, image_mime_type};
+pub use read::{Read, image_mime_type};
 pub use write::Write;
 
 /// Names of the tools active by default.
@@ -273,16 +273,9 @@ fn plain_declaration(name: &str, description: String, parameters: Value) -> Tool
     }
 }
 
-fn text(text: impl Into<String>) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: text.into(),
-        text_signature: None,
-    })
-}
-
 fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult {
     ToolResult {
-        content: vec![text(content)],
+        content: vec![ContentBlock::text(content)],
         details,
         ..ToolResult::default()
     }

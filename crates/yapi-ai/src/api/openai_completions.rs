@@ -8,8 +8,8 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, Usage,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel, ToolCall,
+    ToolDeclaration, Usage,
 };
 use yapi_types::model::{Model, OpenAiCompletionsCompat};
 
@@ -1180,10 +1180,7 @@ impl State {
         if let Some(position) = self.text {
             return position;
         }
-        self.output.content.push(ContentBlock::Text(TextContent {
-            text: String::new(),
-            text_signature: None,
-        }));
+        self.output.content.push(ContentBlock::text(""));
         let position = self.output.content.len() - 1;
         self.text = Some(position);
         sender.update(

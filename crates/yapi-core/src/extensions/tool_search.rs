@@ -294,7 +294,7 @@ impl Tool for ToolSearch {
             };
             let names: Vec<&str> = loaded.iter().map(|(name, _)| name.as_str()).collect();
             Ok(ToolResult {
-                content: vec![crate::mcp::content::text(text)],
+                content: vec![yapi_types::message::ContentBlock::text(text)],
                 details: Some(json!({ "loaded": names })),
                 ..ToolResult::default()
             })

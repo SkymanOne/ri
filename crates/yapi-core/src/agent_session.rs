@@ -26,7 +26,7 @@ use yapi_types::event::{AgentEvent, ToolResult};
 use yapi_types::event::{CompactionReason, CompactionResult, SummarySource};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
-    TextContent, ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
+    ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
 };
 use yapi_types::model::Model;
 use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
@@ -1137,10 +1137,7 @@ impl AgentSession {
     }
 
     fn user_message(text: String, images: Vec<ImageContent>) -> Message {
-        let mut content = vec![ContentBlock::Text(TextContent {
-            text,
-            text_signature: None,
-        })];
+        let mut content = vec![ContentBlock::text(text)];
         content.extend(images.into_iter().map(ContentBlock::Image));
         Message::User(UserMessage {
             content: Content::Blocks(content),
@@ -2547,10 +2544,7 @@ impl AgentSession {
             None => ToolCallOutcome {
                 call: call.clone(),
                 result: ToolResult {
-                    content: vec![ContentBlock::Text(TextContent {
-                        text: "No assistant message issued this call".into(),
-                        text_signature: None,
-                    })],
+                    content: vec![ContentBlock::text("No assistant message issued this call")],
                     details: Some(Value::Object(serde_json::Map::new())),
                     ..ToolResult::default()
                 },

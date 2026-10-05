@@ -18,15 +18,20 @@ pub struct Cassette {
 impl Cassette {
     /// Reads a cassette from a JSON file.
     pub fn load(path: &Path) -> Result<Self, Error> {
-        let text = fs::read_to_string(path).map_err(|source| Error::Read {
-            path: path.to_owned(),
-            source,
-        })?;
-        serde_json::from_str(&text).map_err(|source| Error::Parse {
-            path: path.to_owned(),
-            source,
-        })
+        load_json(path)
     }
+}
+
+/// Reads a JSON file as `T`.
+pub(crate) fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Error> {
+    let text = fs::read_to_string(path).map_err(|source| Error::Read {
+        path: path.to_owned(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| Error::Parse {
+        path: path.to_owned(),
+        source,
+    })
 }
 
 /// One expected request and the response to it.

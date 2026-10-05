@@ -1189,10 +1189,7 @@ impl State {
             }
             "message" => {
                 self.apply_phase(item);
-                self.output.content.push(ContentBlock::Text(TextContent {
-                    text: String::new(),
-                    text_signature: None,
-                }));
+                self.output.content.push(ContentBlock::text(""));
                 (
                     Slot::Text(position),
                     AssistantMessageEvent::TextStart {

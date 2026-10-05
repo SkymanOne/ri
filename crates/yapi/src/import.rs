@@ -6,14 +6,13 @@ use std::path::Path;
 
 use yapi_core::import::{AGENT_ENTRIES, Imported, PROJECT_ENTRIES, import, pi_agent_dir};
 
+use crate::{err, out};
+
 const USAGE: &str = "Usage:\n  yapi import pi\n\nCopy pi's settings, credentials, models, keybindings, MCP servers, sessions,\nprompts, skills, themes, extensions and packages into yapi. Files yapi already has\nare kept. The current project's .pi directory is copied into .yapi.\n";
 
-fn out(line: &str) {
-    let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-fn err(line: &str) {
-    let _ = writeln!(std::io::stderr(), "{line}");
+/// "file" or "files" for `count`.
+fn files(count: usize) -> &'static str {
+    if count == 1 { "file" } else { "files" }
 }
 
 /// Prints what one directory's import did; the files copied and kept.
@@ -23,7 +22,6 @@ fn report(from: &Path, to: &Path, imported: &[Imported]) -> (usize, usize) {
         out("  nothing to import");
     }
     for entry in imported {
-        let files = |count: usize| if count == 1 { "file" } else { "files" };
         let mut line = format!(
             "  {}: {} {} copied",
             entry.entry,
@@ -87,7 +85,6 @@ pub fn run(args: &[String]) -> u8 {
             return 1;
         }
     }
-    let files = |count: usize| if count == 1 { "file" } else { "files" };
     out(&format!(
         "Imported {} {}; kept {} existing {}.",
         totals.0,

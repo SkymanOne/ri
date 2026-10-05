@@ -8,9 +8,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -68,11 +69,6 @@ impl Scenario {
             return Some("its golden shows another operating system's text");
         }
         None
-    }
-
-    /// Whether this machine can run the scenario; see [`Scenario::skip_reason`].
-    pub fn runnable(&self) -> bool {
-        self.skip_reason().is_none()
     }
 }
 
@@ -197,13 +193,41 @@ pub fn fixtures_dir() -> PathBuf {
 
 /// Loads every scenario.
 pub fn load_scenarios() -> Result<Vec<Scenario>, Error> {
-    let path = fixtures_dir().join("scenarios/scenarios.json");
-    let text = std::fs::read_to_string(&path).map_err(|source| Error::Read {
-        path: path.clone(),
-        source,
-    })?;
-    serde_json::from_str(&text).map_err(|source| Error::Parse { path, source })
+    crate::cassette::load_json(&fixtures_dir().join("scenarios/scenarios.json"))
 }
+
+/// Compiles a pattern of this file; each is a valid literal.
+fn pattern(text: &str) -> Regex {
+    Regex::new(text).expect("the normalizer's patterns are valid")
+}
+
+/// pi's sign-in help: a providers.md line followed by a models.md path.
+static PROVIDERS_DOC: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(
+        r"(?m)^[^\n]*/pi-coding-agent/docs/providers\.md\n[^\n]*/pi-coding-agent/docs/models\.md",
+    )
+});
+/// pi's `<docs>` section of the system prompt.
+static DOCS_SECTION: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"\n\n<docs>\n(?s:(?:.*?\n)?)</docs>"));
+/// A path to pi's codemode reference.
+static CODEMODE_DOC: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r#"[^\s"]*/pi-coding-agent/docs/codemode\.md"#));
+/// Codemode's wall time line.
+static WALL_TIME: LazyLock<Regex> = LazyLock::new(|| pattern(r"\nWall time [0-9.]* seconds\n"));
+/// A new session file name: a timestamp and the session id.
+static SESSION_FILE: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(
+        r"(?s)(.{23}Z_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))\.jsonl",
+    )
+});
+/// A UUID such as pi and yapi use for session ids.
+static UUID: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+});
+/// A codemode call row ending in its duration.
+static CALL_DURATION: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^(\s*[✓✗⊘…].*) (?:[0-9]+ms|[0-9]+\.[0-9]s)$"));
 
 /// The length of every run's root directory path. Screens show paths under the
 /// root, and pi's goldens wrap them where a root of 36 to 54 characters does:
@@ -216,10 +240,8 @@ const ROOT_LEN: usize = 45;
 /// A fresh directory for one run, named after the scenario and padded or
 /// truncated to [`ROOT_LEN`].
 fn scratch_dir(name: &str) -> PathBuf {
-    static COUNTER: OnceLock<std::sync::atomic::AtomicU64> = OnceLock::new();
-    let n = COUNTER
-        .get_or_init(Default::default)
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let base = scratch_base();
     let unique = format!("yapi-{}-{n}", std::process::id());
     let len = ROOT_LEN
@@ -371,10 +393,11 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         }
         None => {
             let mut command = tokio::process::Command::new(executable);
-            command.args(&args).current_dir(&cwd).env_clear();
-            for (key, value) in &env {
-                command.env(key, value);
-            }
+            command
+                .args(&args)
+                .current_dir(&cwd)
+                .env_clear()
+                .envs(env.iter().map(|(key, value)| (key, value)));
             command
                 .stdin(if scenario.stdin.is_some() {
                     Stdio::piped()
@@ -469,10 +492,11 @@ async fn run_rpc(
 ) -> std::io::Result<(i32, String, String)> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
     let mut command = tokio::process::Command::new(executable);
-    command.args(args).current_dir(cwd).env_clear();
-    for (key, value) in env {
-        command.env(key, value);
-    }
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env.iter().map(|(key, value)| (key, value)));
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -670,92 +694,40 @@ impl Normalizer<'_> {
                 "  https://github.com/SkymanOne/ri#models-and-sign-in",
                 "  <sign-in help>",
             );
-        const PROVIDERS_DOC: &str = "/pi-coding-agent/docs/providers.md\n";
-        const MODELS_DOC: &str = "/pi-coding-agent/docs/models.md";
-        while let Some(found) = text.find(PROVIDERS_DOC) {
-            let start = text[..found].rfind('\n').map_or(0, |line| line + 1);
-            let after = found + PROVIDERS_DOC.len();
-            let Some(end) = text[after..]
-                .find(MODELS_DOC)
-                .filter(|offset| !text[after..after + offset].contains('\n'))
-            else {
-                break;
-            };
-            text.replace_range(start..after + end + MODELS_DOC.len(), "  <sign-in help>");
-        }
+        text = PROVIDERS_DOC
+            .replace_all(&text, "  <sign-in help>")
+            .into_owned();
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }
         // pi's documentation section points into pi's install; yapi has none.
-        while let Some(start) = text.find("\n\n<docs>\n") {
-            match text[start..].find("\n</docs>") {
-                Some(end) => text.replace_range(start..start + end + "\n</docs>".len(), ""),
-                None => break,
-            }
-        }
+        let text = DOCS_SECTION.replace_all(&text, "");
         // Codemode's reference: in pi's install, and in yapi's agent directory.
-        const CODEMODE_DOC: &str = "/pi-coding-agent/docs/codemode.md";
-        text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
-        while let Some(found) = text.find(CODEMODE_DOC) {
-            let start = text[..found]
-                .rfind(|c: char| c.is_whitespace() || c == '"')
-                .map_or(0, |index| index + 1);
-            text.replace_range(start..found + CODEMODE_DOC.len(), "<codemode docs>");
-        }
+        let text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
+        let text = CODEMODE_DOC.replace_all(&text, "<codemode docs>");
         // Codemode results report the script's wall time.
-        let mut rest = text.as_str();
-        let mut timed = String::new();
-        while let Some(start) = rest.find("\nWall time ") {
-            let after = &rest[start + "\nWall time ".len()..];
-            match after.find(" seconds\n") {
-                Some(end) if after[..end].chars().all(|c| c.is_ascii_digit() || c == '.') => {
-                    timed.push_str(&rest[..start]);
-                    timed.push_str("\nWall time <seconds> seconds\n");
-                    rest = &after[end + " seconds\n".len()..];
-                }
-                _ => {
-                    timed.push_str(&rest[..start + 1]);
-                    rest = &rest[start + 1..];
-                }
-            }
-        }
-        timed.push_str(rest);
-        let text = timed;
+        let text = WALL_TIME.replace_all(&text, "\nWall time <seconds> seconds\n");
         self.unsaved_session_files(&text)
     }
 
     /// Names of new session files that were never written, such as an empty
     /// fork's, as `<session <id>>.jsonl` with the id normalized.
     fn unsaved_session_files(&mut self, text: &str) -> String {
-        const STAMP: usize = "2026-01-01T00-00-00-000Z_".len();
-        const UUID: usize = 36;
-        let mut out = String::new();
-        let mut rest = text;
-        while let Some(end) = rest.find(".jsonl") {
-            let start = end.saturating_sub(STAMP + UUID);
-            let candidate = rest.get(start..end).unwrap_or_default();
-            let seeded = self
-                .run
-                .sessions
-                .iter()
-                .any(|file| file.seeded && file.name.strip_suffix(".jsonl") == Some(candidate));
-            let named = candidate.len() == STAMP + UUID
-                && !seeded
-                && candidate.as_bytes()[STAMP - 1] == b'_'
-                && candidate.as_bytes()[STAMP - 2] == b'Z'
-                && is_uuid(&candidate[STAMP..]);
-            if named {
-                out.push_str(&rest[..start]);
-                let id = self.id(&Value::from(&candidate[STAMP..]));
-                out.push_str(&format!("<session {}>", id.as_str().unwrap_or_default()));
-            } else {
-                out.push_str(&rest[..end]);
-            }
-            out.push_str(".jsonl");
-            rest = &rest[end + ".jsonl".len()..];
-        }
-        out.push_str(rest);
-        out
+        SESSION_FILE
+            .replace_all(text, |captures: &regex_lite::Captures| {
+                let name = &captures[1];
+                let seeded = self
+                    .run
+                    .sessions
+                    .iter()
+                    .any(|file| file.seeded && file.name.strip_suffix(".jsonl") == Some(name));
+                if seeded {
+                    return captures[0].to_owned();
+                }
+                let id = self.id(&Value::from(&captures[2]));
+                format!("<session {}>.jsonl", id.as_str().unwrap_or_default())
+            })
+            .into_owned()
     }
 
     fn id(&mut self, value: &Value) -> Value {
@@ -921,16 +893,6 @@ pub fn normalize(run: &Run) -> Value {
     out
 }
 
-/// Whether `text` is a UUID such as pi and yapi use for session ids.
-fn is_uuid(text: &str) -> bool {
-    let parts: Vec<&str> = text.split('-').collect();
-    parts.len() == 5
-        && parts
-            .iter()
-            .zip([8, 4, 4, 4, 12])
-            .all(|(part, len)| part.len() == len && part.chars().all(|c| c.is_ascii_hexdigit()))
-}
-
 /// Screen rows without the product-specific startup header (pi's logo, its
 /// docs tip, yapi's wordmark), with paths and session ids masked, trailing space
 /// trimmed and blank runs collapsed, so the rest compares across programs.
@@ -1005,10 +967,11 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
         }
         let row = row
             .split(' ')
-            .map(|word| if is_uuid(word) { "<uuid>" } else { word })
+            .map(|word| if UUID.is_match(word) { "<uuid>" } else { word })
             .collect::<Vec<_>>()
             .join(" ");
-        let row = mask_call_duration(row);
+        // A codemode call row (`✓ read {...} 12ms`) with its duration masked.
+        let row = CALL_DURATION.replace(&row, "$1 <duration>").into_owned();
         if row.trim().is_empty() && out.last().is_none_or(|last| last.trim().is_empty()) {
             continue;
         }
@@ -1020,33 +983,6 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
     out
 }
 
-/// A codemode call row (`✓ read {...} 12ms`) with its duration masked.
-fn mask_call_duration(row: String) -> String {
-    let icon = row.trim_start().chars().next();
-    if !matches!(icon, Some('✓' | '✗' | '⊘' | '…')) {
-        return row;
-    }
-    let Some((head, last)) = row.rsplit_once(' ') else {
-        return row;
-    };
-    let timed = last
-        .strip_suffix("ms")
-        .is_some_and(|ms| !ms.is_empty() && ms.chars().all(|c| c.is_ascii_digit()))
-        || last.strip_suffix('s').is_some_and(|seconds| {
-            seconds.split_once('.').is_some_and(|(whole, tenths)| {
-                !whole.is_empty()
-                    && whole.chars().all(|c| c.is_ascii_digit())
-                    && tenths.len() == 1
-                    && tenths.chars().all(|c| c.is_ascii_digit())
-            })
-        });
-    if timed {
-        format!("{head} <duration>")
-    } else {
-        row
-    }
-}
-
 fn sort_tool_completions(events: &mut [Value]) {
     let is_completion = |event: &Value| {
         matches!(
@@ -1054,18 +990,10 @@ fn sort_tool_completions(events: &mut [Value]) {
             Some("tool_execution_end" | "tool_execution_update")
         )
     };
-    let key = |event: &Value| event.to_string();
-    let mut start = 0;
-    while start < events.len() {
-        if !is_completion(&events[start]) {
-            start += 1;
-            continue;
+    for run in events.chunk_by_mut(|a, b| is_completion(a) == is_completion(b)) {
+        if is_completion(&run[0]) {
+            run.sort_by_key(|event| event.to_string());
         }
-        let end = (start..events.len())
-            .find(|&index| !is_completion(&events[index]))
-            .unwrap_or(events.len());
-        events[start..end].sort_by_key(key);
-        start = end;
     }
 }
 

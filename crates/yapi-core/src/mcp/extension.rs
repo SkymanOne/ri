@@ -18,7 +18,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 use yapi_types::rpc::SourceInfo;
 
-use super::config::{self, McpExposure, ServerEntry, ServerTransport, namespace};
+use super::config::{self, McpExposure, ServerEntry, namespace};
 use super::connection::{Connection, State};
 use super::tools::{
     LIST_MCP_RESOURCE_TEMPLATES_TOOL, LIST_MCP_RESOURCES_TOOL, McpTool, READ_MCP_RESOURCE_TOOL,
@@ -225,24 +225,6 @@ fn describe_state(server: &Server, with_error: bool) -> String {
         }
         State::Connecting => "connecting…".into(),
         other => other.as_str().into(),
-    }
-}
-
-/// Whether the server would sign in with OAuth: HTTP without an
-/// `Authorization` header or provider auth.
-fn uses_oauth(entry: &ServerEntry) -> bool {
-    match &entry.config.transport {
-        ServerTransport::Http {
-            headers,
-            auth_provider,
-            ..
-        } => {
-            auth_provider.is_none()
-                && !headers
-                    .keys()
-                    .any(|name| name.eq_ignore_ascii_case("authorization"))
-        }
-        ServerTransport::Stdio { .. } => false,
     }
 }
 
@@ -740,7 +722,9 @@ impl McpExtension {
         }
         let name = rest.first().copied();
         let none = "No enabled MCP server uses OAuth. Only HTTP servers without an Authorization header do.";
-        let oauth = |server: &Server| server.connection.is_some() && uses_oauth(&server.entry);
+        let oauth = |server: &Server| {
+            server.connection.is_some() && server.entry.config.transport.uses_oauth()
+        };
         let needs_auth = |server: &Server| {
             server
                 .connection
@@ -872,7 +856,7 @@ impl Extension for McpExtension {
                 if action == "reconnect" {
                     candidate.connection.is_some()
                 } else {
-                    candidate.connection.is_some() && uses_oauth(&candidate.entry)
+                    candidate.connection.is_some() && candidate.entry.config.transport.uses_oauth()
                 }
             })
             .filter(|candidate| candidate.entry.name.starts_with(server))

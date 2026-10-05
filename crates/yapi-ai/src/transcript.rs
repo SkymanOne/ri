@@ -7,8 +7,8 @@
 
 use indexmap::IndexMap;
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, SystemMessage, TextContent,
-    ToolDeclaration, ToolResultMessage,
+    AssistantMessage, ContentBlock, Message, StopReason, SystemMessage, ToolDeclaration,
+    ToolResultMessage,
 };
 use yapi_types::model::Model;
 
@@ -225,10 +225,7 @@ fn replace_images(content: &[ContentBlock], placeholder: &str) -> Vec<ContentBlo
 }
 
 fn text_block(text: &str) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: text.to_owned(),
-        text_signature: None,
-    })
+    ContentBlock::text(text)
 }
 
 /// Maps a tool-call id from another model to one the target API accepts, given
@@ -615,13 +612,7 @@ mod tests {
         let Message::Assistant(first) = &out[0] else {
             panic!()
         };
-        assert_eq!(
-            first.content[0],
-            ContentBlock::Text(TextContent {
-                text: "hmm".into(),
-                text_signature: None
-            })
-        );
+        assert_eq!(first.content[0], ContentBlock::text("hmm"));
         let Message::ToolResult(result) = &out[1] else {
             panic!()
         };

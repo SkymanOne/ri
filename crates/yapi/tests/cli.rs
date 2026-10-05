@@ -1,5 +1,7 @@
 //! Command-line contract tests for the `yapi` binary.
 
+mod common;
+
 use std::process::Command;
 
 #[test]
@@ -23,10 +25,8 @@ fn version_prints_bare_version() {
 #[test]
 fn export_matches_pi_byte_for_byte() {
     use sha2::Digest;
-    let fixtures =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/pi/sessions");
-    let out = std::env::temp_dir().join(format!("yapi-export-{}", std::process::id()));
-    std::fs::create_dir_all(&out).unwrap();
+    let fixtures = common::fixtures().join("pi/sessions");
+    let out = common::scratch("export");
     for (name, digest) in [
         (
             "main",
@@ -42,13 +42,10 @@ fn export_matches_pi_byte_for_byte() {
         ),
     ] {
         let target = out.join(format!("{name}.html"));
-        let output = Command::new(env!("CARGO_BIN_EXE_yapi"))
+        let output = common::yapi(&out)
             .arg("--export")
             .arg(fixtures.join(format!("{name}.jsonl")))
             .arg(&target)
-            .env_clear()
-            .env("HOME", &out)
-            .env("YAPI_CODING_AGENT_DIR", out.join("agent"))
             .output()
             .unwrap();
         assert!(output.status.success(), "{name}: {output:?}");
@@ -72,23 +69,17 @@ fn export_matches_pi_byte_for_byte() {
         String::from_utf8(missing.stderr).unwrap(),
         "Error: File not found: /nonexistent/session.jsonl\n"
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 /// Once `-p` or `--mode` owns stdout, help and the model list go to stderr,
 /// as in pi; on their own they print to stdout.
 #[test]
 fn metadata_goes_to_stderr_in_print_and_modes() {
-    let home = std::env::temp_dir().join(format!("yapi-metadata-{}", std::process::id()));
-    std::fs::create_dir_all(&home).unwrap();
+    let home = common::scratch("metadata");
     let run = |args: &[&str]| {
-        let output = Command::new(env!("CARGO_BIN_EXE_yapi"))
+        let output = common::yapi(&home)
             .args(args)
-            .env_clear()
-            .env("HOME", &home)
-            .env("YAPI_CODING_AGENT_DIR", home.join("agent"))
             .env("ANTHROPIC_API_KEY", "unused")
-            .current_dir(&home)
             .output()
             .unwrap();
         assert!(output.status.success(), "{args:?}: {output:?}");
@@ -110,7 +101,6 @@ fn metadata_goes_to_stderr_in_print_and_modes() {
     assert!(stderr.contains("claude-sonnet-4-5"));
     let (stdout, _) = run(&["--list-models", "claude-sonnet-4-5"]);
     assert!(stdout.contains("claude-sonnet-4-5"));
-    let _ = std::fs::remove_dir_all(&home);
 }
 
 /// pi's RPC mode starts without any model, reporting pi-agent-core's
@@ -120,15 +110,10 @@ fn metadata_goes_to_stderr_in_print_and_modes() {
 #[test]
 fn rpc_starts_without_models_and_exits_on_sigterm() {
     use std::io::{BufRead, Write};
-    let home = std::env::temp_dir().join(format!("yapi-rpc-signal-{}", std::process::id()));
-    std::fs::create_dir_all(&home).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_yapi"))
+    let home = common::scratch("rpc-signal");
+    let mut child = common::yapi(&home)
         .args(["--mode", "rpc"])
-        .env_clear()
-        .env("HOME", &home)
-        .env("YAPI_CODING_AGENT_DIR", home.join("agent"))
         .env("PI_OFFLINE", "1")
-        .current_dir(&home)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -171,14 +156,14 @@ fn rpc_starts_without_models_and_exits_on_sigterm() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn print_mode_kills_running_commands_on_sigterm() {
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
-    let cassette =
-        yapi_mock::Cassette::load(&fixtures.join("cassettes/anthropic-messages/sleep-tool.json"))
-            .unwrap();
+    let cassette = yapi_mock::Cassette::load(
+        &common::fixtures().join("cassettes/anthropic-messages/sleep-tool.json"),
+    )
+    .unwrap();
     let server = yapi_mock::MockServer::start("127.0.0.1:0".parse().unwrap(), cassette)
         .await
         .unwrap();
-    let home = std::env::temp_dir().join(format!("yapi-print-signal-{}", std::process::id()));
+    let home = common::scratch("print-signal");
     std::fs::create_dir_all(home.join("agent")).unwrap();
     std::fs::write(
         home.join("agent/models.json"),
@@ -188,7 +173,7 @@ async fn print_mode_kills_running_commands_on_sigterm() {
         ),
     )
     .unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_yapi"))
+    let mut child = common::yapi(&home)
         .args([
             "-p",
             "--no-session",
@@ -196,13 +181,9 @@ async fn print_mode_kills_running_commands_on_sigterm() {
             "anthropic/claude-sonnet-4-5",
             "go",
         ])
-        .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("HOME", &home)
-        .env("YAPI_CODING_AGENT_DIR", home.join("agent"))
         .env("ANTHROPIC_API_KEY", "mock")
         .env("PI_OFFLINE", "1")
-        .current_dir(&home)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -241,8 +222,7 @@ async fn print_mode_kills_running_commands_on_sigterm() {
 /// nothing for a package without extensions or one that is not installed.
 #[test]
 fn list_tags_extension_kinds() {
-    let root = std::env::temp_dir().join(format!("yapi-list-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+    let root = common::scratch("list");
     let files = [
         "js/index.ts",
         "native/extensions/shout.wasm",
@@ -270,14 +250,7 @@ fn list_tags_extension_kinds() {
         "npm:not-installed",
     ]});
     std::fs::write(agent.join("settings.json"), settings.to_string()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_yapi"))
-        .arg("list")
-        .current_dir(&root)
-        .env_clear()
-        .env("HOME", &root)
-        .env("YAPI_CODING_AGENT_DIR", &agent)
-        .output()
-        .unwrap();
+    let output = common::yapi(&root).arg("list").output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let package = |name: &str, tag: &str| format!("  {}{tag}\n    {}\n", path(name), path(name));
     let expected = [
@@ -296,7 +269,6 @@ fn list_tags_extension_kinds() {
     ]
     .concat();
     assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// pi's service and easter egg commands report that yapi does not offer them,
@@ -304,8 +276,7 @@ fn list_tags_extension_kinds() {
 #[test]
 fn service_commands_are_not_offered() {
     use std::time::Duration;
-    let root = std::env::temp_dir().join(format!("yapi-unavailable-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+    let root = common::scratch("unavailable");
     let agent = root.join("agent");
     std::fs::create_dir_all(&agent).unwrap();
     let env = [
@@ -337,19 +308,13 @@ fn service_commands_are_not_offered() {
         pty.rows()
     );
     pty.finish().unwrap();
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
 fn update_self_names_the_installer() {
-    let dir = std::env::temp_dir().join(format!("yapi-update-self-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_yapi"))
+    let dir = common::scratch("update-self");
+    let output = common::yapi(&dir)
         .args(["update", "self"])
-        .current_dir(&dir)
-        .env_clear()
-        .env("HOME", &dir)
-        .env("YAPI_CODING_AGENT_DIR", dir.join("agent"))
         .env("PI_OFFLINE", "1")
         .output()
         .unwrap();

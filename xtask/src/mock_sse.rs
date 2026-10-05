@@ -37,10 +37,7 @@ pub struct Args {
 }
 
 pub fn run(args: Args) -> anyhow::Result<ExitCode> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(serve(args))
+    tokio::runtime::Runtime::new()?.block_on(serve(args))
 }
 
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
@@ -91,7 +88,11 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     }
 }
 
-fn write_json(path: &std::path::Path, value: &impl serde::Serialize) -> anyhow::Result<()> {
+/// Writes `value` as pi's pretty JSON with a trailing newline.
+pub(crate) fn write_json(
+    path: &std::path::Path,
+    value: &impl serde::Serialize,
+) -> anyhow::Result<()> {
     let json = yapi_types::json::to_string_pretty(value, "  ")?;
     fs::write(path, json + "\n").with_context(|| format!("writing {}", path.display()))
 }

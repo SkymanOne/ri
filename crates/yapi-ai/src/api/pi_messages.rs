@@ -7,7 +7,7 @@
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, StopReason, TextContent, ThinkingContent, ToolCall, Usage,
+    AssistantMessage, ContentBlock, StopReason, ThinkingContent, ToolCall, Usage,
 };
 use yapi_types::model::Model;
 
@@ -154,10 +154,7 @@ impl Converter {
     fn block(&mut self, index: usize, block: ContentBlock) {
         let content = &mut self.partial.content;
         while content.len() <= index {
-            content.push(ContentBlock::Text(TextContent {
-                text: String::new(),
-                text_signature: None,
-            }));
+            content.push(ContentBlock::text(""));
         }
         content[index] = block;
     }
@@ -203,13 +200,7 @@ impl Converter {
                 return Some(StreamEvent::Error(self.partial.clone()));
             }
             "text_start" => {
-                self.block(
-                    index,
-                    ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }),
-                );
+                self.block(index, ContentBlock::text(""));
                 AssistantMessageEvent::TextStart {
                     content_index: index,
                 }

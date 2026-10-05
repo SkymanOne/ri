@@ -1,14 +1,15 @@
 //! `yapi install`, `remove` (`uninstall`), `update` and `list`: pi's package
 //! commands (`package-manager-cli.ts` in pi `v1.0.0`).
 
-use std::io::{IsTerminal as _, Write as _};
-use std::path::{Path, PathBuf};
+use std::io::Write as _;
+use std::path::PathBuf;
 
 use yapi_core::config::agent_dir;
 use yapi_core::extensions::discovery::is_native;
 use yapi_core::packages::PackageManager;
-use yapi_core::settings::{Scope, SettingsManager};
-use yapi_core::trust::{TrustStore, needs_prompt, resolve_trusted};
+use yapi_core::settings::Scope;
+
+use crate::{err, out};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Command {
@@ -196,38 +197,6 @@ fn update_target(options: &Options) -> Update {
     }
 }
 
-fn out(line: &str) {
-    let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-fn err(line: &str) {
-    let _ = writeln!(std::io::stderr(), "{line}");
-}
-
-/// pi's `createCommandSettingsManager`: settings whose project scope loads
-/// when `override_`, a stored decision or `defaultProjectTrust` trusts the
-/// project, or when the user trusts it at pi's prompt in a terminal.
-pub fn command_settings(
-    cwd: &Path,
-    agent_dir: &Path,
-    override_: Option<bool>,
-) -> anyhow::Result<SettingsManager> {
-    let global = SettingsManager::load(agent_dir, cwd, false)?;
-    let view = global.settings();
-    let store = TrustStore::new(agent_dir);
-    let default = view.default_project_trust;
-    let trusted = if std::io::stdin().is_terminal()
-        && std::io::stdout().is_terminal()
-        && needs_prompt(cwd, &store, override_, default)
-    {
-        crate::interactive::picker::ask_project_trust(agent_dir, cwd, view.theme.as_deref())?
-            .unwrap_or(false)
-    } else {
-        resolve_trusted(cwd, &store, override_, default)
-    };
-    Ok(SettingsManager::load(agent_dir, cwd, trusted)?)
-}
-
 /// Runs a package command when `args` starts with one; its exit code.
 pub async fn run(args: &[String]) -> Option<u8> {
     let command = match args.first()?.as_str() {
@@ -333,8 +302,8 @@ async fn execute(command: Command, options: Options) -> u8 {
         return 1;
     };
     let agent_dir = agent_dir();
-    let settings = match command_settings(&cwd, &agent_dir, options.trust) {
-        Ok(settings) => settings,
+    let settings = match crate::startup::load_settings(&cwd, &agent_dir, options.trust, true) {
+        Ok((settings, _)) => settings,
         Err(error) => {
             err(&format!("Error: {error}"));
             return 1;

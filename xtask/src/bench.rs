@@ -56,6 +56,13 @@ struct Program {
     agent: PathBuf,
 }
 
+impl Program {
+    /// The program with `args` in a 100x40 terminal that answers queries.
+    fn pty(&self, args: &[String]) -> std::io::Result<Pty> {
+        Pty::spawn(&self.path, args, &self.cwd, &self.env, (100, 40), true)
+    }
+}
+
 /// Samples of one measure.
 enum Samples {
     Time(Vec<Duration>),
@@ -101,6 +108,21 @@ struct Row {
     measure: String,
     percent: f64,
     samples: Vec<Samples>,
+}
+
+impl Row {
+    /// A row of medians, one per program.
+    fn median<T>(
+        measure: impl Into<String>,
+        kind: fn(Vec<T>) -> Samples,
+        samples: Vec<Vec<T>>,
+    ) -> Row {
+        Row {
+            measure: measure.into(),
+            percent: 50.0,
+            samples: samples.into_iter().map(kind).collect(),
+        }
+    }
 }
 
 fn percentile(sorted: &mut [f64], percent: f64) -> f64 {
@@ -329,14 +351,7 @@ fn ready(rows: &[String]) -> bool {
 
 /// Time from start to the interactive first paint.
 fn first_paint(program: &Program) -> anyhow::Result<Duration> {
-    let pty = Pty::spawn(
-        &program.path,
-        &model_args(),
-        &program.cwd,
-        &program.env,
-        (100, 40),
-        true,
-    )?;
+    let pty = program.pty(&model_args())?;
     let paint = pty
         .wait_for(Duration::from_secs(20), ready)
         .context("no first paint")?;
@@ -352,14 +367,7 @@ fn memory(
     args: &[String],
     drive: impl FnOnce(&mut Pty) -> anyhow::Result<()>,
 ) -> anyhow::Result<u64> {
-    let mut pty = Pty::spawn(
-        &program.path,
-        args,
-        &program.cwd,
-        &program.env,
-        (100, 40),
-        true,
-    )?;
+    let mut pty = program.pty(args)?;
     let started = pty.wait_for(Duration::from_secs(60), ready).is_some();
     let driven = if started {
         drive(&mut pty)
@@ -570,14 +578,7 @@ fn copy_examples(pi_install: &Path, dir: &Path) -> anyhow::Result<usize> {
 /// Keystroke-to-paint latencies in a session of about `lines` lines.
 fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec<Duration>> {
     let session_args = large_session(program, root, args.lines)?;
-    let mut pty = Pty::spawn(
-        &program.path,
-        &session_args,
-        &program.cwd,
-        &program.env,
-        (100, 40),
-        true,
-    )?;
+    let mut pty = program.pty(&session_args)?;
     pty.wait_for(Duration::from_secs(60), ready)
         .context("large session did not open")?;
     pty.settle();
@@ -747,11 +748,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let version = alternate(&programs, args.runs, |_, program| {
         run_once(&program.path, &["--version"], &program.env)
     })?;
-    rows.push(Row {
-        measure: "`--version`".to_owned(),
-        percent: 50.0,
-        samples: version.into_iter().map(Samples::Time).collect(),
-    });
+    rows.push(Row::median("`--version`", Samples::Time, version));
 
     let listeners = programs
         .iter()
@@ -771,18 +768,14 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     for program in &programs {
         let _ = std::fs::remove_file(program.agent.join("models.json"));
     }
-    rows.push(Row {
-        measure: "Print mode, start to first request byte".to_owned(),
-        percent: 50.0,
-        samples: request.into_iter().map(Samples::Time).collect(),
-    });
+    rows.push(Row::median(
+        "Print mode, start to first request byte",
+        Samples::Time,
+        request,
+    ));
 
     let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
-    rows.push(Row {
-        measure: "Interactive first paint".to_owned(),
-        percent: 50.0,
-        samples: paint.into_iter().map(Samples::Time).collect(),
-    });
+    rows.push(Row::median("Interactive first paint", Samples::Time, paint));
 
     let mut keys = Vec::new();
     for program in &programs {
@@ -800,22 +793,22 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
 
     let idle = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
-    rows.push(Row {
-        measure: "Memory, idle after first paint".to_owned(),
-        percent: 50.0,
-        samples: idle.into_iter().map(Samples::Bytes).collect(),
-    });
+    rows.push(Row::median(
+        "Memory, idle after first paint",
+        Samples::Bytes,
+        idle,
+    ));
 
     let opened = alternate(&programs, args.memory_runs, |_, program| {
         memory(program, &large_session(program, &root, args.lines)?, |_| {
             Ok(())
         })
     })?;
-    rows.push(Row {
-        measure: format!("Memory, {}-line session open", args.lines),
-        percent: 50.0,
-        samples: opened.into_iter().map(Samples::Bytes).collect(),
-    });
+    rows.push(Row::median(
+        format!("Memory, {}-line session open", args.lines),
+        Samples::Bytes,
+        opened,
+    ));
 
     let sample: String = (1..=1000)
         .map(|line| {
@@ -830,11 +823,11 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let active = alternate(&programs, args.memory_runs, |_, program| {
         active_rss(program, &runtime)
     })?;
-    rows.push(Row {
-        measure: format!("Memory after {TURNS} turns with tool calls"),
-        percent: 50.0,
-        samples: active.into_iter().map(Samples::Bytes).collect(),
-    });
+    rows.push(Row::median(
+        format!("Memory after {TURNS} turns with tool calls"),
+        Samples::Bytes,
+        active,
+    ));
 
     for program in &programs {
         write_extensions(&program.agent.join("extensions"), 10)?;
@@ -842,11 +835,11 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         idle_rss(program)?;
     }
     let extended = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
-    rows.push(Row {
-        measure: "Memory with 10 small JS extensions".to_owned(),
-        percent: 50.0,
-        samples: extended.into_iter().map(Samples::Bytes).collect(),
-    });
+    rows.push(Row::median(
+        "Memory with 10 small JS extensions",
+        Samples::Bytes,
+        extended,
+    ));
 
     if let Some(install) = &args.pi_install {
         let mut count = 0;
@@ -855,11 +848,11 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             idle_rss(program)?;
         }
         let examples = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
-        rows.push(Row {
-            measure: format!("Memory with {count} of pi's example extensions"),
-            percent: 50.0,
-            samples: examples.into_iter().map(Samples::Bytes).collect(),
-        });
+        rows.push(Row::median(
+            format!("Memory with {count} of pi's example extensions"),
+            Samples::Bytes,
+            examples,
+        ));
     }
 
     print_report(&programs, &rows);

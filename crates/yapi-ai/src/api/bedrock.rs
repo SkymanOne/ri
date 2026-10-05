@@ -11,8 +11,8 @@ use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, TextContent,
-    ThinkingContent, ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingContent,
+    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::Model;
 
@@ -1165,13 +1165,7 @@ impl State {
             let position = match position {
                 Some(position) => position,
                 None => {
-                    let position = self.push(
-                        ContentBlock::Text(TextContent {
-                            text: String::new(),
-                            text_signature: None,
-                        }),
-                        index,
-                    );
+                    let position = self.push(ContentBlock::text(""), index);
                     sender.update(
                         &self.output,
                         AssistantMessageEvent::TextStart {

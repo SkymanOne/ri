@@ -2,16 +2,9 @@
 //! `protocol/content.ts` of pi-mcp `v1.0.0`.
 
 use serde_json::Value;
-use yapi_types::message::{ContentBlock, ImageContent, TextContent};
+use yapi_types::message::{ContentBlock, ImageContent};
 
 /// A text block.
-pub fn text(value: impl Into<String>) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: value.into(),
-        text_signature: None,
-    })
-}
-
 fn image(data: &str, mime_type: &str) -> ContentBlock {
     ContentBlock::Image(ImageContent {
         data: data.to_owned(),
@@ -28,26 +21,28 @@ fn field<'a>(value: &'a Value, key: &str) -> &'a str {
 /// short placeholder.
 pub fn block_to_llm(block: &Value) -> ContentBlock {
     match field(block, "type") {
-        "text" => text(field(block, "text")),
+        "text" => ContentBlock::text(field(block, "text")),
         "image" => image(field(block, "data"), field(block, "mimeType")),
-        "audio" => text(format!("[audio {} omitted]", field(block, "mimeType"))),
-        "resource_link" => text(format!("{}: {}", field(block, "name"), field(block, "uri"))),
+        "audio" => ContentBlock::text(format!("[audio {} omitted]", field(block, "mimeType"))),
+        "resource_link" => {
+            ContentBlock::text(format!("{}: {}", field(block, "name"), field(block, "uri")))
+        }
         "resource" => {
             let resource = &block["resource"];
             if let Some(content) = resource.get("text").and_then(Value::as_str) {
-                return text(content);
+                return ContentBlock::text(content);
             }
             let mime_type = resource.get("mimeType").and_then(Value::as_str);
             match mime_type {
                 Some(mime) if mime.starts_with("image/") => image(field(resource, "blob"), mime),
-                _ => text(format!(
+                _ => ContentBlock::text(format!(
                     "[binary resource {} ({}) omitted]",
                     field(resource, "uri"),
                     mime_type.unwrap_or("unknown type")
                 )),
             }
         }
-        other => text(format!("[unsupported MCP content {other}]")),
+        other => ContentBlock::text(format!("[unsupported MCP content {other}]")),
     }
 }
 
@@ -63,7 +58,7 @@ pub fn to_llm_content(result: &Value) -> Vec<ContentBlock> {
         && let Some(structured) = result.get("structuredContent")
         && let Ok(json) = yapi_types::json::to_string_pretty(structured, "  ")
     {
-        content.push(text(json));
+        content.push(ContentBlock::text(json));
     }
     content
 }
@@ -86,17 +81,17 @@ mod tests {
         assert_eq!(
             to_llm_content(&result),
             vec![
-                text("a"),
-                text("[audio audio/wav omitted]"),
-                text("x: u://x"),
-                text("[binary resource u://b (application/zip) omitted]"),
+                ContentBlock::text("a"),
+                ContentBlock::text("[audio audio/wav omitted]"),
+                ContentBlock::text("x: u://x"),
+                ContentBlock::text("[binary resource u://b (application/zip) omitted]"),
                 image("AA==", "image/png"),
-                text("[unsupported MCP content widget]"),
+                ContentBlock::text("[unsupported MCP content widget]"),
             ]
         );
         assert_eq!(
             to_llm_content(&json!({"content": [], "structuredContent": {"sum": 3}})),
-            vec![text("{\n  \"sum\": 3\n}")]
+            vec![ContentBlock::text("{\n  \"sum\": 3\n}")]
         );
     }
 }

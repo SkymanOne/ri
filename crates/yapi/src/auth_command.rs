@@ -2,7 +2,6 @@
 //!
 //! Port of pi's `auth-command.ts`, `auth-check.ts` and `credential-print.ts`.
 
-use std::fmt::Write as _;
 use std::io::Write as _;
 
 use yapi_ai::auth::CredentialKind;
@@ -354,12 +353,11 @@ async fn credential_for_print(
         }
         None => {
             let pattern = pattern.unwrap_or_default();
-            let mut providers: Vec<&str> = Vec::new();
-            for model in registry.models() {
-                if !providers.contains(&model.provider.as_str()) {
-                    providers.push(&model.provider);
-                }
-            }
+            let providers: indexmap::IndexSet<&str> = registry
+                .models()
+                .iter()
+                .map(|model| model.provider.as_str())
+                .collect();
             for id in providers {
                 if stored_kind(id).is_none() {
                     continue;
@@ -431,10 +429,8 @@ async fn credential_for_print(
             ))
         }
         _ => {
-            let mut names = String::new();
-            for (index, (id, _)) in found.iter().enumerate() {
-                let _ = write!(names, "{}{id}", if index == 0 { "" } else { ", " });
-            }
+            let names: Vec<&str> = found.iter().map(|(id, _)| id.as_str()).collect();
+            let names = names.join(", ");
             Err(format!(
                 "Multiple configured providers matched ({names}). Specify --provider."
             ))

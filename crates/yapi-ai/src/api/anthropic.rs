@@ -7,8 +7,8 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::{AnthropicMessagesCompat, Model};
 
@@ -589,10 +589,9 @@ impl StreamState {
                     }
                     "text" => {
                         let position = self.push_block(
-                            ContentBlock::Text(TextContent {
-                                text: block["text"].as_str().unwrap_or_default().to_owned(),
-                                text_signature: None,
-                            }),
+                            ContentBlock::text(
+                                block["text"].as_str().unwrap_or_default().to_owned(),
+                            ),
                             index,
                         );
                         sender.update(

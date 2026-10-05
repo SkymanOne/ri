@@ -10,6 +10,8 @@ use yapi_mock::scenario::{
     Program, first_difference, fixtures_dir, load_scenarios, normalize, run,
 };
 
+use crate::mock_sse::write_json;
+
 /// Run `tests/fixtures/scenarios` against yapi, pi, or both.
 ///
 /// Without flags, compares yapi with the goldens recorded from pi. `--record-pi`
@@ -38,10 +40,7 @@ pub struct Args {
 }
 
 pub fn run_command(args: Args) -> anyhow::Result<ExitCode> {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?
-        .block_on(e2e(args))
+    tokio::runtime::Runtime::new()?.block_on(e2e(args))
 }
 
 async fn e2e(args: Args) -> anyhow::Result<ExitCode> {
@@ -62,22 +61,14 @@ async fn e2e(args: Args) -> anyhow::Result<ExitCode> {
         // A golden recorded for another operating system cannot match here.
         if !args.record_pi
             && !args.differential
-            && scenario
-                .os
-                .as_deref()
-                .is_some_and(|os| os != std::env::consts::OS)
+            && let Some(reason) = scenario.skip_reason()
         {
-            eprintln!(
-                "skipped {}: its golden shows another operating system's text",
-                scenario.name
-            );
+            eprintln!("skipped {}: {reason}", scenario.name);
             continue;
         }
         let golden_path = goldens.join(format!("{}.json", scenario.name));
         if args.record_pi {
-            let outcome = normalize(&run(&scenario, &pi).await?);
-            let text = yapi_types::json::to_string_pretty(&outcome, "  ")? + "\n";
-            std::fs::write(&golden_path, text)?;
+            write_json(&golden_path, &normalize(&run(&scenario, &pi).await?))?;
             eprintln!("recorded {}", scenario.name);
             continue;
         }
@@ -99,8 +90,7 @@ async fn e2e(args: Args) -> anyhow::Result<ExitCode> {
                 let dir = Path::new("target/e2e");
                 std::fs::create_dir_all(dir)?;
                 let actual_path = dir.join(format!("{}.actual.json", scenario.name));
-                let text = yapi_types::json::to_string_pretty(&actual, "  ")? + "\n";
-                std::fs::write(&actual_path, text)?;
+                write_json(&actual_path, &actual)?;
                 eprintln!(
                     "DIFFER  {}: {diff} (yapi output in {})",
                     scenario.name,

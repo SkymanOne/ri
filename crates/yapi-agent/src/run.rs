@@ -12,8 +12,8 @@ use yapi_ai::transcript::{current_tools, tool_state_changes};
 use yapi_ai::validation::validate_tool_arguments;
 use yapi_types::event::{AgentEvent, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, SystemMessage, TextContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, SystemMessage, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::Model;
 
@@ -396,10 +396,7 @@ async fn complete(
 
 fn error_result(message: &str) -> ToolResult {
     ToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: message.to_owned(),
-            text_signature: None,
-        })],
+        content: vec![ContentBlock::text(message)],
         details: Some(Value::Object(Default::default())),
         ..ToolResult::default()
     }

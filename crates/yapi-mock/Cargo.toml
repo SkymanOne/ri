@@ -16,6 +16,7 @@ hyper.workspace = true
 hyper-util.workspace = true
 indexmap.workspace = true
 portable-pty.workspace = true
+regex-lite.workspace = true
 reqwest.workspace = true
 ruzstd.workspace = true
 serde.workspace = true

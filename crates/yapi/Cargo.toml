@@ -22,7 +22,7 @@ disabled-strategies = ["quick-install", "compile"]
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
-futures-util.workspace = true
+futures-util = { workspace = true, features = ["std"] }
 getrandom.workspace = true
 indexmap.workspace = true
 regex-lite.workspace = true
@@ -35,6 +35,7 @@ yapi-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 similar.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util", "sync"] }
 tokio-util.workspace = true
 unicode-segmentation.workspace = true

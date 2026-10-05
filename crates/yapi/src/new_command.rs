@@ -4,48 +4,26 @@
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use crate::{err, out};
+
 const USAGE: &str = "Usage:\n  yapi new <path> [--name <name>]\n\nCreate a Cargo project for a native extension package in <path>, which must not\nexist or be empty. The package is named after the directory unless --name says\notherwise.\n";
 
 /// The template's files, by path in the project, with cargo-generate's
 /// `{{project-name}}` and `{{crate_name}}` placeholders.
-const FILES: [(&str, &str); 7] = [
-    (
-        "Cargo.toml",
-        include_str!("../templates/extension/Cargo.toml"),
-    ),
-    (
-        ".cargo/config.toml",
-        include_str!("../templates/extension/.cargo/config.toml"),
-    ),
-    (
-        ".gitignore",
-        include_str!("../templates/extension/.gitignore"),
-    ),
-    (
-        "README.md",
-        include_str!("../templates/extension/README.md"),
-    ),
-    (
-        "extensions/.gitkeep",
-        include_str!("../templates/extension/extensions/.gitkeep"),
-    ),
-    (
-        "package.json",
-        include_str!("../templates/extension/package.json"),
-    ),
-    (
-        "src/lib.rs",
-        include_str!("../templates/extension/src/lib.rs"),
-    ),
+macro_rules! template {
+    ($($path:literal),* $(,)?) => {
+        [$(($path, include_str!(concat!("../templates/extension/", $path)))),*]
+    };
+}
+const FILES: [(&str, &str); 7] = template![
+    "Cargo.toml",
+    ".cargo/config.toml",
+    ".gitignore",
+    "README.md",
+    "extensions/.gitkeep",
+    "package.json",
+    "src/lib.rs",
 ];
-
-fn out(line: &str) {
-    let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-fn err(line: &str) {
-    let _ = writeln!(std::io::stderr(), "{line}");
-}
 
 /// Whether `name` can name a Cargo package: ASCII letters, digits, `-` and
 /// `_`, starting with a letter or `_`.

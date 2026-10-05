@@ -82,7 +82,7 @@ pub fn run(pattern: Option<&str>, to_stderr: bool) -> u8 {
     let width = |column: usize| {
         std::iter::once(&header)
             .chain(&rows)
-            .map(|row| row[column].encode_utf16().count())
+            .map(|row| yapi_types::js::len(&row[column]))
             .max()
             .unwrap_or(0)
     };
@@ -92,7 +92,7 @@ pub fn run(pattern: Option<&str>, to_stderr: bool) -> u8 {
             .iter()
             .zip(&widths)
             .map(|(cell, width)| {
-                let pad = width.saturating_sub(cell.encode_utf16().count());
+                let pad = width.saturating_sub(yapi_types::js::len(cell));
                 format!("{cell}{}", " ".repeat(pad))
             })
             .collect::<Vec<_>>()

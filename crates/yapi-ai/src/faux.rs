@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Map, Value};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ToolCall,
 };
 
 use crate::stream::{EventStream, Provider, Request, StreamEvent, new_output, now_ms};
@@ -56,10 +56,7 @@ impl Response {
 }
 
 fn text_block(text: &str) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: text.to_owned(),
-        text_signature: None,
-    })
+    ContentBlock::text(text)
 }
 
 /// Replays responses in order and records the requests it receives. When the

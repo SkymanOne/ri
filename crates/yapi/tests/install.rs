@@ -7,6 +7,8 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
+mod common;
+
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -19,18 +21,8 @@ const TARGETS: [&str; 4] = [
     "aarch64-apple-darwin",
 ];
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap()
-}
-
 fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("install-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+    common::scratch(&format!("install-{name}"))
 }
 
 /// Packages a fake `yapi` that prints `version` for every target, under
@@ -42,7 +34,7 @@ fn release(site: &Path, version: &str) {
     let out = site.join(format!("releases/download/v{version}"));
     for target in TARGETS {
         let output = Command::new("sh")
-            .arg(repo().join("scripts/package-release.sh"))
+            .arg(common::repo().join("scripts/package-release.sh"))
             .arg(&binary)
             .arg(target)
             .arg(&out)
@@ -90,7 +82,7 @@ fn serve(site: PathBuf, latest: Option<&'static str>) -> String {
 
 fn install(releases: &str, home: &Path, args: &[&str]) -> Output {
     Command::new("sh")
-        .arg(repo().join("install.sh"))
+        .arg(common::repo().join("install.sh"))
         .args(args)
         .env("YAPI_RELEASES_URL", releases)
         .env("HOME", home)
@@ -137,7 +129,7 @@ fn installs_a_chosen_version_where_asked() {
 
     // The environment variables do the same, and a newer install replaces it.
     let output = Command::new("sh")
-        .arg(repo().join("install.sh"))
+        .arg(common::repo().join("install.sh"))
         .env("YAPI_RELEASES_URL", &releases)
         .env("YAPI_VERSION", "v9.9.9")
         .env("YAPI_INSTALL_DIR", &to)

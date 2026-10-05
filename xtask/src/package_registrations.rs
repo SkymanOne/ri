@@ -201,10 +201,7 @@ async fn load(
 }
 
 pub fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    runtime.block_on(compare(args))
+    tokio::runtime::Runtime::new()?.block_on(compare(args))
 }
 
 /// `value` without codemode's `models` line, which points into pi's install
@@ -276,12 +273,8 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     let fixtures = Path::new(FIXTURES);
     let top: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(fixtures.join("top500.json"))?)?;
-    let scratch = Path::new("target/package-registrations")
-        .canonicalize()
-        .or_else(|_| {
-            std::fs::create_dir_all("target/package-registrations")?;
-            Path::new("target/package-registrations").canonicalize()
-        })?;
+    std::fs::create_dir_all("target/package-registrations")?;
+    let scratch = Path::new("target/package-registrations").canonicalize()?;
     let selected: Vec<(usize, String, String)> = top
         .iter()
         .enumerate()

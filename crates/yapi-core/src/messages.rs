@@ -1,8 +1,6 @@
 //! Session message roles beyond the provider's four, and their conversion.
 
-use yapi_types::message::{
-    BashExecutionMessage, Content, ContentBlock, Message, TextContent, UserMessage,
-};
+use yapi_types::message::{BashExecutionMessage, Content, ContentBlock, Message, UserMessage};
 
 /// Wraps a compaction summary when it is sent to the model.
 pub const COMPACTION_SUMMARY_PREFIX: &str = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
@@ -37,10 +35,7 @@ pub fn bash_execution_text(message: &BashExecutionMessage) -> String {
 
 fn user_text(text: String, timestamp: u64) -> Message {
     Message::User(UserMessage {
-        content: Content::Blocks(vec![ContentBlock::Text(TextContent {
-            text,
-            text_signature: None,
-        })]),
+        content: Content::Blocks(vec![ContentBlock::text(text)]),
         timestamp,
     })
 }
@@ -54,10 +49,7 @@ pub fn block_images(messages: Vec<Message>) -> Vec<Message> {
         let mut out: Vec<ContentBlock> = Vec::with_capacity(blocks.len());
         for block in blocks {
             let block = match block {
-                ContentBlock::Image(_) => ContentBlock::Text(TextContent {
-                    text: IMAGES_BLOCKED.to_owned(),
-                    text_signature: None,
-                }),
+                ContentBlock::Image(_) => ContentBlock::text(IMAGES_BLOCKED),
                 other => other,
             };
             let repeated = matches!(
@@ -107,13 +99,7 @@ pub fn convert_to_llm(messages: Vec<Message>) -> Vec<Message> {
             Message::BashExecution(bash) => (bash.exclude_from_context != Some(true))
                 .then(|| user_text(bash_execution_text(&bash), bash.timestamp)),
             Message::Custom(custom) => Some(Message::User(UserMessage {
-                content: match custom.content {
-                    Content::Text(text) => Content::Blocks(vec![ContentBlock::Text(TextContent {
-                        text,
-                        text_signature: None,
-                    })]),
-                    blocks => blocks,
-                },
+                content: Content::Blocks(custom.content.into_blocks()),
                 timestamp: custom.timestamp,
             })),
             Message::BranchSummary(summary) => Some(user_text(

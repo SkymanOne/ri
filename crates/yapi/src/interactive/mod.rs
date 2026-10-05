@@ -58,7 +58,7 @@ use yapi_tui::theme::{
 };
 use yapi_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ToolCall,
 };
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::{DoubleEscapeAction, TuiMode};
@@ -185,7 +185,7 @@ impl ExtensionReply {
     }
 }
 
-use crate::runtime::{SessionFactory, user_text};
+use crate::runtime::SessionFactory;
 
 /// What the run needs from startup.
 pub struct Options {
@@ -673,7 +673,7 @@ impl App {
         for message in &messages {
             match message {
                 Message::User(user) => {
-                    let text = user_text(&user.content);
+                    let text = user.content.text("");
                     history.push(text.clone());
                     if !text.trim().is_empty() {
                         self.push(chat::user_item(text));
@@ -1351,22 +1351,14 @@ impl App {
             let content = &mut message.content;
             let ensure = |content: &mut Vec<ContentBlock>, at: usize, block: ContentBlock| {
                 while content.len() <= at {
-                    content.push(ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }));
+                    content.push(ContentBlock::text(""));
                 }
                 content[at] = block;
             };
             match event {
-                AssistantMessageEvent::TextStart { content_index } => ensure(
-                    content,
-                    content_index,
-                    ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }),
-                ),
+                AssistantMessageEvent::TextStart { content_index } => {
+                    ensure(content, content_index, ContentBlock::text(""))
+                }
                 AssistantMessageEvent::TextDelta {
                     content_index,
                     delta,
@@ -1480,7 +1472,7 @@ impl App {
             }
             AgentEvent::MessageStart { message } => match message {
                 Message::User(user) => {
-                    let text = user_text(&user.content);
+                    let text = user.content.text("");
                     if !text.trim().is_empty() {
                         self.push(chat::user_item(text));
                     }
@@ -2918,10 +2910,7 @@ fn assistant_error(message: &AssistantMessage) -> String {
 
 fn error_result(text: &str) -> ToolResult {
     ToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: text.to_owned(),
-            text_signature: None,
-        })],
+        content: vec![ContentBlock::text(text)],
         is_error: Some(true),
         ..ToolResult::default()
     }

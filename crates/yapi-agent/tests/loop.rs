@@ -14,7 +14,7 @@ use yapi_ai::faux::{Faux, Response};
 use yapi_ai::stream::{Provider, StreamOptions};
 use yapi_types::event::{AgentEvent, ToolResult};
 use yapi_types::message::{
-    Content, ContentBlock, Message, TextContent, ThinkingLevel, ToolDeclaration, UserMessage,
+    Content, ContentBlock, Message, ThinkingLevel, ToolDeclaration, UserMessage,
 };
 use yapi_types::model::Model;
 
@@ -50,17 +50,11 @@ impl Tool for Echo {
         Box::pin(async move {
             let text = args["text"].as_str().unwrap_or_default().to_owned();
             updates(ToolResult {
-                content: vec![ContentBlock::Text(TextContent {
-                    text: "working".into(),
-                    text_signature: None,
-                })],
+                content: vec![ContentBlock::text("working")],
                 ..ToolResult::default()
             });
             Ok(ToolResult {
-                content: vec![ContentBlock::Text(TextContent {
-                    text,
-                    text_signature: None,
-                })],
+                content: vec![ContentBlock::text(text)],
                 ..ToolResult::default()
             })
         })
@@ -169,13 +163,7 @@ async fn runs_tools_and_declares_them() {
     let Message::ToolResult(result) = &added[3] else {
         panic!("expected a tool result")
     };
-    assert_eq!(
-        result.content,
-        vec![ContentBlock::Text(TextContent {
-            text: "hi".into(),
-            text_signature: None
-        })]
-    );
+    assert_eq!(result.content, vec![ContentBlock::text("hi")]);
     // The second request carries the tool result.
     assert_eq!(faux.requests()[1].len(), 4);
 }

@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage, Usage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage, Usage,
 };
 use yapi_types::model::Model;
 
@@ -608,10 +608,7 @@ impl State {
                     },
                 ),
                 Open::Text => (
-                    ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }),
+                    ContentBlock::text(""),
                     AssistantMessageEvent::TextStart {
                         content_index: index,
                     },

@@ -83,6 +83,15 @@ pub enum ServerTransport {
     },
 }
 
+impl ServerTransport {
+    /// Whether the server would sign in with OAuth: HTTP without an
+    /// `Authorization` header or provider auth.
+    pub fn uses_oauth(&self) -> bool {
+        matches!(self, ServerTransport::Http { headers, auth_provider: None, .. }
+            if !headers.keys().any(|name| name.eq_ignore_ascii_case("authorization")))
+    }
+}
+
 /// One validated server entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerConfig {

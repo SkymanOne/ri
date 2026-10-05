@@ -13,8 +13,8 @@ use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
+    ToolCall, ToolDeclaration,
 };
 use yapi_types::model::Model;
 
@@ -488,10 +488,7 @@ impl State {
         if self.current != Some(Current::Text) {
             self.finish_current(sender);
             self.current = Some(Current::Text);
-            self.output.content.push(ContentBlock::Text(TextContent {
-                text: String::new(),
-                text_signature: None,
-            }));
+            self.output.content.push(ContentBlock::text(""));
             sender.update(
                 &self.output,
                 AssistantMessageEvent::TextStart {
