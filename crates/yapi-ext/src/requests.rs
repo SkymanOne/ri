@@ -164,6 +164,8 @@ impl Host {
             "exec" => Box::pin(async { Err(denied("Running processes")) }),
             "fetch" if self.grants.network => Box::pin(ops::fetch(payload)),
             "fetch" => Box::pin(async { Err(denied("Network access")) }),
+            "dns.lookup" if self.grants.network => Box::pin(ops::dns_lookup(payload)),
+            "dns.lookup" => Box::pin(async { Err(denied("Network access")) }),
             "builtin.execute" => {
                 let tool = match self.builtin_tool(&payload, true) {
                     Ok(tool) => tool.tool,
