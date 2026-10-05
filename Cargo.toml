@@ -61,6 +61,7 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1"
 unicode-width = "0.2"
 vt100 = "0.16"
+yaml-rust2 = { version = "0.13", default-features = false }
 
 # Enforces the code rules in AGENTS.md. CI denies all warnings.
 [workspace.lints.rust]

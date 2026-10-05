@@ -1325,7 +1325,7 @@ impl AgentSession {
         let Ok(content) = std::fs::read_to_string(&skill.file_path) else {
             return text.to_owned();
         };
-        let (_, body) = crate::resources::parse_frontmatter(&content);
+        let (_, body) = crate::resources::split_frontmatter(&content);
         let mut expanded = format!(
             "<skill name=\"{}\" location=\"{}\">\nReferences are relative to {}.\n\n{body}\n</skill>",
             skill.name,

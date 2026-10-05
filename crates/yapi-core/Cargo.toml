@@ -30,6 +30,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
 tokio-util.workspace = true
 unicode-normalization.workspace = true
+yaml-rust2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use indexmap::IndexMap;
+use serde_json::Value;
 pub use yapi_types::rpc::SourceInfo;
 
 use crate::config::PROJECT_DIR;
@@ -83,99 +83,73 @@ pub struct PromptTemplate {
     pub source: SourceInfo,
 }
 
-/// Frontmatter values yapi reads: strings and booleans.
-pub type Frontmatter = IndexMap<String, FrontmatterValue>;
+/// Frontmatter as pi's `yaml` parser gives it to JavaScript: the top-level
+/// mapping, in document order.
+pub type Frontmatter = serde_json::Map<String, Value>;
 
-/// A frontmatter scalar.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FrontmatterValue {
-    /// A string.
-    String(String),
-    /// A boolean.
-    Bool(bool),
-}
-
-impl FrontmatterValue {
-    /// The string value.
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            FrontmatterValue::String(text) => Some(text),
-            FrontmatterValue::Bool(_) => None,
-        }
-    }
-}
-
-fn unquote(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.len() >= 2
-        && ((trimmed.starts_with('"') && trimmed.ends_with('"'))
-            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
-    {
-        let inner = &trimmed[1..trimmed.len() - 1];
-        return if trimmed.starts_with('"') {
-            inner.replace("\\\"", "\"").replace("\\n", "\n")
-        } else {
-            inner.replace("''", "'")
-        };
-    }
-    trimmed.to_owned()
-}
-
-/// Splits YAML frontmatter from a markdown body. Supports the subset skills and
-/// templates use: `key: value` scalars, quoted strings, booleans and `|` or `>`
-/// block scalars.
-pub fn parse_frontmatter(content: &str) -> (Frontmatter, String) {
+/// pi's `extractFrontmatter`: the YAML between `---` lines, when there is
+/// any, and the trimmed markdown body after it.
+pub fn split_frontmatter(content: &str) -> (Option<String>, String) {
     let normalized = content
         .strip_prefix('\u{feff}')
         .unwrap_or(content)
         .replace("\r\n", "\n")
         .replace('\r', "\n");
-    let mut frontmatter = Frontmatter::new();
-    if !normalized.starts_with("---") {
-        return (frontmatter, normalized);
+    match normalized
+        .starts_with("---")
+        .then(|| normalized[3..].find("\n---"))
+        .flatten()
+    {
+        Some(end) => (
+            Some(normalized.get(4..end + 3).unwrap_or_default().to_owned()),
+            normalized[end + 7..].trim().to_owned(),
+        ),
+        None => (None, normalized),
     }
-    let Some(end) = normalized[3..].find("\n---").map(|index| index + 3) else {
-        return (frontmatter, normalized);
+}
+
+/// pi's `parseFrontmatter`: the frontmatter and the body, or the YAML error.
+pub fn parse_frontmatter(content: &str) -> Result<(Frontmatter, String), String> {
+    let (yaml, body) = split_frontmatter(content);
+    let Some(yaml) = yaml.filter(|yaml| !yaml.is_empty()) else {
+        return Ok((Frontmatter::new(), body));
     };
-    let yaml = normalized.get(4..end).unwrap_or_default();
-    let body = normalized[end + 4..].trim().to_owned();
-    let lines: Vec<&str> = yaml.lines().collect();
-    let mut index = 0;
-    while index < lines.len() {
-        let line = lines[index];
-        index += 1;
-        if line.starts_with(' ') || line.trim_start().starts_with('#') {
-            continue;
-        }
-        let Some((key, value)) = line.split_once(':') else {
-            continue;
-        };
-        let key = key.trim().to_owned();
-        let value = value.trim();
-        if value.starts_with('|') || value.starts_with('>') {
-            let folded = value.starts_with('>');
-            let mut block = Vec::new();
-            while index < lines.len() && (lines[index].starts_with(' ') || lines[index].is_empty())
-            {
-                block.push(lines[index].trim());
-                index += 1;
-            }
-            let text = if folded {
-                block.join(" ").trim().to_owned()
-            } else {
-                block.join("\n").trim_end().to_owned() + "\n"
-            };
-            frontmatter.insert(key, FrontmatterValue::String(text));
-            continue;
-        }
-        let parsed = match value {
-            "true" => FrontmatterValue::Bool(true),
-            "false" => FrontmatterValue::Bool(false),
-            _ => FrontmatterValue::String(unquote(value)),
-        };
-        frontmatter.insert(key, parsed);
+    let documents =
+        yaml_rust2::YamlLoader::load_from_str(&yaml).map_err(|error| error.to_string())?;
+    let frontmatter = match documents.into_iter().next().map(yaml_to_json) {
+        Some(Value::Object(map)) => map,
+        _ => Frontmatter::new(),
+    };
+    Ok((frontmatter, body))
+}
+
+/// A YAML value as JavaScript sees it; keys become strings.
+fn yaml_to_json(yaml: yaml_rust2::Yaml) -> Value {
+    use yaml_rust2::Yaml;
+    match yaml {
+        Yaml::Real(_) => yaml
+            .as_f64()
+            .and_then(serde_json::Number::from_f64)
+            .map_or(Value::Null, Value::Number),
+        Yaml::Integer(number) => Value::from(number),
+        Yaml::String(text) => Value::String(text),
+        Yaml::Boolean(flag) => Value::Bool(flag),
+        Yaml::Array(items) => Value::Array(items.into_iter().map(yaml_to_json).collect()),
+        Yaml::Hash(entries) => Value::Object(
+            entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let key = match yaml_to_json(key) {
+                        Value::String(text) => text,
+                        Value::Null => String::new(),
+                        other => other.to_string(),
+                    };
+                    (key, yaml_to_json(value))
+                })
+                .collect(),
+        ),
+        Yaml::Null | Yaml::BadValue | Yaml::Alias(_) => Value::Null,
     }
-    (frontmatter, body)
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -324,10 +298,18 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
             return None;
         }
     };
-    let (frontmatter, _) = parse_frontmatter(&text);
+    let frontmatter = match parse_frontmatter(&text) {
+        Ok((frontmatter, _)) => frontmatter,
+        Err(error) => {
+            if declared {
+                diagnostics.push(warn(error));
+            }
+            return None;
+        }
+    };
     let description = frontmatter
         .get("description")
-        .and_then(FrontmatterValue::as_str)
+        .and_then(Value::as_str)
         .filter(|text| !text.trim().is_empty());
     if !declared && description.is_none() {
         return None;
@@ -346,7 +328,7 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
     let base_dir = path.parent()?.to_path_buf();
     let name = frontmatter
         .get("name")
-        .and_then(FrontmatterValue::as_str)
+        .and_then(Value::as_str)
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .or_else(|| {
@@ -361,7 +343,7 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
         file_path: path.to_path_buf(),
         base_dir,
         disable_model_invocation: frontmatter.get("disable-model-invocation")
-            == Some(&FrontmatterValue::Bool(true)),
+            == Some(&Value::Bool(true)),
         source: origin.info(path),
     })
 }
@@ -496,7 +478,12 @@ pub fn format_skills(skills: &[Skill], read_tool: &str) -> String {
     lines.join("\n")
 }
 
-fn templates_in(dir: &Path, origin: &Origin, templates: &mut Vec<PromptTemplate>) {
+fn templates_in(
+    dir: &Path,
+    origin: &Origin,
+    templates: &mut Vec<PromptTemplate>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -504,22 +491,35 @@ fn templates_in(dir: &Path, origin: &Origin, templates: &mut Vec<PromptTemplate>
     paths.sort();
     for path in paths {
         if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            templates.extend(template_at(path, origin));
+            templates.extend(template_at(path, origin, diagnostics));
         }
     }
 }
 
-/// The template in a markdown file.
-fn template_at(path: PathBuf, origin: &Origin) -> Option<PromptTemplate> {
-    let text = read_text(&path)?;
-    let (frontmatter, body) = parse_frontmatter(&text);
+/// pi's `loadTemplateFromFile`: the template in a markdown file. A file that
+/// cannot be read or whose frontmatter does not parse is reported.
+fn template_at(
+    path: PathBuf,
+    origin: &Origin,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<PromptTemplate> {
+    let parsed = std::fs::read_to_string(&path)
+        .map_err(|error| crate::tools::node_error(&error, "open", &path))
+        .and_then(|text| parse_frontmatter(&text));
+    let (frontmatter, body) = match parsed {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            diagnostics.push(Diagnostic::Warning { message, path });
+            return None;
+        }
+    };
     let name = path
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut description = frontmatter
         .get("description")
-        .and_then(FrontmatterValue::as_str)
+        .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
     if description.is_empty()
@@ -536,7 +536,7 @@ fn template_at(path: PathBuf, origin: &Origin) -> Option<PromptTemplate> {
         description,
         argument_hint: frontmatter
             .get("argument-hint")
-            .and_then(FrontmatterValue::as_str)
+            .and_then(Value::as_str)
             .map(str::to_owned),
         content: body,
         source: origin.info(&path),
@@ -550,17 +550,17 @@ fn template_at(path: PathBuf, origin: &Origin) -> Option<PromptTemplate> {
 /// skipped; the command line's are reported by the caller.
 pub fn templates_from(sources: &[SourceInfo]) -> (Vec<PromptTemplate>, Vec<Diagnostic>) {
     let mut templates: Vec<PromptTemplate> = Vec::new();
+    let mut diagnostics = Vec::new();
     for source in sources {
         let path = PathBuf::from(&source.path);
         let origin = Origin::of(source);
         if path.is_dir() {
-            templates_in(&path, &origin, &mut templates);
+            templates_in(&path, &origin, &mut templates, &mut diagnostics);
         } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            templates.extend(template_at(path, &origin));
+            templates.extend(template_at(path, &origin, &mut diagnostics));
         }
     }
     let mut unique: Vec<PromptTemplate> = Vec::new();
-    let mut diagnostics = Vec::new();
     for template in templates {
         match unique
             .iter()
@@ -741,19 +741,55 @@ mod tests {
     #[test]
     fn parses_frontmatter() {
         let (meta, body) = parse_frontmatter(
-            "---\nname: demo\ndescription: \"Does: things\"\ndisable-model-invocation: true\nnotes: |\n  a\n  b\n---\n\nBody\n",
-        );
-        assert_eq!(meta["name"], FrontmatterValue::String("demo".into()));
+            "---\nname: demo\ndescription: \"Does: things\"\ndisable-model-invocation: true\nnotes: |\n  a\n    b\nwhen: >-\n  folded\n  text\ntags: [a, b]\nlimit: 3\n---\n\nBody\n",
+        )
+        .unwrap();
         assert_eq!(
-            meta["description"],
-            FrontmatterValue::String("Does: things".into())
+            serde_json::Value::Object(meta),
+            serde_json::json!({
+                "name": "demo",
+                "description": "Does: things",
+                "disable-model-invocation": true,
+                "notes": "a\n  b\n",
+                "when": "folded text",
+                "tags": ["a", "b"],
+                "limit": 3,
+            })
         );
-        assert_eq!(
-            meta["disable-model-invocation"],
-            FrontmatterValue::Bool(true)
-        );
-        assert_eq!(meta["notes"], FrontmatterValue::String("a\nb\n".into()));
         assert_eq!(body, "Body");
+        // pi's `yaml` throws on malformed YAML, which skips the skill.
+        assert!(parse_frontmatter("---\nname: a: b\n---\n").is_err());
+        assert!(parse_frontmatter("no frontmatter").unwrap().0.is_empty());
+    }
+
+    #[test]
+    fn reports_malformed_frontmatter_like_pi() {
+        let dir = std::env::temp_dir().join(format!("yapi-frontmatter-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let bad = "---\ndescription: a: b\n---\nBody\n";
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::create_dir_all(dir.join("skills/broken")).unwrap();
+        std::fs::write(dir.join("prompts/bad.md"), bad).unwrap();
+        std::fs::write(dir.join("prompts/good.md"), "Hello\n").unwrap();
+        std::fs::write(dir.join("skills/broken/SKILL.md"), bad).unwrap();
+        std::fs::write(dir.join("skills/loose.md"), bad).unwrap();
+
+        // pi's `loadTemplateFromFile` warns and skips the template.
+        let (templates, diagnostics) = templates_from(&[cli_source(&dir.join("prompts"))]);
+        assert_eq!(templates.len(), 1);
+        assert!(matches!(
+            diagnostics.as_slice(),
+            [Diagnostic::Warning { path, .. }] if path.ends_with("prompts/bad.md")
+        ));
+
+        // pi's `loadSkillFromFile` warns only for a declared `SKILL.md`.
+        let (skills, diagnostics) = skills_from(&[cli_source(&dir.join("skills"))]);
+        assert!(skills.is_empty());
+        assert!(matches!(
+            diagnostics.as_slice(),
+            [Diagnostic::Warning { path, .. }] if path.ends_with("broken/SKILL.md")
+        ));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

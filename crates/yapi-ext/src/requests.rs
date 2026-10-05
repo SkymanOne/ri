@@ -133,19 +133,7 @@ impl Host {
             }
             "frontmatter.parse" => {
                 let (frontmatter, body) =
-                    yapi_core::resources::parse_frontmatter(text(payload, "content"));
-                let frontmatter: Map<String, Value> = frontmatter
-                    .into_iter()
-                    .map(|(key, value)| {
-                        let value = match value {
-                            yapi_core::resources::FrontmatterValue::String(text) => {
-                                Value::String(text)
-                            }
-                            yapi_core::resources::FrontmatterValue::Bool(flag) => Value::Bool(flag),
-                        };
-                        (key, value)
-                    })
-                    .collect();
+                    yapi_core::resources::parse_frontmatter(text(payload, "content"))?;
                 Ok(json!({ "frontmatter": frontmatter, "body": body }))
             }
             _ => self.bridge.request(kind, payload),
