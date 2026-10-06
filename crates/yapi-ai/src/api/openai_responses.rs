@@ -17,7 +17,6 @@ use yapi_types::message::{
 };
 use yapi_types::model::{Model, OpenAiResponsesCompat};
 
-use super::sanitize_id_part;
 use crate::cost::calculate_cost;
 use crate::hash::short_hash;
 use crate::http::{self, Failure, Headers, SseReader, is_truthy};
@@ -146,8 +145,9 @@ fn parse_text_signature(signature: Option<&str>) -> Option<(String, Option<Strin
 /// An id part as the Responses API accepts it: sanitized, at most 64 units, no
 /// trailing underscores.
 fn normalize_id_part(part: &str) -> String {
-    let sanitized: String = sanitize_id_part(part).chars().take(64).collect();
-    sanitized.trim_end_matches('_').to_owned()
+    super::normalize_tool_call_id(part)
+        .trim_end_matches('_')
+        .to_owned()
 }
 
 fn foreign_item_id(item_id: &str) -> String {
