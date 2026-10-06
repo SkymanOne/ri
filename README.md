@@ -74,7 +74,7 @@ yapi does not pay for starting Node.js and loading Pi's JavaScript. Measured on 
 
 ## Portable
 
-yapi is one executable for Linux and macOS on x86_64 and arm64. Extensions run in WebAssembly, with memory and compute limits:
+yapi is one executable for Linux and macOS on x86_64 and arm64. Extensions run in WebAssembly with memory and compute limits, and in v0.1 they keep Pi's default file, process and network access:
 
 - Pi extensions in TypeScript or JavaScript run in a bundled QuickJS-NG runtime, with no Node.js install.
 - Native extensions are written in Rust and compiled to WebAssembly components. `yapi new` creates one, and [Native extensions in Rust](https://skymanone.github.io/yapi/native-extensions.html) is the guide.

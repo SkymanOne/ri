@@ -54,3 +54,15 @@ Files in a project's `.yapi` folder can change how yapi behaves and can run code
 - `"defaultProjectTrust": "always"` in global settings skips the question.
 
 `AGENTS.md` and `CLAUDE.md` load whether or not the project is trusted.
+
+## Security model
+
+yapi reads and edits files and runs commands as your user, so give it the same trust as any program you run in your shell.
+
+- Extensions run in WebAssembly instances with memory and compute limits. In v0.1 every package gets Pi's default grants, which allow file, process, network and environment access, so an extension can do what it could do in Pi. Restricting a package's grants is planned.
+- MCP servers started over stdio run as normal processes with your permissions.
+- Codemode scripts run in a fresh instance with no file, process or network access. They act only through the tools they call.
+- Project trust gates project-local resources. yapi loads nothing from a project's `.yapi` folder or `.agents/skills` until you trust the project.
+- Files and tool output that the model reads can steer it. Work in repositories you trust, or run yapi in a container or virtual machine.
+
+Report vulnerabilities privately, as [SECURITY.md](https://github.com/SkymanOne/yapi/blob/main/SECURITY.md) describes.
