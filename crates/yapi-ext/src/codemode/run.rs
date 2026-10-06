@@ -244,6 +244,38 @@ impl ScriptBridge {
         });
     }
 
+    /// Adds a running row for a nested call and publishes it: the row's index
+    /// and when the call started.
+    fn begin(&self, id: String, name: &str, args: String) -> (usize, Instant) {
+        let index = {
+            let mut progress = lock(&self.progress);
+            progress.calls.push(CallRecord {
+                id,
+                name: name.to_owned(),
+                args,
+                status: "running",
+                duration_ms: None,
+                error: None,
+                cost: None,
+            });
+            progress.calls.len() - 1
+        };
+        self.publish();
+        (index, Instant::now())
+    }
+
+    /// Records the duration of row `index`, completes it with `complete` and
+    /// publishes it.
+    fn finish(&self, (index, started): (usize, Instant), complete: impl FnOnce(&mut CallRecord)) {
+        {
+            let mut progress = lock(&self.progress);
+            let record = &mut progress.calls[index];
+            record.duration_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            complete(record);
+        }
+        self.publish();
+    }
+
     fn entry(&self, tool: &Callable) -> Value {
         json!({"name": identifier(tool.registered.name()), "description": tool.sample})
     }
@@ -372,21 +404,7 @@ impl ScriptBridge {
             .as_deref()
             .map(|args| truncate_text(args, ARGS_PREVIEW_CHARS))
             .unwrap_or_default();
-        let index = {
-            let mut progress = lock(&self.progress);
-            progress.calls.push(CallRecord {
-                id: format!("{}/?", self.call_id),
-                name: name.clone(),
-                args: preview,
-                status: "running",
-                duration_ms: None,
-                error: None,
-                cost: None,
-            });
-            progress.calls.len() - 1
-        };
-        self.publish();
-        let started = Instant::now();
+        let row = self.begin(format!("{}/?", self.call_id), &name, preview);
         let cancel = self.calls.child_token();
         let args: Value = args
             .as_deref()
@@ -396,46 +414,39 @@ impl ScriptBridge {
             .execute_tool(&self.call_id, &name, args, cancel.clone(), None)
             .await;
         let text = yapi_types::message::blocks_text(&outcome.result.content, "\n");
-        {
-            let mut progress = lock(&self.progress);
-            let record = &mut progress.calls[index];
-            record.id = outcome.call.id.clone();
-            record.duration_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
-            if outcome.is_error {
-                record.status = if cancel.is_cancelled() {
-                    "cancelled"
-                } else {
-                    "error"
-                };
-                let error = if text.is_empty() {
-                    format!("Tool \"{name}\" failed")
-                } else {
-                    text.clone()
-                };
-                record.error = Some(truncate_text(&error, ERROR_PREVIEW_CHARS));
+        let failure = outcome.is_error.then(|| {
+            if text.is_empty() {
+                format!("Tool \"{name}\" failed")
             } else {
-                record.status = "ok";
+                text.clone()
             }
-        }
-        self.publish();
+        });
+        self.finish(row, |record| {
+            record.id = outcome.call.id.clone();
+            match &failure {
+                Some(error) => {
+                    record.status = if cancel.is_cancelled() {
+                        "cancelled"
+                    } else {
+                        "error"
+                    };
+                    record.error = Some(truncate_text(error, ERROR_PREVIEW_CHARS));
+                }
+                None => record.status = "ok",
+            }
+        });
         let tool = &self.tools[tool];
         if tool.registered.tool.output_schema().is_some()
             && let Some(structured) = &outcome.result.structured_content
         {
             return Ok(script_value(Some(structured)));
         }
-        if outcome.is_error {
-            return Err(if text.is_empty() {
-                format!("Tool \"{name}\" failed")
-            } else {
-                text
-            });
+        if let Some(error) = failure {
+            return Err(error);
         }
         Ok(script_value(Some(&Value::String(text))))
     }
-}
 
-impl ScriptBridge {
     /// `models.*`: pi's `createModelGlobals`.
     async fn model_global(self: Arc<Self>, name: String, args: Value) -> Result<Value, String> {
         let docs = self.docs.clone().ok_or("models is not available")?;
@@ -488,21 +499,11 @@ impl ScriptBridge {
             models::check_images_context(context, docs)?;
         }
         let number = self.model_calls.fetch_add(1, Ordering::Relaxed) + 1;
-        let index = {
-            let mut progress = lock(&self.progress);
-            progress.calls.push(CallRecord {
-                id: format!("{}/{name}/{number}", self.call_id),
-                name: name.to_owned(),
-                args: format!("{provider}/{id}"),
-                status: "running",
-                duration_ms: None,
-                error: None,
-                cost: None,
-            });
-            progress.calls.len() - 1
-        };
-        self.publish();
-        let started = Instant::now();
+        let row = self.begin(
+            format!("{}/{name}/{number}", self.call_id),
+            name,
+            format!("{provider}/{id}"),
+        );
         let result = {
             let _slot = self
                 .model_slots
@@ -532,10 +533,7 @@ impl ScriptBridge {
         let usage: Option<Usage> = result
             .get("usage")
             .and_then(|usage| serde_json::from_value(usage.clone()).ok());
-        {
-            let mut progress = lock(&self.progress);
-            let record = &mut progress.calls[index];
-            record.duration_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+        self.finish(row, |record| {
             record.status = result.as_object().map_or("error", models::status);
             if let Some(error) = result["errorMessage"].as_str() {
                 record.error = Some(truncate_text(error, ERROR_PREVIEW_CHARS));
@@ -543,7 +541,7 @@ impl ScriptBridge {
             if let Some(usage) = &usage {
                 record.cost = Some(usage.cost.total);
             }
-        }
+        });
         if let Some(usage) = usage {
             let mut total = lock(&self.model_usage);
             *total = Some(match total.as_ref() {
@@ -551,7 +549,6 @@ impl ScriptBridge {
                 None => usage,
             });
         }
-        self.publish();
         Ok(script_value(Some(&result)))
     }
 }
@@ -799,17 +796,11 @@ impl Runner {
         let store = read_store(session.as_ref());
         // pi's models need the session's registry.
         let docs = self.docs.clone().filter(|_| session.is_some());
-        let mut globals: Vec<Value> = ["searchTools", "describeTool", "describeNamespace"]
+        let globals: Vec<Value> = ["searchTools", "describeTool", "describeNamespace"]
             .iter()
+            .chain(models::GLOBALS.iter().filter(|_| docs.is_some()))
             .map(|name| json!({"name": name, "spread": true}))
             .collect();
-        if docs.is_some() {
-            globals.extend(
-                models::GLOBALS
-                    .iter()
-                    .map(|name| json!({"name": name, "spread": true})),
-            );
-        }
         let bridge = Arc::new(ScriptBridge {
             session: session.clone(),
             call_id,
