@@ -650,7 +650,7 @@ impl super::App {
                 }
             }
             "/tree" => self.open_tree(None),
-            "/new" => self.new_session(),
+            "/new" => self.new_session(None),
             "/compact" => {
                 self.indicator = None;
                 let session = self.session.clone();
@@ -850,13 +850,15 @@ impl super::App {
         );
     }
 
-    fn reload(&mut self) {
+    pub(super) fn reload(&mut self) {
         if self.running {
             self.warning("Wait for the current response to finish before reloading.");
+            self.answer(Ok(false));
             return;
         }
         if self.manual_compaction {
             self.warning("Wait for compaction to finish before reloading.");
+            self.answer(Ok(false));
             return;
         }
         // pi reloads the session in place, keeping its model and level.
@@ -864,6 +866,7 @@ impl super::App {
         let manager = self.session.take_session();
         let replaced = self.replace_session(manager, Replacement::Reload);
         if let Err(error) = replaced {
+            self.answer(Err(error.clone()));
             self.error(format!("Reload failed: {error}"));
             return;
         }

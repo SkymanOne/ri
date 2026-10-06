@@ -862,6 +862,26 @@ impl AgentSession {
         (messages, forced)
     }
 
+    /// Sets how the mode carries out session changes extension commands
+    /// ask for.
+    pub fn set_actions(&self, actions: crate::extensions::SessionActions) {
+        *lock(&self.inner.actions) = Some(actions);
+    }
+
+    /// Carries out a session change an extension command asks for: whether
+    /// an extension cancelled it. Without a mode, nothing changes, as pi's
+    /// default actions do.
+    pub async fn session_action(
+        &self,
+        action: crate::extensions::SessionAction,
+    ) -> Result<bool, String> {
+        let actions = lock(&self.inner.actions).clone();
+        match actions {
+            Some(actions) => actions(action).await,
+            None => Ok(false),
+        }
+    }
+
     /// Gives extensions their UI and mode and starts them: pi's
     /// `bindExtensions`, which emits `session_start` with the reason this
     /// session replaced another and that session's file, or `startup` when

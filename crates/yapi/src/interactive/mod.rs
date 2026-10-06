@@ -40,7 +40,7 @@ use yapi_core::agent_session::{
     AgentSession, Replacement, SessionChange, TreeNavigation, TreeOutcome, UserBash,
 };
 use yapi_core::bash_executor::BashResult;
-use yapi_core::extensions::BashOperations;
+use yapi_core::extensions::{BashOperations, SessionAction};
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
 use yapi_tui::autocomplete::AutocompleteProvider;
@@ -162,6 +162,8 @@ enum Event {
     ),
     /// Work to finish on the loop for the session with this epoch.
     Then(u64, Then),
+    /// A session change an extension command asks for.
+    Action(Box<crate::runtime::ActionRequest>),
     /// A component an extension built for a transcript item, answering the
     /// request with this sequence number.
     Component(
@@ -428,6 +430,9 @@ struct App {
     model_network: bool,
     /// The last selector catalog refresh id.
     next_refresh: u64,
+    /// Where the outcome of the session change an extension command asked
+    /// for goes.
+    action: Option<tokio::sync::oneshot::Sender<Result<bool, String>>>,
     /// The current session's extensions wait to start, after the session
     /// they replace (if any) shuts down for a reason, with the replacement's
     /// session file.
@@ -2411,7 +2416,7 @@ impl App {
                     ));
                 }
             }
-            "app.session.new" => self.new_session(),
+            "app.session.new" => self.new_session(None),
             "app.session.tree" => self.open_tree(None),
             "app.session.fork" => self.open_fork(),
             "app.session.resume" => self.open_resume(),
@@ -2540,7 +2545,10 @@ impl App {
         match dialog {
             Some(Dialog::TreeSummary(id)) => self.open_tree(Some(id)),
             Some(Dialog::TreeInstructions(id)) => self.ask_tree_summary(id),
-            Some(Dialog::ResumeMissingCwd(_)) => self.status("Resume cancelled"),
+            Some(Dialog::ResumeMissingCwd(_)) => {
+                self.status("Resume cancelled");
+                self.answer(Ok(true));
+            }
             Some(Dialog::Import(_)) => self.status("Import cancelled"),
             Some(Dialog::LoginMenu(..) | Dialog::Logout) => {}
             Some(Dialog::LoginProviders(kind, _)) => self.providers_cancelled(kind),
@@ -2657,6 +2665,7 @@ impl App {
                     self.resume(&path, Some(cwd));
                 } else {
                     self.status("Resume cancelled");
+                    self.answer(Ok(true));
                 }
             }
             Some(Dialog::Extension(ExtensionReply::Select(options, reply))) => {
@@ -2925,23 +2934,29 @@ impl App {
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            if !session.cancels(&change).await {
-                let _ = tx.send(Event::Then(epoch, Box::new(then)));
-            }
+            let then: Then = if session.cancels(&change).await {
+                Box::new(|app| app.answer(Ok(true)))
+            } else {
+                Box::new(then)
+            };
+            let _ = tx.send(Event::Then(epoch, then));
         });
     }
 
-    fn new_session(&mut self) {
+    /// pi's `newSession`, linked to `parent` when given; `/new` also says so.
+    fn new_session(&mut self, parent: Option<String>) {
         self.indicator = None;
         self.unless_cancelled(SessionChange::New, |app| {
-            let result = crate::runtime::new_session(&app.session, None)
+            let command = app.action.is_none();
+            let result = crate::runtime::new_session(&app.session, parent)
                 .map_err(|error| error.to_string())
                 .and_then(|manager| app.replace_session(manager, Replacement::New));
             match result {
-                Ok(()) => app.once_bound(|app| {
+                Ok(()) if command => app.once_bound(|app| {
                     let notice = lines::styled("✓ New session started", app.theme.fg("accent"));
                     app.text_item(vec![notice], true, (1, 1));
                 }),
+                Ok(()) => {}
                 Err(error) => app.fatal("Failed to create session", &error),
             }
         });
@@ -2958,17 +2973,20 @@ impl App {
                 app.replace_session(manager, Replacement::Fork)?;
                 Ok(fork.text)
             });
+            // pi's fork action says "Forked" for both positions, and a
+            // failure ends the app.
+            let command = app.action.is_none();
             match result {
-                Ok(text) => app.once_bound(move |app| {
-                    if at {
-                        app.set_editor_text("");
-                        app.status("Cloned to new session");
-                    } else {
-                        app.set_editor_text(text.as_deref().unwrap_or_default());
-                        app.status("Forked to new session");
-                    }
+                Ok(_) if at && command => app.once_bound(|app| {
+                    app.set_editor_text("");
+                    app.status("Cloned to new session");
                 }),
-                Err(error) => app.error(error),
+                Ok(text) => app.once_bound(move |app| {
+                    app.set_editor_text(text.as_deref().unwrap_or_default());
+                    app.status("Forked to new session");
+                }),
+                Err(error) if command => app.error(error),
+                Err(error) => app.fatal("Failed to fork session", &error),
             }
         });
     }
@@ -3024,6 +3042,7 @@ impl App {
 
     /// pi's fatal runtime error: shown, then the app exits with status 1.
     fn fatal(&mut self, prefix: &str, error: &str) {
+        self.answer(Err(error.to_owned()));
         self.error(format!("{prefix}: {error}"));
         self.quit = true;
         self.exit_code = 1;
@@ -3698,6 +3717,7 @@ impl App {
             model_network: options.model_network,
             next_refresh: 0,
             binding: None,
+            action: None,
             on_bound: Vec::new(),
             overlay: None,
             overlays_below: Vec::new(),
@@ -3733,6 +3753,11 @@ impl App {
         };
         self.ext.set_theme(&self.theme);
         self.share_themes();
+        let tx = self.tx.clone();
+        self.session
+            .set_actions(crate::runtime::actions(move |request| {
+                tx.send(Event::Action(Box::new(request))).is_ok()
+            }));
         let ui = extension_ui::InteractiveUi {
             tx: self.tx.clone(),
             epoch: self.epoch,
@@ -3761,6 +3786,72 @@ impl App {
         yapi_types::sync::lock(&self.ext.shared).check_theme = Some(Arc::new(move |name| {
             theme_named(name, &files, &agent_dir, &colors, mode).map(|_| ())
         }));
+    }
+
+    /// Carries out an extension command's session change as pi's
+    /// interactive mode does; its outcome goes to `reply` once the change is
+    /// done, with the replacement's extensions started.
+    fn on_action(&mut self, (action, reply): crate::runtime::ActionRequest) {
+        if matches!(action, SessionAction::Replaced) {
+            self.run_on_bound();
+            let _ = reply.send(Ok(false));
+            return;
+        }
+        self.action = Some(reply);
+        match action {
+            SessionAction::New { parent } => self.new_session(parent),
+            SessionAction::Fork { entry_id, at } => self.fork(&entry_id, at),
+            SessionAction::Tree { target_id, options } => {
+                let session = self.session.clone();
+                let tx = self.tx.clone();
+                let epoch = self.epoch;
+                tokio::spawn(async move {
+                    let result = session.navigate_tree(&target_id, options).await;
+                    let _ = tx.send(Event::Then(
+                        epoch,
+                        Box::new(move |app: &mut App| app.navigated(result)),
+                    ));
+                });
+            }
+            SessionAction::Switch { path } => {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
+                self.resume(&cwd.join(path), None);
+            }
+            SessionAction::Reload => self.reload(),
+            SessionAction::Replaced => {}
+        }
+    }
+
+    fn run_on_bound(&mut self) {
+        for then in std::mem::take(&mut self.on_bound) {
+            then(self);
+        }
+    }
+
+    /// pi's `navigateTree` action: the transcript of the new position.
+    fn navigated(&mut self, result: Result<TreeOutcome, String>) {
+        match result {
+            Ok(outcome) if outcome.cancelled => self.answer(Ok(true)),
+            Ok(outcome) => {
+                self.clear_chat();
+                self.render_history();
+                if let Some(text) = outcome.editor_text
+                    && self.editor.text().trim().is_empty()
+                {
+                    self.set_editor_text(&text);
+                }
+                self.status("Navigated to selected point");
+                self.answer(Ok(false));
+            }
+            Err(error) => self.answer(Err(error)),
+        }
+    }
+
+    /// Answers the extension command whose session change is done.
+    fn answer(&mut self, outcome: Result<bool, String>) {
+        if let Some(reply) = self.action.take() {
+            let _ = reply.send(outcome);
+        }
     }
 
     /// Handles everything but input.
@@ -3836,8 +3927,13 @@ impl App {
             }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
             Event::Bound => {
-                for then in std::mem::take(&mut self.on_bound) {
-                    then(self);
+                // A session change an extension command asked for is
+                // reported once the command's own work on the replacement
+                // is done; others at once.
+                if self.action.is_some() {
+                    self.answer(Ok(false));
+                } else {
+                    self.run_on_bound();
                 }
                 // Extensions may have added skills, prompt templates and themes.
                 self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
@@ -3863,6 +3959,7 @@ impl App {
                 self.on_component(*slot, sequence, component);
             }
             Event::Then(epoch, then) if epoch == self.epoch => then(self),
+            Event::Action(request) => self.on_action(*request),
             _ => {}
         }
     }

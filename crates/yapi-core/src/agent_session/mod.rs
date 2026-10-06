@@ -241,6 +241,8 @@ struct Inner {
     extensions: Vec<Arc<dyn Extension>>,
     /// The UI and mode extensions see.
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
+    /// How the mode changes sessions for extension commands.
+    actions: Mutex<Option<crate::extensions::SessionActions>>,
     /// Extension sections of the current run's system prompt.
     run_sections: Mutex<IndexMap<String, String>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
@@ -448,6 +450,7 @@ impl AgentSession {
                 tools: tool_registry,
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
+                actions: Mutex::new(None),
                 run_sections: Mutex::new(IndexMap::new()),
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),

@@ -25,7 +25,7 @@ use yapi_ai::stream::{
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
     Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, ModelList,
-    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+    NotifyKind, Placement, RemoteComponent, Renderers, SessionAction, ToolRenderers, Tools, Widget,
     WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
@@ -1524,6 +1524,11 @@ impl Bridge for SessionBridge {
                 let drafts = list(&payload["entries"]);
                 session.boundary_context(boundary, drafts)
             }
+            "session.context" => {
+                let (ui, mode) = session.extension_binding();
+                let trusted = session.project_trusted();
+                Ok(ctx_data(Some(&session), ui.as_ref(), mode, trusted, &CancellationToken::new()))
+            }
             "session.read" => session_read(&session, payload["method"].as_str().unwrap_or_default(), &payload["args"]),
             "tools.getActive" => Ok(to_json(session.active_tool_names())),
             "tools.getAll" => Ok(Value::Array(
@@ -1808,6 +1813,40 @@ impl Bridge for SessionBridge {
                     .compact(payload["customInstructions"].as_str())
                     .await
                     .map(to_json),
+                "session.new"
+                | "session.fork"
+                | "session.navigateTree"
+                | "session.switch"
+                | "session.reload"
+                | "session.replaced" => {
+                    let action = match kind.as_str() {
+                        "session.new" => SessionAction::New {
+                            parent: payload["parentSession"].as_str().map(str::to_owned),
+                        },
+                        "session.fork" => SessionAction::Fork {
+                            entry_id: text(&payload["entryId"]),
+                            at: payload["position"] == "at",
+                        },
+                        "session.navigateTree" => SessionAction::Tree {
+                            target_id: text(&payload["targetId"]),
+                            options: yapi_core::agent_session::TreeNavigation {
+                                summarize: payload["summarize"] == true,
+                                custom_instructions: payload["customInstructions"]
+                                    .as_str()
+                                    .map(str::to_owned),
+                                replace_instructions: payload["replaceInstructions"] == true,
+                                label: payload["label"].as_str().map(str::to_owned),
+                            },
+                        },
+                        "session.switch" => SessionAction::Switch {
+                            path: text(&payload["sessionPath"]),
+                        },
+                        "session.reload" => SessionAction::Reload,
+                        _ => SessionAction::Replaced,
+                    };
+                    let cancelled = session.session_action(action).await?;
+                    Ok(json!({ "cancelled": cancelled }))
+                }
                 "ui.select" | "ui.confirm" | "ui.input" | "ui.editor" => {
                     let (ui, _) = session.extension_binding();
                     let title = text(&payload["title"]);
