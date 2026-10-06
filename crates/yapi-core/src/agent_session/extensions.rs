@@ -505,23 +505,10 @@ impl AgentSession {
     }
 
     /// Delivers pi event `event` to every extension that handles it, in
-    /// order, for events whose results pi ignores.
-    pub async fn emit_extension_event(&self, event: &Value, cancel: CancellationToken) {
-        let kind = event["type"].as_str().unwrap_or_default();
-        let handlers = self.handlers_of(kind);
-        if handlers.is_empty() {
-            return;
-        }
-        let ctx = self.extension_context(cancel);
-        for extension in handlers {
-            extension.handle(&ctx, event).await;
-        }
-    }
-
-    /// Delivers a cancellable `session_before_*` event as pi's runner does:
-    /// the last result a handler gave, or the first that cancels, which
-    /// stops delivery.
-    pub(super) async fn emit_before(
+    /// order, as pi's runner `emit` does. Only a `session_before_*` event has
+    /// a result: the last one a handler gave, or the first that cancels,
+    /// which stops delivery.
+    pub async fn emit_extension_event(
         &self,
         event: &Value,
         cancel: CancellationToken,
@@ -532,9 +519,12 @@ impl AgentSession {
             return None;
         }
         let ctx = self.extension_context(cancel);
+        let before = kind.starts_with("session_before_");
         let mut result = None;
         for extension in handlers {
-            if let Some(next) = extension.handle(&ctx, event).await {
+            if let Some(next) = extension.handle(&ctx, event).await
+                && before
+            {
                 let cancelled = next["cancel"] == true;
                 result = Some(next);
                 if cancelled {
@@ -553,7 +543,9 @@ impl AgentSession {
         if let Some(target) = target {
             event["targetSessionFile"] = target.into();
         }
-        let result = self.emit_before(&event, CancellationToken::new()).await;
+        let result = self
+            .emit_extension_event(&event, CancellationToken::new())
+            .await;
         result.is_some_and(|result| result["cancel"] == true)
     }
 
@@ -566,7 +558,9 @@ impl AgentSession {
             "entryId": entry_id,
             "position": if at { "at" } else { "before" },
         });
-        let result = self.emit_before(&event, CancellationToken::new()).await;
+        let result = self
+            .emit_extension_event(&event, CancellationToken::new())
+            .await;
         result.is_some_and(|result| result["cancel"] == true)
     }
 

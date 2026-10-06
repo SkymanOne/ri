@@ -379,7 +379,7 @@ impl AgentSession {
                 "willRetry": will_retry,
             });
             let event = defined(event, &["customInstructions"]);
-            let result = self.emit_before(&event, cancel.clone()).await;
+            let result = self.emit_extension_event(&event, cancel.clone()).await;
             if result
                 .as_ref()
                 .is_some_and(|result| result["cancel"] == true)

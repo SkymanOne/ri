@@ -1500,7 +1500,10 @@ impl AgentSession {
             }
             let event =
                 serde_json::json!({"type": "session_before_tree", "preparation": preparation});
-            if let Some(result) = self.emit_before(&event, CancellationToken::new()).await {
+            if let Some(result) = self
+                .emit_extension_event(&event, CancellationToken::new())
+                .await
+            {
                 if result["cancel"] == true {
                     return Ok(TreeOutcome {
                         cancelled: true,
