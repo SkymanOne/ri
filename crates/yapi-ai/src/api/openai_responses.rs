@@ -123,7 +123,7 @@ fn encode_text_signature(id: Option<&str>, phase: Option<&str>) -> String {
     if let Some(phase) = phase.filter(|phase| !phase.is_empty()) {
         payload.insert("phase".into(), json!(phase));
     }
-    yapi_types::json::to_string(&payload).unwrap_or_default()
+    yapi_types::json::stringify(&payload)
 }
 
 /// The message id and phase from a text signature: v1 JSON, or a legacy plain id.
@@ -325,7 +325,7 @@ fn convert_assistant(
                 item.insert("name".into(), json!(call.name));
                 item.insert(
                     "arguments".into(),
-                    json!(yapi_types::json::to_string(&call.arguments).unwrap_or_default()),
+                    json!(yapi_types::json::stringify(&call.arguments)),
                 );
                 if same_model && let Some(namespace) = &call.namespace {
                     item.insert("namespace".into(), json!(namespace));
@@ -961,7 +961,7 @@ async fn connect(
             (body, codex_url(&model.base_url))
         }
     };
-    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options)
         .await
@@ -1137,7 +1137,7 @@ impl State {
                         .unwrap_or_default()
                 };
                 let (summary, content) = (join("summary"), join("content"));
-                let signature = yapi_types::json::to_string(item).unwrap_or_default();
+                let signature = yapi_types::json::stringify(item);
                 let Some(block) = self.thinking(position) else {
                     return;
                 };
@@ -1249,7 +1249,7 @@ impl State {
                 continue;
             }
             stored.insert("encrypted_content".into(), json!(encrypted));
-            block.thinking_signature = yapi_types::json::to_string(&stored).ok();
+            block.thinking_signature = Some(yapi_types::json::stringify(&stored));
         }
     }
 
@@ -1338,7 +1338,7 @@ impl State {
                 };
                 let detail = pick("message")
                     .or_else(|| pick("code"))
-                    .unwrap_or_else(|| yapi_types::json::to_string(event).unwrap_or_default());
+                    .unwrap_or_else(|| yapi_types::json::stringify(event));
                 Err(format!("Codex error: {detail}"))
             }
             "response.failed" => Err(event["response"]["error"]["message"]

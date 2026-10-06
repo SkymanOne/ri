@@ -468,14 +468,14 @@ fn model_path(id: &str) -> String {
 /// The SDK's error for a failed status: the JSON body, re-serialized.
 fn status_message(status: u16, body: &str) -> String {
     match serde_json::from_str::<Value>(body) {
-        Ok(json) => yapi_types::json::to_string(&json).unwrap_or_default(),
+        Ok(json) => yapi_types::json::stringify(&json),
         Err(_) => {
             let reason = reqwest::StatusCode::from_u16(status)
                 .ok()
                 .and_then(|code| code.canonical_reason())
                 .unwrap_or("");
             let error = json!({"error": {"message": body, "code": status, "status": reason}});
-            yapi_types::json::to_string(&error).unwrap_or_default()
+            yapi_types::json::stringify(&error)
         }
     }
 }
@@ -589,7 +589,7 @@ impl State {
             ),
         };
         let arguments = call["args"].as_object().cloned().unwrap_or_default();
-        let delta = yapi_types::json::to_string(&arguments).unwrap_or_default();
+        let delta = yapi_types::json::stringify(&arguments);
         let tool_call = ContentBlock::ToolCall(ToolCall {
             id,
             name,
@@ -685,7 +685,7 @@ fn chunk_error(text: &str) -> Option<String> {
                 Value::Null => "undefined".into(),
                 other => other.to_string(),
             },
-            yapi_types::json::to_string(&json).unwrap_or_default()
+            yapi_types::json::stringify(&json)
         )
     })
 }
@@ -783,7 +783,7 @@ async fn connect(
     let max_tokens = requested_max_tokens(model, messages, options);
     let thinking = thinking(model, options, flavor)?;
     let body = build_body(model, messages, options, max_tokens, &thinking)?;
-    let body = yapi_types::json::to_string(&body).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&body);
     let mut headers = Headers::default();
     headers.set("content-type", Some("application/json"));
     match target.auth {

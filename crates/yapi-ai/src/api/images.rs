@@ -127,7 +127,7 @@ async fn openrouter(
     let Some(api_key) = options.api_key.as_deref().filter(|key| !key.is_empty()) else {
         return Err(format!("No API key for provider: {}", model.provider));
     };
-    let body = yapi_types::json::to_string(&params(model, context)).unwrap_or_default();
+    let body = yapi_types::json::stringify(&params(model, context));
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
     let mut headers = Headers::default();
     headers.set("Authorization", Some(format!("Bearer {api_key}")));

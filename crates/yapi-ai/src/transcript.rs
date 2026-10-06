@@ -459,8 +459,7 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
                     ContentBlock::Thinking(thinking) => yapi_types::js::len(&thinking.thinking),
                     ContentBlock::ToolCall(call) => {
                         yapi_types::js::len(&call.name)
-                            + yapi_types::json::to_string(&call.arguments)
-                                .map_or(0, |json| yapi_types::js::len(&json))
+                            + yapi_types::js::len(&yapi_types::json::stringify(&call.arguments))
                     }
                     ContentBlock::Image(_) => 0,
                 })

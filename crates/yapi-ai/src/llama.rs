@@ -154,7 +154,7 @@ impl Client {
         if let Some(body) = body {
             request = request
                 .header("Content-Type", "application/json")
-                .body(yapi_types::json::to_string(&body).unwrap_or_default());
+                .body(yapi_types::json::stringify(&body));
         }
         if let Some(key) = &self.api_key {
             request = request.header("Authorization", format!("Bearer {key}"));

@@ -113,7 +113,7 @@ impl Provider for Faux {
                         arguments: Map::new(),
                         ..call.clone()
                     }),
-                    yapi_types::json::to_string(&call.arguments).unwrap_or_default(),
+                    yapi_types::json::stringify(&call.arguments),
                 ),
                 ContentBlock::Image(_) => continue,
             };

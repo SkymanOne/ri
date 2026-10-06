@@ -92,7 +92,7 @@ fn make_node_strict(schema: &mut Value, check: Option<KeywordCheck>) -> Result<(
             if check(key, value) {
                 return Err(format!(
                     "{key}: {} is unsupported",
-                    yapi_types::json::to_string(value).unwrap_or_default()
+                    yapi_types::json::stringify(value)
                 ));
             }
         }

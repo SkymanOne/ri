@@ -40,10 +40,6 @@ impl KimiOAuth {
     }
 }
 
-fn js(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_else(|_| "null".into())
-}
-
 /// A credential from a token response, or pi's error for `operation`.
 fn token(json: &Value, operation: &str) -> Result<OAuthCredential, AuthError> {
     let access = json["access_token"]
@@ -62,7 +58,7 @@ fn token(json: &Value, operation: &str) -> Result<OAuthCredential, AuthError> {
         }),
         _ => Err(AuthError::Failed(format!(
             "Kimi Code token {operation} response missing fields: {}",
-            js(json)
+            yapi_types::json::stringify(json)
         ))),
     }
 }
@@ -101,7 +97,7 @@ impl KimiOAuth {
         ) else {
             return Err(AuthError::Failed(format!(
                 "Invalid Kimi Code device authorization response: {}",
-                js(&json)
+                yapi_types::json::stringify(&json)
             )));
         };
         let interval = positive(&json["interval"]).unwrap_or(DEFAULT_POLL_INTERVAL_SECONDS);
@@ -222,7 +218,7 @@ impl KimiOAuth {
             }
             return Err(AuthError::Failed(format!(
                 "Kimi Code token refresh failed with status {status}: {}",
-                js(&json)
+                yapi_types::json::stringify(&json)
             )));
         }
         Err(last.unwrap_or_else(|| AuthError::failed("Kimi Code token refresh failed")))

@@ -1248,7 +1248,7 @@ async fn connect(
         &thinking,
         configured_region.as_deref(),
     )
-    .and_then(|body| yapi_types::json::to_string(&body).map_err(|err| err.to_string()))
+    .map(|body| yapi_types::json::stringify(&body))
     .map_err(Failure::plain)?;
     let target = target(model, options).await.map_err(Failure::plain)?;
     send(&target, &body, options).await

@@ -72,14 +72,11 @@ impl OpenRouterOAuth {
             .post(&self.token_url)
             .header("accept", "application/json")
             .header("content-type", "application/json")
-            .body(
-                yapi_types::json::to_string(&json!({
-                    "code": code,
-                    "code_verifier": verifier,
-                    "code_challenge_method": "S256",
-                }))
-                .unwrap_or_default(),
-            );
+            .body(yapi_types::json::stringify(&json!({
+                "code": code,
+                "code_verifier": verifier,
+                "code_challenge_method": "S256",
+            })));
         let response =
             match tokio::time::timeout(TOKEN_EXCHANGE_TIMEOUT, send(request, cancel)).await {
                 Ok(response) => response?,

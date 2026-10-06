@@ -101,7 +101,7 @@ pub(crate) async fn post_json(
         cancel: options.cancel.clone(),
         ..StreamOptions::default()
     };
-    let text = yapi_types::json::to_string(body).unwrap_or_default();
+    let text = yapi_types::json::stringify(body);
     let build = || {
         let mut request = headers.apply(http::client().post(url).body(text.clone()));
         if let Some(timeout) = options.timeout_ms {
@@ -195,7 +195,7 @@ const CLOUDFLARE: Transport = Transport {
         if run.get("state").and_then(Value::as_str) != Some("Completed") {
             let state = match run.get("state") {
                 Some(Value::String(state)) => state.clone(),
-                Some(other) => yapi_types::json::to_string(other).unwrap_or_default(),
+                Some(other) => yapi_types::json::stringify(other),
                 None => "undefined".into(),
             };
             return Err(format!(

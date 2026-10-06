@@ -282,8 +282,8 @@ pub fn sdk_status_message(status: u16, error: Option<&Value>, raw: Option<&str>)
     let message = match error {
         Some(error) => match error.get("message") {
             Some(Value::String(message)) if !message.is_empty() => Some(message.clone()),
-            Some(message) if is_truthy(message) => yapi_types::json::to_string(message).ok(),
-            _ if is_truthy(error) => yapi_types::json::to_string(error).ok(),
+            Some(message) if is_truthy(message) => Some(yapi_types::json::stringify(message)),
+            _ if is_truthy(error) => Some(yapi_types::json::stringify(error)),
             _ => raw.map(str::to_owned),
         },
         None => raw.map(str::to_owned),
@@ -308,10 +308,8 @@ pub(crate) fn openai_status_message(status: u16, body: &str, prefix: Option<&str
 pub fn sdk_error_message(error: &Value) -> String {
     match error.get("message") {
         Some(Value::String(message)) if !message.is_empty() => message.clone(),
-        Some(message) if is_truthy(message) => {
-            yapi_types::json::to_string(message).unwrap_or_default()
-        }
-        _ if is_truthy(error) => yapi_types::json::to_string(error).unwrap_or_default(),
+        Some(message) if is_truthy(message) => yapi_types::json::stringify(message),
+        _ if is_truthy(error) => yapi_types::json::stringify(error),
         _ => "(no status code or body)".to_owned(),
     }
 }
@@ -374,7 +372,7 @@ pub fn provider_error_message(
 ) -> String {
     let body = body
         .filter(|body| body.as_object().is_some_and(|object| !object.is_empty()))
-        .and_then(|body| yapi_types::json::to_string(body).ok())
+        .map(yapi_types::json::stringify)
         .map(|text| truncate_chars(text.trim(), MAX_ERROR_BODY_CHARS))
         .filter(|body| !body.is_empty() && !message.contains(body.as_str()));
     match (status, body, prefix) {

@@ -163,7 +163,9 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                         ContentBlock::Text(text) if !text.text.trim().is_empty() => {
                             content.push(json!({"type": "text", "text": text.text}));
                         }
-                        ContentBlock::Thinking(thinking) if !thinking.thinking.trim().is_empty() => {
+                        ContentBlock::Thinking(thinking)
+                            if !thinking.thinking.trim().is_empty() =>
+                        {
                             content.push(json!({
                                 "type": "thinking",
                                 "thinking": [{"type": "text", "text": thinking.thinking}],
@@ -174,7 +176,7 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                             "type": "function",
                             "function": {
                                 "name": call.name,
-                                "arguments": yapi_types::json::to_string(&call.arguments).unwrap_or_default(),
+                                "arguments": yapi_types::json::stringify(&call.arguments),
                             },
                             "index": 0,
                         })),
@@ -484,7 +486,7 @@ impl State {
         let delta = match arguments {
             Value::String(text) => text.clone(),
             Value::Null => "{}".to_owned(),
-            other => yapi_types::json::to_string(other).unwrap_or_default(),
+            other => yapi_types::json::stringify(other),
         };
         let partial = self.partial_args.entry(position).or_default();
         partial.push_str(&delta);
@@ -645,7 +647,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             max_tokens,
             level,
         )?;
-        let payload = yapi_types::json::to_string(&payload).map_err(|err| err.to_string())?;
+        let payload = yapi_types::json::stringify(&payload);
 
         let mut headers = Headers::default();
         headers.set("accept", Some("text/event-stream"));

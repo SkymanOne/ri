@@ -497,7 +497,7 @@ fn convert_messages(
                         .map(|call| {
                             json!({"id": call.id, "type": "function", "function": {
                                 "name": call.name,
-                                "arguments": yapi_types::json::to_string(&call.arguments).unwrap_or_default()}})
+                                "arguments": yapi_types::json::stringify(&call.arguments)}})
                         })
                         .collect();
                     out.insert("tool_calls".into(), Value::Array(tool_calls));
@@ -1063,7 +1063,7 @@ async fn connect(
     headers.extend(&options.headers);
 
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
-    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options).await.map_err(failure_message)
 }

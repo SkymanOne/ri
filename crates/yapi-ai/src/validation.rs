@@ -231,7 +231,7 @@ fn display_path(path: &str) -> String {
 }
 
 fn js_number(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_default()
+    yapi_types::json::stringify(value)
 }
 
 /// Appends `(path, message)` for every violation of `schema` by `value`.

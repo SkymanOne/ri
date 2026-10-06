@@ -332,7 +332,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         ));
     };
     let url = format!("{}/messages", model.base_url.trim_end_matches('/'));
-    let body = yapi_types::json::to_string(&payload(&model, &request)).unwrap_or_default();
+    let body = yapi_types::json::stringify(&payload(&model, &request));
     let mut builder = http::client()
         .post(&url)
         .header("authorization", format!("Bearer {api_key}"))

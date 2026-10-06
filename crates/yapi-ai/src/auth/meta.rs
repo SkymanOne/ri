@@ -123,7 +123,7 @@ impl MetaOAuth {
         ) else {
             return Err(AuthError::Failed(format!(
                 "Invalid Meta device authorization response: {}",
-                yapi_types::json::to_string(&json).unwrap_or_default()
+                yapi_types::json::stringify(&json)
             )));
         };
         let interval = positive(&json["interval"]);

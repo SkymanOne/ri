@@ -293,7 +293,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             "{}/v1/messages?beta=true",
             model.base_url.trim_end_matches('/')
         );
-        let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+        let body = yapi_types::json::stringify(&params);
         if let Some(config) = &federation {
             let token = federation::token(config, false, &options.cancel).await?;
             federated_headers(&mut headers, &token);

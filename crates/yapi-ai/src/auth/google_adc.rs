@@ -180,8 +180,7 @@ fn fetch<'a>(
 /// `gtoken` builds it.
 fn signed_jwt(email: &str, private_key: &str, audience: &str) -> Result<String, String> {
     let encode = |value: &Value| {
-        base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(yapi_types::json::to_string(value).unwrap_or_default())
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(yapi_types::json::stringify(value))
     };
     let issued = now_ms() / 1000;
     let header = encode(&json!({"alg": "RS256"}));
@@ -299,7 +298,7 @@ async fn impersonate(
         .post(url)
         .header("authorization", format!("Bearer {source_token}"))
         .header("content-type", "application/json")
-        .body(yapi_types::json::to_string(&Value::Object(body)).unwrap_or_default());
+        .body(yapi_types::json::stringify(&Value::Object(body)));
     let (status, body) = post(request, cancel).await?;
     if !(200..300).contains(&status) {
         return Err(format!(
@@ -383,7 +382,7 @@ async fn external_account(
     if let Some(project) = credentials["workforce_pool_user_project"].as_str() {
         pairs.push((
             "options",
-            yapi_types::json::to_string(&json!({"userProject": project})).unwrap_or_default(),
+            yapi_types::json::stringify(&json!({"userProject": project})),
         ));
     }
     let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();

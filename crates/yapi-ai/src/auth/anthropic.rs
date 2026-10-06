@@ -111,8 +111,7 @@ impl AnthropicOAuth {
         body: &Value,
         cancel: &CancellationToken,
     ) -> Result<String, AuthError> {
-        let body =
-            yapi_types::json::to_string(body).map_err(|err| AuthError::failed(err.to_string()))?;
+        let body = yapi_types::json::stringify(body);
         let request = crate::http::client()
             .post(&self.token_url)
             .header("Content-Type", "application/json")
