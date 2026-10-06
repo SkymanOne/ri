@@ -1,0 +1,214 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "notify",
+      "message": "model_select set claude-sonnet-4-5 -> claude-haiku-4-5"
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "set_model",
+      "success": true,
+      "data": {
+        "id": "<id-3>",
+        "name": "Claude Haiku 4.5 (latest)",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "<mock>",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 5,
+          "cacheRead": 0.1,
+          "cacheWrite": 1.25
+        },
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "compat": {
+          "supportsStrictTools": true
+        },
+        "promptCache": {
+          "short": 300,
+          "long": 3600
+        },
+        "inputLimits": {
+          "maxRequestBytes": 33554432,
+          "images": {
+            "maxPerRequest": 100,
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        },
+        "type": "chat"
+      }
+    },
+    {
+      "id": "<id-4>",
+      "type": "response",
+      "command": "set_model",
+      "success": true,
+      "data": {
+        "id": "<id-3>",
+        "name": "Claude Haiku 4.5 (latest)",
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "baseUrl": "<mock>",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 1,
+          "output": 5,
+          "cacheRead": 0.1,
+          "cacheWrite": 1.25
+        },
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "compat": {
+          "supportsStrictTools": true
+        },
+        "promptCache": {
+          "short": 300,
+          "long": 3600
+        },
+        "inputLimits": {
+          "maxRequestBytes": 33554432,
+          "images": {
+            "maxPerRequest": 100,
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        },
+        "type": "chat"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-5>",
+      "method": "notify",
+      "message": "model_select cycle claude-haiku-4-5 -> claude-sonnet-4-5"
+    },
+    {
+      "id": "<id-6>",
+      "type": "response",
+      "command": "cycle_model",
+      "success": true,
+      "data": {
+        "model": {
+          "id": "<id-7>",
+          "name": "Claude Sonnet 4.5 (latest)",
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "baseUrl": "<mock>",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 3,
+            "output": 15,
+            "cacheRead": 0.3,
+            "cacheWrite": 3.75
+          },
+          "contextWindow": 1000000,
+          "maxTokens": 64000,
+          "compat": {
+            "supportsStrictTools": true
+          },
+          "promptCache": {
+            "short": 300,
+            "long": 3600
+          },
+          "inputLimits": {
+            "maxRequestBytes": 33554432,
+            "images": {
+              "maxPerRequest": 600,
+              "resize": {
+                "maxWidth": 2000,
+                "maxHeight": 2000,
+                "maxBytes": 4718592,
+                "jpegQuality": 80
+              }
+            }
+          },
+          "type": "chat"
+        },
+        "thinkingLevel": "medium",
+        "isScoped": true
+      }
+    },
+    {
+      "type": "thinking_level_changed",
+      "level": "high"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-8>",
+      "method": "notify",
+      "message": "thinking_level_select medium -> high"
+    },
+    {
+      "id": "<id-9>",
+      "type": "response",
+      "command": "set_thinking_level",
+      "success": true
+    },
+    {
+      "type": "session_info_changed",
+      "name": "Named"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-10>",
+      "method": "notify",
+      "message": "{\"type\":\"session_info_changed\",\"name\":\"Named\"}"
+    },
+    {
+      "id": "<id-11>",
+      "type": "response",
+      "command": "set_session_name",
+      "success": true
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-12>",
+      "method": "notify",
+      "message": "model_select set claude-sonnet-4-5 -> claude-haiku-4-5"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-13>",
+      "method": "notify",
+      "message": "picked true"
+    },
+    {
+      "id": "<id-14>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

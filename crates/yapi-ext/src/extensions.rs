@@ -1241,7 +1241,10 @@ impl Bridge for SessionBridge {
                     if !registry.has_auth(&model.provider) {
                         return Ok(Value::Bool(false));
                     }
-                    Ok(Value::Bool(session.set_model(model).is_ok()))
+                    let set = session.set_model(model).is_ok();
+                    // pi's `setModel` returns once `model_select` handlers ran.
+                    session.flush_announcements().await;
+                    Ok(Value::Bool(set))
                 }
                 "models.apiKey" => {
                     let registry = session.registry();

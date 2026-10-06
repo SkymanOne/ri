@@ -548,6 +548,35 @@ impl AgentSession {
         result.is_some_and(|result| result["cancel"] == true)
     }
 
+    /// Delivers `event` to extensions in the background, after the events
+    /// announced before it, as pi's runner delivers events it does not wait
+    /// for. Outside a tokio runtime it waits for the next
+    /// [`AgentSession::flush_announcements`].
+    pub(super) fn announce(&self, event: Value) {
+        let kind = event["type"].as_str().unwrap_or_default();
+        if !self.has_handlers(kind) {
+            return;
+        }
+        lock(&self.inner.announcements).push_back(event);
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let session = self.clone();
+            runtime.spawn(async move { session.flush_announcements().await });
+        }
+    }
+
+    /// Waits until the events announced so far have reached extensions.
+    pub async fn flush_announcements(&self) {
+        let _turn = self.inner.announcing.lock().await;
+        loop {
+            let next = lock(&self.inner.announcements).pop_front();
+            let Some(event) = next else {
+                return;
+            };
+            self.emit_extension_event(&event, CancellationToken::new())
+                .await;
+        }
+    }
+
     /// pi's `input` event: `None` when a handler handled the input,
     /// otherwise the possibly transformed text and images.
     pub(super) async fn input_handlers(

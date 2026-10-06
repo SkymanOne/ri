@@ -502,7 +502,14 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
             "Unknown command: {}",
             name.as_deref().unwrap_or("undefined")
         )),
-        command => handle(&rpc, id.as_ref(), command).await,
+        command => {
+            let session = rpc.session();
+            let reply = handle(&rpc, id.as_ref(), command).await;
+            // Extensions hear of model, thinking level and name changes
+            // before the response, as pi's handlers run first.
+            session.flush_announcements().await;
+            reply
+        }
     };
     rpc.reply(id.as_ref(), name.as_deref(), reply);
 }

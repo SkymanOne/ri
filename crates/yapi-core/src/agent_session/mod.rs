@@ -217,6 +217,10 @@ struct Inner {
     retry_cancel: Mutex<Option<CancellationToken>>,
     /// Calls tools made through [`AgentSession::execute_tool`].
     nested: crate::nested::NestedCalls,
+    /// Events for extensions that are delivered in the background, in order.
+    announcements: Mutex<VecDeque<Value>>,
+    /// Held while announcements are delivered.
+    announcing: tokio::sync::Mutex<()>,
 }
 
 /// Counts an operation in [`Inner::compacting`] while alive.
@@ -399,6 +403,8 @@ impl AgentSession {
                 compacting: AtomicUsize::new(0),
                 manual_compaction: std::sync::atomic::AtomicBool::new(false),
                 retry_cancel: Mutex::new(None),
+                announcements: Mutex::new(VecDeque::new()),
+                announcing: tokio::sync::Mutex::new(()),
                 nested: crate::nested::NestedCalls::default(),
             }),
         }
@@ -464,13 +470,16 @@ impl AgentSession {
             })
     }
 
-    /// Names the session.
+    /// Names the session; extensions hear of it as pi's
+    /// `session_info_changed`.
     pub fn set_name(&self, name: &str) {
         let name = self.with_session(|session| {
             let _ = session.append_session_info(name);
             session.name()
         });
-        self.emit(&AgentEvent::SessionInfoChanged { name });
+        self.emit(&AgentEvent::SessionInfoChanged { name: name.clone() });
+        let event = serde_json::json!({"type": "session_info_changed", "name": name});
+        self.announce(extensions::defined(event, &["name"]));
     }
 
     /// A snapshot of the merged settings.
