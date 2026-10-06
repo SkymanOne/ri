@@ -69,7 +69,6 @@ struct Shared {
     /// The exposure the resource tools were last registered with.
     resource_tools_exposure: Option<McpExposure>,
     tools: Option<Tools>,
-    ui: Option<Arc<dyn ExtensionUi>>,
 }
 
 /// The MCP extension. Each session has its own.
@@ -890,7 +889,6 @@ impl Extension for McpExtension {
                 shared.startup = None;
                 shared.generation += 1;
                 shared.tools = Some(ctx.tools.clone());
-                shared.ui = Some(Arc::clone(&ctx.ui));
                 shared.servers = loaded
                     .servers
                     .into_iter()

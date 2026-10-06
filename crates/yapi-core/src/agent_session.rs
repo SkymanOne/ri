@@ -1132,26 +1132,13 @@ impl AgentSession {
         })
     }
 
-    /// pi's `sendCustomMessage`: `deliver_as` `nextTurn` holds the message
-    /// for the next prompt; while a run streams it steers (or follows up)
-    /// unless `trigger_turn` is false, in which case it is appended when the
-    /// turn ends; otherwise `trigger_turn` starts a run with it, and without
-    /// one it is appended at once.
-    pub async fn send_custom_message(
-        &self,
-        message: yapi_types::message::CustomMessage,
-        trigger_turn: Option<bool>,
-        deliver_as: Option<&str>,
-    ) {
-        if let Some(message) = self.deliver_custom_message(message, trigger_turn, deliver_as) {
-            self.run_triggered(message).await;
-        }
-    }
-
-    /// The part of [`AgentSession::send_custom_message`] that happens at
-    /// once, as in pi: the message is queued, held or recorded and reported
-    /// before this returns. A message that starts a turn is returned for
-    /// [`AgentSession::run_triggered`].
+    /// The part of pi's `sendCustomMessage` that happens at once: the message
+    /// is queued, held or recorded and reported before this returns.
+    /// `deliver_as` `nextTurn` holds the message for the next prompt; while a
+    /// run streams it steers (or follows up) unless `trigger_turn` is false, in
+    /// which case it is appended when the turn ends; otherwise `trigger_turn`
+    /// returns it to start a run with [`AgentSession::run_triggered`], and
+    /// without one it is appended at once.
     pub fn deliver_custom_message(
         &self,
         message: yapi_types::message::CustomMessage,
@@ -1966,7 +1953,6 @@ impl AgentSession {
             apis: &self.inner.apis,
             auth: &auth,
             thinking_level: self.thinking_level(),
-            session_id: None,
             retry: self.retry_policy(),
             cancel: cancel.clone(),
             on_retry: Some(&on_retry),
@@ -2225,7 +2211,6 @@ impl AgentSession {
                 apis: &self.inner.apis,
                 auth: &auth,
                 thinking_level: ThinkingLevel::Off,
-                session_id: None,
                 retry: self.retry_policy(),
                 cancel,
                 on_retry: Some(&on_retry),

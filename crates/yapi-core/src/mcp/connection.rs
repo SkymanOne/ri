@@ -236,7 +236,6 @@ impl Connection {
                 Ok(Transport::Http(HttpTransport::new(HttpOptions {
                     url: url.clone(),
                     headers: resolved,
-                    token: None,
                 })))
             }
             ServerTransport::Stdio {

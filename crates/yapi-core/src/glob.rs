@@ -34,11 +34,6 @@ pub fn matches_with(pattern: &str, text: &str, nocase: bool) -> bool {
     })
 }
 
-/// Whether `pattern` has characters that make it a glob rather than a path.
-pub fn is_glob(pattern: &str) -> bool {
-    pattern.contains(['*', '?', '[', '{'])
-}
-
 fn match_segments(pattern: &[&str], text: &[&str]) -> bool {
     match (pattern.first(), text.first()) {
         (None, None) => true,

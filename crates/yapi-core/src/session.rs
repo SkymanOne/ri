@@ -1019,7 +1019,8 @@ impl SessionManager {
     }
 }
 
-fn entry_messages(entry: &FileEntry) -> Vec<Message> {
+/// The messages an entry contributes to the context before edits.
+pub(crate) fn entry_messages(entry: &FileEntry) -> Vec<Message> {
     match entry {
         FileEntry::Message(entry) => vec![entry.message.clone()],
         FileEntry::CustomMessage(entry) => vec![Message::Custom(CustomMessage {
@@ -1104,11 +1105,6 @@ pub struct Projection<'a> {
     pub thinking_level: String,
     /// The last model used or selected on the branch, as (provider, model id).
     pub model: Option<(String, String)>,
-}
-
-/// The messages an entry contributes to the context before edits.
-pub fn entry_context_messages(entry: &FileEntry) -> Vec<Message> {
-    entry_messages(entry)
 }
 
 /// Projects a branch path: from the last compaction on, entries kept by it, then

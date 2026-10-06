@@ -22,7 +22,7 @@ use yapi_types::session::FileEntry;
 use yapi_types::settings::Settings;
 
 use crate::messages::convert_to_llm;
-use crate::session::{ProjectedEntry, Projection, entry_context_messages};
+use crate::session::{ProjectedEntry, Projection, entry_messages};
 use crate::time::{now_ms, uuid_v7};
 
 /// When and how much to compact.
@@ -113,14 +113,6 @@ fn assistant_usage(message: &Message) -> Option<&Usage> {
         }
         _ => None,
     }
-}
-
-/// The usage of the last successful assistant message on a branch.
-pub fn last_assistant_usage(entries: &[&FileEntry]) -> Option<Usage> {
-    entries.iter().rev().find_map(|entry| match entry {
-        FileEntry::Message(entry) => assistant_usage(&entry.message).cloned(),
-        _ => None,
-    })
 }
 
 const ESTIMATED_IMAGE_CHARS: usize = 4800;
@@ -370,7 +362,7 @@ fn find_cut_point(
     let suffix = &entries[(cut + 1).min(end)..end];
     let intrinsically_visible = |entry: &ProjectedEntry<'_>| {
         !matches!(entry.source, FileEntry::ContextEdit(_))
-            && !entry_context_messages(entry.source).is_empty()
+            && !entry_messages(entry.source).is_empty()
     };
     let omitted =
         |entry: &ProjectedEntry<'_>| intrinsically_visible(entry) && entry.messages.is_empty();
@@ -711,8 +703,6 @@ pub struct Summarizer<'a> {
     pub auth: &'a Auth,
     /// The session's thinking level; used when the model reasons.
     pub thinking_level: ThinkingLevel,
-    /// Routing session id; a fresh one when absent.
-    pub session_id: Option<String>,
     /// Retries for transient failures.
     pub retry: RetryPolicy,
     /// Cancels the requests.
@@ -823,7 +813,7 @@ impl Summarizer<'_> {
     /// One summary request with retries on transient failures, reported as
     /// pi-ai's `retryAssistantCall` reports them.
     async fn complete(&self, prompt: &str, max_tokens: u64) -> AssistantMessage {
-        let session_id = self.session_id.clone().unwrap_or_else(uuid_v7);
+        let session_id = uuid_v7();
         let max_attempts = if self.retry.enabled {
             self.retry.max_retries
         } else {
@@ -1040,7 +1030,7 @@ fn branch_entry_message(entry: &FileEntry) -> Option<Message> {
     match entry {
         FileEntry::Message(entry) if matches!(entry.message, Message::ToolResult(_)) => None,
         FileEntry::Message(_) | FileEntry::CustomMessage(_) | FileEntry::BranchSummary(_) => {
-            entry_context_messages(entry).into_iter().next()
+            entry_messages(entry).into_iter().next()
         }
         FileEntry::Compaction(compaction) => Some(Message::CompactionSummary(
             yapi_types::message::CompactionSummaryMessage {
