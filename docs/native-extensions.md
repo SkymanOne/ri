@@ -4,6 +4,8 @@ Native extensions are WebAssembly components written in Rust with the `yapi-exte
 
 A native extension needs no JavaScript runtime and runs in a WebAssembly instance of its own. A built extension is one `.wasm` file of a few hundred kilobytes.
 
+Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Rust SDK and the host requests they use may change in any release before then, and extensions may need to be rebuilt. Pi extensions from npm use Pi's extension API and are not affected.
+
 ## Create an extension
 
 Add the `wasm32-wasip2` target to your toolchain once:
@@ -91,6 +93,12 @@ yapi -e .
 ```
 
 `-e` also takes the `.wasm` file itself.
+
+To check that the package loads without a model or the network, run [`check-extension.py`](https://github.com/SkymanOne/yapi/blob/main/skills/yapi-extension/scripts/check-extension.py) from the [agent skills](agent-skills.md). It prints the commands the extensions registered and every load error, and exits with 1 on an error:
+
+```sh
+python3 check-extension.py .
+```
 
 ## Install it
 
