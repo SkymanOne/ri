@@ -63,13 +63,12 @@ pub(super) enum Request {
     EditorSubmit(String),
     /// Raw input that matched an extension shortcut.
     Shortcut(String),
-    /// A runtime's input listeners started or stopped listening.
-    TerminalInput(u64, Option<Arc<dyn ComponentHost>>),
-    /// A runtime composed autocomplete providers, with their trigger
-    /// characters.
-    Autocomplete(u64, Arc<dyn ComponentHost>, Vec<String>),
-    /// A runtime's providers ask for the suggestions below theirs.
-    Suggest(u64, Value, oneshot::Sender<Value>),
+    /// Input listeners started or stopped listening.
+    TerminalInput(Option<Arc<dyn ComponentHost>>),
+    /// Composed autocomplete providers, with their trigger characters.
+    Autocomplete(Arc<dyn ComponentHost>, Vec<char>),
+    /// The providers ask for the built-in provider's suggestions.
+    Suggest(Value, oneshot::Sender<Value>),
     Render,
     ToolsExpanded(bool),
     Shutdown,
@@ -261,22 +260,25 @@ impl ExtensionUi for InteractiveUi {
             .send(Event::EditorAction(self.epoch, action.to_owned()));
     }
 
-    fn set_terminal_input(&self, runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
-        self.send(Request::TerminalInput(runtime, listeners));
+    fn set_terminal_input(&self, listeners: Option<Arc<dyn ComponentHost>>) {
+        self.send(Request::TerminalInput(listeners));
     }
 
-    fn set_autocomplete(
-        &self,
-        runtime: u64,
-        providers: Arc<dyn ComponentHost>,
-        triggers: Vec<String>,
-    ) {
-        self.send(Request::Autocomplete(runtime, providers, triggers));
+    /// pi's editor takes single characters as triggers.
+    fn set_autocomplete(&self, providers: Arc<dyn ComponentHost>, triggers: Vec<String>) {
+        let triggers = triggers
+            .iter()
+            .filter_map(|trigger| {
+                let mut chars = trigger.chars();
+                chars.next().filter(|_| chars.next().is_none())
+            })
+            .collect();
+        self.send(Request::Autocomplete(providers, triggers));
     }
 
-    fn suggestions(&self, runtime: u64, request: Value) -> BoxFuture<'static, Value> {
+    fn suggestions(&self, request: Value) -> BoxFuture<'static, Value> {
         let (reply, answer) = oneshot::channel();
-        self.send(Request::Suggest(runtime, request, reply));
+        self.send(Request::Suggest(request, reply));
         Box::pin(async move { answer.await.unwrap_or(Value::Null) })
     }
 
@@ -553,11 +555,11 @@ pub(super) struct ExtensionState {
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
     pub editor: Option<CustomEditor>,
-    /// Runtimes with `onTerminalInput` listeners, in the order they started.
-    pub listeners: Vec<(u64, Arc<dyn ComponentHost>)>,
-    /// Runtimes with autocomplete providers and their trigger characters, in
-    /// the order they added the first.
-    pub completions: Vec<(u64, Arc<dyn ComponentHost>, Vec<String>)>,
+    /// What runs the `onTerminalInput` listeners, while there are any.
+    pub listeners: Option<Arc<dyn ComponentHost>>,
+    /// What runs the providers composed with `addAutocompleteProvider`, and
+    /// their trigger characters.
+    pub completions: Option<(Arc<dyn ComponentHost>, Vec<char>)>,
     pub working_message: Option<String>,
     pub working_hidden: bool,
     pub working_indicator: Option<WorkingIndicator>,
@@ -573,8 +575,8 @@ impl ExtensionState {
         self.footer = None;
         self.header = None;
         self.editor = None;
-        self.listeners.clear();
-        self.completions.clear();
+        self.listeners = None;
+        self.completions = None;
         self.working_message = None;
         self.working_hidden = false;
         self.working_indicator = None;
@@ -790,25 +792,12 @@ impl super::App {
             Request::Shortcut(data) => {
                 self.run_shortcut(&data);
             }
-            Request::TerminalInput(runtime, listeners) => {
-                self.ext.listeners.retain(|(id, _)| *id != runtime);
-                self.ext
-                    .listeners
-                    .extend(listeners.map(|host| (runtime, host)));
-            }
-            Request::Autocomplete(runtime, providers, triggers) => {
-                match self
-                    .ext
-                    .completions
-                    .iter_mut()
-                    .find(|(id, ..)| *id == runtime)
-                {
-                    Some(entry) => entry.2 = triggers,
-                    None => self.ext.completions.push((runtime, providers, triggers)),
-                }
+            Request::TerminalInput(listeners) => self.ext.listeners = listeners,
+            Request::Autocomplete(providers, triggers) => {
+                self.ext.completions = Some((providers, triggers));
                 self.install_completions();
             }
-            Request::Suggest(runtime, request, reply) => self.suggest(runtime, request, reply),
+            Request::Suggest(request, reply) => self.suggest(request, reply),
             Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);
                 // An overlay over an open overlay stacks on it.

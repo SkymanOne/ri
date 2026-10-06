@@ -727,28 +727,12 @@ impl App {
             commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
                 .notify_with(notify.clone())
         };
-        let provider: Box<dyn AutocompleteProvider> = match self.ext.completions.last() {
-            Some((_, providers, _)) => {
-                let mut triggers: Vec<char> = Vec::new();
-                for trigger in self
-                    .ext
-                    .completions
-                    .iter()
-                    .flat_map(|(_, _, triggers)| triggers)
-                {
-                    let mut chars = trigger.chars();
-                    if let (Some(c), None) = (chars.next(), chars.next())
-                        && !triggers.contains(&c)
-                    {
-                        triggers.push(c);
-                    }
-                }
-                Box::new(completions::ExtensionCompletions::new(
-                    providers.clone(),
-                    triggers,
-                    notify.clone(),
-                ))
-            }
+        let provider: Box<dyn AutocompleteProvider> = match &self.ext.completions {
+            Some((providers, triggers)) => Box::new(completions::ExtensionCompletions::new(
+                providers.clone(),
+                triggers.clone(),
+                notify.clone(),
+            )),
             None => Box::new(builtin()),
         };
         self.builtin_completions = Some(builtin());
@@ -756,31 +740,9 @@ impl App {
         self.answer_suggestions();
     }
 
-    /// Answers an extension's request for the suggestions below its
-    /// providers: the providers of the runtime that added theirs before, else
-    /// the built-in provider, whose `@` search may answer later.
-    fn suggest(
-        &mut self,
-        runtime: u64,
-        request: Value,
-        reply: tokio::sync::oneshot::Sender<Value>,
-    ) {
-        let below = self
-            .ext
-            .completions
-            .iter()
-            .position(|(id, ..)| *id == runtime)
-            .unwrap_or(self.ext.completions.len());
-        if let Some((_, providers, _)) = below
-            .checked_sub(1)
-            .and_then(|index| self.ext.completions.get(index))
-        {
-            let providers = providers.clone();
-            tokio::spawn(async move {
-                let _ = reply.send(providers.suggestions(request).await);
-            });
-            return;
-        }
+    /// Answers an extension's request for the built-in provider's
+    /// suggestions, whose `@` search may answer later.
+    fn suggest(&mut self, request: Value, reply: tokio::sync::oneshot::Sender<Value>) {
         // As pi aborts a superseded request, only the latest one waits.
         if let Some((_, previous)) = self.waiting_suggestions.replace((request, reply)) {
             let _ = previous.send(Value::Null);
@@ -2215,7 +2177,7 @@ impl App {
     /// input listeners see input before everything else. The listeners run
     /// beside the loop; later keys wait behind them, in order.
     fn on_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
-        if self.ext.listeners.is_empty() && self.input_queue.is_empty() && !self.listening {
+        if self.ext.listeners.is_none() && self.input_queue.is_empty() && !self.listening {
             self.handle_keys(keys, terminal);
             return;
         }
@@ -2229,26 +2191,15 @@ impl App {
         if self.listening || self.input_queue.is_empty() {
             return;
         }
-        let mut keys = std::mem::take(&mut self.input_queue);
-        if self.ext.listeners.is_empty() {
+        let keys = std::mem::take(&mut self.input_queue);
+        let Some(listeners) = self.ext.listeners.clone() else {
             self.handle_keys(keys, terminal);
             return;
-        }
+        };
         self.listening = true;
-        let listeners: Vec<_> = self
-            .ext
-            .listeners
-            .iter()
-            .map(|(_, host)| host.clone())
-            .collect();
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            for listener in listeners {
-                if keys.is_empty() {
-                    break;
-                }
-                keys = listener.terminal_input(keys).await;
-            }
+            let keys = listeners.terminal_input(keys).await;
             let _ = tx.send(Event::TerminalInput(keys));
         });
     }

@@ -453,17 +453,17 @@
 		tuiModule ??= await import("@earendil-works/pi-tui");
 		return tuiModule.getKeybindings();
 	};
-	// The extension editor in the built-in one's place, and the app actions
-	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
-	// needs load when the session binds, so the factory runs at once.
-	const editorSlot = { factory: undefined, handle: undefined };
+	const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
+	// pi-tui's input listeners: `onTerminalInput` handlers, which see raw
+	// input before the editor and may consume or transform it.
+	const terminalListeners = new Set();
 	// `addAutocompleteProvider` factories and the provider they compose over
 	// the host's, as pi's `setupAutocompleteProvider` does.
 	const completionWrappers = [];
 	const hostCompletions = {
 		getSuggestions: (lines, cursorLine, cursorCol, options) =>
 			yapi.op("ui.suggestions", { lines, cursorLine, cursorCol, force: !!options?.force }).then((suggestions) => suggestions ?? null),
-		applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => yapi.request("ui.applyCompletion", { lines, cursorLine, cursorCol, item: plain(item), prefix }),
+		applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => request("applyCompletion", { lines, cursorLine, cursorCol, item: plain(item), prefix }),
 	};
 	let completions = hostCompletions;
 	function addCompletions(factory) {
@@ -477,14 +477,14 @@
 		if (triggers.length > 0) provider.triggerCharacters = [...new Set(triggers)];
 		completions = provider;
 		components.get(editorSlot.handle)?.setAutocompleteProvider?.(provider);
-		yapi.request("ui.setAutocomplete", { triggerCharacters: provider.triggerCharacters ?? [] });
+		request("setAutocomplete", { triggerCharacters: provider.triggerCharacters ?? [] });
 	}
-	// pi-tui's input listeners: `onTerminalInput` handlers, which see raw
-	// input before the editor and may consume or transform it.
-	const terminalListeners = new Set();
+	// The extension editor in the built-in one's place, and the app actions
+	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
+	// needs load when the session binds, so the factory runs at once.
+	const editorSlot = { factory: undefined, handle: undefined };
 	let editorActions = [];
 	function setEditor(factory) {
-		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
 		const text = request("getEditorText", {}) ?? "";
 		const editor = typeof factory === "function" ? factory(tui, facade.getEditorTheme(), tuiModule.getKeybindings()) : undefined;
 		editorSlot.factory = editor ? factory : undefined;
@@ -529,7 +529,6 @@
 
 	// ----- contexts --------------------------------------------------------------------------------------
 	function createUi(data) {
-		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
 		const shown = !!(data.hasUI && data.components);
 		const replaceSlot = (slot, factory, ...args) => {
 			if (slots[slot] !== undefined) unmount(slots[slot]);

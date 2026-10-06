@@ -897,17 +897,16 @@ impl SessionBridge {
             "ui.editorChange" => ui.editor_changed(&text(&payload["text"])),
             "ui.editorSubmit" => ui.editor_submit(&text(&payload["text"])),
             "ui.editorAction" => ui.editor_action(&text(&payload["action"])),
-            "ui.setTerminalInput" => ui.set_terminal_input(
-                self.runtime_id,
-                self.components().filter(|_| payload["listening"] == true),
-            ),
+            "ui.setTerminalInput" => {
+                ui.set_terminal_input(self.components().filter(|_| payload["listening"] == true));
+            }
             "ui.setAutocomplete" => {
                 if let Some(providers) = self.components() {
                     let triggers = list(&payload["triggerCharacters"])
                         .iter()
                         .map(text)
                         .collect();
-                    ui.set_autocomplete(self.runtime_id, providers, triggers);
+                    ui.set_autocomplete(providers, triggers);
                 }
             }
             "ui.applyCompletion" => return ui.apply_completion(payload),
@@ -1172,12 +1171,11 @@ impl Bridge for SessionBridge {
             .unwrap_or_else(|| (Arc::new(|_| {}), CancellationToken::new()));
         let codemode = self.codemode.clone();
         let kind = kind.to_owned();
-        let runtime = self.runtime_id;
         Box::pin(async move {
             match kind.as_str() {
                 "ui.suggestions" => {
                     let (ui, _) = session.extension_binding();
-                    Ok(ui.suggestions(runtime, payload).await)
+                    Ok(ui.suggestions(payload).await)
                 }
                 "codemode.execute" => codemode
                     .execute(

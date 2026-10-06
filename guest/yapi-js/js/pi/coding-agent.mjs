@@ -293,7 +293,6 @@ export class CustomEditor extends Editor {
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 		this.actionHandlers = new Map();
 	}
-	setWorkingStatusIndicator() {}
 	onAction(action, handler) {
 		this.actionHandlers.set(action, handler);
 	}

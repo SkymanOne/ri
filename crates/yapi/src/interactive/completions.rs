@@ -124,7 +124,7 @@ struct Request {
 }
 
 /// The editor's provider while extensions add providers: their composition
-/// in the runtime that added the last ones.
+/// in the JS runtime.
 pub(super) struct ExtensionCompletions {
     providers: Arc<dyn ComponentHost>,
     triggers: Vec<char>,

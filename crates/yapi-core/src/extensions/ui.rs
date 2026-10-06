@@ -278,27 +278,20 @@ pub trait ExtensionUi: Send + Sync {
     /// such as `app.interrupt`.
     fn editor_action(&self, _action: &str) {}
 
-    /// Starts passing raw input through the `onTerminalInput` listeners of
-    /// runtime `runtime`, which `listeners` runs, or stops with `None`.
-    fn set_terminal_input(&self, _runtime: u64, _listeners: Option<Arc<dyn ComponentHost>>) {}
+    /// Starts passing raw input through the `onTerminalInput` listeners
+    /// that `listeners` runs, or stops with `None`. Only the JS runtime has
+    /// them.
+    fn set_terminal_input(&self, _listeners: Option<Arc<dyn ComponentHost>>) {}
 
-    /// Completes through the autocomplete providers runtime `runtime`
-    /// composed with `addAutocompleteProvider`, which `providers` runs;
-    /// `triggers` open completion too.
-    fn set_autocomplete(
-        &self,
-        _runtime: u64,
-        _providers: Arc<dyn ComponentHost>,
-        _triggers: Vec<String>,
-    ) {
-    }
+    /// Completes through the providers composed with
+    /// `addAutocompleteProvider`, which `providers` runs; `triggers` open
+    /// completion too. Only the JS runtime has them.
+    fn set_autocomplete(&self, _providers: Arc<dyn ComponentHost>, _triggers: Vec<String>) {}
 
-    /// What the provider below runtime `runtime`'s providers suggests for
-    /// pi's provider arguments `request`, `{"lines", "cursorLine",
-    /// "cursorCol", "force"}` with UTF-16 columns: the providers of the
-    /// runtime that composed them before, else the built-in one. pi's
-    /// `AutocompleteSuggestions`, or `Null`.
-    fn suggestions(&self, _runtime: u64, _request: Value) -> BoxFuture<'static, Value> {
+    /// What the built-in provider suggests for pi's provider arguments
+    /// `request`, `{"lines", "cursorLine", "cursorCol", "force"}` with
+    /// UTF-16 columns: pi's `AutocompleteSuggestions`, or `Null`.
+    fn suggestions(&self, _request: Value) -> BoxFuture<'static, Value> {
         Box::pin(async { Value::Null })
     }
 
