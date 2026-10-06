@@ -10,8 +10,9 @@ mod common;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::json;
 use yapi_ext::{Engine, Instance, NoBridge, Options};
@@ -96,16 +97,41 @@ async fn pi_extension_template_registers_what_the_skill_describes() {
     assert_eq!(extension["events"], json!(["tool_call"]));
 }
 
-fn python(script: &str, args: &[&str], env: &[(&str, &Path)]) -> Output {
+/// `command`'s output, or a panic after two minutes, so that a script that
+/// deadlocks fails the test instead of hanging it.
+fn output(mut command: Command) -> Output {
+    let child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || send.send(child.wait_with_output().unwrap()));
+    receive
+        .recv_timeout(Duration::from_secs(120))
+        .unwrap_or_else(|_| {
+            let _ = Command::new("kill").arg(pid.to_string()).status();
+            panic!("{command:?} did not finish");
+        })
+}
+
+fn python(script: &str, yapi: &Path, args: &[&str], env: &[(&str, &Path)]) -> Output {
     let mut command = Command::new("python3");
     command
         .arg(skill(script))
-        .args(["--yapi", env!("CARGO_BIN_EXE_yapi")])
+        .arg("--yapi")
+        .arg(yapi)
         .args(args);
     for (key, value) in env {
         command.env(key, value);
     }
-    command.output().unwrap()
+    output(command)
+}
+
+fn yapi() -> &'static Path {
+    Path::new(env!("CARGO_BIN_EXE_yapi"))
 }
 
 #[test]
@@ -114,11 +140,13 @@ fn check_extension_reports_commands_and_load_errors() {
     let template = skill("yapi-extension/templates/pi-extension.ts");
     let output = python(
         "yapi-extension/scripts/check-extension.py",
+        yapi(),
         &[template.to_str().unwrap()],
         &[("HOME", &dir)],
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{output:?}");
+    assert!(stdout.starts_with("Loaded 1 extension(s).\n"), "{stdout}");
     assert!(stdout.contains("  /hello: Says hello\n"), "{stdout}");
 
     let broken = dir.join("broken.ts");
@@ -129,12 +157,58 @@ fn check_extension_reports_commands_and_load_errors() {
     .unwrap();
     let output = python(
         "yapi-extension/scripts/check-extension.py",
+        yapi(),
         &[broken.to_str().unwrap()],
         &[("HOME", &dir)],
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(stderr.contains("not-installed"), "{stderr}");
+
+    // An extension that loads but fails in a handler.
+    let throws = dir.join("throws.ts");
+    std::fs::write(
+        &throws,
+        "export default function (pi) {\n  pi.registerCommand(\"throws\", { description: \"Fails on start\", handler: async () => {} });\n  pi.on(\"session_start\", () => { throw new Error(\"boom\"); });\n}\n",
+    )
+    .unwrap();
+    let output = python(
+        "yapi-extension/scripts/check-extension.py",
+        yapi(),
+        &[throws.to_str().unwrap()],
+        &[("HOME", &dir)],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(
+        stdout,
+        "Loaded with 1 error(s).\n  /throws: Fails on start\n"
+    );
+    assert!(stderr.contains("boom"), "{stderr}");
+}
+
+/// yapi's stderr fills a pipe after 64 KB, so the scripts must not leave it
+/// unread while they wait for yapi's output.
+#[test]
+fn check_extension_survives_a_flood_of_logs() {
+    let dir = scratch("check-logs");
+    let noisy = dir.join("noisy.ts");
+    std::fs::write(
+        &noisy,
+        "export default function (pi) {\n  console.error(\"x\".repeat(200000));\n  pi.registerCommand(\"noisy\", { description: \"Logs a lot\", handler: async () => {} });\n}\n",
+    )
+    .unwrap();
+    let output = python(
+        "yapi-extension/scripts/check-extension.py",
+        yapi(),
+        &[noisy.to_str().unwrap()],
+        &[("HOME", &dir)],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert_eq!(stdout, "Loaded 1 extension(s).\n  /noisy: Logs a lot\n");
+    assert!(output.stderr.len() > 200_000);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -27,13 +27,15 @@ def main() -> int:
     command = [args.yapi, "--mode", "rpc", "--no-session", "--offline", "-ne"]
     for extension in args.extensions:
         command += ["-e", os.path.abspath(extension)]
-    with tempfile.TemporaryDirectory(prefix="yapi-check-") as agent:
+    # stderr goes to a file: a pipe nobody reads fills up with extension logs
+    # and stops yapi.
+    with tempfile.TemporaryDirectory(prefix="yapi-check-") as agent, tempfile.TemporaryFile() as log:
         env = dict(os.environ, YAPI_CODING_AGENT_DIR=agent, PI_OFFLINE="1")
         proc = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=log,
             text=True,
             env=env,
         )
@@ -49,15 +51,19 @@ def main() -> int:
                 commands = event.get("data", {}).get("commands", [])
                 break
         proc.stdin.close()
-        stderr = proc.stderr.read()
         code = proc.wait()
+        log.seek(0)
+        stderr = log.read().decode(errors="replace")
 
     if commands is None or code != 0:
         print(stderr.strip() or f"yapi exited with {code}", file=sys.stderr)
         return 1
     # `-ne` keeps the built-in extensions out, so every extension command is theirs.
     loaded = [c for c in commands if c.get("source") == "extension"]
-    print(f"Loaded {len(args.extensions)} extension(s).")
+    if errors:
+        print(f"Loaded with {len(errors)} error(s).")
+    else:
+        print(f"Loaded {len(args.extensions)} extension(s).")
     for command in loaded:
         print(f"  /{command['name']}: {command.get('description') or ''}")
     if stderr.strip():
