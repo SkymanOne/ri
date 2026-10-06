@@ -6,7 +6,7 @@ yapi reads Pi's formats but keeps its own folders, so the two tools never write 
 yapi import pi
 ```
 
-The command copies settings, credentials, models, key bindings, MCP servers, trust decisions, the global `AGENTS.md` or `CLAUDE.md`, `SYSTEM.md` and `APPEND_SYSTEM.md`, sessions, prompt templates, skills, themes, extensions and packages from Pi's agent folder into yapi's. That folder is `~/.pi/agent`, or `PI_CODING_AGENT_DIR` when it is set. The command also copies the current project's `.pi` folder into `.yapi`. Files that yapi already has are kept.
+The command copies settings, credentials, models, key bindings, MCP servers and their sign-ins, trust decisions, the global `AGENTS.md` or `CLAUDE.md`, `SYSTEM.md` and `APPEND_SYSTEM.md`, sessions, prompt templates, skills, themes, extensions and packages from Pi's agent folder into yapi's. That folder is `~/.pi/agent`, or `PI_CODING_AGENT_DIR` when it is set. The command also copies the current project's `.pi` folder into `.yapi`. Files that yapi already has are kept.
 
 After that, yapi and Pi work side by side. Session files written by either one open in the other.
 
