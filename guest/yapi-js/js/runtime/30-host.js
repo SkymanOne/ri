@@ -265,8 +265,6 @@
 		}
 		return found;
 	}
-	/** Wire APIs registered with pi-ai's `registerApiProvider`. */
-	const registeredApis = () => [...(yapi.apiProviders?.keys() ?? [])];
 	function describe(extension) {
 		return {
 			id: extension.id,
@@ -1049,7 +1047,8 @@
 			for (const [name, value] of Object.entries(payload.flags ?? {})) flagValues.set(name, value);
 			const results = [];
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
-			return { extensions: results, apis: registeredApis() };
+			// Wire APIs registered with pi-ai's `registerApiProvider`.
+			return { extensions: results, apis: [...(yapi.apiProviders?.keys() ?? [])] };
 		},
 		async bind() {
 			bound = true;
@@ -1088,7 +1087,7 @@
 				extensions.delete(id);
 				results.push(await instantiate(id, extension.path, extension.factory));
 			}
-			return { extensions: results, apis: registeredApis() };
+			return { extensions: results };
 		},
 		flags(payload) {
 			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);

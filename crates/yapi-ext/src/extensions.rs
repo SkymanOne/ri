@@ -72,9 +72,9 @@ pub struct ExtensionHost {
     sources: Vec<SourceInfo>,
     /// Descriptions of the loaded extensions, as the guest last reported them.
     loaded: Mutex<Vec<Value>>,
-    /// Wire APIs registered with pi-ai's `registerApiProvider`, as the guest
-    /// last reported them.
-    apis: Mutex<Vec<String>>,
+    /// Wire APIs registered with pi-ai's `registerApiProvider` while the
+    /// extensions loaded.
+    apis: Vec<String>,
     errors: Vec<LoadError>,
     /// Sessions handed extensions so far.
     sessions: AtomicU64,
@@ -139,7 +139,7 @@ impl ExtensionHost {
             bridge,
             sources: sources.to_vec(),
             loaded: Mutex::new(loaded),
-            apis: Mutex::new(api_ids(&result)),
+            apis: list(&result["apis"]).iter().map(text).collect(),
             errors,
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
@@ -204,7 +204,7 @@ impl ExtensionHost {
     /// that yapi has no provider for, to stream the session's models of
     /// those APIs.
     pub fn apis(self: &Arc<Self>) -> Vec<Arc<dyn Provider>> {
-        lock(&self.apis)
+        self.apis
             .iter()
             .filter(|api| yapi_ai::api::builtin(api).is_none())
             .map(|api| self.js_stream(api))
@@ -328,10 +328,7 @@ impl ExtensionHost {
         *lock(&self.bridge.session) = ctx.session.clone();
         if generation > 0 {
             match self.instance.call("reload", &Value::Null).await {
-                Ok(result) => {
-                    *lock(&self.loaded) = split(&result).0;
-                    *lock(&self.apis) = api_ids(&result);
-                }
+                Ok(result) => *lock(&self.loaded) = split(&result).0,
                 Err(err) => {
                     ctx.ui
                         .extension_error("yapi-js", "session_start", &err.to_string(), None)
@@ -507,10 +504,6 @@ impl Provider for JsStream {
         }
         stream
     }
-}
-
-fn api_ids(result: &Value) -> Vec<String> {
-    list(&result["apis"]).iter().map(text).collect()
 }
 
 fn split(result: &Value) -> (Vec<Value>, Vec<LoadError>) {
@@ -1433,9 +1426,9 @@ impl Bridge for SessionBridge {
                 return Ok(Value::Null);
             };
             // Events after the final one are dropped, as pi's streams drop them.
-            let Some(output) = running else {
+            if running.is_none() {
                 return Ok(Value::Null);
-            };
+            }
             match crate::streams::event_from_json(payload) {
                 Ok(event) => {
                     if matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_)) {
@@ -1443,12 +1436,11 @@ impl Bridge for SessionBridge {
                     }
                     sender.send(event);
                 }
+                // An invalid event fails the stream, without an abort.
                 Err(message) => {
-                    let mut output = output.clone();
-                    output.stop_reason = yapi_types::message::StopReason::Error;
-                    output.error_message = Some(message);
-                    *running = None;
-                    sender.send(StreamEvent::Error(output));
+                    if let Some(output) = running.take() {
+                        send_error(sender, output, &CancellationToken::new(), message);
+                    }
                 }
             }
             return Ok(Value::Null);
