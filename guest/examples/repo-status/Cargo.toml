@@ -11,3 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

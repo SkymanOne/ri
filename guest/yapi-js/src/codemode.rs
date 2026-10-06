@@ -14,9 +14,9 @@ use rquickjs::{
     CatchResultExt, CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value,
 };
 
+use crate::bindings::yapi::extension::host;
+use crate::bindings::yapi::extension::types::Outcome;
 use crate::eval;
-use crate::yapi::extension::host;
-use crate::yapi::extension::types::Outcome;
 
 /// pi's prelude, unchanged: globals, the tool proxy, store, output and errors.
 const PRELUDE: &str = include_str!("../js/vendor/codemode-prelude.js");

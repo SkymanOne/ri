@@ -7,7 +7,10 @@
 //! `fail` finish calls. Module sources come from the host, except the builtins
 //! embedded here: the Node shims, pi's API facade and the vendored pi packages.
 
-wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
+/// The `yapi:extension` world's bindings.
+mod bindings {
+    wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
+}
 
 mod builtins;
 mod codemode;
@@ -16,12 +19,12 @@ mod fs;
 
 use std::cell::{Cell, RefCell};
 
-use exports::yapi::extension::guest::Guest;
+use bindings::exports::yapi::extension::guest::Guest;
+use bindings::yapi::extension::host;
+use bindings::yapi::extension::types::Outcome;
 use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::module::Declared;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Module, Object, Runtime, Value};
-use yapi::extension::host;
-use yapi::extension::types::Outcome;
 
 /// QuickJS's own limit; the host bounds the whole instance's memory.
 const STACK_SIZE: usize = 1024 * 1024;
@@ -335,4 +338,4 @@ impl Guest for Runtime_ {
     }
 }
 
-export!(Runtime_);
+bindings::export!(Runtime_ with_types_in bindings);
