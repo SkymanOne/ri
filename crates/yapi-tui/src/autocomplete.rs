@@ -812,15 +812,6 @@ impl AutocompleteProvider for CombinedProvider {
     }
 }
 
-/// The largest char boundary of `text` at or before `index`.
-fn floor_boundary(text: &str, index: usize) -> usize {
-    let mut index = index.min(text.len());
-    while !text.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
 /// [`CombinedProvider`]'s completion: `item` replacing `prefix` before the
 /// cursor at byte column `col`. A prefix longer than the text before the
 /// cursor replaces all of it.
@@ -832,8 +823,8 @@ pub fn apply_completion(
     prefix: &str,
 ) -> Completion {
     let current = lines.get(line).map_or("", String::as_str);
-    let col = floor_boundary(current, col);
-    let before_prefix = &current[..floor_boundary(current, col.saturating_sub(prefix.len()))];
+    let col = current.floor_char_boundary(col);
+    let before_prefix = &current[..current.floor_char_boundary(col.saturating_sub(prefix.len()))];
     let after_cursor = &current[col..];
     let quoted_prefix = prefix.starts_with('"') || prefix.starts_with("@\"");
     let after = if quoted_prefix && item.value.ends_with('"') && after_cursor.starts_with('"') {
@@ -883,6 +874,6 @@ pub fn apply_completion(
 /// command's name.
 pub fn should_trigger_file_completion(lines: &[String], line: usize, col: usize) -> bool {
     let current = lines.get(line).map_or("", String::as_str);
-    let before = current[..floor_boundary(current, col)].trim();
+    let before = current[..current.floor_char_boundary(col)].trim();
     !(before.starts_with('/') && !before.contains(' '))
 }
