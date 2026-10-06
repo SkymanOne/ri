@@ -62,43 +62,41 @@ impl Program {
     }
 }
 
-/// Samples of one measure.
-enum Samples {
-    Time(Vec<Duration>),
-    Bytes(Vec<u64>),
+/// Samples of one measure, sorted, in `unit`.
+struct Samples {
+    sorted: Vec<f64>,
+    unit: &'static str,
 }
 
 impl Samples {
-    /// The median, or the given percentile for times.
-    fn value(&self, percent: f64) -> f64 {
-        match self {
-            Samples::Time(samples) => {
-                let mut sorted: Vec<f64> = samples.iter().map(Duration::as_secs_f64).collect();
-                percentile(&mut sorted, percent) * 1000.0
-            }
-            Samples::Bytes(samples) => {
-                let mut sorted: Vec<f64> = samples.iter().map(|&bytes| bytes as f64).collect();
-                percentile(&mut sorted, percent) / 1e6
-            }
+    fn new(mut values: Vec<f64>, unit: &'static str) -> Samples {
+        values.sort_by(f64::total_cmp);
+        Samples {
+            sorted: values,
+            unit,
         }
     }
 
-    fn range(&self) -> (f64, f64) {
-        (self.value(0.0), self.value(100.0))
+    fn times(times: Vec<Duration>) -> Samples {
+        let millis = times.iter().map(|time| time.as_secs_f64() * 1000.0);
+        Samples::new(millis.collect(), "ms")
     }
 
-    fn unit(&self) -> &'static str {
-        match self {
-            Samples::Time(_) => "ms",
-            Samples::Bytes(_) => "MB",
-        }
+    fn sizes(bytes: Vec<u64>) -> Samples {
+        let megabytes = bytes.iter().map(|&bytes| bytes as f64 / 1e6);
+        Samples::new(megabytes.collect(), "MB")
     }
 
-    fn len(&self) -> usize {
-        match self {
-            Samples::Time(samples) => samples.len(),
-            Samples::Bytes(samples) => samples.len(),
-        }
+    /// The `percent` percentile, interpolated between the two nearest
+    /// samples: the median of an even count is the mean of the middle two.
+    fn percentile(&self, percent: f64) -> f64 {
+        let Some(last) = self.sorted.len().checked_sub(1) else {
+            return 0.0;
+        };
+        let position = last as f64 * percent / 100.0;
+        let low = self.sorted[position.floor() as usize];
+        let high = self.sorted[position.ceil() as usize];
+        low + (high - low) * position.fract()
     }
 }
 
@@ -122,15 +120,6 @@ impl Row {
             samples: samples.into_iter().map(kind).collect(),
         }
     }
-}
-
-fn percentile(sorted: &mut [f64], percent: f64) -> f64 {
-    sorted.sort_by(f64::total_cmp);
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    let index = ((sorted.len() as f64 - 1.0) * percent / 100.0).round() as usize;
-    sorted[index.min(sorted.len() - 1)]
 }
 
 /// A session file whose transcript renders about `lines` lines.
@@ -676,23 +665,21 @@ fn print_report(programs: &[Program], rows: &[Row]) {
     for row in rows {
         let mut line = format!("| {} |", row.measure);
         for samples in &row.samples {
-            let (low, high) = samples.range();
-            let value = samples.value(row.percent);
-            if samples.len() > 1 {
+            let value = format_value(samples.percentile(row.percent), samples.unit);
+            if samples.sorted.len() > 1 {
                 line.push_str(&format!(
-                    " {} ({:.1} to {:.1}) |",
-                    format_value(value, samples.unit()),
-                    low,
-                    high
+                    " {value} ({:.1} to {:.1}) |",
+                    samples.percentile(0.0),
+                    samples.percentile(100.0)
                 ));
             } else {
-                line.push_str(&format!(" {} |", format_value(value, samples.unit())));
+                line.push_str(&format!(" {value} |"));
             }
         }
         if let [first, second] = row.samples.as_slice() {
-            let base = first.value(row.percent);
+            let base = first.percentile(row.percent);
             if base > 0.0 {
-                line.push_str(&format!(" {:.1}x |", second.value(row.percent) / base));
+                line.push_str(&format!(" {:.1}x |", second.percentile(row.percent) / base));
             }
         }
         println!("{line}");
@@ -772,7 +759,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         .collect::<anyhow::Result<Vec<_>>>()?;
     println!(
         "- Process start floor (`true`): {}",
-        format_value(Samples::Time(floor).value(50.0), "ms")
+        format_value(Samples::times(floor).percentile(50.0), "ms")
     );
     if args.pi.is_some()
         && let Some(node) = &node
@@ -782,13 +769,13 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             .collect::<anyhow::Result<Vec<_>>>()?;
         println!(
             "- Node.js start floor (`node -e \"\"`): {}",
-            format_value(Samples::Time(runs).value(50.0), "ms")
+            format_value(Samples::times(runs).percentile(50.0), "ms")
         );
     }
     println!();
 
     let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
-    rows.push(Row::median("Startup, interactive", Samples::Time, paint));
+    rows.push(Row::median("Startup, interactive", Samples::times, paint));
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -812,7 +799,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
     rows.push(Row::median(
         "Startup, print mode (to first request byte)",
-        Samples::Time,
+        Samples::times,
         request,
     ));
 
@@ -827,14 +814,14 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
                 args.lines
             ),
             percent,
-            samples: keys.iter().cloned().map(Samples::Time).collect(),
+            samples: keys.iter().cloned().map(Samples::times).collect(),
         });
     }
 
     let idle = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row::median(
         "Memory, idle after first paint",
-        Samples::Bytes,
+        Samples::sizes,
         idle,
     ));
 
@@ -845,7 +832,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     })?;
     rows.push(Row::median(
         format!("Memory, {}-line session open", args.lines),
-        Samples::Bytes,
+        Samples::sizes,
         opened,
     ));
 
@@ -860,7 +847,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     })?;
     rows.push(Row::median(
         format!("Memory after {TURNS} turns with tool calls"),
-        Samples::Bytes,
+        Samples::sizes,
         active,
     ));
 
@@ -872,7 +859,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let extended = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row::median(
         "Memory with 10 small JS extensions",
-        Samples::Bytes,
+        Samples::sizes,
         extended,
     ));
 
@@ -885,7 +872,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         let examples = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
         rows.push(Row::median(
             format!("Memory with {count} of pi's example extensions"),
-            Samples::Bytes,
+            Samples::sizes,
             examples,
         ));
     }
@@ -916,6 +903,16 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percentiles_interpolate_between_samples() {
+        let samples = Samples::new(vec![4.0, 1.0, 3.0, 2.0], "ms");
+        assert_eq!(samples.percentile(0.0), 1.0);
+        assert_eq!(samples.percentile(50.0), 2.5);
+        assert_eq!(samples.percentile(100.0), 4.0);
+        assert_eq!(Samples::new(vec![7.0], "ms").percentile(99.0), 7.0);
+        assert_eq!(Samples::new(Vec::new(), "ms").percentile(50.0), 0.0);
+    }
 
     #[test]
     fn typed_counts_only_the_editor() {
