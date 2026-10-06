@@ -59,18 +59,18 @@ yapi keeps Pi's command-line flags, slash commands, file formats, JSON and RPC p
 
 ## Fast
 
-yapi does not pay for starting Node.js and loading Pi's JavaScript. Measured on the same Linux machine, as medians:
+yapi does not pay for starting Node.js and loading Pi's JavaScript. Measured on GitHub's hosted Linux runner, as medians:
 
 | Measure | yapi | Pi |
 |---|---|---|
-| Startup, interactive | 12.0 ms | 410.9 ms |
-| Startup, print mode (to first request byte) | 17.2 ms | 451.1 ms |
-| Keystroke to paint, p99, 10,000-line session | 4.7 ms | 11.7 ms |
-| Memory, idle | 18.9 MB | 112.5 MB |
-| Memory after 20 turns with tool calls | 37.9 MB | 198.2 MB |
-| Install size | 32.3 MB | 245.2 MB with Node.js |
+| Startup, interactive | 10.6 ms | 316.1 ms |
+| Startup, print mode (to first request byte) | 14.9 ms | 340.5 ms |
+| Keystroke to paint, p99, 10,000-line session | 0.7 ms | 4.1 ms |
+| Memory, idle | 18.1 MB | 116.2 MB |
+| Memory after 20 turns with tool calls | 35.4 MB | 198.3 MB |
+| Install size | 32.5 MB | 246.6 MB with Node.js |
 
-[Performance](https://skymanone.github.io/yapi/performance.html) explains each measure and the method, with results from GitHub's hosted Linux and macOS runners.
+[Performance](https://skymanone.github.io/yapi/performance.html) explains each measure and the method, and has the macOS results.
 
 ## Portable
 
