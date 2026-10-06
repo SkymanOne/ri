@@ -15,7 +15,6 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 ## API
 
 - Pi's internal classes, such as `SettingsManager`, `ModelRuntime` and `ExtensionRunner`, import but throw when called. Built-in tool factories run yapi's tools and reject custom `operations`.
-- These events are never sent: `before_provider_request`, `user_bash`, `model_select`, `resources_discover`, `session_before_*` and `agent_before_settle`. `session_start` always has the reason `startup`. `turn_end` handlers cannot stage entries or continue the run.
 - `newSession`, `fork`, `navigateTree`, `switchSession` and `reload` on the command context fail.
 - `onTerminalInput`, `setEditorComponent` and `addAutocompleteProvider` have no effect, and `setTheme` reports failure. `registerEntryRenderer`, `registerMarkdownTransformer` and `registerMcpServer` are recorded but unused.
 - `registerProvider` works for providers configured like `models.json` entries, without a custom `streamSimple`, an OAuth sign-in or `refreshModels`.

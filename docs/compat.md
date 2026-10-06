@@ -51,7 +51,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 
 | Area | Pi | yapi today | Issue |
 |---|---|---|---|
-| Extension events | Every event of the extension API | Never sends `before_provider_request`, `user_bash`, `model_select`, `resources_discover`, `session_before_*` or `agent_before_settle`. `session_start` always has the reason `startup`, and `turn_end` handlers cannot stage entries or continue the run. | [#21](https://github.com/SkymanOne/yapi/issues/21) |
 | Extension session actions | `newSession`, `fork`, `navigateTree`, `switchSession`, `reload` and `setTheme` work | The session actions fail and `setTheme` reports failure. | [#22](https://github.com/SkymanOne/yapi/issues/22) |
 | Extension providers | `registerProvider` accepts a custom `streamSimple`, an OAuth sign-in and `refreshModels` | Only providers configured like `models.json` entries. A model whose API only an extension implements cannot be the session's model. | [#24](https://github.com/SkymanOne/yapi/issues/24) |
 | MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
