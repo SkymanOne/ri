@@ -613,13 +613,7 @@ impl ModelRegistry {
     /// or bearer token a request would send, refreshed first when it is an
     /// expiring OAuth token.
     pub async fn provider_token(&self, provider: &str) -> Option<String> {
-        let model = self
-            .models
-            .iter()
-            .find(|model| model.provider == provider)
-            .cloned()
-            .or_else(|| placeholder_model(provider))?;
-        let auth = self.auth(&model).await;
+        let auth = self.provider_auth(provider).await?;
         if auth.error.is_some() {
             return None;
         }
@@ -631,6 +625,18 @@ impl ModelRegistry {
                 .and_then(|value| value.strip_prefix("Bearer "))
                 .map(str::to_owned)
         })
+    }
+
+    /// Credentials for a provider-level call: those of the provider's first
+    /// model, or of a placeholder model of it.
+    async fn provider_auth(&self, provider: &str) -> Option<Auth> {
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.provider == provider)
+            .cloned()
+            .or_else(|| placeholder_model(provider))?;
+        Some(self.auth(&model).await)
     }
 
     /// The catalog alone, with no files.
@@ -917,19 +923,11 @@ impl ModelRegistry {
     /// refreshed when it has expired, else the API key a request would use.
     pub async fn refresh_credential(&self, provider: &str) -> Option<Credential> {
         if let Some(Credential::OAuth(stored)) = self.credential(provider) {
-            self.oauth_flow(provider)?;
-            self.oauth_auth(provider, stored, 0).await.ok()??;
-            return self
-                .credential(provider)
-                .filter(|credential| matches!(credential, Credential::OAuth(_)));
+            let flow = self.oauth_flow(provider)?;
+            let refreshed = self.refreshed_oauth(provider, flow.as_ref(), stored, 0);
+            return refreshed.await.ok().flatten().map(Credential::OAuth);
         }
-        let model = self
-            .models
-            .iter()
-            .find(|model| model.provider == provider)
-            .cloned()
-            .or_else(|| placeholder_model(provider))?;
-        let auth = self.auth(&model).await;
+        let auth = self.provider_auth(provider).await?;
         Some(Credential::ApiKey(ApiKeyCredential {
             key: Some(auth.api_key?),
             env: auth.env,
@@ -1288,10 +1286,9 @@ impl ModelRegistry {
         auth
     }
 
-    /// Request credentials from a stored OAuth token. A token that expires
-    /// within `min_validity_ms` is refreshed under the `auth.json` lock, after
-    /// checking again that no other process refreshed it. `Ok(None)` means the
-    /// provider was logged out meanwhile.
+    /// Request credentials from a stored OAuth token, refreshed first when
+    /// it expires within `min_validity_ms`. `Ok(None)` means the provider was
+    /// logged out meanwhile.
     async fn oauth_auth(
         &self,
         provider: &str,
@@ -1305,45 +1302,62 @@ impl ModelRegistry {
                 ..OAuthAuth::default()
             }));
         };
-        let expires_soon = |credential: &OAuthCredential| {
-            crate::auth::now_ms() + min_validity_ms >= credential.expires
+        let refreshed = self.refreshed_oauth(provider, flow.as_ref(), stored, min_validity_ms);
+        let Some(credential) = refreshed.await? else {
+            return Ok(None);
         };
-        let mut credential = stored;
-        if expires_soon(&credential) {
-            let cancel = CancellationToken::new();
-            let (flow_ref, cancel_ref) = (&flow, &cancel);
-            let refreshed = self
-                .store
-                .modify(
-                    provider,
-                    |current| async move {
-                        let Some(Credential::OAuth(current)) = current else {
-                            return Ok(None);
-                        };
-                        if !expires_soon(&current) {
-                            return Ok(None);
-                        }
-                        let refresh = flow_ref.refresh(&current, cancel_ref);
-                        match tokio::time::timeout(OAUTH_REFRESH_TIMEOUT, refresh).await {
-                            Ok(result) => result.map(|next| Some(Credential::OAuth(next))),
-                            Err(_) => Err(AuthError::failed(
-                                "The operation was aborted due to timeout",
-                            )),
-                        }
-                    },
-                    &cancel,
-                )
-                .await
-                .map_err(|err| format!("OAuth refresh failed for {provider}: {err}"))?;
-            match refreshed {
-                Some(Credential::OAuth(next)) => credential = next,
-                _ => return Ok(None),
-            }
-        }
         flow.to_auth(&credential)
             .await
             .map(Some)
             .map_err(|err| format!("OAuth auth derivation failed for {provider}: {err}"))
+    }
+
+    /// `stored`, or when it expires within `min_validity_ms`, the credential
+    /// `flow` refreshes it to under the `auth.json` lock, after checking again
+    /// that no other process refreshed it. `Ok(None)` means the provider was
+    /// logged out meanwhile.
+    async fn refreshed_oauth(
+        &self,
+        provider: &str,
+        flow: &dyn OAuthProvider,
+        stored: OAuthCredential,
+        min_validity_ms: u64,
+    ) -> Result<Option<OAuthCredential>, String> {
+        let expires_soon = |credential: &OAuthCredential| {
+            crate::auth::now_ms() + min_validity_ms >= credential.expires
+        };
+        if !expires_soon(&stored) {
+            return Ok(Some(stored));
+        }
+        let cancel = CancellationToken::new();
+        let cancel_ref = &cancel;
+        let refreshed = self
+            .store
+            .modify(
+                provider,
+                |current| async move {
+                    let Some(Credential::OAuth(current)) = current else {
+                        return Ok(None);
+                    };
+                    if !expires_soon(&current) {
+                        return Ok(None);
+                    }
+                    let refresh = flow.refresh(&current, cancel_ref);
+                    match tokio::time::timeout(OAUTH_REFRESH_TIMEOUT, refresh).await {
+                        Ok(result) => result.map(|next| Some(Credential::OAuth(next))),
+                        Err(_) => Err(AuthError::failed(
+                            "The operation was aborted due to timeout",
+                        )),
+                    }
+                },
+                &cancel,
+            )
+            .await
+            .map_err(|err| format!("OAuth refresh failed for {provider}: {err}"))?;
+        Ok(match refreshed {
+            Some(Credential::OAuth(next)) => Some(next),
+            _ => None,
+        })
     }
 
     /// The display name of a provider: its `models.json` or extension
