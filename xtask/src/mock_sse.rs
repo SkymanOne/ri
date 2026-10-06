@@ -1,7 +1,6 @@
 //! `cargo xtask mock-sse`: serve or record a cassette for an out-of-process client
 //! such as pi.
 
-use std::fs;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -9,6 +8,8 @@ use std::process::ExitCode;
 
 use anyhow::Context;
 use yapi_mock::{Cassette, MockServer};
+
+use crate::write_json;
 
 /// Serve a cassette with the mock provider server, or record one through a proxy to
 /// a real provider, until Ctrl-C or SIGTERM.
@@ -86,15 +87,6 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::FAILURE)
         }
     }
-}
-
-/// Writes `value` as pi's pretty JSON with a trailing newline.
-pub(crate) fn write_json(
-    path: &std::path::Path,
-    value: &impl serde::Serialize,
-) -> anyhow::Result<()> {
-    let json = yapi_types::json::to_string_pretty(value, "  ")?;
-    fs::write(path, json + "\n").with_context(|| format!("writing {}", path.display()))
 }
 
 async fn shutdown() -> io::Result<()> {

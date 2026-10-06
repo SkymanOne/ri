@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, bail};
 use serde_json::Value;
 
+use crate::read_json;
+
 /// pi-ai release the catalog is generated from.
 const PI_AI_VERSION: &str = "1.0.0";
 
@@ -61,7 +63,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .context("provider file name")?;
-        let groups = read_json(path)?;
+        let groups: Value = read_json(path)?;
         let models = typed_models(&groups, "chat");
         let classifiers = typed_models(&groups, "classifier");
         let images = typed_models(&groups, "image");
@@ -151,9 +153,4 @@ fn json_lines(models: &[Value]) -> anyhow::Result<String> {
     }
     json += "]\n";
     Ok(json)
-}
-
-fn read_json(path: &Path) -> anyhow::Result<Value> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
