@@ -57,6 +57,19 @@ pub fn default_session_dir(agent_dir: &Path, cwd: &Path) -> PathBuf {
         .join(format!("--{safe}--"))
 }
 
+/// Whether environment variable `name` is set to `1`, `true` or `yes`, as pi
+/// reads `PI_OFFLINE`.
+pub fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .is_ok_and(|value| value == "1" || matches!(value.to_lowercase().as_str(), "true" | "yes"))
+}
+
+/// The documentation the model reads: yapi's pages, with pi's README, docs
+/// and examples under `pi/`. The installer or yapi's first run puts it here.
+pub fn docs_dir(agent_dir: &Path) -> PathBuf {
+    agent_dir.join("docs")
+}
+
 /// Executables the agent installs for its tools, prepended to `PATH` for commands.
 pub fn bin_dir(agent_dir: &Path) -> PathBuf {
     agent_dir.join("bin")

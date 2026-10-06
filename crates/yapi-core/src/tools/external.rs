@@ -74,8 +74,7 @@ fn exe(name: &str) -> String {
 
 /// Whether `PI_OFFLINE` asks to skip network operations.
 pub fn offline() -> bool {
-    std::env::var("PI_OFFLINE")
-        .is_ok_and(|value| value == "1" || matches!(value.to_lowercase().as_str(), "true" | "yes"))
+    crate::config::env_flag("PI_OFFLINE")
 }
 
 async fn command_exists(name: &str) -> bool {
@@ -193,6 +192,24 @@ async fn run(command: &str, args: &[&std::ffi::OsStr]) -> Result<(), String> {
     ))
 }
 
+/// The body of `url`, a release download.
+pub(crate) async fn fetch(url: &str) -> Result<Vec<u8>, String> {
+    let response = yapi_ai::http::client()
+        .get(url)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed with HTTP {}: {url}",
+            response.status().as_u16()
+        ));
+    }
+    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+    Ok(bytes.to_vec())
+}
+
 async fn download(tool: ExternalTool, bin_dir: &Path) -> Result<PathBuf, String> {
     let version = latest_version(tool.repo()).await?;
     let asset = tool.asset(&version).ok_or_else(|| {
@@ -210,19 +227,7 @@ async fn download(tool: ExternalTool, bin_dir: &Path) -> Result<PathBuf, String>
     );
     let archive = bin_dir.join(&asset);
     let binary = bin_dir.join(exe(tool.binary()));
-    let response = yapi_ai::http::client()
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with HTTP {}: {url}",
-            response.status().as_u16()
-        ));
-    }
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+    let bytes = fetch(&url).await?;
     std::fs::write(&archive, &bytes).map_err(|err| err.to_string())?;
     let extract = bin_dir.join(format!(
         "extract_tmp_{}_{}_{}",

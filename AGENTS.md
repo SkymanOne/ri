@@ -192,6 +192,7 @@ Feasibility study, prior art and rejected alternatives: [dev/research/extension-
 | 12 | Linux and macOS are tier 1. | Windows specifics (PowerShell tool, console input) follow once the core is stable. |
 | 13 | pi JSON files are order-preserving documents; `yapi-types` structs are views over them. | pi's key order depends on the code path and on user edits, so only the document round-trips byte-identically. |
 | 14 | The binary embeds `yapi-js.wasm` deflated, and the release profile optimizes Cranelift's code generator for size. | Both are used only when the component cache has no entry, once per runtime version. Together they save 4.8 MB for about 0.2 s more on that one compile. |
+| 15 | The docs the model reads, yapi's book and pi's README, docs and examples, are a `yapi-docs.tar.gz` release asset, not files in the repository or the binary. install.sh unpacks it into `~/.yapi/agent/docs`, other installs download it on their first run, and without a local copy the prompt points to the published docs. | pi's system prompt, header and sign-in help point to the docs pi installs with its package. Packing pi's files from its npm tarball at release time keeps them out of the repository and the binary. |
 
 ## Performance
 

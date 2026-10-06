@@ -231,6 +231,21 @@ async fn run(parsed: &mut args::Args) -> u8 {
     // Once print or a mode owns stdout, pi sends help and the model list to
     // stderr.
     let metadata_to_stderr = parsed.print || parsed.mode.is_some();
+    // install.sh puts the docs for the model in place. Other installs fetch
+    // them here, in the background. Debug builds name no released version.
+    // ponytail: a release build of an unreleased version retries each start;
+    // remember the 404 if that matters.
+    if !cfg!(debug_assertions)
+        && !parsed.offline
+        && !yapi_core::tools::external::offline()
+        && !yapi_core::docs::opted_out()
+    {
+        let agent_dir = yapi_core::config::agent_dir();
+        tokio::spawn(async move {
+            // The model reads the published docs until a later start succeeds.
+            let _ = yapi_core::docs::download(yapi_core::docs::RELEASES_URL, &agent_dir).await;
+        });
+    }
     if let Some(pattern) = &parsed.list_models {
         return list_models::run(pattern.as_deref(), metadata_to_stderr);
     }
