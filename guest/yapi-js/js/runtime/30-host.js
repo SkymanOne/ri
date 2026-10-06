@@ -1260,13 +1260,14 @@
 			return withOAuth(payload, (oauth) => oauth.getApiKey(payload.credential));
 		},
 		/**
-		 * Runs one phase of provider `provider`'s `refreshModels`: its model
-		 * list, or `null` when it returns none. `publish` persists the entry
-		 * the extension asks for in the models store.
+		 * Runs one phase of provider `provider`'s `refreshModels`: `{ models }`,
+		 * `null` when it returns none, with the last entry it asked `publish`
+		 * to persist (`null` to delete) as `persist`. The host writes it.
 		 */
 		async refreshModels(payload) {
 			const config = providerConfig(payload.provider);
-			if (typeof config?.refreshModels !== "function") return null;
+			if (typeof config?.refreshModels !== "function") return { models: null };
+			const result = {};
 			const models = await abortable(payload.id, (signal) =>
 				config.refreshModels({
 					credential: payload.credential ?? undefined,
@@ -1275,13 +1276,14 @@
 					force: payload.allowNetwork ? payload.force : undefined,
 					signal,
 					publish: async (publication) => {
-						if (publication.persist !== undefined) await yapi.op("models.persist", { provider: payload.provider, entry: plain(publication.persist) ?? null });
+						if (publication.persist !== undefined) result.persist = plain(publication.persist) ?? null;
 						publication.update?.();
 						return true;
 					},
 				}),
 			);
-			return plain(models) ?? null;
+			result.models = plain(models) ?? null;
+			return result;
 		},
 		/**
 		 * Builds the component a tool's `renderCall`/`renderResult` or a

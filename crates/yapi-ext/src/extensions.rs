@@ -613,7 +613,8 @@ impl JsExtension {
     }
 
     /// One `refreshModels` phase of `provider` in the guest: the model list
-    /// it returned, if any.
+    /// it returned, if any. A catalog it published to persist is written to
+    /// the registry's models store.
     async fn refresh_phase(
         &self,
         provider: &str,
@@ -629,15 +630,22 @@ impl JsExtension {
             "provider": provider, "id": self.shared.next_id(), "credential": credential,
             "stored": stored, "allowNetwork": allow_network, "force": options.force,
         });
-        let models = self
+        let result = self
             .shared
             .call_abortable("refreshModels", &payload, &options.cancel)
             .await
             .map_err(|err| err.to_string())?;
+        if let (Some(store), Some(entry)) = (registry.models_store(), result.get("persist")) {
+            match entry {
+                Value::Null => store.delete(provider, &options.cancel).await,
+                entry => store.write(provider, entry.clone(), &options.cancel).await,
+            }?;
+        }
+        let models = &result["models"];
         if models.is_null() {
             return Ok(None);
         }
-        serde_json::from_value(models)
+        serde_json::from_value(models.clone())
             .map(Some)
             .map_err(|err| format!("Invalid models from {provider}: {err}"))
     }
