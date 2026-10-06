@@ -41,6 +41,7 @@ Pi extensions run unchanged, but not in Pi's Node.js process. yapi runs them in 
 | Word motions in Chinese, Japanese and Thai | Move by dictionary words | Move one character at a time, because ICU's word dictionaries would add megabytes to the binary. |
 | Tree label times | Local time | UTC, because yapi carries no time zone database. |
 | Codex transport | WebSocket first, then SSE with a compressed body | SSE with an uncompressed body. Requests and events are the same as Pi's fallback. |
+| Image formats | Images from RPC clients, extensions and tools in any format Pi's image library reads, such as TIFF, are converted to PNG for the model | BMP is the only format converted. Prompt images in other formats are left out with a note, and tool results pass them on unchanged. |
 
 ## Open Gaps
 
@@ -53,7 +54,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Custom editors and input hooks | `setEditorComponent`, `onTerminalInput` and `addAutocompleteProvider` work | They have no effect. | [#23](https://github.com/SkymanOne/yapi/issues/23) |
 | Extension providers | `registerProvider` accepts a custom `streamSimple`, an OAuth sign-in and `refreshModels` | Only providers configured like `models.json` entries. A model whose API only an extension implements cannot be the session's model. | [#24](https://github.com/SkymanOne/yapi/issues/24) |
 | Documentation for the model | Installs its docs and examples. The system prompt points the model at them, and the header says Pi can explain its own features. | Ships no docs, so the model cannot look up how yapi or its extension API works. | [#25](https://github.com/SkymanOne/yapi/issues/25) |
-| Images sent to models | Resized to fit 2000×2000 (`images.autoResize`). BMP converted. | Sent unresized. A BMP image or one over the size limit is replaced by Pi's omission note. | [#26](https://github.com/SkymanOne/yapi/issues/26) |
 | MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
 | Temporary packages | `-e npm:<name>` and `-e git:<url>` install a package for one run | Not supported. | [#29](https://github.com/SkymanOne/yapi/issues/29) |
 | Entry renderers and markdown transformers | `registerEntryRenderer` and `registerMarkdownTransformer` change how entries and markdown render | Recorded but unused. | [#30](https://github.com/SkymanOne/yapi/issues/30) |

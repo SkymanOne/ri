@@ -31,6 +31,8 @@ getrandom = "0.4"
 http-body-util = { version = "0.1", features = ["channel"] }
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
+# The version pi's Photon library builds on, so images decode and encode as in pi.
+image = { version = "0.24.9", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 indexmap = { version = "2", features = ["serde"] }
 regex-lite = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls"] }

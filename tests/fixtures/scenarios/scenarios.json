@@ -198,6 +198,15 @@
     "files": {"notes.md": "# Notes\n\nShip on Friday.\n", "src/lib.rs": "pub fn add(a: i32, b: i32) -> i32 { a + b }\n"}
   },
   {
+    "name": "file-image-resize-json",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--mode", "json", "--no-session", "--no-tools", "--model", "anthropic/claude-sonnet-4-5", "@wide.png", "@tiny.bmp", "Describe them"],
+    "binaryFiles": {
+      "wide.png": "iVBORw0KGgoAAAANSUhEUgAACDQAAAAICAIAAACDYaovAAAAXElEQVR42u3ZMQ0AAAgEsZeDRCQiCxcsNKmCWy/VAwAAAAAAcCYSAAAAAAAA5gQAAAAAAGBOAAAAAAAAmBMAAAAAAIA5AQAAAAAAYE4AAAAAAADmBAAAAAAA8NMCUClOZWrbHScAAAAASUVORK5CYII=",
+      "tiny.bmp": "Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABABgAAAAAABAAAAATCwAAEwsAAAAAAAAAAAAAAAD/AP8AAAD/AAD///8AAA=="
+    }
+  },
+  {
     "name": "file-argument-missing-print",
     "cassette": "none.json",
     "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b", "@missing.md", "hi"]
