@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://skymanone.github.io/yapi/">
-    <img alt="yapi logo" src="assets/logo.svg" width="260">
+    <img alt="yapi logo" src="assets/logo.svg" width="224">
   </a>
 </p>
 <p align="center">
