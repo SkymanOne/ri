@@ -7,6 +7,25 @@ pub fn len(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
+/// The UTF-16 index of byte offset `byte` in `text`, as JavaScript indexes
+/// strings; an offset inside a character counts from its start.
+pub fn utf16_index(text: &str, byte: usize) -> usize {
+    len(&text[..text.floor_char_boundary(byte)])
+}
+
+/// The byte offset of UTF-16 index `units` in `text`: the start of the
+/// first character at or after it, or the end of the text.
+pub fn byte_index(text: &str, units: usize) -> usize {
+    let mut count = 0;
+    for (index, c) in text.char_indices() {
+        if count >= units {
+            return index;
+        }
+        count += c.len_utf16();
+    }
+    text.len()
+}
+
 /// `text.slice(start, end)` with indices in UTF-16 code units, clamped to the
 /// text. A surrogate pair cut in half becomes U+FFFD.
 pub fn slice(text: &str, start: usize, end: usize) -> String {
@@ -112,6 +131,15 @@ pub fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indices_convert_between_bytes_and_utf16() {
+        let text = "é😀x";
+        assert_eq!(utf16_index(text, 2), 1);
+        assert_eq!(utf16_index(text, 6), 3);
+        assert_eq!(byte_index(text, 3), 6);
+        assert_eq!(byte_index(text, 9), text.len());
+    }
 
     #[test]
     fn words_io_errors_as_node() {

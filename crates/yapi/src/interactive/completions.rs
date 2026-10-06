@@ -13,27 +13,8 @@ use yapi_tui::autocomplete::{
     AutocompleteProvider, Completion, Suggestions, apply_completion, should_trigger_file_completion,
 };
 use yapi_tui::select_list::SelectItem;
+use yapi_types::js::{byte_index, utf16_index};
 use yapi_types::sync::lock;
-
-/// Byte column `byte` of `line` in UTF-16 code units, as JavaScript counts.
-fn utf16_col(line: &str, byte: usize) -> usize {
-    line.char_indices()
-        .take_while(|(index, _)| *index < byte)
-        .map(|(_, c)| c.len_utf16())
-        .sum()
-}
-
-/// The byte column of UTF-16 column `units` in `line`.
-fn byte_col(line: &str, units: usize) -> usize {
-    let mut counted = 0;
-    for (index, c) in line.char_indices() {
-        if counted >= units {
-            return index;
-        }
-        counted += c.len_utf16();
-    }
-    line.len()
-}
 
 /// The lines and cursor of pi's provider arguments, in byte columns.
 fn cursor(value: &Value) -> (Vec<String>, usize, usize) {
@@ -48,13 +29,13 @@ fn cursor(value: &Value) -> (Vec<String>, usize, usize) {
         .unwrap_or_default();
     let line = value["cursorLine"].as_u64().unwrap_or(0) as usize;
     let units = value["cursorCol"].as_u64().unwrap_or(0) as usize;
-    let col = byte_col(lines.get(line).map_or("", String::as_str), units);
+    let col = byte_index(lines.get(line).map_or("", String::as_str), units);
     (lines, line, col)
 }
 
 /// pi's provider arguments for the cursor at byte column `col`.
 fn arguments(lines: &[String], line: usize, col: usize, force: bool) -> Value {
-    let units = utf16_col(lines.get(line).map_or("", String::as_str), col);
+    let units = utf16_index(lines.get(line).map_or("", String::as_str), col);
     json!({"lines": lines, "cursorLine": line, "cursorCol": units, "force": force})
 }
 
@@ -101,7 +82,7 @@ pub(super) fn apply(request: &Value) -> Value {
     let (lines, line, col) = cursor(request);
     let prefix = request["prefix"].as_str().unwrap_or_default();
     let applied = apply_completion(&lines, line, col, &item(&request["item"]), prefix);
-    let units = utf16_col(
+    let units = utf16_index(
         applied
             .lines
             .get(applied.cursor_line)
@@ -253,15 +234,6 @@ impl AutocompleteProvider for ExtensionCompletions {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn columns_convert_between_bytes_and_utf16() {
-        let line = "é😀x";
-        assert_eq!(utf16_col(line, 2), 1);
-        assert_eq!(utf16_col(line, 6), 3);
-        assert_eq!(byte_col(line, 3), 6);
-        assert_eq!(byte_col(line, 9), line.len());
-    }
 
     #[test]
     fn applying_answers_in_utf16_columns() {

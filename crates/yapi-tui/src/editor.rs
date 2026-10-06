@@ -21,6 +21,7 @@ use crate::segment::{
 };
 use crate::select_list::{SelectItem, SelectList, SelectListLayout, SelectListTheme};
 use crate::text::{has_cjk, has_whitespace, is_autocomplete_separator, take_width, visible_width};
+use yapi_types::js::{byte_index, utf16_index};
 
 const HISTORY_LIMIT: usize = 100;
 const LARGE_PASTE_LINES: usize = 10;
@@ -226,21 +227,6 @@ fn decode_pasted_controls(text: &str) -> String {
     }
     out.push_str(rest);
     out
-}
-
-fn to_utf16(text: &str, byte: usize) -> usize {
-    yapi_types::js::len(&text[..text.floor_char_boundary(byte)])
-}
-
-fn from_utf16(text: &str, units: usize) -> usize {
-    let mut count = 0;
-    for (index, c) in text.char_indices() {
-        if count >= units {
-            return index;
-        }
-        count += c.len_utf16();
-    }
-    text.len()
 }
 
 /// The byte offset of the character holding UTF-16 unit `units`, so an
@@ -1417,7 +1403,7 @@ impl Editor {
     /// Offset of `col` from a visual line's start in UTF-16 units, as pi counts.
     fn units_from(&self, vl: VisualLine, col: usize) -> usize {
         let line = &self.state.lines[vl.logical];
-        to_utf16(line, col).saturating_sub(to_utf16(line, vl.start))
+        utf16_index(line, col).saturating_sub(utf16_index(line, vl.start))
     }
 
     fn visual_len(&self, vl: VisualLine) -> usize {
@@ -1431,7 +1417,7 @@ impl Editor {
                 let line = &self.state.lines[current.logical];
                 let byte = floor_from_utf16(line, snapped);
                 let index = Self::visual_line_at(visual, current.logical, byte);
-                snapped.saturating_sub(to_utf16(line, visual[index].start))
+                snapped.saturating_sub(utf16_index(line, visual[index].start))
             }
             None => self.units_from(current, self.state.cursor_col),
         };
@@ -1450,8 +1436,9 @@ impl Editor {
         let line = self.state.lines[target.logical].clone();
         // pi's cursor is a UTF-16 index, which may land inside a surrogate
         // pair until it snaps to the grapheme's start below.
-        let target_units = (to_utf16(&line, target.start) + column).min(yapi_types::js::len(&line));
-        self.state.cursor_col = from_utf16(&line, target_units);
+        let target_units =
+            (utf16_index(&line, target.start) + column).min(yapi_types::js::len(&line));
+        self.state.cursor_col = byte_index(&line, target_units);
 
         let ids = self.valid_ids();
         let mut seg_units = 0;
