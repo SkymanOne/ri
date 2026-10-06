@@ -28,7 +28,7 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
         ..
     } = startup;
     let mode = if json { Mode::Json } else { Mode::Print };
-    session.bind_extensions(Arc::new(NoUi), mode).await;
+    session.bind_extensions(Arc::new(NoUi), mode, None).await;
     if json {
         if let Some(header) = session.header_json() {
             write_line(&header);

@@ -2880,11 +2880,7 @@ impl App {
         reason: Replacement,
     ) -> Result<(), String> {
         let target = crate::runtime::file_of(&manager);
-        let previous = self
-            .session
-            .with_session(|manager| crate::runtime::file_of(manager));
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
-        session.set_start(reason, previous);
         self.session.abort();
         self.session.abort_bash();
         self.epoch += 1;
@@ -3729,10 +3725,15 @@ impl App {
         let session = self.session.clone();
         let tx = self.tx.clone();
         tokio::spawn(async move {
+            let mut replaced = None;
             if let Some((old, reason, target)) = old {
+                let previous = old.with_session(|manager| crate::runtime::file_of(manager));
                 old.shutdown_for(reason, target).await;
+                replaced = Some((reason, previous));
             }
-            session.bind_extensions(Arc::new(ui), Mode::Tui).await;
+            session
+                .bind_extensions(Arc::new(ui), Mode::Tui, replaced)
+                .await;
             let _ = tx.send(Event::Bound);
         });
     }

@@ -905,32 +905,29 @@ impl AgentSession {
         (messages, forced)
     }
 
-    /// Records that this session replaces another for `reason`, whose
-    /// session file was `previous`; `session_start` reports both.
-    pub fn set_start(&self, reason: Replacement, previous: Option<String>) {
-        *lock(&self.inner.start) = Some((reason, previous));
-    }
-
     /// Gives extensions their UI and mode and starts them: pi's
-    /// `bindExtensions`, which emits `session_start` with the reason set by
-    /// [`AgentSession::set_start`], `startup` by default.
-    pub async fn bind_extensions(&self, ui: Arc<dyn ExtensionUi>, mode: Mode) {
+    /// `bindExtensions`, which emits `session_start` with the reason this
+    /// session replaced another and that session's file, or `startup` when
+    /// `replaced` is `None`.
+    pub async fn bind_extensions(
+        &self,
+        ui: Arc<dyn ExtensionUi>,
+        mode: Mode,
+        replaced: Option<(Replacement, Option<String>)>,
+    ) {
         *lock(&self.inner.binding) = (ui, mode);
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;
         }
-        let start = lock(&self.inner.start).clone();
         let mut event = serde_json::json!({"type": "session_start", "reason": "startup"});
-        let reload = start
-            .as_ref()
-            .is_some_and(|(reason, _)| *reason == Replacement::Reload);
-        if let Some((reason, previous)) = start {
+        let mut reload = false;
+        if let Some((reason, previous)) = replaced {
             event["reason"] = reason.as_str().into();
-            // pi reports no previous file on reload.
-            if let Some(previous) = previous.filter(|_| reason != Replacement::Reload) {
+            if let Some(previous) = reason.reported(previous) {
                 event["previousSessionFile"] = previous.into();
             }
+            reload = reason == Replacement::Reload;
         }
         self.emit_extension_event(&event, CancellationToken::new())
             .await;
@@ -1024,7 +1021,7 @@ impl AgentSession {
     /// on reload.
     pub async fn shutdown_for(&self, reason: Replacement, target: Option<String>) {
         let mut event = serde_json::json!({"type": "session_shutdown", "reason": reason.as_str()});
-        if let Some(target) = target.filter(|_| reason != Replacement::Reload) {
+        if let Some(target) = reason.reported(target) {
             event["targetSessionFile"] = target.into();
         }
         self.stop_extensions(event).await;

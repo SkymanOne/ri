@@ -99,6 +99,12 @@ impl Replacement {
             Replacement::Reload => "reload",
         }
     }
+
+    /// The other session's file as pi's `session_start` and
+    /// `session_shutdown` report it: not on reload.
+    fn reported(self, file: Option<String>) -> Option<String> {
+        file.filter(|_| self != Replacement::Reload)
+    }
 }
 
 /// A session change extensions may cancel, as pi's `session_before_switch`
@@ -235,9 +241,6 @@ struct Inner {
     extensions: Vec<Arc<dyn Extension>>,
     /// The UI and mode extensions see.
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
-    /// Why this session started and the session file it replaced; `None`
-    /// at startup.
-    start: Mutex<Option<(Replacement, Option<String>)>>,
     /// Extension sections of the current run's system prompt.
     run_sections: Mutex<IndexMap<String, String>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
@@ -445,7 +448,6 @@ impl AgentSession {
                 tools: tool_registry,
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
-                start: Mutex::new(None),
                 run_sections: Mutex::new(IndexMap::new()),
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),

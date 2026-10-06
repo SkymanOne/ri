@@ -21,7 +21,7 @@ use yapi_types::sync::lock;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncBufReadExt;
-use yapi_core::agent_session::{AgentSession, InputSource, SessionChange, UserBash};
+use yapi_core::agent_session::{AgentSession, InputSource, Replacement, SessionChange, UserBash};
 use yapi_core::session::SessionManager;
 use yapi_types::message::Message;
 use yapi_types::rpc::{
@@ -327,8 +327,8 @@ impl Rpc {
     }
 
     /// Streams `session`'s events, makes it current and starts its
-    /// extensions.
-    async fn bind(&self, session: AgentSession) {
+    /// extensions, telling them the session it replaced, if any.
+    async fn bind(&self, session: AgentSession, replaced: Option<(Replacement, Option<String>)>) {
         let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let current = Arc::clone(&self.epoch);
         let out = self.out.clone();
@@ -345,7 +345,11 @@ impl Rpc {
         }));
         *self.session.borrow_mut() = session.clone();
         session
-            .bind_extensions(Arc::clone(&self.ui) as Arc<dyn ExtensionUi>, Mode::Rpc)
+            .bind_extensions(
+                Arc::clone(&self.ui) as Arc<dyn ExtensionUi>,
+                Mode::Rpc,
+                replaced,
+            )
             .await;
     }
 
@@ -372,11 +376,11 @@ impl Rpc {
             .shutdown_for(reason, runtime::file_of(&manager))
             .await;
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
-        session.set_start(reason, previous);
         // pi's runtime rebinds the replacement, and then its RPC command
         // handler binds it again, so extensions see `session_start` twice.
-        self.bind(session.clone()).await;
-        self.bind(session).await;
+        self.bind(session.clone(), Some((reason, previous.clone())))
+            .await;
+        self.bind(session, Some((reason, previous))).await;
         Ok(false)
     }
 
@@ -883,7 +887,7 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let local = tokio::task::LocalSet::new();
     let code = local
         .run_until(async {
-            rpc.bind(session).await;
+            rpc.bind(session, None).await;
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
             let signal = termination();
