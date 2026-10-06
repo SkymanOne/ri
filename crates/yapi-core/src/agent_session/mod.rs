@@ -101,6 +101,43 @@ impl Replacement {
     }
 }
 
+/// A session change extensions may cancel, as pi's `session_before_switch`
+/// and `session_before_fork` report it.
+#[derive(Clone, Debug)]
+pub enum SessionChange {
+    /// A new session.
+    New,
+    /// A switch to this session file.
+    Resume(String),
+    /// A fork at an entry, keeping the entry when `at` (`/clone`) or ending
+    /// the fork before it.
+    Fork {
+        /// The entry.
+        entry_id: String,
+        /// Keep the entry.
+        at: bool,
+    },
+}
+
+impl SessionChange {
+    /// The pi event that may cancel the change.
+    pub fn event(&self) -> &'static str {
+        match self {
+            SessionChange::Fork { .. } => "session_before_fork",
+            _ => "session_before_switch",
+        }
+    }
+
+    /// Why the replacement session starts.
+    pub fn reason(&self) -> Replacement {
+        match self {
+            SessionChange::New => Replacement::New,
+            SessionChange::Resume(_) => Replacement::Resume,
+            SessionChange::Fork { .. } => Replacement::Fork,
+        }
+    }
+}
+
 /// What `user_bash` handlers decided for a `!` command.
 pub enum UserBash {
     /// Run it with the session's shell.

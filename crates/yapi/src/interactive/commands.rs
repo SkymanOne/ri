@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
-use yapi_core::agent_session::{AgentSession, Replacement};
+use yapi_core::agent_session::{AgentSession, Replacement, SessionChange};
 use yapi_core::session::SessionManager;
 use yapi_tui::autocomplete::{CombinedProvider, SlashCommand};
 use yapi_tui::fuzzy::fuzzy_filter;
@@ -803,15 +803,9 @@ impl super::App {
                 suffix += 1;
             }
         }
-        let session = self.session.clone();
         let target = destination.display().to_string();
-        let before = async move {
-            session
-                .before_switch(Replacement::Resume, Some(&target))
-                .await
-        };
         let path = path.to_owned();
-        self.unless_cancelled("session_before_switch", before, move |app| {
+        self.unless_cancelled(SessionChange::Resume(target), move |app| {
             if !already && let Err(error) = std::fs::copy(&source, &destination) {
                 app.fatal("Failed to import session", &error.to_string());
                 return;

@@ -24,7 +24,7 @@ use crate::extensions::{Context, Extension, ExtensionUi, Mode, ToolRenderers};
 use crate::messages::convert_to_llm;
 use crate::time::now_ms;
 
-use super::{AgentSession, InputSource, Replacement, drain};
+use super::{AgentSession, InputSource, Replacement, SessionChange, drain};
 
 fn behavior_name(behavior: StreamingBehavior) -> &'static str {
     match behavior {
@@ -535,29 +535,24 @@ impl AgentSession {
         result
     }
 
-    /// pi's `session_before_switch`: whether an extension cancels switching
-    /// to another session, a new one or `target` for [`Replacement::Resume`].
-    pub async fn before_switch(&self, reason: Replacement, target: Option<&str>) -> bool {
-        let mut event =
-            serde_json::json!({"type": "session_before_switch", "reason": reason.as_str()});
-        if let Some(target) = target {
-            event["targetSessionFile"] = target.into();
-        }
-        let result = self
-            .emit_extension_event(&event, CancellationToken::new())
-            .await;
-        result.is_some_and(|result| result["cancel"] == true)
-    }
-
-    /// pi's `session_before_fork`: whether an extension cancels forking at
-    /// `entry_id`, keeping the entry (`at`, as `/clone` does) or ending the
-    /// fork before it.
-    pub async fn before_fork(&self, entry_id: &str, at: bool) -> bool {
-        let event = serde_json::json!({
-            "type": "session_before_fork",
-            "entryId": entry_id,
-            "position": if at { "at" } else { "before" },
-        });
+    /// pi's `session_before_switch` or `session_before_fork`: whether an
+    /// extension cancels `change`.
+    pub async fn cancels(&self, change: &SessionChange) -> bool {
+        let event = match change {
+            SessionChange::New => {
+                serde_json::json!({"type": change.event(), "reason": change.reason().as_str()})
+            }
+            SessionChange::Resume(target) => serde_json::json!({
+                "type": change.event(),
+                "reason": change.reason().as_str(),
+                "targetSessionFile": target,
+            }),
+            SessionChange::Fork { entry_id, at } => serde_json::json!({
+                "type": change.event(),
+                "entryId": entry_id,
+                "position": if *at { "at" } else { "before" },
+            }),
+        };
         let result = self
             .emit_extension_event(&event, CancellationToken::new())
             .await;

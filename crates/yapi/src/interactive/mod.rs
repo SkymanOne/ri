@@ -36,7 +36,9 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use yapi_core::agent_session::{AgentSession, Replacement, TreeNavigation, TreeOutcome, UserBash};
+use yapi_core::agent_session::{
+    AgentSession, Replacement, SessionChange, TreeNavigation, TreeOutcome, UserBash,
+};
 use yapi_core::bash_executor::BashResult;
 use yapi_core::extensions::BashOperations;
 use yapi_core::extensions::{Mode, NotifyKind};
@@ -2905,23 +2907,23 @@ impl App {
         Ok(())
     }
 
-    /// Runs `then` unless an extension cancels a session change: at once
-    /// when no extension handles `kind`, otherwise once `before`, pi's
-    /// cancellable `session_before_*` event, answers that none did.
+    /// Runs `then` unless an extension cancels `change`: at once when no
+    /// extension handles its event, otherwise once pi's cancellable
+    /// `session_before_*` event answers that none did.
     pub(super) fn unless_cancelled(
         &mut self,
-        kind: &str,
-        before: impl std::future::Future<Output = bool> + Send + 'static,
+        change: SessionChange,
         then: impl FnOnce(&mut App) + Send + 'static,
     ) {
-        if !self.session.has_handlers(kind) {
+        if !self.session.has_handlers(change.event()) {
             then(self);
             return;
         }
+        let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            if !before.await {
+            if !session.cancels(&change).await {
                 let _ = tx.send(Event::Then(epoch, Box::new(then)));
             }
         });
@@ -2929,9 +2931,7 @@ impl App {
 
     fn new_session(&mut self) {
         self.indicator = None;
-        let session = self.session.clone();
-        let before = async move { session.before_switch(Replacement::New, None).await };
-        self.unless_cancelled("session_before_switch", before, |app| {
+        self.unless_cancelled(SessionChange::New, |app| {
             let result = crate::runtime::new_session(&app.session, None)
                 .map_err(|error| error.to_string())
                 .and_then(|manager| app.replace_session(manager, Replacement::New));
@@ -2948,11 +2948,9 @@ impl App {
     /// pi's `runtimeHost.fork`: `at` keeps the entry (`/clone`), otherwise the
     /// branch ends before the user message (`/fork`).
     fn fork(&mut self, id: &str, at: bool) {
-        let session = self.session.clone();
-        let entry = id.to_owned();
-        let before = async move { session.before_fork(&entry, at).await };
+        let entry_id = id.to_owned();
         let id = id.to_owned();
-        self.unless_cancelled("session_before_fork", before, move |app| {
+        self.unless_cancelled(SessionChange::Fork { entry_id, at }, move |app| {
             let result = crate::runtime::plan_fork(&app.session, &id, at).and_then(|fork| {
                 let manager = fork.build(&app.session)?;
                 app.replace_session(manager, Replacement::Fork)?;
@@ -2975,15 +2973,9 @@ impl App {
 
     /// pi's `switchSession` to `path`, in `cwd_override` when given.
     fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
-        let session = self.session.clone();
         let target = path.display().to_string();
-        let before = async move {
-            session
-                .before_switch(Replacement::Resume, Some(&target))
-                .await
-        };
         let path = path.to_path_buf();
-        self.unless_cancelled("session_before_switch", before, move |app| {
+        self.unless_cancelled(SessionChange::Resume(target), move |app| {
             app.open_resumed(&path, cwd_override);
         });
     }
