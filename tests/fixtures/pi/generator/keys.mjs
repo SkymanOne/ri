@@ -1,5 +1,5 @@
 // Records pi-tui's key decoding over a corpus of terminal input, for
-// crates/ri-tui/tests/keys.rs.
+// crates/yapi-tui/tests/keys.rs.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

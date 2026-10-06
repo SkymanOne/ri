@@ -1,5 +1,5 @@
 // Records pi-tui's CombinedAutocompleteProvider over a generated directory
-// tree, for crates/ri-tui/tests/autocomplete.rs. `@` cases need `fd` on PATH.
+// tree, for crates/yapi-tui/tests/autocomplete.rs. `@` cases need `fd` on PATH.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
