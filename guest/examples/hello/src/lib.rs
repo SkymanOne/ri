@@ -1,5 +1,5 @@
-//! An example native extension: a tool, a command, a flag and an event
-//! handler.
+//! An example native extension: a tool, a command, a flag and two event
+//! handlers.
 
 use yapi_extension_api::{Api, FlagType, Tool, ToolResult, append_entry, get_flag, json, notify};
 

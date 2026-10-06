@@ -167,6 +167,34 @@ export default function (pi) {
     assert_eq!(probe("process", main).await, "true,true,true,false,1,0,1");
 }
 
+/// `removeListener` drops only the most recent registration of a listener,
+/// as Node does, and finds `once` listeners by the function they wrap.
+#[tokio::test(flavor = "multi_thread")]
+async fn removes_one_registration_per_call() {
+    let main = r#"
+import { EventEmitter } from "node:events";
+export default function (pi) {
+	const emitter = new EventEmitter();
+	const calls = [];
+	const a = () => calls.push("a");
+	const b = () => calls.push("b");
+	emitter.on("x", a).on("x", b).on("x", a);
+	emitter.removeListener("x", a);
+	emitter.emit("x");
+	const once = () => calls.push("once");
+	emitter.once("y", once).once("y", once);
+	emitter.off("y", once);
+	emitter.emit("y");
+	emitter.emit("y");
+	pi.registerCommand("probe", {
+		description: [calls.join(""), emitter.listenerCount("x"), emitter.listenerCount("y")].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    assert_eq!(probe("remove-listener", main).await, "abonce,2,0");
+}
+
 /// The host cannot have the runtime evaluate source text.
 #[tokio::test(flavor = "multi_thread")]
 async fn evaluates_no_source_text() {

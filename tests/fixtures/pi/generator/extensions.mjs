@@ -1,6 +1,6 @@
 // Loads each of pi's example extensions and prints what it registers:
-// tools, commands, flags and shortcuts. The ri side of the comparison lives in
-// crates/ri-ext/tests/examples.rs.
+// tools, commands, flags and shortcuts. The yapi side of the comparison lives in
+// crates/yapi-ext/tests/examples.rs.
 //
 //   node extensions.mjs > ../extensions/registrations.json
 import fs from "node:fs";

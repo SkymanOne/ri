@@ -1,4 +1,4 @@
-// Records pi's theme colors, for crates/ri-tui/tests/theme.rs: the escape
+// Records pi's theme colors, for crates/yapi-tui/tests/theme.rs: the escape
 // sequence of every token of the built-in themes in both color modes, and the
 // system theme generated for several terminal color reports.
 import { mkdirSync, writeFileSync } from "node:fs";

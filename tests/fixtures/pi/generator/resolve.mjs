@@ -1,7 +1,7 @@
 // Builds resource trees and records what pi's `DefaultPackageManager.resolve`
 // finds in each: every extension, skill, prompt and theme with its metadata
-// and whether it is enabled. `crates/ri-core/tests/resolve.rs` rebuilds the
-// same trees and compares ri's resolver with these files.
+// and whether it is enabled. `crates/yapi-core/tests/resolve.rs` rebuilds the
+// same trees and compares yapi's resolver with these files.
 //
 //   node resolve.mjs > ../resolve/cases.json
 //

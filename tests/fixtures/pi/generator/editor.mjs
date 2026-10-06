@@ -1,4 +1,4 @@
-// Records pi-tui's Editor over key sequences, for crates/ri-tui/tests/editor.rs.
+// Records pi-tui's Editor over key sequences, for crates/yapi-tui/tests/editor.rs.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

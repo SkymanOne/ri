@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP test server for ri's tests: the same tools, resources and replies over
+"""MCP test server for yapi's tests: the same tools, resources and replies over
 stdio (default) or streamable HTTP (`--http`, which prints its URL on the first
 line of stdout). Python standard library only.
 

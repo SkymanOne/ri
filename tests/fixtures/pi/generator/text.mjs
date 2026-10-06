@@ -1,4 +1,4 @@
-// Records pi-tui's text layout, for crates/ri-tui/tests/text.rs: wrapping,
+// Records pi-tui's text layout, for crates/yapi-tui/tests/text.rs: wrapping,
 // truncation and markdown rendering, as plain text (identity theme).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
