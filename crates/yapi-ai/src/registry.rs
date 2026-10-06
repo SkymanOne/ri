@@ -889,6 +889,53 @@ impl ModelRegistry {
         self.rebuild();
     }
 
+    /// Replaces the models an extension provider configures with ones its
+    /// `refreshModels` returned. Fails, changing nothing, when a model lacks
+    /// an API or base URL, as pi validates a refreshed list before using it.
+    pub fn replace_models(
+        &mut self,
+        provider: &str,
+        models: Vec<ModelDefinition>,
+    ) -> Result<(), String> {
+        let config = self
+            .config
+            .providers
+            .get_mut(provider)
+            .ok_or_else(|| format!("Unknown provider: {provider}"))?;
+        // Any built-in model supplies the API and base URL a definition leaves out.
+        let defaults = catalog::builtin_models(provider).into_iter().next();
+        for definition in &models {
+            model_from_definition(provider, definition, config, defaults.as_ref())?;
+        }
+        config.models = Some(models);
+        self.rebuild();
+        Ok(())
+    }
+
+    /// The credential a catalog refresh of `provider` passes to the network,
+    /// as pi's `resolveRefreshCredential`: a stored OAuth credential,
+    /// refreshed when it has expired, else the API key a request would use.
+    pub async fn refresh_credential(&self, provider: &str) -> Option<Credential> {
+        if let Some(Credential::OAuth(stored)) = self.credential(provider) {
+            self.oauth_flow(provider)?;
+            self.oauth_auth(provider, stored, 0).await.ok()??;
+            return self
+                .credential(provider)
+                .filter(|credential| matches!(credential, Credential::OAuth(_)));
+        }
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.provider == provider)
+            .cloned()
+            .or_else(|| placeholder_model(provider))?;
+        let auth = self.auth(&model).await;
+        Some(Credential::ApiKey(ApiKeyCredential {
+            key: Some(auth.api_key?),
+            env: auth.env,
+        }))
+    }
+
     /// Adds models from an extension provider, replacing the provider's models.
     pub fn register_provider(&mut self, provider: &str, models: Vec<Model>) {
         self.extension_models
@@ -1445,6 +1492,43 @@ mod tests {
             strip_json_comments("[1,\u{a0}\u{feff}] \"a\\\"// b\""),
             "[1\u{a0}\u{feff}] \"a\\\"// b\""
         );
+    }
+
+    /// A refreshed list replaces an extension provider's models only when
+    /// every model has an API and a base URL.
+    #[test]
+    fn replace_models_validates_before_applying() {
+        let config = |value| serde_json::from_value::<ProviderConfig>(value).unwrap();
+        let models = |value| serde_json::from_value::<Vec<ModelDefinition>>(value).unwrap();
+        let ids = |registry: &ModelRegistry, provider: &str| -> Vec<String> {
+            registry
+                .models()
+                .iter()
+                .filter(|model| model.provider == provider)
+                .map(|model| model.id.clone())
+                .collect()
+        };
+        let mut registry = ModelRegistry::builtin();
+        registry.register_config(
+            "x",
+            config(serde_json::json!({"baseUrl": "http://x", "api": "openai-completions", "models": [{"id": "a"}]})),
+        );
+        registry
+            .replace_models("x", models(serde_json::json!([{"id": "b"}, {"id": "c"}])))
+            .unwrap();
+        assert_eq!(ids(&registry, "x"), ["b", "c"]);
+        registry.register_config(
+            "y",
+            config(serde_json::json!({"baseUrl": "http://y", "models": [{"id": "a", "api": "openai-completions"}]})),
+        );
+        let error = registry
+            .replace_models("y", models(serde_json::json!([{"id": "b"}])))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "Provider y, model b: no \"api\" specified. Set at provider or model level."
+        );
+        assert_eq!(ids(&registry, "y"), ["a"]);
     }
 
     /// pi's `/login` labels for each credential source, and names from

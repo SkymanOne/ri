@@ -16,6 +16,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use yapi_ai::api::Apis;
 use yapi_ai::auth::{AuthError, AuthPrompt, AuthRequest, Interaction, LoginOptions};
+use yapi_ai::model_catalog::RefreshOptions;
 use yapi_ai::registry::{LoginKind, ModelRegistry};
 use yapi_ai::stream::{EventStream, Request, StreamEvent, StreamOptions};
 use yapi_core::agent_session::{AgentSession, Resources, SessionConfig};
@@ -99,6 +100,20 @@ export default function (pi: ExtensionAPI) {
 				return { ...credentials, refresh: "refresh-2", access: `${credentials.access}-refreshed`, expires: Date.now() + 3600000 };
 			},
 			getApiKey: (credentials) => `key:${credentials.access}:${credentials.team}`,
+		},
+		streamSimple,
+	});
+	const model = (id, name) => ({ id, name, reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 });
+	pi.registerProvider("dyn", {
+		baseUrl: "http://127.0.0.1:9",
+		apiKey: "dyn-key",
+		api: "echo-api",
+		models: [model("dyn-static", "Static")],
+		async refreshModels(context) {
+			if (!context.allowNetwork) return context.stored?.models;
+			const models = [model("dyn-live", `Live ${context.credential.type} ${context.credential.key}`)];
+			await context.publish({ persist: { models, checkedAt: 1 } });
+			return models;
 		},
 		streamSimple,
 	});
@@ -426,4 +441,69 @@ async fn oauth_providers_sign_in_store_and_refresh() {
         .login("corp", LoginKind::OAuth, &interaction, &options)
         .await;
     assert_eq!(result.unwrap_err(), AuthError::Cancelled);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn refresh_models_replaces_and_persists_the_model_list() {
+    let dir = scratch("provider-refresh");
+    let host = load(&dir).await;
+    let session = |registry: ModelRegistry, apis: Apis| {
+        AgentSession::new(SessionConfig {
+            cwd: dir.clone(),
+            agent_dir: dir.join("agent"),
+            settings: SettingsManager::in_memory(),
+            registry,
+            apis,
+            session: SessionManager::in_memory(&dir),
+            model: None,
+            thinking_level: ThinkingLevel::Off,
+            tools: Vec::new(),
+            extensions: host.for_session(),
+            include_extension_tools: true,
+            allowed_tools: None,
+            excluded_tools: Vec::new(),
+            docs: yapi_core::docs::Locations::default(),
+            resources: Resources::default(),
+        })
+    };
+    let ids = |session: &AgentSession| -> Vec<(String, String)> {
+        session
+            .registry()
+            .models()
+            .iter()
+            .filter(|model| model.provider == "dyn")
+            .map(|model| (model.id.clone(), model.name.clone()))
+            .collect()
+    };
+    let only_dyn = |allow_network: bool| RefreshOptions {
+        providers: Some(vec!["dyn".into()]),
+        allow_network,
+        ..RefreshOptions::default()
+    };
+
+    // Online, the extension's list replaces the registered one and persists.
+    let (registry, apis) = registry_and_apis(&host, &dir);
+    let first = session(registry, apis);
+    assert_eq!(ids(&first), [("dyn-static".into(), "Static".into())]);
+    let result = first.refresh_model_catalogs(only_dyn(true)).await;
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(
+        ids(&first),
+        [("dyn-live".into(), "Live api_key dyn-key".into())]
+    );
+    let store: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("agent").join("models-store.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(store["dyn"]["models"][0]["id"], "dyn-live");
+    first.shutdown().await;
+
+    // Offline, a later session restores the stored list.
+    let (registry, apis) = registry_and_apis(&host, &dir);
+    let second = session(registry, apis);
+    second.refresh_model_catalogs(only_dyn(false)).await;
+    assert_eq!(
+        ids(&second),
+        [("dyn-live".into(), "Live api_key dyn-key".into())]
+    );
 }

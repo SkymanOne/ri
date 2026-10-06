@@ -67,6 +67,20 @@ impl ModelsStore {
         entry: Value,
         cancel: &CancellationToken,
     ) -> Result<(), String> {
+        self.modify(provider, Some(entry), cancel).await
+    }
+
+    /// Removes `provider`'s entry under the file lock.
+    pub async fn delete(&self, provider: &str, cancel: &CancellationToken) -> Result<(), String> {
+        self.modify(provider, None, cancel).await
+    }
+
+    async fn modify(
+        &self,
+        provider: &str,
+        entry: Option<Value>,
+        cancel: &CancellationToken,
+    ) -> Result<(), String> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
         }
@@ -77,7 +91,10 @@ impl ModelsStore {
             .await
             .map_err(|err| err.to_string())?;
         let mut all = self.read_all();
-        all.insert(provider.to_owned(), entry);
+        match entry {
+            Some(entry) => all.insert(provider.to_owned(), entry),
+            None => all.remove(provider),
+        };
         let text = yapi_types::json::to_string_pretty(&Value::Object(all), "  ")
             .map_err(|err| err.to_string())?;
         std::fs::write(&self.path, text).map_err(|err| err.to_string())
@@ -561,6 +578,25 @@ pub async fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn store_writes_and_deletes_entries() {
+        let dir = std::env::temp_dir().join(format!("yapi-models-store-{}", std::process::id()));
+        let store = ModelsStore::new(dir.join("models-store.json"));
+        let cancel = CancellationToken::new();
+        store
+            .write("a", json!({"models": []}), &cancel)
+            .await
+            .unwrap();
+        store
+            .write("b", json!({"models": [1]}), &cancel)
+            .await
+            .unwrap();
+        store.delete("a", &cancel).await.unwrap();
+        assert_eq!(store.read("a"), None);
+        assert_eq!(store.read("b"), Some(json!({"models": [1]})));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn parses_catalog_shapes_and_dates() {

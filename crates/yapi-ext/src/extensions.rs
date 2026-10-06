@@ -17,22 +17,26 @@ use yapi_ai::auth::{
     AuthError, AuthEvent, AuthPrompt, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
     SelectOption,
 };
+use yapi_ai::model_catalog::RefreshOptions;
+use yapi_ai::registry::ModelRegistry;
 use yapi_ai::stream::{
     EventSender, EventStream, Provider, Request, StreamEvent, new_output, now_ms, send_error,
 };
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
-    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
-    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
+    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, ModelList,
+    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+    WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
-use yapi_types::auth::OAuthCredential;
+use yapi_types::auth::{Credential, OAuthCredential};
 use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel,
     ToolDeclaration,
 };
+use yapi_types::models::ModelDefinition;
 use yapi_types::rpc::{SourceInfo, StreamingBehavior};
 use yapi_types::sync::lock;
 
@@ -166,6 +170,7 @@ impl ExtensionHost {
                 let name = text(&provider["name"]);
                 let mut config = provider["config"].as_object()?.clone();
                 let streams = config.remove("hasStreamSimple") == Some(Value::Bool(true));
+                config.remove("hasRefreshModels");
                 let oauth = config
                     .remove("oauth")
                     .filter(Value::is_object)
@@ -623,6 +628,40 @@ impl JsExtension {
     fn path_text(&self) -> String {
         self.path.to_string_lossy().into_owned()
     }
+
+    /// One `refreshModels` phase of `provider` in the guest: the model list
+    /// it returned, if any.
+    async fn refresh_phase(
+        &self,
+        provider: &str,
+        registry: &ModelRegistry,
+        credential: Option<Credential>,
+        allow_network: bool,
+        options: &RefreshOptions,
+    ) -> Result<Option<Vec<ModelDefinition>>, String> {
+        let id = self.shared.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+        let stored = registry
+            .models_store()
+            .and_then(|store| store.read(provider));
+        let payload = json!({
+            "provider": provider, "id": id, "credential": credential, "stored": stored,
+            "allowNetwork": allow_network, "force": options.force,
+        });
+        let call = self.shared.instance.call("refreshModels", &payload);
+        let models = match options.cancel.run_until_cancelled(call).await {
+            Some(result) => result.map_err(|err| err.to_string())?,
+            None => {
+                let _ = self.shared.instance.call("abort", &json!({"id": id})).await;
+                return Err(format!("Model refresh aborted for {provider}"));
+            }
+        };
+        if models.is_null() {
+            return Ok(None);
+        }
+        serde_json::from_value(models)
+            .map(Some)
+            .map_err(|err| format!("Invalid models from {provider}: {err}"))
+    }
 }
 
 impl Extension for JsExtension {
@@ -789,6 +828,46 @@ impl Extension for JsExtension {
                 .await
                 .ok()?;
             self.shared.bridge.component(&result["handle"])
+        })
+    }
+
+    fn refresh_models<'a>(
+        &'a self,
+        registry: &'a ModelRegistry,
+        options: &'a RefreshOptions,
+    ) -> BoxFuture<'a, Vec<(String, ModelList)>> {
+        Box::pin(async move {
+            let providers: Vec<String> = list(&self.description["providers"])
+                .iter()
+                .filter(|provider| provider["config"]["hasRefreshModels"] == true)
+                .map(|provider| text(&provider["name"]))
+                .filter(|name| {
+                    options
+                        .providers
+                        .as_ref()
+                        .is_none_or(|selected| selected.contains(name))
+                })
+                .collect();
+            let mut lists = Vec::new();
+            for provider in providers {
+                let stored = registry.store().get(&provider);
+                let offline = self
+                    .refresh_phase(&provider, registry, stored, false, options)
+                    .await;
+                let failed = offline.is_err();
+                lists.extend(offline.transpose().map(|list| (provider.clone(), list)));
+                if failed || !options.allow_network || options.cancel.is_cancelled() {
+                    continue;
+                }
+                let Some(credential) = registry.refresh_credential(&provider).await else {
+                    continue;
+                };
+                let online = self
+                    .refresh_phase(&provider, registry, Some(credential), true, options)
+                    .await;
+                lists.extend(online.transpose().map(|list| (provider.clone(), list)));
+            }
+            lists
         })
     }
 

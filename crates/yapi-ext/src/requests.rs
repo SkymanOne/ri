@@ -18,6 +18,7 @@ use sha2::Digest as _;
 
 use tokio_util::sync::CancellationToken;
 use yapi_ai::api::Apis;
+use yapi_ai::model_catalog::ModelsStore;
 use yapi_ai::stream::{EventStream, Request, StreamEvent};
 use yapi_core::tools::{RegisteredTool, ToolEnv};
 use yapi_types::message::Message;
@@ -274,6 +275,21 @@ impl Host {
                 Box::pin(async move { streams.start(&payload, env_keys) })
             }
             "ai.stream" => Box::pin(async { Err(denied("Network access")) }),
+            // A provider's `refreshModels` persists its catalog in the agent
+            // directory's models store, as pi's `publish` does.
+            "models.persist" if self.options.grants.filesystem => {
+                let store = ModelsStore::new(self.options.agent_dir.join("models-store.json"));
+                Box::pin(async move {
+                    let provider = text(&payload, "provider");
+                    let cancel = CancellationToken::new();
+                    match &payload["entry"] {
+                        Value::Null => store.delete(provider, &cancel).await,
+                        entry => store.write(provider, entry.clone(), &cancel).await,
+                    }
+                    .map(|()| Value::Null)
+                })
+            }
+            "models.persist" => Box::pin(async { Err(denied("File access")) }),
             "ai.next" => {
                 let streams = self.ai_streams.clone();
                 let id = payload["id"].as_u64().unwrap_or_default();

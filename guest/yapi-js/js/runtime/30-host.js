@@ -254,6 +254,7 @@
 			else out[key] = plain(value);
 		}
 		out.hasStreamSimple = typeof config.streamSimple === "function";
+		out.hasRefreshModels = typeof config.refreshModels === "function";
 		return out;
 	}
 	/** The configuration of provider `name` as last registered, with its code. */
@@ -1257,6 +1258,34 @@
 		},
 		oauthApiKey(payload) {
 			return withOAuth(payload, (oauth) => oauth.getApiKey(payload.credential));
+		},
+		/**
+		 * Runs one phase of provider `provider`'s `refreshModels`: its model
+		 * list, or `null` when it returns none. `publish` persists the entry
+		 * the extension asks for in the models store.
+		 */
+		async refreshModels(payload) {
+			const config = providerConfig(payload.provider);
+			if (typeof config?.refreshModels !== "function") return null;
+			const controller = new AbortController();
+			aborts.set(payload.id, controller);
+			try {
+				const models = await config.refreshModels({
+					credential: payload.credential ?? undefined,
+					stored: payload.stored ?? undefined,
+					allowNetwork: !!payload.allowNetwork,
+					force: payload.allowNetwork ? payload.force : undefined,
+					signal: controller.signal,
+					publish: async (publication) => {
+						if (publication.persist !== undefined) await yapi.op("models.persist", { provider: payload.provider, entry: plain(publication.persist) ?? null });
+						publication.update?.();
+						return true;
+					},
+				});
+				return plain(models) ?? null;
+			} finally {
+				aborts.delete(payload.id);
+			}
 		},
 		/**
 		 * Builds the component a tool's `renderCall`/`renderResult` or a

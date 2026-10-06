@@ -56,7 +56,7 @@ To remove the provider and `/llama`, disable `llama.cpp` in `yapi config`, or ad
 
 ## Model catalogs
 
-The catalog is built into yapi. Between releases, Pi publishes catalog updates for its providers. yapi fetches them for the providers you have configured: in the background at startup, when the model selector opens, after `/login`, and with `yapi update --models`. Fetched catalogs are kept in `~/.yapi/agent/models-store.json`, so later sessions have them offline. `--offline` or `PI_OFFLINE=1` turns fetching off.
+The catalog is built into yapi. Between releases, Pi publishes catalog updates for its providers. yapi fetches them for the providers you have configured: in the background at startup, when the model selector opens, after `/login`, and with `yapi update --models`. Fetched catalogs are kept in `~/.yapi/agent/models-store.json`, so later sessions have them offline. `--offline` or `PI_OFFLINE=1` turns fetching off. Providers that extensions register with `refreshModels` refresh at the same times.
 
 ## Classifier and image models
 
