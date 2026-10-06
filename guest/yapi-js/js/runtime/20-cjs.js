@@ -7,10 +7,7 @@
 	const builtins = globalThis.__yapi_builtins;
 	const cache = new Map();
 
-	const builtinName = (specifier) => {
-		const name = String(specifier).replace(/^node:/, "");
-		return Object.hasOwn(builtins, name) ? name : undefined;
-	};
+	const builtinName = yapi.builtinName;
 	const dirname = (path) => builtins.path.dirname(path);
 
 	function requireFor(referrer) {

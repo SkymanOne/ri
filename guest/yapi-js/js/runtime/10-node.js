@@ -1556,10 +1556,19 @@
 		},
 		AsyncResource: class AsyncResource {},
 	};
+	// Node loads these only by their `node:` names.
+	const prefixOnly = new Set(["sea", "sqlite", "test", "test/reporters"]);
+	/** The built-in module `specifier` names as Node resolves it, if any. */
+	yapi.builtinName = (specifier) => {
+		const text = String(specifier);
+		const name = text.startsWith("node:") ? text.slice(5) : text;
+		if (!Object.hasOwn(builtins, name) || (name === text && prefixOnly.has(name))) return undefined;
+		return name;
+	};
 	builtins.module = {
 		createRequire: (filename) => globalThis.__yapi_require_for(toPath(filename)),
 		builtinModules: Object.keys(builtins),
-		isBuiltin: (name) => String(name).replace(/^node:/, "") in builtins,
+		isBuiltin: (name) => yapi.builtinName(name) !== undefined,
 	};
 })();
 

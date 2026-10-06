@@ -43,7 +43,7 @@ impl Resolver for HostResolver {
         name: &str,
         _attributes: Option<ImportAttributes<'js>>,
     ) -> rquickjs::Result<String> {
-        if let Some(builtin) = builtins::resolve(base, name) {
+        if let Some(builtin) = builtins::resolve(ctx, base, name)? {
             return Ok(builtin);
         }
         let payload = serde_json::json!({"specifier": name, "referrer": base}).to_string();
