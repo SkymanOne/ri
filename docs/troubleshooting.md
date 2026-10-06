@@ -6,6 +6,14 @@ yapi honors `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY`, and the `ht
 
 `--offline`, or `PI_OFFLINE=1`, skips startup network work such as downloading `fd` and `rg`.
 
+## macOS blocks a downloaded binary
+
+macOS marks an archive downloaded in a browser as quarantined, and Gatekeeper then refuses to open the `yapi` binary inside it, which Apple has not notarized. The install script, `curl` and Cargo do not set the mark. Remove it from the unpacked binary:
+
+```sh
+xattr -d com.apple.quarantine ~/.local/bin/yapi
+```
+
 ## No models available
 
 yapi found no credentials. Set a provider's API key or run `/login`, as described in [Models and sign-in](models.md).
