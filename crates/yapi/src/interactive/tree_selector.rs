@@ -1159,15 +1159,10 @@ impl TreeSelector {
         let theme = ui.theme;
         let mut out = lines::spacer(1);
         out.push(ui.border(width));
-        out.extend(lines::text(
-            &[styled(
-                "  Session Tree",
-                Style::new().add_modifier(Modifier::BOLD),
-            )],
+        out.extend(lines::text_row(
+            styled("  Session Tree", Style::new().add_modifier(Modifier::BOLD)),
             width,
             1,
-            0,
-            None,
         ));
         out.extend(self.help(width, ui));
         let mut search = vec![

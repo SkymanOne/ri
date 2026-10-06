@@ -1090,12 +1090,10 @@ impl ToolView {
             let previewed = matches!(&preview, Some(Err(error)) if *error == text);
             if !text.is_empty() && !previewed {
                 out.extend(lines::spacer(1));
-                out.extend(lines::text(
-                    &[lines::styled(text, theme.fg("error"))],
+                out.extend(lines::text_row(
+                    lines::styled(text, theme.fg("error")),
                     width,
                     1,
-                    0,
-                    None,
                 ));
             }
         }

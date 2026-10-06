@@ -210,7 +210,7 @@ pub fn user_item(text: String) -> Item {
 }
 
 fn padded_text(text: StyledLine, width: usize, px: usize) -> Vec<StyledLine> {
-    lines::text(&[text], width, px, 0, None)
+    lines::text_row(text, width, px)
 }
 
 impl Item {

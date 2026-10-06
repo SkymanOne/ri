@@ -134,10 +134,6 @@ fn list_theme(ui: &Ui<'_>) -> SettingsListTheme {
     }
 }
 
-fn text_rows(text: &str, style: ratatui_core::style::Style, width: usize) -> Vec<StyledLine> {
-    lines::text(&[styled(text.to_owned(), style)], width, 0, 0, None)
-}
-
 /// pi's `SelectSubmenu`: a titled select list, optionally filtered by typing.
 struct SelectSubmenu {
     title: String,
@@ -207,14 +203,21 @@ impl SelectSubmenu {
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         let theme = ui.theme;
-        let mut out = text_rows(
-            &self.title,
-            theme.fg("accent").add_modifier(Modifier::BOLD),
+        let mut out = lines::text_row(
+            styled(
+                self.title.clone(),
+                theme.fg("accent").add_modifier(Modifier::BOLD),
+            ),
             width,
+            0,
         );
         if !self.description.is_empty() {
             out.extend(lines::spacer(1));
-            out.extend(text_rows(&self.description, theme.fg("muted"), width));
+            out.extend(lines::text_row(
+                styled(self.description.clone(), theme.fg("muted")),
+                width,
+                0,
+            ));
         }
         if let Some(input) = &mut self.search {
             out.extend(lines::spacer(1));
@@ -228,7 +231,7 @@ impl SelectSubmenu {
         } else {
             "  Enter to select · Esc to go back"
         };
-        out.extend(text_rows(hint, theme.fg("dim"), width));
+        out.extend(lines::text_row(styled(hint, theme.fg("dim")), width, 0));
         out
     }
 
@@ -581,21 +584,30 @@ impl ThemeMenu {
             return select.render(width, ui);
         }
         let theme = ui.theme;
-        let mut out = text_rows(
-            "Automatic Theme",
-            theme.fg("accent").add_modifier(Modifier::BOLD),
+        let mut out = lines::text_row(
+            styled(
+                "Automatic Theme",
+                theme.fg("accent").add_modifier(Modifier::BOLD),
+            ),
             width,
+            0,
         );
         out.extend(lines::spacer(1));
-        out.extend(text_rows(
-            "Choose themes for terminal light and dark appearance.",
-            theme.fg("muted"),
+        out.extend(lines::text_row(
+            styled(
+                "Choose themes for terminal light and dark appearance.",
+                theme.fg("muted"),
+            ),
             width,
+            0,
         ));
-        out.extend(text_rows(
-            "Light/dark detection requires terminal support.",
-            theme.fg("muted"),
+        out.extend(lines::text_row(
+            styled(
+                "Light/dark detection requires terminal support.",
+                theme.fg("muted"),
+            ),
             width,
+            0,
         ));
         out.extend(lines::spacer(1));
         // A light or dark theme list takes the settings' place.

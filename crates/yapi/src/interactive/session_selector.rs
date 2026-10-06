@@ -720,34 +720,27 @@ impl SessionSelector {
         out.extend(lines::spacer(1));
         let cursor;
         if let Some((_, input)) = &mut self.rename {
-            out.extend(lines::text(
-                &[styled(
-                    "Rename Session",
-                    Style::new().add_modifier(Modifier::BOLD),
-                )],
+            out.extend(lines::text_row(
+                styled("Rename Session", Style::new().add_modifier(Modifier::BOLD)),
                 width,
                 1,
-                0,
-                None,
             ));
             out.extend(lines::spacer(1));
             let row = input.render(width);
             cursor = input.cursor_column().map(|col| (out.len(), col));
             out.push(row);
             out.extend(lines::spacer(1));
-            out.extend(lines::text(
-                &[styled(
+            out.extend(lines::text_row(
+                styled(
                     format!(
                         "{} to save · {} to cancel",
                         super::keybindings::keys_text(ui.keys, "tui.select.confirm"),
                         super::keybindings::keys_text(ui.keys, "tui.select.cancel")
                     ),
                     ui.theme.fg("muted"),
-                )],
+                ),
                 width,
                 1,
-                0,
-                None,
             ));
         } else {
             out.extend(self.header(width, ui));

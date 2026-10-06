@@ -398,15 +398,13 @@ impl WidgetView {
                 let mut out = Vec::new();
                 for line in text.iter().take(MAX_WIDGET_LINES) {
                     let (line, _) = yapi_tui::ansi::parse_line(line);
-                    out.extend(lines::text(&[line], width, 1, 0, None));
+                    out.extend(lines::text_row(line, width, 1));
                 }
                 if text.len() > MAX_WIDGET_LINES {
-                    out.extend(lines::text(
-                        &[lines::styled("... (widget truncated)", theme.fg("muted"))],
+                    out.extend(lines::text_row(
+                        lines::styled("... (widget truncated)", theme.fg("muted")),
                         width,
                         1,
-                        0,
-                        None,
                     ));
                 }
                 out

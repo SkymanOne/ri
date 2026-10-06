@@ -138,11 +138,6 @@ impl Ui<'_> {
     }
 }
 
-/// One-line `Text` rows with padding 0.
-fn text_row(line: StyledLine, width: usize) -> Vec<StyledLine> {
-    lines::text(&[line], width, 0, 0, None)
-}
-
 /// A selector in the editor's place.
 pub enum Selector {
     /// `/model`.
@@ -413,17 +408,18 @@ impl ModelSelector {
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
         if self.scoped.is_empty() {
-            out.extend(text_row(
+            out.extend(lines::text_row(
                 styled(
                     "Only showing models from configured providers. Use /login to add providers.",
                     theme.fg("warning"),
                 ),
                 width,
+                0,
             ));
         } else {
             let muted = theme.fg("muted");
             let pick = |on: bool| if on { theme.fg("accent") } else { muted };
-            out.extend(text_row(
+            out.extend(lines::text_row(
                 Line::from(vec![
                     Span::styled("Scope: ", muted),
                     Span::styled("all", pick(!self.in_scope)),
@@ -431,10 +427,11 @@ impl ModelSelector {
                     Span::styled("scoped", pick(self.in_scope)),
                 ]),
                 width,
+                0,
             ));
             let mut hint = ui.key_hint("tui.input.tab", "scope");
             hint.push(Span::styled(" (all/scoped)", muted));
-            out.extend(text_row(Line::from(hint), width));
+            out.extend(lines::text_row(Line::from(hint), width, 0));
         }
         out.extend(lines::spacer(1));
         let input = self.input.render(width);
@@ -469,35 +466,38 @@ impl ModelSelector {
             if self.is_default(model) {
                 spans.push(Span::styled(" · default", theme.fg("muted")));
             }
-            out.extend(text_row(Line::from(spans), width));
+            out.extend(lines::text_row(Line::from(spans), width, 0));
         }
         if start > 0 || end < count {
-            out.extend(text_row(
+            out.extend(lines::text_row(
                 styled(
                     format!("  ({}/{})", self.selected + 1, count),
                     theme.fg("muted"),
                 ),
                 width,
+                0,
             ));
         }
         match (&self.refresh, self.filtered.get(self.selected)) {
             (RefreshStatus::Failed(error), _) => {
                 for line in error.split('\n') {
-                    out.extend(text_row(styled(line, theme.fg("error")), width));
+                    out.extend(lines::text_row(styled(line, theme.fg("error")), width, 0));
                 }
             }
-            (_, None) => out.extend(text_row(
+            (_, None) => out.extend(lines::text_row(
                 styled("  No matching models", theme.fg("muted")),
                 width,
+                0,
             )),
             (_, Some(&index)) => {
                 out.extend(lines::spacer(1));
-                out.extend(text_row(
+                out.extend(lines::text_row(
                     styled(
                         format!("  Model Name: {}", self.models[index].name),
                         theme.fg("muted"),
                     ),
                     width,
+                    0,
                 ));
             }
         }
@@ -508,13 +508,14 @@ impl ModelSelector {
         };
         if let Some((text, color)) = status {
             out.extend(lines::spacer(1));
-            out.extend(text_row(
+            out.extend(lines::text_row(
                 styled(format!("  {text}"), theme.fg(color)),
                 width,
+                0,
             ));
         }
         out.extend(lines::spacer(1));
-        out.extend(text_row(
+        out.extend(lines::text_row(
             styled(
                 format!(
                     "  {} to select · {} to set as default · {} to cancel",
@@ -525,6 +526,7 @@ impl ModelSelector {
                 theme.fg("dim"),
             ),
             width,
+            0,
         ));
         out.push(ui.border(width));
         (out, cursor)
@@ -670,14 +672,15 @@ impl ThinkingSelector {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        out.extend(text_row(lines::raw("Thinking Level"), width));
+        out.extend(lines::text_row(lines::raw("Thinking Level"), width, 0));
         out.extend(lines::spacer(1));
-        out.extend(text_row(
+        out.extend(lines::text_row(
             lines::raw(format!(
                 "{} cycles thinking levels in-session",
                 keys_display(ui.keys, "app.thinking.cycle")
             )),
             width,
+            0,
         ));
         out.extend(lines::spacer(1));
         let input = self.input.render(width);
@@ -686,7 +689,7 @@ impl ThinkingSelector {
         out.extend(lines::spacer(1));
         out.extend(self.list.render(width));
         out.extend(lines::spacer(1));
-        out.extend(text_row(
+        out.extend(lines::text_row(
             styled(
                 format!(
                     "  {} to select · {} to set as default · {} to cancel",
@@ -697,6 +700,7 @@ impl ThinkingSelector {
                 theme.fg("dim"),
             ),
             width,
+            0,
         ));
         out.push(ui.border(width));
         (out, cursor)
@@ -764,25 +768,21 @@ impl ForkSelector {
     fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         let theme = ui.theme;
         let mut out = lines::spacer(1);
-        out.extend(lines::text(
-            &[styled(
+        out.extend(lines::text_row(
+            styled(
                 "Fork from Message",
                 Style::new().add_modifier(Modifier::BOLD),
-            )],
+            ),
             width,
             1,
-            0,
-            None,
         ));
-        out.extend(lines::text(
-            &[styled(
+        out.extend(lines::text_row(
+            styled(
                 "Select a user message to copy the active path up to that point into a new session",
                 theme.fg("muted"),
-            )],
+            ),
             width,
             1,
-            0,
-            None,
         ));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
@@ -904,19 +904,16 @@ impl TrustSelector {
 
     fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         let theme = ui.theme;
-        let muted =
-            |text: String| lines::text(&[styled(text, theme.fg("muted"))], width, 1, 0, None);
+        let muted = |text: String| lines::text_row(styled(text, theme.fg("muted")), width, 1);
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        out.extend(lines::text(
-            &[styled(
+        out.extend(lines::text_row(
+            styled(
                 "Project trust",
                 theme.fg("accent").add_modifier(Modifier::BOLD),
-            )],
+            ),
             width,
             1,
-            0,
-            None,
         ));
         out.extend(muted(self.cwd.clone()));
         out.extend(lines::spacer(1));
@@ -957,7 +954,7 @@ impl TrustSelector {
                 option.label.clone(),
                 theme.fg(if selected { "accent" } else { "text" }),
             ));
-            out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
+            out.extend(lines::text_row(Line::from(spans), width, 1));
         }
         out.extend(lines::spacer(1));
         let hint = [
@@ -966,7 +963,7 @@ impl TrustSelector {
             ui.key_hint("tui.select.cancel", "cancel"),
         ]
         .join(&Span::raw("  "));
-        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::text_row(Line::from(hint), width, 1));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
         out
@@ -1099,7 +1096,7 @@ impl ChoiceDialog {
             if let Some((_, suffix)) = self.suffix.as_ref().filter(|(at, _)| *at == index) {
                 spans.extend(suffix.iter().cloned());
             }
-            out.extend(lines::text(&[Line::from(spans)], width, 1, 0, None));
+            out.extend(lines::text_row(Line::from(spans), width, 1));
         }
         out.extend(lines::spacer(1));
         let hint = [
@@ -1108,7 +1105,7 @@ impl ChoiceDialog {
             ui.key_hint("tui.select.cancel", "cancel"),
         ]
         .join(&Span::raw("  "));
-        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::text_row(Line::from(hint), width, 1));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
         out
@@ -1160,12 +1157,10 @@ impl TextDialog {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        out.extend(lines::text(
-            &[styled(self.title.clone(), theme.fg("accent"))],
+        out.extend(lines::text_row(
+            styled(self.title.clone(), theme.fg("accent")),
             width,
             1,
-            0,
-            None,
         ));
         out.extend(lines::spacer(1));
         let editor = self.editor.render(width);
@@ -1182,7 +1177,7 @@ impl TextDialog {
             ui.key_hint("app.editor.external", "external editor"),
         ]
         .join(&Span::raw("  "));
-        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::text_row(Line::from(hint), width, 1));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
         (out, cursor)
@@ -1227,13 +1222,7 @@ impl InputDialog {
             Some(countdown) => countdown.title(&self.title),
             None => self.title.clone(),
         };
-        out.extend(lines::text(
-            &[styled(title, theme.fg("accent"))],
-            width,
-            1,
-            0,
-            None,
-        ));
+        out.extend(lines::text_row(styled(title, theme.fg("accent")), width, 1));
         out.extend(lines::spacer(1));
         let row = out.len();
         out.push(self.input.render(width));
@@ -1244,7 +1233,7 @@ impl InputDialog {
             ui.key_hint("tui.select.cancel", "cancel"),
         ]
         .join(&Span::raw("  "));
-        out.extend(lines::text(&[Line::from(hint)], width, 1, 0, None));
+        out.extend(lines::text_row(Line::from(hint), width, 1));
         out.extend(lines::spacer(1));
         out.push(ui.border(width));
         (out, cursor)

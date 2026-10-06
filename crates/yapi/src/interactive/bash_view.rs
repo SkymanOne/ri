@@ -98,15 +98,13 @@ impl BashView {
         // pi recolors the header with the bash color once output or the result
         // arrives, even for `!!` commands.
         let header_color = if self.updated { "bashMode" } else { color };
-        out.extend(lines::text(
-            &[styled(
+        out.extend(lines::text_row(
+            styled(
                 format!("$ {}", self.command),
                 theme.fg(header_color).add_modifier(Modifier::BOLD),
-            )],
+            ),
             width,
             1,
-            0,
-            None,
         ));
         let full = self.lines.join("\n");
         let truncation = truncate_tail(&full, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES);
@@ -140,19 +138,17 @@ impl BashView {
                     / SPINNER_INTERVAL.as_millis()) as usize
                     % SPINNER.len()];
                 out.push(Line::default());
-                out.extend(lines::text(
-                    &[Line::from(vec![
+                out.extend(lines::text_row(
+                    Line::from(vec![
                         Span::styled(frame, theme.fg(color)),
                         Span::raw(" "),
                         Span::styled(
                             format!("Running... ({} to cancel)", ctx.cancel_key),
                             theme.fg("muted"),
                         ),
-                    ])],
+                    ]),
                     width,
                     1,
-                    0,
-                    None,
                 ));
             }
             Some(result) => {

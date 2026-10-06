@@ -591,12 +591,10 @@ impl App {
         let (text, style) = (text.into(), style.to_owned());
         self.push(Item::Render(Box::new(move |width, ctx| {
             let mut out = lines::spacer(1);
-            out.extend(lines::text(
-                &[lines::styled(text.clone(), ctx.theme.fg(&style))],
+            out.extend(lines::text_row(
+                lines::styled(text.clone(), ctx.theme.fg(&style)),
                 width,
                 1,
-                0,
-                None,
             ));
             out
         })));

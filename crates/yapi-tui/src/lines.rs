@@ -346,6 +346,11 @@ pub fn text(
     out
 }
 
+/// pi-tui's `Text` holding one line, without vertical padding or background.
+pub fn text_row(line: StyledLine, width: usize, px: usize) -> Vec<StyledLine> {
+    text(&[line], width, px, 0, None)
+}
+
 /// pi-tui's `TruncatedText`: the first line only, cut to fit with `...`.
 pub fn truncated_text(content: &Line<'_>, width: usize, px: usize) -> StyledLine {
     let available = width.saturating_sub(px * 2).max(1);

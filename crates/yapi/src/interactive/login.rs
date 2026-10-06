@@ -611,15 +611,13 @@ impl LoginDialog {
     ) -> (Vec<StyledLine>, Option<(usize, usize)>) {
         let theme = ui.theme;
         let mut out = vec![ui.border(width)];
-        out.extend(lines::text(
-            &[styled(
+        out.extend(lines::text_row(
+            styled(
                 self.title.clone(),
                 theme.fg("accent").add_modifier(Modifier::BOLD),
-            )],
+            ),
             width,
             1,
-            0,
-            None,
         ));
         let mut cursor = None;
         for row in &self.rows {

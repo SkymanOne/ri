@@ -529,15 +529,10 @@ fn framed_markdown(
     let border = ctx.theme.fg("border");
     let mut out = lines::spacer(1);
     out.push(lines::border(width, border));
-    out.extend(lines::text(
-        &[styled(
-            title,
-            ctx.theme.fg("accent").add_modifier(Modifier::BOLD),
-        )],
+    out.extend(lines::text_row(
+        styled(title, ctx.theme.fg("accent").add_modifier(Modifier::BOLD)),
         width,
         1,
-        0,
-        None,
     ));
     out.extend(lines::spacer(1));
     out.extend(markdown::render(
