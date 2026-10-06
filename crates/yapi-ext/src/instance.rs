@@ -238,12 +238,7 @@ impl Instance {
         let host = Arc::new(Host {
             loader: Loader::new(options.cwd.clone(), options.cache_dir.clone()),
             bridge,
-            grants: options.grants,
-            cwd: options.cwd.clone(),
-            agent_dir: options.agent_dir.clone(),
-            home_dir: options.home_dir.clone(),
-            temp_dir: options.temp_dir.clone(),
-            environment: options.environment.clone(),
+            options,
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
@@ -256,8 +251,8 @@ impl Instance {
             .name("yapi-ext-instance".into())
             // Guest code runs on this thread's stack.
             .stack_size(crate::engine::WASM_STACK + (2 << 20))
-            .spawn(move || {
-                match Actor::new(engine, component, options, host, runtime, sender, flag) {
+            .spawn(
+                move || match Actor::new(engine, component, host, runtime, sender, flag) {
                     Ok(actor) => {
                         let _ = ready.send(Ok(()));
                         actor.run(&receiver);
@@ -265,8 +260,8 @@ impl Instance {
                     Err(err) => {
                         let _ = ready.send(Err(err));
                     }
-                }
-            })
+                },
+            )
             .map_err(|err| Error::Instantiate(err.to_string()))?;
         started.await.map_err(|_| Error::Stopped)??;
         Ok(Instance {
@@ -356,7 +351,6 @@ pub fn join_stopped() {
 struct Actor {
     engine: Engine,
     component: Component,
-    options: Options,
     host: Arc<Host>,
     runtime: tokio::runtime::Handle,
     commands: mpsc::Sender<Command>,
@@ -374,17 +368,15 @@ impl Actor {
     fn new(
         engine: Engine,
         component: Component,
-        options: Options,
         host: Arc<Host>,
         runtime: tokio::runtime::Handle,
         commands: mpsc::Sender<Command>,
         interrupt: Arc<AtomicBool>,
     ) -> Result<Actor, Error> {
-        let (store, bindings) = instantiate(&engine, &component, &options, &host, &interrupt)?;
+        let (store, bindings) = instantiate(&engine, &component, &host, &interrupt)?;
         Ok(Actor {
             engine,
             component,
-            options,
             host,
             runtime,
             commands,
@@ -545,13 +537,7 @@ impl Actor {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }
         self.generation += 1;
-        match instantiate(
-            &self.engine,
-            &self.component,
-            &self.options,
-            &self.host,
-            &self.interrupt,
-        ) {
+        match instantiate(&self.engine, &self.component, &self.host, &self.interrupt) {
             Ok((store, bindings)) => {
                 self.store = store;
                 self.bindings = bindings;
@@ -578,10 +564,10 @@ impl Actor {
 fn instantiate(
     engine: &Engine,
     component: &Component,
-    options: &Options,
     host: &Arc<Host>,
     interrupt: &Arc<AtomicBool>,
 ) -> Result<(Store<State>, Extension), Error> {
+    let options = &host.options;
     let mut wasi = WasiCtx::builder();
     if options.grants.filesystem {
         for root in &options.filesystem_roots {
