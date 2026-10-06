@@ -8,10 +8,10 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, post_form, trusted_url};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, trusted_url};
 use super::{
     AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
-    json_body, now_ms, send,
+    json_body, now_ms, post_form, send,
 };
 
 const CLIENT_ID: &str = "17e5f671-d194-4dfb-9706-5516cb48c098";
@@ -19,6 +19,7 @@ const DEFAULT_OAUTH_HOST: &str = "https://auth.kimi.com";
 const DEVICE_CODE_TIMEOUT_SECONDS: f64 = 15.0 * 60.0;
 const DEFAULT_POLL_INTERVAL_SECONDS: f64 = 5.0;
 const REFRESH_MAX_RETRIES: u32 = 3;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Kimi Code sign-in.
 #[derive(Clone, Debug, Default)]
@@ -40,10 +41,6 @@ impl KimiOAuth {
     }
 }
 
-fn js(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_else(|_| "null".into())
-}
-
 /// A credential from a token response, or pi's error for `operation`.
 fn token(json: &Value, operation: &str) -> Result<OAuthCredential, AuthError> {
     let access = json["access_token"]
@@ -62,7 +59,7 @@ fn token(json: &Value, operation: &str) -> Result<OAuthCredential, AuthError> {
         }),
         _ => Err(AuthError::Failed(format!(
             "Kimi Code token {operation} response missing fields: {}",
-            js(json)
+            yapi_types::json::stringify(json)
         ))),
     }
 }
@@ -73,9 +70,10 @@ impl KimiOAuth {
         let cancel = interaction.cancel();
         let response = send(
             post_form(
-                &format!("{host}/api/oauth/device_authorization"),
+                format!("{host}/api/oauth/device_authorization"),
                 &[("client_id", CLIENT_ID)],
-            ),
+            )
+            .timeout(REQUEST_TIMEOUT),
             cancel,
         )
         .await?;
@@ -101,7 +99,7 @@ impl KimiOAuth {
         ) else {
             return Err(AuthError::Failed(format!(
                 "Invalid Kimi Code device authorization response: {}",
-                js(&json)
+                yapi_types::json::stringify(&json)
             )));
         };
         let interval = positive(&json["interval"]).unwrap_or(DEFAULT_POLL_INTERVAL_SECONDS);
@@ -125,7 +123,8 @@ impl KimiOAuth {
                     ("device_code", device_code),
                     ("grant_type", DEVICE_CODE_GRANT),
                 ],
-            );
+            )
+            .timeout(REQUEST_TIMEOUT);
             async move {
                 let response = send(request, cancel).await?;
                 let status = response.status().as_u16();
@@ -176,10 +175,10 @@ impl KimiOAuth {
         for attempt in 0..=REFRESH_MAX_RETRIES {
             if attempt > 0 {
                 let delay = Duration::from_millis(1000 << (attempt - 1));
-                tokio::select! {
-                    () = tokio::time::sleep(delay) => {}
-                    () = cancel.cancelled() => return Err(AuthError::Cancelled),
-                }
+                cancel
+                    .run_until_cancelled(tokio::time::sleep(delay))
+                    .await
+                    .ok_or(AuthError::Cancelled)?;
             }
             if cancel.is_cancelled() {
                 return Err(AuthError::failed("Kimi Code token refresh aborted"));
@@ -191,7 +190,8 @@ impl KimiOAuth {
                     ("grant_type", "refresh_token"),
                     ("refresh_token", refresh),
                 ],
-            );
+            )
+            .timeout(REQUEST_TIMEOUT);
             let response = match send(request, cancel).await {
                 Ok(response) => response,
                 Err(AuthError::Cancelled) => return Err(AuthError::Cancelled),
@@ -222,7 +222,7 @@ impl KimiOAuth {
             }
             return Err(AuthError::Failed(format!(
                 "Kimi Code token refresh failed with status {status}: {}",
-                js(&json)
+                yapi_types::json::stringify(&json)
             )));
         }
         Err(last.unwrap_or_else(|| AuthError::failed("Kimi Code token refresh failed")))

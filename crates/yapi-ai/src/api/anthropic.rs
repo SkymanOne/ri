@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration, ToolResultMessage,
+    ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::{AnthropicMessagesCompat, Model};
 
@@ -20,7 +20,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{adjust_max_tokens_for_thinking, clamp_max_tokens_to_context};
+use crate::thinking::{budgeted, requested_max_tokens};
 use crate::transcript::{
     current_tools, declared_tools, has_tool_redefinitions, initial_system_message,
     resolve_transcript, transform_messages,
@@ -119,11 +119,7 @@ fn thinking_options(
     messages: &[Message],
     options: &StreamOptions,
 ) -> Thinking {
-    let base = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
+    let base = requested_max_tokens(model, messages, options);
     let level = options
         .reasoning
         .filter(|level| *level != ThinkingLevel::Off);
@@ -143,16 +139,10 @@ fn thinking_options(
             max_tokens: base,
         };
     }
-    let (adjusted, budget) = adjust_max_tokens_for_thinking(
-        Some(base),
-        model.max_tokens,
-        level,
-        &options.thinking_budgets,
-    );
-    let max_tokens = clamp_max_tokens_to_context(model, messages, adjusted);
+    let (max_tokens, budget) = budgeted(model, messages, base, level, &options.thinking_budgets);
     Thinking {
         enabled: Some(true),
-        budget_tokens: Some(budget.min(max_tokens.saturating_sub(1024))),
+        budget_tokens: Some(budget),
         effort: None,
         max_tokens,
     }
@@ -303,7 +293,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             "{}/v1/messages?beta=true",
             model.base_url.trim_end_matches('/')
         );
-        let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+        let body = yapi_types::json::stringify(&params);
         if let Some(config) = &federation {
             let token = federation::token(config, false, &options.cancel).await?;
             federated_headers(&mut headers, &token);
@@ -498,11 +488,7 @@ impl StreamState {
                         );
                     }
                     "text" => ContentBlock::text(text("text")),
-                    "thinking" => ContentBlock::Thinking(ThinkingContent {
-                        thinking: text("thinking"),
-                        thinking_signature: Some(text("signature")),
-                        redacted: None,
-                    }),
+                    "thinking" => ContentBlock::thinking(text("thinking"), Some(text("signature"))),
                     "redacted_thinking" => ContentBlock::Thinking(ThinkingContent {
                         thinking: "[Reasoning redacted]".into(),
                         thinking_signature: block["data"].as_str().map(str::to_owned),
@@ -510,17 +496,15 @@ impl StreamState {
                     }),
                     "tool_use" => {
                         let name = text("name");
-                        ContentBlock::ToolCall(ToolCall {
-                            id: text("id"),
-                            name: if self.oauth {
+                        ContentBlock::tool_call(
+                            text("id"),
+                            if self.oauth {
                                 from_claude_code_name(&name, &self.tools)
                             } else {
                                 name
                             },
-                            arguments: block["input"].as_object().cloned().unwrap_or_default(),
-                            thought_signature: None,
-                            namespace: None,
-                        })
+                            block["input"].as_object().cloned().unwrap_or_default(),
+                        )
                     }
                     _ => return Ok(()),
                 };

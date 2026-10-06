@@ -138,7 +138,7 @@ fn redact(body: &str) -> String {
                     matches!(key.as_str(), "error" | "error_description" | "error_uri")
                 })
                 .collect();
-            yapi_types::json::to_string(&Value::Object(safe)).unwrap_or_default()
+            yapi_types::json::stringify(&Value::Object(safe))
         }
         Ok(_) => "null".to_owned(),
         Err(_) if body.chars().count() <= MAX_ERROR_BODY_CHARS => body.to_owned(),
@@ -195,7 +195,7 @@ async fn exchange(config: &Config, cancel: &CancellationToken) -> Result<(String
             "User-Agent",
             format!("anthropic-sdk-typescript/{SDK_VERSION} oidcFederationProvider"),
         )
-        .body(yapi_types::json::to_string(&Value::Object(body)).unwrap_or_default());
+        .body(yapi_types::json::stringify(&Value::Object(body)));
     let response = super::send(request, cancel)
         .await
         .map_err(|err| match err {

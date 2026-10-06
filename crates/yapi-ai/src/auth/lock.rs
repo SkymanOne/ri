@@ -63,10 +63,10 @@ impl FileLock {
                 Duration::from_millis(10u64.saturating_mul(1 << retry.min(10))).min(MAX_DELAY / 2);
             retry += 1;
             let delay = (base + base.mul_f64(jitter())).min(remaining);
-            tokio::select! {
-                () = tokio::time::sleep(delay) => {}
-                () = cancel.cancelled() => return Err(LockError::Cancelled),
-            }
+            cancel
+                .run_until_cancelled(tokio::time::sleep(delay))
+                .await
+                .ok_or(LockError::Cancelled)?;
         }
     }
 }
@@ -87,11 +87,7 @@ fn is_stale(dir: &Path) -> bool {
 
 /// A value in `[0, 1)`; spreads retries of competing processes.
 fn jitter() -> f64 {
-    let mut bytes = [0u8; 2];
-    if getrandom::fill(&mut bytes).is_err() {
-        return 0.5;
-    }
-    f64::from(u16::from_le_bytes(bytes)) / 65536.0
+    f64::from(u16::from_le_bytes(yapi_types::time::random_bytes())) / 65536.0
 }
 
 #[cfg(test)]

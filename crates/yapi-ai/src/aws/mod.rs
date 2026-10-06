@@ -235,7 +235,7 @@ fn resolve_profile<'a>(
     visited: Vec<String>,
     assume_role_source: bool,
     cancel: &'a CancellationToken,
-) -> crate::auth::BoxFuture<'a, Chained> {
+) -> futures_util::future::BoxFuture<'a, Chained> {
     Box::pin(async move {
         let empty = Section::new();
         let data = profiles.profiles.get(name).unwrap_or(&empty);
@@ -500,10 +500,10 @@ async fn credential_process(
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output();
-    let output = tokio::select! {
-        output = run => output.map_err(|err| err.to_string())?,
-        () = cancel.cancelled() => return Err(crate::http::ABORTED_BEFORE_RESPONSE.into()),
+    let Some(output) = cancel.run_until_cancelled(run).await else {
+        return Err(crate::http::ABORTED_BEFORE_RESPONSE.into());
     };
+    let output = output.map_err(|err| err.to_string())?;
     if !output.status.success() {
         return Err(format!(
             "Command failed: {command}\n{}",

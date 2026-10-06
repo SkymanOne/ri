@@ -212,7 +212,7 @@ fn replace_images(content: &[ContentBlock], placeholder: &str) -> Vec<ContentBlo
     for block in content {
         if matches!(block, ContentBlock::Image(_)) {
             if !previous_was_placeholder {
-                result.push(text_block(placeholder));
+                result.push(ContentBlock::text(placeholder));
             }
             previous_was_placeholder = true;
             continue;
@@ -222,10 +222,6 @@ fn replace_images(content: &[ContentBlock], placeholder: &str) -> Vec<ContentBlo
         result.push(block.clone());
     }
     result
-}
-
-fn text_block(text: &str) -> ContentBlock {
-    ContentBlock::text(text)
 }
 
 /// Maps a tool-call id from another model to one the target API accepts, given
@@ -295,7 +291,7 @@ pub fn transform_messages(
                 result.push(Message::ToolResult(ToolResultMessage {
                     tool_call_id: id,
                     tool_name: name,
-                    content: vec![text_block("No result provided")],
+                    content: vec![ContentBlock::text("No result provided")],
                     details: None,
                     usage: None,
                     is_error: true,
@@ -376,14 +372,14 @@ fn transform_assistant(
                 } else if same_model {
                     content.push(block.clone());
                 } else {
-                    content.push(text_block(&thinking.thinking));
+                    content.push(ContentBlock::text(&thinking.thinking));
                 }
             }
             ContentBlock::Text(text) => {
                 if same_model {
                     content.push(block.clone());
                 } else {
-                    content.push(text_block(&text.text));
+                    content.push(ContentBlock::text(&text.text));
                 }
             }
             ContentBlock::ToolCall(call) => {
@@ -463,8 +459,7 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
                     ContentBlock::Thinking(thinking) => yapi_types::js::len(&thinking.thinking),
                     ContentBlock::ToolCall(call) => {
                         yapi_types::js::len(&call.name)
-                            + yapi_types::json::to_string(&call.arguments)
-                                .map_or(0, |json| yapi_types::js::len(&json))
+                            + yapi_types::js::len(&yapi_types::json::stringify(&call.arguments))
                     }
                     ContentBlock::Image(_) => 0,
                 })
@@ -619,7 +614,7 @@ mod tests {
         };
         assert_eq!(
             user.content,
-            Content::Blocks(vec![text_block(NON_VISION_USER_IMAGE)])
+            Content::Blocks(vec![ContentBlock::text(NON_VISION_USER_IMAGE)])
         );
     }
 

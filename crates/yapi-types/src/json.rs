@@ -9,10 +9,24 @@ use std::io;
 
 use serde::Serialize;
 use serde_json::ser::{CompactFormatter, Formatter, PrettyFormatter, Serializer};
+use serde_json::{Map, Value};
 
 /// Serializes `value` like `JSON.stringify(value)`.
 pub fn to_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<String> {
     write(value, JsFormatter(CompactFormatter))
+}
+
+/// A JSON document in memory, whose serialization cannot fail.
+pub trait JsonValue: Serialize {}
+
+impl JsonValue for Value {}
+
+impl JsonValue for Map<String, Value> {}
+
+/// Serializes a JSON value like `JSON.stringify(value)`.
+pub fn stringify(value: &impl JsonValue) -> String {
+    // Object keys are strings and numbers are finite, so serialization succeeds.
+    to_string(value).unwrap_or_default()
 }
 
 /// Serializes `value` like `JSON.stringify(value, null, indent)`.

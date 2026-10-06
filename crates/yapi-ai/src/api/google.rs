@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration, ToolResultMessage, Usage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolCall,
+    ToolDeclaration, ToolResultMessage, Usage, blocks_text,
 };
 use yapi_types::model::Model;
 
@@ -20,7 +20,7 @@ use crate::stream::{
     EventSender, Request, StreamEvent, StreamOptions, ThinkingBudgets, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{clamp_level, requested_max_tokens};
 use crate::transcript::{
     current_tools, initial_system_message, resolve_transcript, transform_messages,
 };
@@ -266,15 +266,7 @@ fn convert_assistant(assistant: &AssistantMessage, model: &Model) -> Vec<Value> 
 }
 
 fn convert_tool_result(result: &ToolResultMessage, model: &Model, contents: &mut Vec<Value>) {
-    let text = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = blocks_text(&result.content, "\n");
     let images: Vec<Value> = if model.accepts_images() {
         result
             .content
@@ -468,14 +460,14 @@ fn model_path(id: &str) -> String {
 /// The SDK's error for a failed status: the JSON body, re-serialized.
 fn status_message(status: u16, body: &str) -> String {
     match serde_json::from_str::<Value>(body) {
-        Ok(json) => yapi_types::json::to_string(&json).unwrap_or_default(),
+        Ok(json) => yapi_types::json::stringify(&json),
         Err(_) => {
             let reason = reqwest::StatusCode::from_u16(status)
                 .ok()
                 .and_then(|code| code.canonical_reason())
                 .unwrap_or("");
             let error = json!({"error": {"message": body, "code": status, "status": reason}});
-            yapi_types::json::to_string(&error).unwrap_or_default()
+            yapi_types::json::stringify(&error)
         }
     }
 }
@@ -547,11 +539,7 @@ impl State {
         if self.open != Some(kind) {
             self.close(sender);
             let block = match kind {
-                Open::Thinking => ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
+                Open::Thinking => ContentBlock::thinking("", None),
                 Open::Text => ContentBlock::text(""),
             };
             sender.start(&mut self.output, block);
@@ -593,7 +581,7 @@ impl State {
             ),
         };
         let arguments = call["args"].as_object().cloned().unwrap_or_default();
-        let delta = yapi_types::json::to_string(&arguments).unwrap_or_default();
+        let delta = yapi_types::json::stringify(&arguments);
         let tool_call = ContentBlock::ToolCall(ToolCall {
             id,
             name,
@@ -689,7 +677,7 @@ fn chunk_error(text: &str) -> Option<String> {
                 Value::Null => "undefined".into(),
                 other => other.to_string(),
             },
-            yapi_types::json::to_string(&json).unwrap_or_default()
+            yapi_types::json::stringify(&json)
         )
     })
 }
@@ -784,14 +772,10 @@ async fn connect(
         },
         Flavor::Vertex => vertex::target(model, options)?,
     };
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
+    let max_tokens = requested_max_tokens(model, messages, options);
     let thinking = thinking(model, options, flavor)?;
     let body = build_body(model, messages, options, max_tokens, &thinking)?;
-    let body = yapi_types::json::to_string(&body).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&body);
     let mut headers = Headers::default();
     headers.set("content-type", Some("application/json"));
     match target.auth {

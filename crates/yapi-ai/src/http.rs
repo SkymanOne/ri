@@ -191,6 +191,33 @@ fn retryable(failure: &Failure, headers: &HeaderMap) -> bool {
     }
 }
 
+/// POSTs `body` with `headers`, each attempt limited to `timeout_ms`, retrying
+/// as [`send`] does.
+pub(crate) async fn post(
+    url: &str,
+    headers: &Headers,
+    body: &str,
+    timeout_ms: Option<u64>,
+    max_retries: u32,
+    max_retry_delay_ms: Option<u64>,
+    cancel: &CancellationToken,
+) -> Result<reqwest::Response, Failure> {
+    let options = StreamOptions {
+        max_retries,
+        max_retry_delay_ms,
+        cancel: cancel.clone(),
+        ..StreamOptions::default()
+    };
+    let build = || {
+        let request = headers.apply(client().post(url).body(body.to_owned()));
+        match timeout_ms {
+            Some(timeout) => request.timeout(Duration::from_millis(timeout)),
+            None => request,
+        }
+    };
+    send(build, &options).await
+}
+
 /// Sends a request built by `build`, retrying retryable failures up to
 /// `options.max_retries` times with pi's backoff and honoring `retry-after`.
 pub async fn send(
@@ -199,10 +226,11 @@ pub async fn send(
 ) -> Result<reqwest::Response, Failure> {
     let mut retry = 0;
     loop {
-        let result = tokio::select! {
-            () = options.cancel.cancelled() => Err(Box::new((Failure::Aborted, HeaderMap::new()))),
-            result = attempt(build()) => result,
-        };
+        let result = options
+            .cancel
+            .run_until_cancelled(attempt(build()))
+            .await
+            .unwrap_or_else(|| Err(Box::new((Failure::Aborted, HeaderMap::new()))));
         let (failure, headers) = match result {
             Ok(response) => return Ok(response),
             Err(failure) => *failure,
@@ -215,10 +243,11 @@ pub async fn send(
         }
         let delay = retry_delay(&headers, retry, options.max_retry_delay_ms)?;
         retry += 1;
-        tokio::select! {
-            () = options.cancel.cancelled() => return Err(Failure::Aborted),
-            () = tokio::time::sleep(delay) => {}
-        }
+        options
+            .cancel
+            .run_until_cancelled(tokio::time::sleep(delay))
+            .await
+            .ok_or(Failure::Aborted)?;
     }
 }
 
@@ -282,8 +311,8 @@ pub fn sdk_status_message(status: u16, error: Option<&Value>, raw: Option<&str>)
     let message = match error {
         Some(error) => match error.get("message") {
             Some(Value::String(message)) if !message.is_empty() => Some(message.clone()),
-            Some(message) if is_truthy(message) => yapi_types::json::to_string(message).ok(),
-            _ if is_truthy(error) => yapi_types::json::to_string(error).ok(),
+            Some(message) if is_truthy(message) => Some(yapi_types::json::stringify(message)),
+            _ if is_truthy(error) => Some(yapi_types::json::stringify(error)),
             _ => raw.map(str::to_owned),
         },
         None => raw.map(str::to_owned),
@@ -308,10 +337,8 @@ pub(crate) fn openai_status_message(status: u16, body: &str, prefix: Option<&str
 pub fn sdk_error_message(error: &Value) -> String {
     match error.get("message") {
         Some(Value::String(message)) if !message.is_empty() => message.clone(),
-        Some(message) if is_truthy(message) => {
-            yapi_types::json::to_string(message).unwrap_or_default()
-        }
-        _ if is_truthy(error) => yapi_types::json::to_string(error).unwrap_or_default(),
+        Some(message) if is_truthy(message) => yapi_types::json::stringify(message),
+        _ if is_truthy(error) => yapi_types::json::stringify(error),
         _ => "(no status code or body)".to_owned(),
     }
 }
@@ -374,7 +401,7 @@ pub fn provider_error_message(
 ) -> String {
     let body = body
         .filter(|body| body.as_object().is_some_and(|object| !object.is_empty()))
-        .and_then(|body| yapi_types::json::to_string(body).ok())
+        .map(yapi_types::json::stringify)
         .map(|text| truncate_chars(text.trim(), MAX_ERROR_BODY_CHARS))
         .filter(|body| !body.is_empty() && !message.contains(body.as_str()));
     match (status, body, prefix) {
@@ -412,9 +439,11 @@ pub async fn read_chunk(
     }
     // A body that goes quiet for longer than the idle timeout fails as
     // undici's body timeout does.
-    let chunk = tokio::select! {
-        () = cancel.cancelled() => return Err(interrupted.to_owned()),
-        chunk = within_idle_timeout(response.chunk()) => chunk,
+    let Some(chunk) = cancel
+        .run_until_cancelled(within_idle_timeout(response.chunk()))
+        .await
+    else {
+        return Err(interrupted.to_owned());
     };
     chunk
         .and_then(Result::ok)

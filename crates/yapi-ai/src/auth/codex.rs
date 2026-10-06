@@ -6,12 +6,11 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::anthropic::expiry;
 use super::callback::{Received, callback_or_manual, start_code_server};
 use super::device::{Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    callback_host, error_text, form, parse_authorization_input, pkce, send,
+    callback_host, error_text, expiry, form, parse_authorization_input, pkce, send,
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -118,7 +117,7 @@ impl CodexOAuth {
             }),
             _ => Err(AuthError::Failed(format!(
                 "OpenAI Codex token {operation} response missing fields: {}",
-                yapi_types::json::to_string(&json).unwrap_or_default()
+                yapi_types::json::stringify(&json)
             ))),
         }
     }
@@ -214,10 +213,10 @@ impl CodexOAuth {
         let request = crate::http::client()
             .post(self.url("/api/accounts/deviceauth/usercode"))
             .header("Content-Type", "application/json")
-            .body(
-                yapi_types::json::to_string(&super::object(&[("client_id", CLIENT_ID)]))
-                    .unwrap_or_default(),
-            );
+            .body(yapi_types::json::stringify(&super::object(&[(
+                "client_id",
+                CLIENT_ID,
+            )])));
         let response = send(request, cancel).await?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -257,7 +256,7 @@ impl CodexOAuth {
         ) else {
             return Err(AuthError::Failed(format!(
                 "Invalid OpenAI Codex device code response: {}",
-                yapi_types::json::to_string(&json).unwrap_or_default()
+                yapi_types::json::stringify(&json)
             )));
         };
         interaction.notify(AuthEvent::DeviceCode {
@@ -266,11 +265,10 @@ impl CodexOAuth {
             interval_seconds: Some(interval),
             expires_in_seconds: Some(DEVICE_CODE_TIMEOUT_SECONDS),
         });
-        let poll_body = yapi_types::json::to_string(&super::object(&[
+        let poll_body = yapi_types::json::stringify(&super::object(&[
             ("device_auth_id", device_auth_id),
             ("user_code", user_code),
-        ]))
-        .unwrap_or_default();
+        ]));
         let token_url = self.url("/api/accounts/deviceauth/token");
         let (code, verifier) = poll_device_code(
             Some(interval),
@@ -297,7 +295,7 @@ impl CodexOAuth {
                             }
                             _ => Poll::Failed(format!(
                                 "Invalid OpenAI Codex device auth token response: {}",
-                                yapi_types::json::to_string(&json).unwrap_or_default()
+                                yapi_types::json::stringify(&json)
                             )),
                         });
                     }

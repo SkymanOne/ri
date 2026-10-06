@@ -3,6 +3,8 @@
 use serde_json::{Map, Value};
 use yapi_types::message::ToolDeclaration;
 
+use crate::validation::schema_types;
+
 /// Keywords no strict mode accepts.
 const UNSUPPORTED_KEYS: &[&str] = &[
     "$ref",
@@ -44,11 +46,7 @@ fn is_structured(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };
-    let types: Vec<&str> = match object.get("type") {
-        Some(Value::String(kind)) => vec![kind],
-        Some(Value::Array(kinds)) => kinds.iter().filter_map(Value::as_str).collect(),
-        _ => vec![],
-    };
+    let types = schema_types(schema);
     types.contains(&"object")
         || types.contains(&"array")
         || object.contains_key("properties")
@@ -59,12 +57,8 @@ fn allows_null(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };
-    match object.get("type") {
-        Some(Value::String(kind)) if kind == "null" => return true,
-        Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "null") => return true,
-        _ => {}
-    }
-    if object.get("const") == Some(&Value::Null)
+    if schema_types(schema).contains(&"null")
+        || object.get("const") == Some(&Value::Null)
         || object
             .get("enum")
             .and_then(Value::as_array)
@@ -92,7 +86,7 @@ fn make_node_strict(schema: &mut Value, check: Option<KeywordCheck>) -> Result<(
             if check(key, value) {
                 return Err(format!(
                     "{key}: {} is unsupported",
-                    yapi_types::json::to_string(value).unwrap_or_default()
+                    yapi_types::json::stringify(value)
                 ));
             }
         }

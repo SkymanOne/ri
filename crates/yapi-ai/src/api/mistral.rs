@@ -12,8 +12,8 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolDeclaration,
+    blocks_text,
 };
 use yapi_types::model::Model;
 
@@ -26,7 +26,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{effort, requested_max_tokens};
 use crate::transcript::{current_tools, resolve_transcript, transform_messages};
 
 const TOOL_CALL_ID_LENGTH: usize = 9;
@@ -164,7 +164,9 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                         ContentBlock::Text(text) if !text.text.trim().is_empty() => {
                             content.push(json!({"type": "text", "text": text.text}));
                         }
-                        ContentBlock::Thinking(thinking) if !thinking.thinking.trim().is_empty() => {
+                        ContentBlock::Thinking(thinking)
+                            if !thinking.thinking.trim().is_empty() =>
+                        {
                             content.push(json!({
                                 "type": "thinking",
                                 "thinking": [{"type": "text", "text": thinking.thinking}],
@@ -175,7 +177,7 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                             "type": "function",
                             "function": {
                                 "name": call.name,
-                                "arguments": yapi_types::json::to_string(&call.arguments).unwrap_or_default(),
+                                "arguments": yapi_types::json::stringify(&call.arguments),
                             },
                             "index": 0,
                         })),
@@ -197,15 +199,7 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                 out.push(Value::Object(item));
             }
             Message::ToolResult(result) => {
-                let text = result
-                    .content
-                    .iter()
-                    .filter_map(|block| match block {
-                        ContentBlock::Text(text) => Some(text.text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let text = blocks_text(&result.content, "\n");
                 let has_images = result
                     .content
                     .iter()
@@ -448,11 +442,7 @@ impl State {
             self.current = Some(kind);
             let block = match kind {
                 Current::Text => ContentBlock::text(""),
-                Current::Thinking => ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
+                Current::Thinking => ContentBlock::thinking("", None),
             };
             sender.start(&mut self.output, block);
         }
@@ -478,13 +468,7 @@ impl State {
                     .as_str()
                     .unwrap_or_default()
                     .to_owned();
-                let block = ContentBlock::ToolCall(ToolCall {
-                    id,
-                    name,
-                    arguments: Map::new(),
-                    thought_signature: None,
-                    namespace: None,
-                });
+                let block = ContentBlock::tool_call(id, name, Map::new());
                 let position = sender.start(&mut self.output, block);
                 self.tools.insert(key, position);
                 self.partial_args.insert(position, String::new());
@@ -495,7 +479,7 @@ impl State {
         let delta = match arguments {
             Value::String(text) => text.clone(),
             Value::Null => "{}".to_owned(),
-            other => yapi_types::json::to_string(other).unwrap_or_default(),
+            other => yapi_types::json::stringify(other),
         };
         let partial = self.partial_args.entry(position).or_default();
         partial.push_str(&delta);
@@ -605,12 +589,13 @@ fn start_timeout(token: &CancellationToken) -> Arc<AtomicBool> {
     let fired = Arc::new(AtomicBool::new(false));
     let (token, flag) = (token.clone(), Arc::clone(&fired));
     tokio::spawn(async move {
-        tokio::select! {
-            () = tokio::time::sleep(TIMEOUT) => {
-                flag.store(true, Ordering::SeqCst);
-                token.cancel();
-            }
-            () = token.cancelled() => {}
+        if token
+            .run_until_cancelled(tokio::time::sleep(TIMEOUT))
+            .await
+            .is_some()
+        {
+            flag.store(true, Ordering::SeqCst);
+            token.cancel();
         }
     });
     fired
@@ -646,15 +631,8 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             let normalize = |id: &str, _: &AssistantMessage| ids.borrow_mut().normalize(id);
             transform_messages(&normalized, &model, Some(&normalize), now_ms())
         };
-        let max_tokens = clamp_max_tokens_to_context(
-            &model,
-            &messages,
-            options.max_tokens.unwrap_or(model.max_tokens),
-        );
-        let level = options
-            .reasoning
-            .map(|level| clamp_level(&model, level))
-            .filter(|level| *level != ThinkingLevel::Off);
+        let max_tokens = requested_max_tokens(&model, &messages, &options);
+        let level = effort(&model, &options);
         let payload = build_payload(
             &model,
             &normalized,
@@ -663,7 +641,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             max_tokens,
             level,
         )?;
-        let payload = yapi_types::json::to_string(&payload).map_err(|err| err.to_string())?;
+        let payload = yapi_types::json::stringify(&payload);
 
         let mut headers = Headers::default();
         headers.set("accept", Some("text/event-stream"));
@@ -689,18 +667,18 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             model.base_url.trim_end_matches('/')
         );
         let request = headers.apply(http::client().post(&url).body(payload));
-        let response = tokio::select! {
-            () = cancel.cancelled() => return Err(aborted()),
-            response = request.send() => response.map_err(|_| "fetch failed".to_owned())?,
+        let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+            return Err(aborted());
         };
+        let response = response.map_err(|_| "fetch failed".to_owned())?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
         }
-        let body = tokio::select! {
-            () = cancel.cancelled() => return Err(aborted()),
-            body = response.text() => body.unwrap_or_default(),
+        let Some(body) = cancel.run_until_cancelled(response.text()).await else {
+            return Err(aborted());
         };
+        let body = body.unwrap_or_default();
         let body = body.trim();
         let text = if body.is_empty() {
             status.canonical_reason().map_or_else(

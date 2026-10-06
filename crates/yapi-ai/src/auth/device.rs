@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use super::{AuthError, form};
+use super::AuthError;
 
 /// RFC 8628's grant type for exchanging a device code.
 pub(crate) const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -32,16 +32,6 @@ pub(crate) fn positive(value: &Value) -> Option<f64> {
         .filter(|value| value.is_finite() && *value > 0.0)
 }
 
-/// A form POST that accepts JSON, with a 30-second timeout.
-pub(crate) fn post_form(url: &str, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
-    crate::http::client()
-        .post(url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "application/json")
-        .timeout(Duration::from_secs(30))
-        .body(form(fields))
-}
-
 /// The result of one poll.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Poll<T> {
@@ -60,10 +50,10 @@ fn seconds(value: f64) -> Duration {
 }
 
 async fn sleep(duration: Duration, cancel: &CancellationToken) -> Result<(), AuthError> {
-    tokio::select! {
-        () = tokio::time::sleep(duration) => Ok(()),
-        () = cancel.cancelled() => Err(AuthError::Cancelled),
-    }
+    cancel
+        .run_until_cancelled(tokio::time::sleep(duration))
+        .await
+        .ok_or(AuthError::Cancelled)
 }
 
 /// Polls until `poll` completes, fails, the code expires or `cancel` fires.

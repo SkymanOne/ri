@@ -9,7 +9,7 @@ use yapi_types::auth::OAuthCredential;
 
 use super::callback::{Received, callback_or_manual, start_code_server};
 use super::{
-    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, callback_host, now_ms,
+    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, callback_host, expiry,
     parse_authorization_input, pkce,
 };
 
@@ -63,16 +63,6 @@ fn credential(token: Token) -> OAuthCredential {
     }
 }
 
-/// `Date.now() + expires_in * 1000 - margin`, in milliseconds.
-pub(crate) fn expiry(expires_in: f64, margin_ms: f64) -> u64 {
-    let value = now_ms() as f64 + expires_in * 1000.0 - margin_ms;
-    if value.is_finite() && value > 0.0 {
-        value as u64
-    } else {
-        0
-    }
-}
-
 fn parse_token(body: &str) -> Result<Token, String> {
     let value: Value = serde_json::from_str(body).map_err(|err| format!("SyntaxError: {err}"))?;
     let field = |name: &str| value.get(name).and_then(Value::as_str).map(str::to_owned);
@@ -111,8 +101,7 @@ impl AnthropicOAuth {
         body: &Value,
         cancel: &CancellationToken,
     ) -> Result<String, AuthError> {
-        let body =
-            yapi_types::json::to_string(body).map_err(|err| AuthError::failed(err.to_string()))?;
+        let body = yapi_types::json::stringify(body);
         let request = crate::http::client()
             .post(&self.token_url)
             .header("Content-Type", "application/json")

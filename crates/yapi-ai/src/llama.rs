@@ -154,21 +154,21 @@ impl Client {
         if let Some(body) = body {
             request = request
                 .header("Content-Type", "application/json")
-                .body(yapi_types::json::to_string(&body).unwrap_or_default());
+                .body(yapi_types::json::stringify(&body));
         }
         if let Some(key) = &self.api_key {
             request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let response = tokio::select! {
-            () = cancel.cancelled() => return Err("This operation was aborted".into()),
-            response = request.send() => response.map_err(|err| {
-                if err.is_timeout() {
-                    "The operation was aborted due to timeout".to_owned()
-                } else {
-                    "fetch failed".to_owned()
-                }
-            })?,
+        let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+            return Err("This operation was aborted".into());
         };
+        let response = response.map_err(|err| {
+            if err.is_timeout() {
+                "The operation was aborted due to timeout".to_owned()
+            } else {
+                "fetch failed".to_owned()
+            }
+        })?;
         let status = response.status();
         let payload: Value = response
             .bytes()
@@ -339,10 +339,10 @@ impl Client {
 }
 
 async fn sleep(duration: Duration, cancel: &CancellationToken) -> Result<(), String> {
-    tokio::select! {
-        () = cancel.cancelled() => Err("Cancelled".into()),
-        () = tokio::time::sleep(duration) => Ok(()),
-    }
+    cancel
+        .run_until_cancelled(tokio::time::sleep(duration))
+        .await
+        .ok_or_else(|| "Cancelled".into())
 }
 
 /// What a long operation reports.
@@ -662,10 +662,10 @@ pub mod huggingface {
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
             }
-            let response = tokio::select! {
-                () = cancel.cancelled() => return Err("This operation was aborted".into()),
-                response = request.send() => response.map_err(|_| "fetch failed".to_owned())?,
+            let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+                return Err("This operation was aborted".into());
             };
+            let response = response.map_err(|_| "fetch failed".to_owned())?;
             let status = response.status().as_u16();
             let header = |name: &str| {
                 response
@@ -836,11 +836,13 @@ pub mod huggingface {
             }
             _ => stem,
         };
-        let pattern = regex_lite::Regex::new(
-            r"(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$",
-        )
-        .ok()?;
-        pattern
+        static PATTERN: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
+            regex_lite::Regex::new(
+                r"(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$",
+            )
+            .expect("constant pattern; `normalizes_server_urls_like_pi`")
+        });
+        PATTERN
             .captures(stem)
             .and_then(|captures| captures.get(1))
             .map(|found| found.as_str().to_uppercase())

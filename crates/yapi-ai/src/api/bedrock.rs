@@ -10,8 +10,8 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::Model;
 
@@ -25,7 +25,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{adjust_max_tokens_for_thinking, clamp_max_tokens_to_context};
+use crate::thinking::{budgeted, requested_max_tokens};
 use crate::transcript::{
     current_tools, initial_system_message, resolve_transcript, transform_messages,
 };
@@ -365,11 +365,7 @@ struct Thinking {
 }
 
 fn thinking(model: &Model, messages: &[Message], options: &StreamOptions) -> Thinking {
-    let base = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
+    let base = requested_max_tokens(model, messages, options);
     let level = options
         .reasoning
         .filter(|level| *level != ThinkingLevel::Off);
@@ -381,16 +377,11 @@ fn thinking(model: &Model, messages: &[Message], options: &StreamOptions) -> Thi
         };
     };
     if is_claude(model) && !supports_adaptive_thinking(model) {
-        let (adjusted, budget) = adjust_max_tokens_for_thinking(
-            Some(base),
-            model.max_tokens,
-            level,
-            &options.thinking_budgets,
-        );
-        let max_tokens = clamp_max_tokens_to_context(model, messages, adjusted);
+        let (max_tokens, budget) =
+            budgeted(model, messages, base, level, &options.thinking_budgets);
         return Thinking {
             level: Some(level),
-            budget: Some(budget.min(max_tokens.saturating_sub(1024))),
+            budget: Some(budget),
             max_tokens,
         };
     }
@@ -869,9 +860,8 @@ fn max_attempts(options: &StreamOptions) -> u32 {
 fn retry_delay(attempt: u32, throttled: bool) -> Duration {
     let base: u64 = if throttled { 500 } else { 100 };
     let ceiling = (base << attempt.min(16)).min(20_000);
-    let mut bytes = [0u8; 8];
-    let _ = getrandom::fill(&mut bytes);
-    let fraction = (u64::from_le_bytes(bytes) % 10_000) as f64 / 10_000.0;
+    let random = u64::from_le_bytes(yapi_types::time::random_bytes());
+    let fraction = (random % 10_000) as f64 / 10_000.0;
     Duration::from_millis((ceiling as f64 * fraction) as u64)
 }
 
@@ -886,9 +876,8 @@ async fn send(
     loop {
         let headers = signed_headers(target, body, options).map_err(Failure::plain)?;
         let request = headers.apply(http::client().post(&target.url).body(body.to_owned()));
-        let result = tokio::select! {
-            () = options.cancel.cancelled() => return Err(aborted()),
-            result = request.send() => result,
+        let Some(result) = options.cancel.run_until_cancelled(request.send()).await else {
+            return Err(aborted());
         };
         let failure = match result {
             Ok(response) if response.status().is_success() => return Ok(response),
@@ -914,10 +903,11 @@ async fn send(
                 .code
                 .as_deref()
                 .is_some_and(|code| THROTTLING_CODES.contains(&code));
-        tokio::select! {
-            () = options.cancel.cancelled() => return Err(aborted()),
-            () = tokio::time::sleep(retry_delay(attempt, throttled)) => {}
-        }
+        options
+            .cancel
+            .run_until_cancelled(tokio::time::sleep(retry_delay(attempt, throttled)))
+            .await
+            .ok_or_else(aborted)?;
         attempt += 1;
     }
 }
@@ -1092,11 +1082,7 @@ impl State {
         } else if delta["reasoningContent"].is_object() {
             let reasoning = &delta["reasoningContent"];
             let position = position.unwrap_or_else(|| {
-                let block = ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: Some(String::new()),
-                    redacted: None,
-                });
+                let block = ContentBlock::thinking("", Some(String::new()));
                 self.push(block, index, sender)
             });
             let ContentBlock::Thinking(_) = self.output.content[position] else {
@@ -1261,7 +1247,7 @@ async fn connect(
         &thinking,
         configured_region.as_deref(),
     )
-    .and_then(|body| yapi_types::json::to_string(&body).map_err(|err| err.to_string()))
+    .map(|body| yapi_types::json::stringify(&body))
     .map_err(Failure::plain)?;
     let target = target(model, options).await.map_err(Failure::plain)?;
     send(&target, &body, options).await

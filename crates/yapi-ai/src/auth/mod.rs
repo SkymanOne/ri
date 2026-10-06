@@ -20,18 +20,14 @@ pub mod radius;
 pub mod store;
 pub mod xai;
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
 pub use store::{CredentialKind, CredentialStore};
-
-/// A boxed future, for trait methods.
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Why a sign-in, refresh or credential change failed.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -209,9 +205,9 @@ impl Interaction {
                 cancel: cancel.clone(),
             })
             .map_err(|_| AuthError::Cancelled)?;
-        tokio::select! {
-            answer = answer => answer.map_err(|_| AuthError::Cancelled),
-            () = cancel.cancelled() => Err(AuthError::Cancelled),
+        match cancel.run_until_cancelled(answer).await {
+            Some(Ok(answer)) => Ok(answer),
+            _ => Err(AuthError::Cancelled),
         }
     }
 
@@ -355,6 +351,28 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
         .finish()
 }
 
+/// A POST of `fields` as a form that accepts JSON, without a timeout.
+pub(crate) fn post_form(
+    url: impl reqwest::IntoUrl,
+    fields: &[(&str, &str)],
+) -> reqwest::RequestBuilder {
+    crate::http::client()
+        .post(url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .body(form(fields))
+}
+
+/// `Date.now() + expires_in * 1000 - margin`, in milliseconds.
+pub(crate) fn expiry(expires_in: f64, margin_ms: f64) -> u64 {
+    let value = now_ms() as f64 + expires_in * 1000.0 - margin_ms;
+    if value.is_finite() && value > 0.0 {
+        value as u64
+    } else {
+        0
+    }
+}
+
 /// A JSON object of string fields, in order.
 pub(crate) fn object(pairs: &[(&str, &str)]) -> serde_json::Value {
     pairs.iter().copied().collect()
@@ -382,10 +400,11 @@ pub(crate) async fn send(
     request: reqwest::RequestBuilder,
     cancel: &CancellationToken,
 ) -> Result<reqwest::Response, AuthError> {
-    tokio::select! {
-        response = request.send() => response.map_err(|err| AuthError::Failed(network_message(&err))),
-        () = cancel.cancelled() => Err(AuthError::Cancelled),
-    }
+    cancel
+        .run_until_cancelled(request.send())
+        .await
+        .ok_or(AuthError::Cancelled)?
+        .map_err(|err| AuthError::Failed(network_message(&err)))
 }
 
 /// A network error with its causes, like Node's `fetch failed` chain.

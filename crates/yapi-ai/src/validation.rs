@@ -30,12 +30,23 @@ pub fn validate_tool_arguments(tool: &ToolDeclaration, call: &ToolCall) -> Resul
     ))
 }
 
-fn schema_types(schema: &Value) -> Vec<&str> {
+/// The types a schema's `type` names: one string or an array of them.
+pub(crate) fn schema_types(schema: &Value) -> Vec<&str> {
     match schema.get("type") {
         Some(Value::String(kind)) => vec![kind.as_str()],
         Some(Value::Array(kinds)) => kinds.iter().filter_map(Value::as_str).collect(),
         _ => Vec::new(),
     }
+}
+
+/// The schemas of an array's items: positional for a tuple `items`, else the one
+/// `items` schema for every item.
+fn item_schemas(schema: &Value) -> impl Iterator<Item = &Value> {
+    let (tuple, single) = match schema.get("items") {
+        Some(Value::Array(schemas)) => (schemas.as_slice(), None),
+        single => (&[][..], single),
+    };
+    tuple.iter().chain(std::iter::from_fn(move || single))
 }
 
 fn matches_type(value: &Value, kind: &str) -> bool {
@@ -148,18 +159,8 @@ fn coerce(value: Value, schema: &Value) -> Value {
     if types.contains(&"array")
         && let Value::Array(items) = &mut value
     {
-        match schema.get("items") {
-            Some(Value::Array(schemas)) => {
-                for (item, item_schema) in items.iter_mut().zip(schemas) {
-                    *item = coerce(std::mem::take(item), item_schema);
-                }
-            }
-            Some(item_schema @ Value::Object(_)) => {
-                for item in items.iter_mut() {
-                    *item = coerce(std::mem::take(item), item_schema);
-                }
-            }
-            _ => {}
+        for (item, item_schema) in items.iter_mut().zip(item_schemas(schema)) {
+            *item = coerce(std::mem::take(item), item_schema);
         }
     }
     value
@@ -169,19 +170,11 @@ fn coerce(value: Value, schema: &Value) -> Value {
 /// strict-mode providers send them.
 fn normalize_optional_nulls(value: &mut Value, schema: &Value) {
     match value {
-        Value::Array(items) => match schema.get("items") {
-            Some(Value::Array(schemas)) => {
-                for (item, item_schema) in items.iter_mut().zip(schemas) {
-                    normalize_optional_nulls(item, item_schema);
-                }
+        Value::Array(items) => {
+            for (item, item_schema) in items.iter_mut().zip(item_schemas(schema)) {
+                normalize_optional_nulls(item, item_schema);
             }
-            Some(item_schema) => {
-                for item in items.iter_mut() {
-                    normalize_optional_nulls(item, item_schema);
-                }
-            }
-            None => {}
-        },
+        }
         Value::Object(object) => {
             let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
                 return;
@@ -231,7 +224,7 @@ fn display_path(path: &str) -> String {
 }
 
 fn js_number(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_default()
+    yapi_types::json::stringify(value)
 }
 
 /// Appends `(path, message)` for every violation of `schema` by `value`.
@@ -349,28 +342,13 @@ fn check(value: &Value, schema: &Value, path: &str, errors: &mut Vec<(String, St
                     format!("must not have more than {max} items"),
                 ));
             }
-            match schema_object.get("items") {
-                Some(Value::Array(schemas)) => {
-                    for (index, (item, item_schema)) in items.iter().zip(schemas).enumerate() {
-                        check(
-                            item,
-                            item_schema,
-                            &join_path(path, &index.to_string()),
-                            errors,
-                        );
-                    }
-                }
-                Some(item_schema) => {
-                    for (index, item) in items.iter().enumerate() {
-                        check(
-                            item,
-                            item_schema,
-                            &join_path(path, &index.to_string()),
-                            errors,
-                        );
-                    }
-                }
-                None => {}
+            for (index, (item, item_schema)) in items.iter().zip(item_schemas(schema)).enumerate() {
+                check(
+                    item,
+                    item_schema,
+                    &join_path(path, &index.to_string()),
+                    errors,
+                );
             }
         }
         Value::Object(object) => check_object(object, schema_object, path, errors),
@@ -472,5 +450,17 @@ mod tests {
             err,
             "Validation failed for tool \"read\":\n  - path: must have required properties path\n  - offset: must be number\n\nReceived arguments:\n{\n  \"offset\": [\n    1\n  ]\n}"
         );
+    }
+    #[test]
+    fn coerces_tuple_and_list_items() {
+        let schema = json!({"type":"object","properties":{
+            "pair":{"type":"array","items":[{"type":"number"},{"type":"string"}]},
+            "list":{"type":"array","items":{"type":"number"}}}});
+        let args = validate_tool_arguments(
+            &tool(schema),
+            &call(json!({"pair": ["1", 2, "x"], "list": ["3", "4"]})),
+        )
+        .unwrap();
+        assert_eq!(args, json!({"pair": [1, "2", "x"], "list": [3, 4]}));
     }
 }

@@ -443,6 +443,30 @@ impl ContentBlock {
             text_signature: None,
         })
     }
+
+    /// A thinking block that is not redacted.
+    pub fn thinking(thinking: impl Into<String>, signature: Option<String>) -> ContentBlock {
+        ContentBlock::Thinking(ThinkingContent {
+            thinking: thinking.into(),
+            thinking_signature: signature,
+            redacted: None,
+        })
+    }
+
+    /// A tool call without a thought signature or namespace.
+    pub fn tool_call(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: Map<String, Value>,
+    ) -> ContentBlock {
+        ContentBlock::ToolCall(ToolCall {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+            thought_signature: None,
+            namespace: None,
+        })
+    }
 }
 
 /// The text blocks of `blocks` joined by `separator`.

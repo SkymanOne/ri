@@ -14,7 +14,7 @@ use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{AuthError, form, now_ms};
+use super::{AuthError, now_ms};
 
 /// The scope Vertex AI requests.
 pub const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
@@ -133,13 +133,13 @@ fn fetch<'a>(
     Box::pin(async move {
         match credentials["type"].as_str().unwrap_or_default() {
             "authorized_user" => {
-                let body = form(&[
+                let fields = [
                     ("refresh_token", field(credentials, "refresh_token")?),
                     ("client_id", field(credentials, "client_id")?),
                     ("client_secret", field(credentials, "client_secret")?),
                     ("grant_type", "refresh_token"),
-                ]);
-                oauth_token(oauth2_token_url, body, cancel).await
+                ];
+                oauth_token(oauth2_token_url, &fields, cancel).await
             }
             "service_account" => {
                 let token_uri = credentials["token_uri"]
@@ -151,8 +151,8 @@ fn fetch<'a>(
                     field(credentials, "private_key")?,
                     token_uri,
                 )?;
-                let body = form(&[("grant_type", JWT_BEARER), ("assertion", &assertion)]);
-                oauth_token(token_uri, body, cancel).await
+                let fields = [("grant_type", JWT_BEARER), ("assertion", &assertion)];
+                oauth_token(token_uri, &fields, cancel).await
             }
             "impersonated_service_account" => {
                 let source = &credentials["source_credentials"];
@@ -180,8 +180,7 @@ fn fetch<'a>(
 /// `gtoken` builds it.
 fn signed_jwt(email: &str, private_key: &str, audience: &str) -> Result<String, String> {
     let encode = |value: &Value| {
-        base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(yapi_types::json::to_string(value).unwrap_or_default())
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(yapi_types::json::stringify(value))
     };
     let issued = now_ms() / 1000;
     let header = encode(&json!({"alg": "RS256"}));
@@ -256,14 +255,10 @@ fn token_error(status: u16, body: &Value) -> String {
 /// An `access_token` and `expires_in` from an OAuth token endpoint.
 async fn oauth_token(
     url: &str,
-    body: String,
+    fields: &[(&str, &str)],
     cancel: &CancellationToken,
 ) -> Result<(String, u64), String> {
-    let request = crate::http::client()
-        .post(url)
-        .header("content-type", "application/x-www-form-urlencoded")
-        .header("accept", "application/json")
-        .body(body);
+    let request = super::post_form(url, fields);
     let (status, body) = post(request, cancel).await?;
     if !(200..300).contains(&status) {
         return Err(token_error(status, &body));
@@ -299,7 +294,7 @@ async fn impersonate(
         .post(url)
         .header("authorization", format!("Bearer {source_token}"))
         .header("content-type", "application/json")
-        .body(yapi_types::json::to_string(&Value::Object(body)).unwrap_or_default());
+        .body(yapi_types::json::stringify(&Value::Object(body)));
     let (status, body) = post(request, cancel).await?;
     if !(200..300).contains(&status) {
         return Err(format!(
@@ -383,11 +378,11 @@ async fn external_account(
     if let Some(project) = credentials["workforce_pool_user_project"].as_str() {
         pairs.push((
             "options",
-            yapi_types::json::to_string(&json!({"userProject": project})).unwrap_or_default(),
+            yapi_types::json::stringify(&json!({"userProject": project})),
         ));
     }
     let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let (sts_token, expires_at_ms) = oauth_token(token_url, form(&borrowed), cancel).await?;
+    let (sts_token, expires_at_ms) = oauth_token(token_url, &borrowed, cancel).await?;
     match credentials["service_account_impersonation_url"].as_str() {
         Some(url) if !url.is_empty() => impersonate(url, &sts_token, json!([]), cancel).await,
         _ => Ok((sts_token, expires_at_ms)),

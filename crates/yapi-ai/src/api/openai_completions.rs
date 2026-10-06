@@ -13,16 +13,14 @@ use yapi_types::model::{Model, OpenAiCompletionsCompat};
 
 use super::sanitize_id_part;
 use crate::cost::calculate_cost;
-use crate::http::{self, Failure, Headers, SseReader};
+use crate::http::{self, Failure, SseReader};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, new_output, now_ms,
     send_error,
 };
-use crate::thinking::{
-    MIN_ANSWER_TOKENS, budget_for_level, clamp_level, clamp_max_tokens_to_context,
-};
+use crate::thinking::{MIN_ANSWER_TOKENS, budget_for_level, effort, requested_max_tokens};
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// Compat flags with detected defaults applied.
@@ -499,7 +497,7 @@ fn convert_messages(
                         .map(|call| {
                             json!({"id": call.id, "type": "function", "function": {
                                 "name": call.name,
-                                "arguments": yapi_types::json::to_string(&call.arguments).unwrap_or_default()}})
+                                "arguments": yapi_types::json::stringify(&call.arguments)}})
                         })
                         .collect();
                     out.insert("tool_calls".into(), Value::Array(tool_calls));
@@ -1024,15 +1022,8 @@ async fn connect(
         None => return Err(format!("No API key for provider: {}", model.provider)),
     };
     // streamSimple: clamp output to the context and the level to the model.
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
+    let max_tokens = requested_max_tokens(model, messages, options);
+    let effort = effort(model, options);
     let retention = options.resolved_cache_retention();
     let params = build_params(
         model,
@@ -1044,11 +1035,7 @@ async fn connect(
         effort,
     )?;
 
-    let mut headers = Headers::default();
-    headers.set("authorization", Some(format!("Bearer {api_key}")));
-    headers.set("content-type", Some("application/json"));
-    headers.set("accept", Some("application/json"));
-    headers.extend_model(model.headers.as_ref());
+    let mut headers = super::openai_headers(&api_key, model.headers.as_ref());
     if model.provider == "github-copilot" {
         for (key, value) in super::copilot_headers(messages) {
             headers.set(key, Some(value));
@@ -1072,7 +1059,7 @@ async fn connect(
     headers.extend(&options.headers);
 
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
-    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options).await.map_err(failure_message)
 }
@@ -1136,11 +1123,7 @@ impl State {
         if let Some(position) = self.thinking {
             return position;
         }
-        let block = ContentBlock::Thinking(ThinkingContent {
-            thinking: String::new(),
-            thinking_signature: Some(signature.to_owned()),
-            redacted: None,
-        });
+        let block = ContentBlock::thinking("", Some(signature.to_owned()));
         let position = sender.start(&mut self.output, block);
         self.thinking = Some(position);
         position
@@ -1164,13 +1147,7 @@ impl State {
         let index = match existing {
             Some(index) => index,
             None => {
-                let block = ContentBlock::ToolCall(ToolCall {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                    arguments: Map::new(),
-                    thought_signature: None,
-                    namespace: None,
-                });
+                let block = ContentBlock::tool_call(id, name, Map::new());
                 let position = sender.start(&mut self.output, block);
                 self.calls.push(CallState {
                     position,

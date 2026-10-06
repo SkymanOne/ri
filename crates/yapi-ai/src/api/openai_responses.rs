@@ -13,11 +13,10 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage, blocks_text,
 };
 use yapi_types::model::{Model, OpenAiResponsesCompat};
 
-use super::sanitize_id_part;
 use crate::cost::calculate_cost;
 use crate::hash::short_hash;
 use crate::http::{self, Failure, Headers, SseReader, is_truthy};
@@ -27,7 +26,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{effort, requested_max_tokens};
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// Which Responses endpoint a request goes to.
@@ -123,7 +122,7 @@ fn encode_text_signature(id: Option<&str>, phase: Option<&str>) -> String {
     if let Some(phase) = phase.filter(|phase| !phase.is_empty()) {
         payload.insert("phase".into(), json!(phase));
     }
-    yapi_types::json::to_string(&payload).unwrap_or_default()
+    yapi_types::json::stringify(&payload)
 }
 
 /// The message id and phase from a text signature: v1 JSON, or a legacy plain id.
@@ -146,8 +145,9 @@ fn parse_text_signature(signature: Option<&str>) -> Option<(String, Option<Strin
 /// An id part as the Responses API accepts it: sanitized, at most 64 units, no
 /// trailing underscores.
 fn normalize_id_part(part: &str) -> String {
-    let sanitized: String = sanitize_id_part(part).chars().take(64).collect();
-    sanitized.trim_end_matches('_').to_owned()
+    super::normalize_tool_call_id(part)
+        .trim_end_matches('_')
+        .to_owned()
 }
 
 fn foreign_item_id(item_id: &str) -> String {
@@ -226,15 +226,7 @@ fn image_input(mime_type: &str, data: &str) -> Value {
 }
 
 fn tool_result_output(model: &Model, result: &ToolResultMessage) -> Value {
-    let text = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = blocks_text(&result.content, "\n");
     let images: Vec<Value> = result
         .content
         .iter()
@@ -325,7 +317,7 @@ fn convert_assistant(
                 item.insert("name".into(), json!(call.name));
                 item.insert(
                     "arguments".into(),
-                    json!(yapi_types::json::to_string(&call.arguments).unwrap_or_default()),
+                    json!(yapi_types::json::stringify(&call.arguments)),
                 );
                 if same_model && let Some(namespace) = &call.namespace {
                     item.insert("namespace".into(), json!(namespace));
@@ -887,15 +879,8 @@ async fn connect(
         }
         None => return Err(format!("No API key for provider: {}", model.provider)),
     };
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
+    let max_tokens = requested_max_tokens(model, messages, options);
+    let effort = effort(model, options);
 
     let mut headers = Headers::default();
     let session = options
@@ -905,10 +890,7 @@ async fn connect(
     let (params, url) = match flavor {
         Flavor::OpenAi => {
             let params = build_params(model, &normalized, options, &compat, max_tokens, effort)?;
-            headers.set("authorization", Some(format!("Bearer {api_key}")));
-            headers.set("content-type", Some("application/json"));
-            headers.set("accept", Some("application/json"));
-            headers.extend_model(model.headers.as_ref());
+            headers = super::openai_headers(&api_key, model.headers.as_ref());
             if model.provider == "github-copilot" {
                 for (key, value) in super::copilot_headers(messages) {
                     headers.set(key, Some(value));
@@ -968,7 +950,7 @@ async fn connect(
             (body, codex_url(&model.base_url))
         }
     };
-    let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+    let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options)
         .await
@@ -1045,14 +1027,7 @@ impl State {
     fn create_slot(&mut self, index: u64, item: &Value, sender: &EventSender) -> Option<Slot> {
         let position = self.output.content.len();
         let (slot, block) = match item["type"].as_str()? {
-            "reasoning" => (
-                Slot::Thinking(position),
-                ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
-            ),
+            "reasoning" => (Slot::Thinking(position), ContentBlock::thinking("", None)),
             "message" => {
                 self.apply_phase(item);
                 (Slot::Text(position), ContentBlock::text(""))
@@ -1151,7 +1126,7 @@ impl State {
                         .unwrap_or_default()
                 };
                 let (summary, content) = (join("summary"), join("content"));
-                let signature = yapi_types::json::to_string(item).unwrap_or_default();
+                let signature = yapi_types::json::stringify(item);
                 let Some(block) = self.thinking(position) else {
                     return;
                 };
@@ -1263,7 +1238,7 @@ impl State {
                 continue;
             }
             stored.insert("encrypted_content".into(), json!(encrypted));
-            block.thinking_signature = yapi_types::json::to_string(&stored).ok();
+            block.thinking_signature = Some(yapi_types::json::stringify(&stored));
         }
     }
 
@@ -1352,7 +1327,7 @@ impl State {
                 };
                 let detail = pick("message")
                     .or_else(|| pick("code"))
-                    .unwrap_or_else(|| yapi_types::json::to_string(event).unwrap_or_default());
+                    .unwrap_or_else(|| yapi_types::json::stringify(event));
                 Err(format!("Codex error: {detail}"))
             }
             "response.failed" => Err(event["response"]["error"]["message"]

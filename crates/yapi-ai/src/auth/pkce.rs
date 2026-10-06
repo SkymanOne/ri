@@ -13,17 +13,14 @@ pub struct Pkce {
     pub challenge: String,
 }
 
-/// `count` random bytes, base64url without padding.
-pub fn random_base64url(count: usize) -> String {
-    let mut bytes = vec![0u8; count];
-    // The OS generator only fails on unsupported platforms, where sign-in cannot work anyway.
-    let _ = getrandom::fill(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
+/// 32 random bytes, base64url without padding.
+pub fn random_base64url() -> String {
+    URL_SAFE_NO_PAD.encode(yapi_types::time::random_bytes::<32>())
 }
 
 /// A fresh verifier from 32 random bytes and its SHA-256 challenge.
 pub fn generate() -> Pkce {
-    let verifier = random_base64url(32);
+    let verifier = random_base64url();
     let challenge = challenge(&verifier);
     Pkce {
         verifier,
