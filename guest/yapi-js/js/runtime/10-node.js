@@ -694,10 +694,10 @@
 			return this.once(event, listener);
 		}
 		off(event, listener) {
-			this._events?.set(
-				event,
-				this._list(event).filter((item) => item !== listener && item.listener !== listener),
-			);
+			// Node removes only the most recent registration of `listener`.
+			const list = this._list(event);
+			const index = list.findLastIndex((item) => item === listener || item.listener === listener);
+			if (index >= 0) this._events.set(event, list.toSpliced(index, 1));
 			return this;
 		}
 		removeListener(event, listener) {
