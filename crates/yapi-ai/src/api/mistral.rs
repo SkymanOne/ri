@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolDeclaration,
+    blocks_text,
 };
 use yapi_types::model::Model;
 
@@ -198,15 +199,7 @@ fn chat_messages(messages: &[Message], supports_images: bool) -> Vec<Value> {
                 out.push(Value::Object(item));
             }
             Message::ToolResult(result) => {
-                let text = result
-                    .content
-                    .iter()
-                    .filter_map(|block| match block {
-                        ContentBlock::Text(text) => Some(text.text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let text = blocks_text(&result.content, "\n");
                 let has_images = result
                     .content
                     .iter()

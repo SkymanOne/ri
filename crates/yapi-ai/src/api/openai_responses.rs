@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage, blocks_text,
 };
 use yapi_types::model::{Model, OpenAiResponsesCompat};
 
@@ -226,15 +226,7 @@ fn image_input(mime_type: &str, data: &str) -> Value {
 }
 
 fn tool_result_output(model: &Model, result: &ToolResultMessage) -> Value {
-    let text = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = blocks_text(&result.content, "\n");
     let images: Vec<Value> = result
         .content
         .iter()

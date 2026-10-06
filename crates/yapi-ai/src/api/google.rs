@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolCall,
-    ToolDeclaration, ToolResultMessage, Usage,
+    ToolDeclaration, ToolResultMessage, Usage, blocks_text,
 };
 use yapi_types::model::Model;
 
@@ -266,15 +266,7 @@ fn convert_assistant(assistant: &AssistantMessage, model: &Model) -> Vec<Value> 
 }
 
 fn convert_tool_result(result: &ToolResultMessage, model: &Model, contents: &mut Vec<Value>) {
-    let text = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = blocks_text(&result.content, "\n");
     let images: Vec<Value> = if model.accepts_images() {
         result
             .content
