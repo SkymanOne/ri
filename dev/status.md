@@ -135,12 +135,12 @@ Run on Linux x86_64 after the rename to yapi.
 | QA review | Agents drove yapi and pi side by side and compared screens, styles, requests, files and exit codes | Every finding is fixed with a regression test or a scenario recorded from pi, or listed in [compat.md](../docs/compat.md). |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
 
-QA once saw yapi exit with SIGABRT after writing all of its output, in 2 of about 190 RPC runs with an extension loaded. It was a race on Linux between extension threads and libgcc's exit-time unwinder cleanup. yapi now joins its extension threads before it exits (pull request `feature/extension-exit-abort`).
+QA once saw yapi exit with SIGABRT after writing all of its output, in 2 of about 190 RPC runs with an extension loaded. It was a race on Linux between extension threads and libgcc's exit-time unwinder cleanup. yapi now joins its extension threads before it exits (#10).
 
 ## Open issues
 
 - The scenario manifest has grown since the last differential run. `cargo test` checks every scenario against pi's recorded golden, but the live differential needs a rerun for an up-to-date count.
-- No Intel macOS runner checks the `x86_64-apple-darwin` release archive.
+- CI runs the `x86_64-apple-darwin` release archive only under Rosetta on Apple silicon, not on an Intel Mac.
 
 ## Pending live checks
 
