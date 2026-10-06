@@ -2798,9 +2798,7 @@ impl App {
         }
         let mut edited: Option<String> = None;
         self.with_terminal_released(terminal, || {
-            emit(&format!(
-                "Launching external editor: {command}\nri will resume when the editor exits.\n"
-            ));
+            emit(&external_editor_notice(&command));
             let mut parts = command.split(' ').filter(|part| !part.is_empty());
             if let Some(program) = parts.next() {
                 let status = std::process::Command::new(program)
@@ -2820,6 +2818,11 @@ impl App {
             self.editor.set_text(&text);
         }
     }
+}
+
+/// pi's notice before the external editor takes the terminal.
+fn external_editor_notice(command: &str) -> String {
+    format!("Launching external editor: {command}\nyapi will resume when the editor exits.\n")
 }
 
 /// pi's `CompactionStatusIndicator` label for `reason`.
@@ -3515,6 +3518,14 @@ mod tests {
         let status = yapi_tui::ansi::parse_line(status).0;
         let spinner = Line::from("●");
         text(&status_border(status, spinner, hidden, width, style).expect("a status"))
+    }
+
+    #[test]
+    fn external_editor_notice_names_yapi() {
+        assert_eq!(
+            external_editor_notice("vim"),
+            "Launching external editor: vim\nyapi will resume when the editor exits.\n"
+        );
     }
 
     #[test]
