@@ -2120,6 +2120,10 @@ impl AgentSession {
                     &cancel,
                 )
                 .await?;
+            // As pi, a summary cut short by an abort is not recorded.
+            if cancel.is_cancelled() {
+                return Err("Compaction cancelled".to_owned());
+            }
             Ok(self.record_compaction(result))
         }
         .await;

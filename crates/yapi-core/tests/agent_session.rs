@@ -6,14 +6,16 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use yapi_ai::api::Apis;
 use yapi_ai::faux::{Faux, Response};
 use yapi_ai::registry::ModelRegistry;
+use yapi_ai::stream::{EventStream, Provider, Request};
 use yapi_core::agent_session::{AgentSession, Resources, SessionConfig, TreeNavigation};
 use yapi_core::session::SessionManager;
 use yapi_core::settings::SettingsManager;
-use yapi_types::message::{Message, ThinkingLevel};
+use yapi_types::message::{Message, StopReason, ThinkingLevel};
 use yapi_types::model::Model;
 use yapi_types::session::FileEntry;
 
@@ -28,12 +30,16 @@ fn faux_model() -> Model {
 }
 
 fn session(faux: &Faux) -> AgentSession {
+    session_with(Arc::new(faux.clone()))
+}
+
+fn session_with(provider: Arc<dyn Provider>) -> AgentSession {
     let model = faux_model();
     let mut registry = ModelRegistry::builtin();
     registry.register_provider("faux", vec![model.clone()]);
     registry.set_runtime_key("faux", "key".into());
     let mut apis = Apis::default();
-    apis.register(Arc::new(faux.clone()));
+    apis.register(provider);
     AgentSession::new(SessionConfig {
         cwd: Path::new("/work").to_path_buf(),
         agent_dir: Path::new("/agent").to_path_buf(),
@@ -160,4 +166,57 @@ async fn navigating_to_a_user_message_returns_its_text() {
             .iter()
             .any(|message| matches!(message, Message::User(_)))
     );
+}
+
+/// The faux provider, cancelling the requests it gets once `cancel` is set,
+/// as an abort while they stream does.
+struct Cancelling {
+    faux: Faux,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Provider for Cancelling {
+    fn api(&self) -> &str {
+        "faux"
+    }
+
+    fn stream(&self, request: Request) -> EventStream {
+        if self.cancel.load(Ordering::SeqCst) {
+            request.options.cancel.cancel();
+        }
+        self.faux.stream(request)
+    }
+}
+
+#[tokio::test]
+async fn a_manual_compaction_cancelled_mid_summary_records_nothing() {
+    let faux = Faux::new([
+        Response::text("one"),
+        Response::text("two"),
+        Response {
+            stop_reason: Some(StopReason::Aborted),
+            ..Response::text("## Goal\nPartial")
+        },
+    ]);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let session = session_with(Arc::new(Cancelling {
+        faux,
+        cancel: Arc::clone(&cancel),
+    }));
+    session
+        .set_nested_global_setting("compaction", "keepRecentTokens", 2.into())
+        .unwrap();
+    session.prompt("first", Vec::new()).await.unwrap();
+    session.prompt("second", Vec::new()).await.unwrap();
+
+    cancel.store(true, Ordering::SeqCst);
+    let error = session.compact(None).await.unwrap_err();
+
+    // As pi, which checks the abort before it appends the compaction.
+    assert_eq!(error, "Compaction cancelled");
+    assert!(session.with_session(|file| {
+        !file
+            .entries()
+            .any(|entry| matches!(entry, FileEntry::Compaction(_)))
+    }));
 }
