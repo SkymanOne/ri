@@ -1,5 +1,6 @@
 //! Streaming one assistant message from a provider.
 
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -74,6 +75,39 @@ pub struct StreamOptions {
     /// Provider settings from the credential, such as a Cloudflare account id
     /// or an AWS profile, read ahead of the process environment.
     pub env: Option<ProviderEnv>,
+    /// Observers of the request.
+    pub hooks: RequestHooks,
+}
+
+/// Replaces a request body before it is sent.
+pub type PayloadHook = std::sync::Arc<
+    dyn Fn(serde_json::Value) -> BoxFuture<'static, serde_json::Value> + Send + Sync,
+>;
+
+/// What a session observes of its requests: pi-ai's `onPayload` option.
+#[derive(Clone, Default)]
+pub struct RequestHooks {
+    /// Sees each request body, as the wire API would send it, and returns
+    /// the body to send.
+    pub payload: Option<PayloadHook>,
+}
+
+impl RequestHooks {
+    /// The body to send in place of `payload`.
+    pub async fn payload(&self, payload: serde_json::Value) -> serde_json::Value {
+        match &self.payload {
+            Some(hook) => hook(payload).await,
+            None => payload,
+        }
+    }
+}
+
+impl std::fmt::Debug for RequestHooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestHooks")
+            .field("payload", &self.payload.is_some())
+            .finish()
+    }
 }
 
 impl StreamOptions {

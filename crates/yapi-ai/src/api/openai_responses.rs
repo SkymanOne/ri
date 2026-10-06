@@ -950,6 +950,7 @@ async fn connect(
             (body, codex_url(&model.base_url))
         }
     };
+    let params = options.hooks.payload(params).await;
     let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options)

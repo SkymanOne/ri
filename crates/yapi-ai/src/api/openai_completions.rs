@@ -1059,6 +1059,7 @@ async fn connect(
     headers.extend(&options.headers);
 
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
+    let params = options.hooks.payload(params).await;
     let body = yapi_types::json::stringify(&params);
     let build = || headers.apply(http::client().post(&url).body(body.clone()));
     http::send(build, options).await.map_err(failure_message)

@@ -19,7 +19,7 @@ use yapi_agent::{
 };
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
-use yapi_ai::stream::{StreamOptions, ThinkingBudgets};
+use yapi_ai::stream::{RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
@@ -1202,7 +1202,19 @@ impl AgentSession {
                 .and_then(|provider| provider.max_retries)
                 .unwrap_or(0),
             cancel: cancel.clone(),
+            hooks: self.request_hooks(cancel),
             ..StreamOptions::default()
+        }
+    }
+
+    /// What extensions see of the run's provider requests.
+    fn request_hooks(&self, cancel: &CancellationToken) -> RequestHooks {
+        let (session, cancel) = (self.clone(), cancel.clone());
+        RequestHooks {
+            payload: Some(Arc::new(move |payload| {
+                let (session, cancel) = (session.clone(), cancel.clone());
+                Box::pin(async move { session.before_provider_request(payload, cancel).await })
+            })),
         }
     }
 

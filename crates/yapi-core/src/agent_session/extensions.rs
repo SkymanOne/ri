@@ -548,6 +548,30 @@ impl AgentSession {
         result.is_some_and(|result| result["cancel"] == true)
     }
 
+    /// pi's `before_provider_request`: the request body extensions return
+    /// in place of `payload`, each seeing the previous one's.
+    pub(super) async fn before_provider_request(
+        &self,
+        payload: Value,
+        cancel: CancellationToken,
+    ) -> Value {
+        let handlers = self.handlers_of("before_provider_request");
+        if handlers.is_empty() {
+            return payload;
+        }
+        let ctx = self.extension_context(cancel);
+        let mut payload = payload;
+        for extension in handlers {
+            let event = serde_json::json!({"type": "before_provider_request", "payload": payload});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Some(next) = result.get("payload")
+            {
+                payload = next.clone();
+            }
+        }
+        payload
+    }
+
     /// Delivers `event` to extensions in the background, after the events
     /// announced before it, as pi's runner delivers events it does not wait
     /// for. Outside a tokio runtime it waits for the next

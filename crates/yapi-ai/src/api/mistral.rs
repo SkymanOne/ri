@@ -641,6 +641,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             max_tokens,
             level,
         )?;
+        let payload = options.hooks.payload(payload).await;
         let payload = yapi_types::json::stringify(&payload);
 
         let mut headers = Headers::default();
