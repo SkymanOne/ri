@@ -40,6 +40,6 @@ By default, yapi offers MCP tools through codemode. Instead of one tool call per
 
 Set `"exposure": "direct"` on a server to offer its tools to the model directly. `--tools read,bash,edit,write,codemode` routes the built-in tools through codemode as well.
 
-Scripts also reach the `models` global: they list the catalog and run classifier and image models with the session's credentials. yapi writes the script reference the model reads to `~/.yapi/agent/docs/codemode.md` when codemode is active.
+Scripts also reach the `models` global: they list the catalog and run classifier and image models with the session's credentials. The model reads how to use it in Pi's codemode documentation, in `~/.yapi/agent/docs/pi/docs/codemode.md` when the documentation for the model is installed, else on GitHub.
 
 Pi's [MCP](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/mcp.md) and [codemode](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/codemode.md) documentation describes every option.

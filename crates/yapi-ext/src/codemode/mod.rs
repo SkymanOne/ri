@@ -14,7 +14,7 @@ pub(crate) use models::{model_type, models_of_type, run_model};
 pub(crate) use run::Runner;
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use futures_util::future::BoxFuture;
@@ -33,27 +33,12 @@ use declarations::Declaration;
 
 pub use yapi_core::extensions::codemode::NAME;
 
-/// What scripts read about `models`: pi's codemode reference, adapted.
-const REFERENCE: &str = include_str!("codemode.md");
+/// Where pi's codemode reference is, once an extension knows.
+static DOCS: OnceLock<String> = OnceLock::new();
 
-/// Where the reference is written, once an extension has a place for it.
-static DOCS: OnceLock<PathBuf> = OnceLock::new();
-
-/// The reference's path, when scripts reach `models`.
+/// The reference's path or URL, when scripts reach `models`.
 pub(crate) fn docs() -> Option<String> {
-    DOCS.get().map(|path| path.display().to_string())
-}
-
-/// Writes the reference to `path` unless it already holds it.
-fn write_reference(path: &Path) {
-    if std::fs::read_to_string(path).is_ok_and(|text| text == REFERENCE) {
-        return;
-    }
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    // Without the file the model reads the API from the result errors.
-    let _ = std::fs::write(path, REFERENCE);
+    DOCS.get().cloned()
 }
 
 /// pi's `CODEMODE_SOURCE_GRAMMAR`, declared for grammar-constrained sampling.
@@ -137,28 +122,23 @@ fn is_codemode(tool: &RegisteredTool) -> bool {
 pub struct CodemodeExtension {
     runner: Arc<run::Runner>,
     session: Arc<Mutex<WeakSession>>,
-    /// The reference scripts read about `models`.
-    docs: Option<PathBuf>,
+    /// pi's codemode reference, which scripts read about `models`.
+    docs: Option<String>,
 }
 
 impl CodemodeExtension {
     /// The extension; compiled runtimes are cached in `cache_dir`. With
-    /// `docs`, the path of its reference, scripts reach `models`, pi's
-    /// classifiers and image models.
-    pub fn new(cache_dir: Option<PathBuf>, docs: Option<PathBuf>) -> CodemodeExtension {
-        if let Some(path) = &docs {
-            DOCS.get_or_init(|| path.clone());
+    /// `docs`, where pi's `codemode.md` is, which the description points to,
+    /// scripts reach `models`, pi's classifiers and image models.
+    pub fn new(cache_dir: Option<PathBuf>, docs: Option<String>) -> CodemodeExtension {
+        if let Some(docs) = &docs {
+            DOCS.get_or_init(|| docs.clone());
         }
-        let shown = docs.as_ref().map(|path| path.display().to_string());
         CodemodeExtension {
-            runner: Arc::new(run::Runner::new(cache_dir, shown)),
+            runner: Arc::new(run::Runner::new(cache_dir, docs.clone())),
             session: Arc::default(),
             docs,
         }
-    }
-
-    fn docs_text(&self) -> Option<String> {
-        self.docs.as_ref().map(|path| path.display().to_string())
     }
 }
 
@@ -180,7 +160,7 @@ impl Extension for CodemodeExtension {
                     &[],
                     &HashSet::new(),
                     None,
-                    self.docs_text().as_deref(),
+                    self.docs.as_deref(),
                 ),
                 parameters: codemode::parameters(),
                 constrained_sampling: Some(constrained_sampling()),
@@ -248,18 +228,9 @@ impl Extension for CodemodeExtension {
             .map(|tool| tool.name().to_owned())
             .collect();
         let listed: Vec<Declaration> = listed.into_iter().map(declaration).collect();
-        // Codemode is active, so the model may read the reference.
-        if let Some(path) = &self.docs {
-            write_reference(path);
-        }
         descriptions.insert(
             NAME.to_owned(),
-            declarations::description(
-                &listed,
-                &deferred,
-                Some(budget),
-                self.docs_text().as_deref(),
-            ),
+            declarations::description(&listed, &deferred, Some(budget), self.docs.as_deref()),
         );
         descriptions
     }

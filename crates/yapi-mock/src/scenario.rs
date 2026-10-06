@@ -212,10 +212,7 @@ static DOCS_SECTION: LazyLock<Regex> =
 /// A page of pi's docs that messages name: in pi's install, in the local
 /// docs yapi installs, or on GitHub.
 static PI_DOC: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r#"[^\s"]*/docs/(providers|models)\.md"#));
-/// A path to pi's codemode reference.
-static CODEMODE_DOC: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r#"[^\s"]*/pi-coding-agent/docs/codemode\.md"#));
+    LazyLock::new(|| pattern(r#"[^\s"]*/docs/(providers|models|codemode)\.md"#));
 /// Codemode's wall time line.
 static WALL_TIME: LazyLock<Regex> = LazyLock::new(|| pattern(r"\nWall time [0-9.]* seconds\n"));
 /// A new session file name: a timestamp and the session id.
@@ -726,9 +723,6 @@ impl Normalizer<'_> {
         // The documentation section names each program and its docs.
         let text = DOCS_SECTION.replace_all(&text, "");
         let text = PI_DOC.replace_all(&text, "<pi docs>/$1.md");
-        // Codemode's reference: in pi's install, and in yapi's agent directory.
-        let text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
-        let text = CODEMODE_DOC.replace_all(&text, "<codemode docs>");
         // Codemode results report the script's wall time.
         let text = WALL_TIME.replace_all(&text, "\nWall time <seconds> seconds\n");
         self.unsaved_session_files(&text)

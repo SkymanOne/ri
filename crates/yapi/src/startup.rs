@@ -716,7 +716,10 @@ fn build(
     };
 
     let codemode_cache = agent_dir.join("cache").join("wasm");
-    let codemode_docs = agent_dir.join("docs").join("codemode.md");
+    let codemode_docs = format!(
+        "{}/codemode.md",
+        yapi_core::docs::Locations::find(&agent_dir).pi_docs
+    );
     let session = AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
