@@ -171,11 +171,9 @@ impl Host {
             _ => self.bridge.start(kind, payload),
         }
     }
-}
 
-impl Host {
-    /// Built-in tool `{name}` for `{cwd}`, if the grants cover what it does.
-    /// Built-in tool `name`; with `run`, only when the grants allow running it.
+    /// Built-in tool `{name}` for `{cwd}`; with `run`, only when the grants
+    /// allow running it.
     fn builtin_tool(&self, payload: &Value, run: bool) -> Result<RegisteredTool, String> {
         let name = text(payload, "name");
         let granted = if name == "bash" {
