@@ -47,6 +47,7 @@ pub fn sanitize_binary(text: &str) -> String {
         .collect()
 }
 
+#[derive(Default)]
 struct Output {
     chunks: Vec<String>,
     kept: usize,
@@ -137,13 +138,7 @@ pub async fn execute(
     let pid = child.id();
     let _tracked = crate::tools::bash::TrackedChild::new(pid);
     let mut pipes = Pipes::take(&mut child);
-    let mut output = Output {
-        chunks: Vec::new(),
-        kept: 0,
-        total_bytes: 0,
-        pending: Vec::new(),
-        file: None,
-    };
+    let mut output = Output::default();
     let mut cancelled = false;
     let mut exit_code: Option<i32> = None;
     // Descendants may hold the pipes open: stop reading shortly after the
@@ -195,13 +190,7 @@ where
     F: std::future::Future<Output = Result<Option<i32>, String>>,
 {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-    let mut output = Output {
-        chunks: Vec::new(),
-        kept: 0,
-        total_bytes: 0,
-        pending: Vec::new(),
-        file: None,
-    };
+    let mut output = Output::default();
     let run = exec(sender);
     tokio::pin!(run);
     let outcome = loop {
