@@ -36,8 +36,9 @@ pub(crate) struct Host {
     pub(crate) ai_streams: AiStreams,
 }
 
-/// A running stream of one of yapi's wire APIs, with its cancellation.
-type AiStream = (Arc<tokio::sync::Mutex<EventStream>>, CancellationToken);
+/// A running stream of one of yapi's wire APIs, with its cancellation. The
+/// events are out of the map while an `ai.next` call reads them.
+type AiStream = (Option<EventStream>, CancellationToken);
 
 /// Streams of yapi's wire APIs that extensions read through pi-ai, by id.
 #[derive(Clone, Default)]
@@ -84,20 +85,19 @@ impl AiStreams {
             None => Apis::default().stream(request),
         };
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        lock(&self.running).insert(id, (Arc::new(tokio::sync::Mutex::new(events)), cancel));
+        lock(&self.running).insert(id, (Some(events), cancel));
         Ok(json!(id))
     }
 
     /// The events of stream `id` that have arrived, waiting for at least
     /// one; none once the stream has ended.
     async fn next(&self, id: u64) -> Value {
-        let Some(events) = lock(&self.running)
-            .get(&id)
-            .map(|(events, _)| events.clone())
+        let Some(mut events) = lock(&self.running)
+            .get_mut(&id)
+            .and_then(|(events, _)| events.take())
         else {
             return json!([]);
         };
-        let mut events = events.lock().await;
         let mut batch = Vec::new();
         let mut next = events.next().await;
         let mut ended = next.is_none();
@@ -109,8 +109,11 @@ impl AiStreams {
             }
             next = events.next().now_or_never().flatten();
         }
+        let mut running = lock(&self.running);
         if ended {
-            lock(&self.running).remove(&id);
+            running.remove(&id);
+        } else if let Some((slot, _)) = running.get_mut(&id) {
+            *slot = Some(events);
         }
         Value::Array(batch)
     }
@@ -132,6 +135,12 @@ fn text<'a>(payload: &'a Value, key: &str) -> &'a str {
 }
 
 impl Host {
+    /// Whether the extension reads the process environment, which provider
+    /// key variables come from.
+    fn reads_process_env(&self) -> bool {
+        self.options.grants.environment && self.options.environment.is_none()
+    }
+
     /// Answers request `kind` at once.
     pub(crate) fn request(&self, kind: &str, payload: &Value) -> Result<Value, String> {
         match kind {
@@ -175,14 +184,10 @@ impl Host {
                 .find(|model| model.id == text(payload, "id"))
                 .and_then(|model| serde_json::to_value(model).ok())
                 .unwrap_or_default()),
-            "models.envApiKey"
-                if self.options.grants.environment && self.options.environment.is_none() =>
-            {
-                Ok(
-                    yapi_ai::credentials::env_api_key(text(payload, "provider"), None)
-                        .map_or(Value::Null, |(_, key)| Value::String(key)),
-                )
-            }
+            "models.envApiKey" if self.reads_process_env() => Ok(
+                yapi_ai::credentials::env_api_key(text(payload, "provider"), None)
+                    .map_or(Value::Null, |(_, key)| Value::String(key)),
+            ),
             "models.envApiKey" => Ok(Value::Null),
             "platform" => Ok(Value::String(platform().into())),
             "env" => Ok(Value::Object(
@@ -268,8 +273,7 @@ impl Host {
             "dns.lookup" => Box::pin(async { Err(denied("Network access")) }),
             "ai.stream" if self.options.grants.network => {
                 let streams = self.ai_streams.clone();
-                let env_keys =
-                    self.options.grants.environment && self.options.environment.is_none();
+                let env_keys = self.reads_process_env();
                 // The stream starts on the runtime.
                 Box::pin(async move { streams.start(&payload, env_keys) })
             }
