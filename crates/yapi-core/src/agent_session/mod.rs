@@ -1299,12 +1299,63 @@ impl AgentSession {
         let Some(target) = target else {
             return Err(format!("Entry {target_id} not found"));
         };
-        let (entries, _common) = self.with_session(|session| {
+        let (entries, common) = self.with_session(|session| {
             crate::compaction::collect_branch_entries(session, old_leaf.as_deref(), target_id)
         });
+        let mut options = options;
         let mut summary = None;
+        let mut from_extension = false;
+        if self.has_handlers("session_before_tree") {
+            let mut preparation = serde_json::json!({
+                "targetId": target_id,
+                "oldLeafId": old_leaf,
+                "commonAncestorId": common,
+                "entriesToSummarize": entries,
+                "userWantsSummary": options.summarize,
+            });
+            if let Some(instructions) = &options.custom_instructions {
+                preparation["customInstructions"] = instructions.clone().into();
+            }
+            if options.replace_instructions {
+                preparation["replaceInstructions"] = true.into();
+            }
+            if let Some(label) = &options.label {
+                preparation["label"] = label.clone().into();
+            }
+            let event =
+                serde_json::json!({"type": "session_before_tree", "preparation": preparation});
+            if let Some(result) = self.emit_before(&event, CancellationToken::new()).await {
+                if result["cancel"] == true {
+                    return Ok(TreeOutcome {
+                        cancelled: true,
+                        ..TreeOutcome::default()
+                    });
+                }
+                if options.summarize
+                    && let Some(text) = result["summary"]["summary"]
+                        .as_str()
+                        .filter(|text| !text.is_empty())
+                {
+                    let details = Some(result["summary"]["details"].clone())
+                        .filter(|details| !details.is_null());
+                    let usage = serde_json::from_value(result["summary"]["usage"].clone()).ok();
+                    summary = Some((text.to_owned(), details, usage));
+                    from_extension = true;
+                }
+                if let Some(instructions) = result["customInstructions"].as_str() {
+                    options.custom_instructions = Some(instructions.to_owned());
+                }
+                if let Some(replace) = result["replaceInstructions"].as_bool() {
+                    options.replace_instructions = replace;
+                }
+                if let Some(label) = result["label"].as_str() {
+                    options.label = Some(label.to_owned());
+                }
+            }
+        }
         if options.summarize
             && !entries.is_empty()
+            && summary.is_none()
             && let Some(model) = &model
         {
             let cancel = CancellationToken::new();
@@ -1351,7 +1402,9 @@ impl AgentSession {
                 } => {
                     summary = Some((
                         text,
-                        serde_json::json!({"readFiles": read_files, "modifiedFiles": modified_files}),
+                        Some(
+                            serde_json::json!({"readFiles": read_files, "modifiedFiles": modified_files}),
+                        ),
                         usage,
                     ));
                 }
@@ -1375,8 +1428,8 @@ impl AgentSession {
                         .branch_with_summary(
                             new_leaf.as_deref(),
                             text,
-                            Some(details),
-                            Some(false),
+                            details,
+                            Some(from_extension),
                             usage,
                         )
                         .map_err(|err| err.to_string())?;
@@ -1410,6 +1463,7 @@ impl AgentSession {
         });
         if let Some(entry) = &summary_entry {
             event["summaryEntry"] = serde_json::to_value(entry).unwrap_or_default();
+            event["fromExtension"] = from_extension.into();
         }
         self.emit_extension_event(&event, CancellationToken::new())
             .await;

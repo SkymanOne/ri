@@ -41,6 +41,15 @@ pub(super) struct Hooks {
     pub(super) turn_index: std::sync::atomic::AtomicU64,
 }
 
+/// `event` without the fields in `keys` that are null, which pi leaves
+/// undefined.
+pub(super) fn defined(mut event: Value, keys: &[&str]) -> Value {
+    if let Some(object) = event.as_object_mut() {
+        object.retain(|key, value| !(value.is_null() && keys.contains(&key.as_str())));
+    }
+    event
+}
+
 /// A loop event as pi's extension event (`_emitExtensionEvent` in pi's agent
 /// session), when `wanted` takes its type; `None` for events extensions do
 /// not see.
