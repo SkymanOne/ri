@@ -986,7 +986,7 @@ impl Summarizer<'_> {
                     None => previous.unwrap_or("No prior history.").to_owned(),
                 };
                 let usage = match history {
-                    Some(history) => combine_usage(&history.usage, &prefix.usage),
+                    Some(history) => history.usage.combine(&prefix.usage),
                     None => prefix.usage,
                 };
                 (
@@ -1211,27 +1211,10 @@ pub fn collect_branch_entries(
     (entries, common)
 }
 
-/// Sum of two usages, as pi's `combineUsage`.
+/// Sum of two usages, as pi's `combineUsage`; [`Usage::combine`], kept for
+/// the crates that still call it.
 pub fn combine_usage(first: &Usage, second: &Usage) -> Usage {
-    let optional = |a: Option<u64>, b: Option<u64>| {
-        (a.is_some() || b.is_some()).then(|| a.unwrap_or(0) + b.unwrap_or(0))
-    };
-    Usage {
-        input: first.input + second.input,
-        output: first.output + second.output,
-        cache_read: first.cache_read + second.cache_read,
-        cache_write: first.cache_write + second.cache_write,
-        cache_write_1h: optional(first.cache_write_1h, second.cache_write_1h),
-        reasoning: optional(first.reasoning, second.reasoning),
-        total_tokens: Some(first.total_tokens.unwrap_or(0) + second.total_tokens.unwrap_or(0)),
-        cost: yapi_types::message::Cost {
-            input: first.cost.input + second.cost.input,
-            output: first.cost.output + second.cost.output,
-            cache_read: first.cost.cache_read + second.cost.cache_read,
-            cache_write: first.cost.cache_write + second.cost.cache_write,
-            total: first.cost.total + second.cost.total,
-        },
-    }
+    first.combine(second)
 }
 
 #[cfg(test)]

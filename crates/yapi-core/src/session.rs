@@ -1222,7 +1222,7 @@ fn header(path: &Path) -> Option<Value> {
     let file = fs::File::open(path).ok()?;
     let mut line = String::new();
     std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut line).ok()?;
-    let header: Value = serde_json::from_str(line.trim_start_matches('\u{feff}')).ok()?;
+    let header: Value = yapi_types::json::parse(&line).ok()?;
     (header["type"] == "session").then_some(header)
 }
 

@@ -211,7 +211,7 @@ pub fn resolve_model_scope(
     let mut add = |model: &Model, thinking_level: Option<ThinkingLevel>| {
         if !scoped
             .iter()
-            .any(|entry| entry.model.provider == model.provider && entry.model.id == model.id)
+            .any(|entry| entry.model.is(&model.provider, &model.id))
         {
             scoped.push(ScopedModel {
                 model: model.clone(),
@@ -378,10 +378,7 @@ pub fn resolve_cli_model(
         if inferred && !registry.has_auth(&model.provider) {
             let others: Vec<&Model> = models
                 .iter()
-                .filter(|m| {
-                    m.id.eq_ignore_ascii_case(pattern)
-                        && !(m.provider == model.provider && m.id == model.id)
-                })
+                .filter(|m| m.id.eq_ignore_ascii_case(pattern) && !m.is(&model.provider, &model.id))
                 .filter(|m| registry.has_auth(&m.provider))
                 .collect();
             if others.len() == 1 {
@@ -489,10 +486,7 @@ pub fn initial_model(
     }
     let available = registry.available();
     for (provider, id) in DEFAULT_MODEL_PER_PROVIDER {
-        if let Some(model) = available
-            .iter()
-            .find(|m| m.provider == *provider && m.id == *id)
-        {
+        if let Some(model) = available.iter().find(|m| m.is(provider, id)) {
             return Some((*model).clone());
         }
     }

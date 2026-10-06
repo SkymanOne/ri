@@ -8,6 +8,7 @@
 use std::io;
 
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::ser::{CompactFormatter, Formatter, PrettyFormatter, Serializer};
 
 /// Serializes `value` like `JSON.stringify(value)`.
@@ -114,11 +115,27 @@ impl<F: Formatter> Formatter for JsFormatter<F> {
     }
 }
 
+/// Parses `text` like pi's `JSON.parse(stripBom(text))`: a leading byte
+/// order mark is ignored.
+pub fn parse<T: DeserializeOwned>(text: &str) -> serde_json::Result<T> {
+    serde_json::from_str(text.strip_prefix('\u{feff}').unwrap_or(text))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    #[test]
+    fn parses_past_a_byte_order_mark() {
+        assert_eq!(
+            parse::<Value>("\u{feff}{\"a\":1}").ok(),
+            Some(json!({"a": 1}))
+        );
+        assert_eq!(parse::<Value>("[]").ok(), Some(json!([])));
+        assert!(parse::<Value>("\u{feff}\u{feff}[]").is_err());
+    }
 
     #[test]
     fn numbers_match_javascript() {

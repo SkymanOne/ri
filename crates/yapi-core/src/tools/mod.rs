@@ -281,37 +281,13 @@ fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult
     }
 }
 
+pub use yapi_types::js::node_error;
+
 /// `Error code: ENOENT` style text for an I/O error, as Node reports it.
 pub(crate) fn error_code(err: &std::io::Error) -> String {
-    use std::io::ErrorKind;
-    let code = match err.kind() {
-        ErrorKind::NotFound => "ENOENT",
-        ErrorKind::PermissionDenied => "EACCES",
-        ErrorKind::AlreadyExists => "EEXIST",
-        ErrorKind::IsADirectory => "EISDIR",
-        ErrorKind::NotADirectory => "ENOTDIR",
-        _ => return err.to_string(),
-    };
-    format!("Error code: {code}")
-}
-
-/// The message Node gives a failed file system call, such as
-/// `ENOENT: no such file or directory, access '/a/b'`.
-pub fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
-    use std::io::ErrorKind;
-    let path = path.display();
-    match err.kind() {
-        ErrorKind::NotFound => format!("ENOENT: no such file or directory, {syscall} '{path}'"),
-        ErrorKind::PermissionDenied => format!("EACCES: permission denied, {syscall} '{path}'"),
-        // Node names no path for a read, as `readFile` reports it.
-        ErrorKind::IsADirectory if syscall == "read" => {
-            "EISDIR: illegal operation on a directory, read".to_owned()
-        }
-        ErrorKind::IsADirectory => {
-            format!("EISDIR: illegal operation on a directory, {syscall} '{path}'")
-        }
-        ErrorKind::NotADirectory => format!("ENOTDIR: not a directory, {syscall} '{path}'"),
-        _ => format!("{err}, {syscall} '{path}'"),
+    match yapi_types::js::errno(err.kind()) {
+        Some((code, _)) => format!("Error code: {code}"),
+        None => err.to_string(),
     }
 }
 

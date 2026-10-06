@@ -83,9 +83,54 @@ pub fn to_fixed(value: f64, digits: usize) -> String {
     format!("{}.{}", &text[..split], &text[split..])
 }
 
+/// Node's code and description for an I/O error of `kind`, such as
+/// `("ENOENT", "no such file or directory")`.
+pub fn errno(kind: std::io::ErrorKind) -> Option<(&'static str, &'static str)> {
+    use std::io::ErrorKind;
+    Some(match kind {
+        ErrorKind::NotFound => ("ENOENT", "no such file or directory"),
+        ErrorKind::PermissionDenied => ("EACCES", "permission denied"),
+        ErrorKind::AlreadyExists => ("EEXIST", "file already exists"),
+        ErrorKind::IsADirectory => ("EISDIR", "illegal operation on a directory"),
+        ErrorKind::NotADirectory => ("ENOTDIR", "not a directory"),
+        _ => return None,
+    })
+}
+
+/// The message Node gives a failed file system call, such as
+/// `ENOENT: no such file or directory, access '/a/b'`.
+pub fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
+    let path = path.display();
+    match errno(err.kind()) {
+        // Node names no path for a read, as `readFile` reports it.
+        Some(("EISDIR", text)) if syscall == "read" => format!("EISDIR: {text}, read"),
+        Some((code, text)) => format!("{code}: {text}, {syscall} '{path}'"),
+        None => format!("{err}, {syscall} '{path}'"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn words_io_errors_as_node() {
+        let error = |kind| std::io::Error::from(kind);
+        let path = std::path::Path::new("/a/b");
+        assert_eq!(
+            node_error(&error(std::io::ErrorKind::NotFound), "open", path),
+            "ENOENT: no such file or directory, open '/a/b'"
+        );
+        assert_eq!(
+            node_error(&error(std::io::ErrorKind::IsADirectory), "read", path),
+            "EISDIR: illegal operation on a directory, read"
+        );
+        assert_eq!(
+            node_error(&error(std::io::ErrorKind::AlreadyExists), "mkdir", path),
+            "EEXIST: file already exists, mkdir '/a/b'"
+        );
+        assert_eq!(errno(std::io::ErrorKind::Other), None);
+    }
 
     #[test]
     fn counts_and_slices_utf16_units() {

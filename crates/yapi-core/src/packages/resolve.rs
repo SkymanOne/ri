@@ -575,8 +575,7 @@ impl Manifest {
     /// is unreadable or declares neither key.
     pub(crate) fn read(root: &Path) -> Option<Manifest> {
         let text = std::fs::read_to_string(root.join("package.json")).ok()?;
-        let package: serde_json::Value =
-            serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+        let package: serde_json::Value = yapi_types::json::parse(&text).ok()?;
         let manifest = ["yapi", "pi"]
             .iter()
             .find_map(|key| package.get(*key).filter(|value| value.is_object()))?;

@@ -36,8 +36,8 @@ use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{
     BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer, SummaryRetry,
-    calculate_context_tokens, combine_usage, estimate_context_tokens,
-    estimate_projected_context_tokens, estimate_tokens, prepare_compaction, should_compact,
+    calculate_context_tokens, estimate_context_tokens, estimate_projected_context_tokens,
+    estimate_tokens, prepare_compaction, should_compact,
 };
 use crate::extensions::{
     Context, Extension, ExtensionUi, Loadout, Mode, NoUi, ToolRenderers, Tools,
@@ -707,9 +707,9 @@ impl AgentSession {
         {
             let mut scoped = lock(&self.inner.scoped_models);
             if scoped.is_empty()
-                || scoped.iter().any(|entry| {
-                    entry.model.provider == model.provider && entry.model.id == model.id
-                })
+                || scoped
+                    .iter()
+                    .any(|entry| entry.model.is(&model.provider, &model.id))
             {
                 return;
             }
@@ -777,7 +777,7 @@ impl AgentSession {
                 .filter(|entry| {
                     available
                         .iter()
-                        .any(|m| m.provider == entry.model.provider && m.id == entry.model.id)
+                        .any(|m| m.is(&entry.model.provider, &entry.model.id))
                 })
                 .map(|entry| (entry.model, entry.thinking_level))
                 .collect()
@@ -790,9 +790,9 @@ impl AgentSession {
         let index = self
             .model()
             .and_then(|current| {
-                models.iter().position(|(model, _)| {
-                    model.provider == current.provider && model.id == current.id
-                })
+                models
+                    .iter()
+                    .position(|(model, _)| model.is(&current.provider, &current.id))
             })
             .unwrap_or(0);
         let next = if forward {
@@ -1650,7 +1650,7 @@ impl AgentSession {
     /// The model whose limits apply to a response: the current one when it made it.
     fn model_for_message(&self, message: &AssistantMessage) -> Option<Model> {
         self.model()
-            .filter(|model| model.provider == message.provider && model.id == message.model)
+            .filter(|model| model.is(&message.provider, &message.model))
     }
 
     fn is_retryable(&self, message: &AssistantMessage) -> bool {
@@ -3309,7 +3309,7 @@ impl AgentHooks for Hooks {
         }
         if let Some(usage) = summary.usage {
             message.usage = Some(match &message.usage {
-                Some(own) => combine_usage(own, &usage),
+                Some(own) => own.combine(&usage),
                 None => usage,
             });
         }
