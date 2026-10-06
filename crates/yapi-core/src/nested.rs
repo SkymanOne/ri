@@ -38,7 +38,7 @@ impl Recorder {
             self.incomplete = true;
             return None;
         }
-        let json = yapi_types::json::to_string(&call.arguments).unwrap_or_default();
+        let json = yapi_types::json::stringify(&call.arguments);
         let bytes = json.len();
         let mut record = NestedToolCall {
             id: call.id.clone(),

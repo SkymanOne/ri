@@ -239,8 +239,7 @@ impl HttpTransport {
         if !self.inner.started.load(Ordering::SeqCst) || self.inner.closed.load(Ordering::SeqCst) {
             return Err(McpError::closed());
         }
-        let body = yapi_types::json::to_string(message)
-            .map_err(|error| McpError::Other(error.to_string()))?;
+        let body = yapi_types::json::stringify(message);
         let response = self
             .authorized(reqwest::Method::POST, Some(body), |headers| {
                 headers.insert(

@@ -15,19 +15,15 @@ use sha2::Digest as _;
 use tokio_util::sync::CancellationToken;
 use yapi_core::tools::{RegisteredTool, ToolEnv};
 
+use crate::instance::Options;
 use crate::loader::Loader;
-use crate::{Bridge, Grants, ops};
+use crate::{Bridge, ops};
 
 /// What an instance's requests and operations reach.
 pub(crate) struct Host {
     pub(crate) loader: Loader,
     pub(crate) bridge: Arc<dyn Bridge>,
-    pub(crate) grants: Grants,
-    pub(crate) cwd: PathBuf,
-    pub(crate) agent_dir: PathBuf,
-    pub(crate) home_dir: PathBuf,
-    pub(crate) temp_dir: PathBuf,
-    pub(crate) environment: Option<std::collections::BTreeMap<String, String>>,
+    pub(crate) options: Options,
 }
 
 fn denied(what: &str) -> String {
@@ -57,10 +53,18 @@ impl Host {
                     .log(text(payload, "level"), text(payload, "message"));
                 Ok(Value::Null)
             }
-            "cwd" => Ok(Value::String(self.cwd.to_string_lossy().into_owned())),
-            "home" => Ok(Value::String(self.home_dir.to_string_lossy().into_owned())),
-            "agentDir" => Ok(Value::String(self.agent_dir.to_string_lossy().into_owned())),
-            "tmpdir" => Ok(Value::String(self.temp_dir.to_string_lossy().into_owned())),
+            "cwd" => Ok(Value::String(
+                self.options.cwd.to_string_lossy().into_owned(),
+            )),
+            "home" => Ok(Value::String(
+                self.options.home_dir.to_string_lossy().into_owned(),
+            )),
+            "agentDir" => Ok(Value::String(
+                self.options.agent_dir.to_string_lossy().into_owned(),
+            )),
+            "tmpdir" => Ok(Value::String(
+                self.options.temp_dir.to_string_lossy().into_owned(),
+            )),
             // pi-ai's built-in catalog, which needs no session.
             "models.providers" => Ok(json!(
                 yapi_ai::catalog::builtin_providers().collect::<Vec<_>>()
@@ -74,19 +78,25 @@ impl Host {
                 .find(|model| model.id == text(payload, "id"))
                 .and_then(|model| serde_json::to_value(model).ok())
                 .unwrap_or_default()),
-            "models.envApiKey" if self.grants.environment && self.environment.is_none() => Ok(
-                yapi_ai::credentials::env_api_key(text(payload, "provider"), None)
-                    .map_or(Value::Null, |(_, key)| Value::String(key)),
-            ),
+            "models.envApiKey"
+                if self.options.grants.environment && self.options.environment.is_none() =>
+            {
+                Ok(
+                    yapi_ai::credentials::env_api_key(text(payload, "provider"), None)
+                        .map_or(Value::Null, |(_, key)| Value::String(key)),
+                )
+            }
             "models.envApiKey" => Ok(Value::Null),
             "platform" => Ok(Value::String(platform().into())),
             "env" => Ok(Value::Object(
-                if let (true, Some(environment)) = (self.grants.environment, &self.environment) {
+                if let (true, Some(environment)) =
+                    (self.options.grants.environment, &self.options.environment)
+                {
                     environment
                         .iter()
                         .map(|(key, value)| (key.clone(), Value::String(value.clone())))
                         .collect()
-                } else if self.grants.environment {
+                } else if self.options.grants.environment {
                     std::env::vars()
                         .chain(
                             yapi_core::config::child_env()
@@ -106,7 +116,7 @@ impl Host {
                 Ok(Value::String(STANDARD.encode(bytes)))
             }
             "hash" => hash(text(payload, "algorithm"), text(payload, "data")),
-            "exec.sync" if self.grants.process => ops::exec_sync(payload),
+            "exec.sync" if self.options.grants.process => ops::exec_sync(payload),
             "exec.sync" => Err(denied("Running processes")),
             "json.repair" => Ok(Value::String(yapi_ai::json_parse::repair_json(text(
                 payload, "text",
@@ -148,11 +158,11 @@ impl Host {
     ) -> BoxFuture<'static, Result<Value, String>> {
         match kind {
             "timer" => Box::pin(ops::timer(payload)),
-            "exec" if self.grants.process => Box::pin(ops::exec(payload)),
+            "exec" if self.options.grants.process => Box::pin(ops::exec(payload)),
             "exec" => Box::pin(async { Err(denied("Running processes")) }),
-            "fetch" if self.grants.network => Box::pin(ops::fetch(payload)),
+            "fetch" if self.options.grants.network => Box::pin(ops::fetch(payload)),
             "fetch" => Box::pin(async { Err(denied("Network access")) }),
-            "dns.lookup" if self.grants.network => Box::pin(ops::dns_lookup(payload)),
+            "dns.lookup" if self.options.grants.network => Box::pin(ops::dns_lookup(payload)),
             "dns.lookup" => Box::pin(async { Err(denied("Network access")) }),
             "builtin.execute" => {
                 let tool = match self.builtin_tool(&payload, true) {
@@ -177,20 +187,20 @@ impl Host {
     fn builtin_tool(&self, payload: &Value, run: bool) -> Result<RegisteredTool, String> {
         let name = text(payload, "name");
         let granted = if name == "bash" {
-            self.grants.process
+            self.options.grants.process
         } else {
-            self.grants.filesystem
+            self.options.grants.filesystem
         };
         if run && !granted {
             return Err(denied(&format!("The {name} tool")));
         }
         let cwd = payload["cwd"]
             .as_str()
-            .map_or_else(|| self.cwd.clone(), PathBuf::from);
+            .map_or_else(|| self.options.cwd.clone(), PathBuf::from);
         let env = ToolEnv {
             cwd,
             runtime: Arc::default(),
-            bin_dir: yapi_core::config::bin_dir(&self.agent_dir),
+            bin_dir: yapi_core::config::bin_dir(&self.options.agent_dir),
         };
         yapi_core::tools::builtin(name, &env)
             .ok_or_else(|| format!("Unknown built-in tool: {name}"))

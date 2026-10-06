@@ -163,8 +163,7 @@ pub fn estimate_tokens(message: &Message) -> u64 {
                 ContentBlock::Thinking(thinking) => yapi_types::js::len(&thinking.thinking),
                 ContentBlock::ToolCall(call) => {
                     yapi_types::js::len(&call.name)
-                        + yapi_types::json::to_string(&call.arguments)
-                            .map_or(0, |json| yapi_types::js::len(&json))
+                        + yapi_types::js::len(&yapi_types::json::stringify(&call.arguments))
                 }
                 ContentBlock::Image(_) => 0,
             })
@@ -540,10 +539,7 @@ pub fn serialize_conversation(messages: &[Message]) -> String {
                                 .arguments
                                 .iter()
                                 .map(|(key, value)| {
-                                    format!(
-                                        "{key}={}",
-                                        yapi_types::json::to_string(value).unwrap_or_default()
-                                    )
+                                    format!("{key}={}", yapi_types::json::stringify(value))
                                 })
                                 .collect();
                             calls.push(format!("{}({})", call.name, arguments.join(", ")));
@@ -1180,12 +1176,6 @@ pub fn collect_branch_entries(
     }
     entries.reverse();
     (entries, common)
-}
-
-/// Sum of two usages, as pi's `combineUsage`; [`Usage::combine`], kept for
-/// the crates that still call it.
-pub fn combine_usage(first: &Usage, second: &Usage) -> Usage {
-    first.combine(second)
 }
 
 #[cfg(test)]

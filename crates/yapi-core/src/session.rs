@@ -156,7 +156,7 @@ fn to_doc(entry: &FileEntry) -> Value {
 }
 
 fn line(doc: &Value) -> String {
-    yapi_types::json::to_string(doc).unwrap_or_default() + "\n"
+    yapi_types::json::stringify(doc) + "\n"
 }
 
 /// Reads the entries of a session file; empty when the file is missing or does not

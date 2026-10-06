@@ -1712,9 +1712,6 @@ mod tests {
                 .iter()
                 .any(|model| model.provider == "p")
         );
-        assert_eq!(
-            session.with_registry(|registry| registry.has_auth("p")),
-            Some(true)
-        );
+        assert!(session.with_registry(|registry| registry.has_auth("p")));
     }
 }

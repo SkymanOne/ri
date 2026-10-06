@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value};
-use yapi_core::packages::entry_source;
-use yapi_core::packages::resolve::{BUILTIN_PREFIX, ResolvedPaths, ResourceType};
+use yapi_core::packages::resolve::{BUILTIN_PREFIX, ResolvedPaths, ResourceType, string_list};
 use yapi_core::packages::source::{is_local, local_path};
+use yapi_core::packages::{entry_source, scope_dir, settings_packages};
 use yapi_core::settings::{Scope, SettingsManager};
 use yapi_core::tools::path::relative;
 use yapi_tui::lines::{self, StyledLine, styled};
@@ -384,34 +384,15 @@ impl ConfigSelector {
     }
 
     fn base(&self, scope: Scope) -> PathBuf {
-        match scope {
-            Scope::Project => self.cwd.join(yapi_core::config::PROJECT_DIR),
-            Scope::Global => self.agent_dir.clone(),
-        }
+        scope_dir(scope, &self.cwd, &self.agent_dir)
     }
 
-    /// The `packages` entries of `scope`'s settings.
     fn packages(&self, scope: Scope) -> Vec<Value> {
-        self.settings
-            .document(scope)
-            .get("packages")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
+        settings_packages(&self.settings, scope)
     }
 
     fn write(&mut self, scope: Scope, key: &str, value: Option<Value>) {
         let _ = self.settings.set(scope, key, value);
-    }
-
-    fn list(document: &Map<String, Value>, key: &str) -> Vec<String> {
-        document
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.as_str().map(str::to_owned))
-            .collect()
     }
 
     /// A package entry as an object; a bare source becomes `{"source": ...}`.
@@ -451,7 +432,7 @@ impl ConfigSelector {
         let sign = Some(if enabled { "+" } else { "-" });
         if item.info.origin == "top-level" {
             // pi's `getResourcePattern`: the pattern in the item's own scope.
-            let mut list = Self::list(self.settings.document(scope), key);
+            let mut list = string_list(self.settings.document(scope), key);
             Self::set_pattern(&mut list, &self.pattern_for_scope(item, scope), sign);
             self.write(scope, key, Some(Value::from(list)));
             return enabled;
@@ -466,7 +447,7 @@ impl ConfigSelector {
         let Some(mut entry) = Self::package_object(&packages[index]) else {
             return enabled;
         };
-        let mut list = Self::list(&entry, key);
+        let mut list = string_list(&entry, key);
         Self::set_pattern(&mut list, &Self::package_pattern(item), sign);
         entry.insert(key.to_owned(), Value::from(list));
         packages[index] = Value::Object(entry);
@@ -569,7 +550,7 @@ impl ConfigSelector {
             return Override::Inherit;
         }
         if item.info.origin == "top-level" {
-            let entries = Self::list(self.settings.document(Scope::Project), item.kind.key());
+            let entries = string_list(self.settings.document(Scope::Project), item.kind.key());
             return Self::state_from_entries(&entries, &self.top_level_patterns(item), false);
         }
         let Some(Value::Object(entry)) = self.matching_package(item) else {
@@ -613,7 +594,7 @@ impl ConfigSelector {
                 self.pattern_for_scope(item, Scope::Project)
             };
             let patterns = self.top_level_patterns(item);
-            let mut list = Self::list(self.settings.document(Scope::Project), key);
+            let mut list = string_list(self.settings.document(Scope::Project), key);
             list.retain(|entry| {
                 let target = strip_sign(entry);
                 if entry.starts_with(['!', '+', '-'])
@@ -668,7 +649,7 @@ impl ConfigSelector {
             Override::Load => Some("+"),
             Override::Unload => Some("-"),
         };
-        let mut list = Self::list(&entry, key);
+        let mut list = string_list(&entry, key);
         Self::set_pattern(&mut list, &Self::package_pattern(item), sign);
         if list.is_empty() {
             entry.remove(key);

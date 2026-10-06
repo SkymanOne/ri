@@ -126,9 +126,7 @@ impl StdioTransport {
         }
         let mut stdin = self.stdin.lock().await;
         let stdin = stdin.as_mut().ok_or_else(McpError::closed)?;
-        let line = yapi_types::json::to_string(message)
-            .map_err(|error| McpError::Other(error.to_string()))?
-            + "\n";
+        let line = yapi_types::json::stringify(message) + "\n";
         // A server that already exited fails the write as Node's does.
         let failed = |error: std::io::Error| {
             if error.kind() == std::io::ErrorKind::BrokenPipe {

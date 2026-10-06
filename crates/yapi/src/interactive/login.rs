@@ -41,8 +41,6 @@ pub struct ProviderOption {
     pub kind: LoginKind,
     /// Method name, searched but not shown.
     pub method: String,
-    /// Whether the method stores an API key; otherwise it is configured outside yapi.
-    pub can_login: bool,
     /// The current credential, if any.
     pub status: Option<Status>,
     /// Whether the OAuth sign-in is a subscription.
@@ -88,28 +86,24 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
                 name: name.clone(),
                 kind: LoginKind::OAuth,
                 method: flow.name().to_owned(),
-                can_login: true,
                 status: status.clone(),
                 subscription,
             });
         }
         // Custom providers take a key; OAuth-only built-ins do not.
         let api_key = match info {
-            Some(info) => info
-                .api_key
-                .map(|method| (method.name.to_owned(), method.login)),
-            None if id == llama => Some(("llama.cpp server".to_owned(), true)),
-            None => Some(("API key".to_owned(), true)),
+            Some(info) => info.api_key.map(|method| method.name.to_owned()),
+            None if id == llama => Some("llama.cpp server".to_owned()),
+            None => Some("API key".to_owned()),
         };
         if kind.is_none_or(|kind| kind == LoginKind::ApiKey)
-            && let Some((method, can_login)) = api_key
+            && let Some(method) = api_key
         {
             options.push(ProviderOption {
                 id,
                 name,
                 kind: LoginKind::ApiKey,
                 method,
-                can_login,
                 status,
                 subscription,
             });
@@ -137,7 +131,6 @@ pub fn logout_options(registry: &ModelRegistry) -> Vec<ProviderOption> {
                 id,
                 kind,
                 method: String::new(),
-                can_login: true,
                 status: Some(Status {
                     kind,
                     source: "stored credential".into(),
@@ -464,12 +457,12 @@ pub struct LoginDialog {
 }
 
 impl LoginDialog {
-    /// A dialog titled `Login to <name>`, or `title` when given.
-    pub fn new(name: &str, title: Option<&str>) -> LoginDialog {
+    /// A dialog titled `Login to <name>`.
+    pub fn new(name: &str) -> LoginDialog {
         let mut input = TextInput::new("> ");
         input.focused = true;
         LoginDialog {
-            title: title.map_or_else(|| format!("Login to {name}"), str::to_owned),
+            title: format!("Login to {name}"),
             rows: Vec::new(),
             input,
             pending: None,
@@ -554,12 +547,6 @@ impl LoginDialog {
     pub fn show_info(&mut self, message: &str, ui: &Ui<'_>) {
         self.rows.push(Row::Spacer);
         self.text(styled(message, ui.theme.fg("text")));
-    }
-
-    /// Adds the close hint of an information-only dialog.
-    pub fn show_close_hint(&mut self, ui: &Ui<'_>) {
-        self.rows.push(Row::Spacer);
-        self.text(Self::cancel_hint(ui, "to close"));
     }
 
     /// Asks a text, secret or pasted-code question.
@@ -851,35 +838,12 @@ impl super::App {
         }
     }
 
-    /// pi's `startProviderLogin`: the login dialog, or the setup notice for
-    /// providers configured outside yapi.
+    /// pi's `startProviderLogin`: the login dialog. Every method yapi offers
+    /// signs in, so pi's notice for providers configured outside it never shows.
     pub(super) fn start_login(&mut self, option: ProviderOption, back: Back) {
-        let ui = super::selectors::Ui {
-            theme: &self.theme,
-            keys: &self.keys,
-        };
-        if !option.can_login {
-            let mut dialog =
-                LoginDialog::new(&option.name, Some(&format!("{} setup", option.name)));
-            dialog.show_info(
-                &format!("{} is configured outside yapi.", option.method),
-                &ui,
-            );
-            dialog.show_close_hint(&ui);
-            self.selector = Some(super::selectors::Selector::Login(Box::new(dialog)));
-            self.login = Some(LoginRun {
-                id: 0,
-                option,
-                back,
-                parked: None,
-                select: None,
-                had_model: true,
-            });
-            return;
-        }
         self.next_login += 1;
         let id = self.next_login;
-        let mut dialog = LoginDialog::new(&option.name, None);
+        let mut dialog = LoginDialog::new(&option.name);
         if option.id == "amazon-bedrock" && option.kind == LoginKind::ApiKey {
             let theme = &self.theme;
             dialog.show_details(vec![

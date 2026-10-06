@@ -300,7 +300,7 @@ async fn check(
         if let Some(credential) = &credential {
             object.insert("credentials".into(), credential.as_str().into());
         }
-        yapi_types::json::to_string(&serde_json::Value::Object(object)).unwrap_or_default()
+        yapi_types::json::stringify(&object)
     } else {
         credential.unwrap_or_else(|| status.to_owned())
     };

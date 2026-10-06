@@ -4,6 +4,7 @@
 
 use serde_json::{Map, Value, json};
 use yapi_ai::registry::ModelRegistry;
+use yapi_types::json::stringify;
 
 /// `models.classify()` and `models.generateImages()` calls one script may
 /// have in flight; more wait for a slot.
@@ -21,11 +22,6 @@ pub(super) const GLOBALS: [&str; 5] = [
 const MODEL_TYPES: [&str; 3] = ["chat", "image", "classifier"];
 
 const CLASSIFIER_CONTEXT_SHAPE: &str = r#"{ state: { ... }, questions: { <id>: { type: "choice", instructions, criteria: { <label>: <meaning> } } | { type: "score", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", instructions, criteria: { true: <meaning>, false: <meaning> } } } }"#;
-
-/// A JSON value as `JSON.stringify` shows it in a message.
-fn stringify(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_default()
-}
 
 pub(crate) fn model_type(value: &Value) -> Result<&'static str, String> {
     value

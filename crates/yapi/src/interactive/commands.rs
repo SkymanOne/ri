@@ -877,7 +877,6 @@ impl super::App {
         if let Some(error) = self
             .session
             .with_registry(|registry| registry.error().map(str::to_owned))
-            .flatten()
         {
             self.error(format!("models.json error: {error}"));
         }

@@ -119,11 +119,7 @@ fn merge_default_tools(base: Option<&Value>, overrides: Option<&Value>) -> Optio
 
 impl SettingsManager {
     /// Loads both scopes; the project scope only when `project_trusted`.
-    pub fn load(
-        agent_dir: &Path,
-        cwd: &Path,
-        project_trusted: bool,
-    ) -> Result<SettingsManager, SettingsError> {
+    pub fn load(agent_dir: &Path, cwd: &Path, project_trusted: bool) -> SettingsManager {
         let global_path = agent_dir.join(ConfigFile::Settings.file_name());
         let project_path = cwd.join(PROJECT_DIR).join(ConfigFile::Settings.file_name());
         let mut errors = Vec::new();
@@ -161,7 +157,7 @@ impl SettingsManager {
             errors,
         };
         manager.remerge();
-        Ok(manager)
+        manager
     }
 
     /// Settings with no files behind them.

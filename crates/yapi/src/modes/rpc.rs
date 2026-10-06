@@ -135,9 +135,7 @@ impl RpcUi {
         line.insert("type".into(), json!("extension_ui_request"));
         line.insert("id".into(), json!(id));
         line.append(&mut request);
-        if let Ok(text) = yapi_types::json::to_string(&line) {
-            self.out.line(text);
-        }
+        self.out.line(yapi_types::json::stringify(&line));
     }
 
     /// Writes a request that needs no response.
@@ -218,9 +216,7 @@ impl ExtensionUi for RpcUi {
 
     fn extension_error(&self, path: &str, event: &str, error: &str, _stack: Option<&str>) {
         let line = json!({"type": "extension_error", "extensionPath": path, "event": event, "error": error});
-        if let Ok(text) = yapi_types::json::to_string(&line) {
-            self.out.line(text);
-        }
+        self.out.line(yapi_types::json::stringify(&line));
     }
 
     fn notify(&self, message: &str, kind: NotifyKind) {
@@ -437,9 +433,7 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
             "error".into(),
             format!("Unknown command: {}", js_string(kind)).into(),
         );
-        if let Ok(text) = yapi_types::json::to_string(&Value::Object(line)) {
-            rpc.out.line(text);
-        }
+        rpc.out.line(yapi_types::json::stringify(&line));
         return;
     }
     let name = command_name(&parsed);

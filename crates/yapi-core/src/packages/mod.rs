@@ -8,7 +8,6 @@
 
 pub mod npm;
 pub mod resolve;
-pub mod resources;
 pub mod source;
 
 use std::path::{Path, PathBuf};
@@ -18,7 +17,6 @@ use yapi_types::settings::FilteredPackage;
 
 use crate::config::PROJECT_DIR;
 use crate::settings::{Scope, SettingsError, SettingsManager};
-pub use resources::{PackageResources, package_resources};
 pub use source::{Source, parse};
 
 /// Why a package operation failed; the message is pi's where pi has one.
@@ -82,17 +80,9 @@ pub fn resolve_resources(
             agent_dir.to_path_buf()
         }
     };
-    let list = |scope: Scope| -> Vec<Value> {
-        settings
-            .document(scope)
-            .get("packages")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-    };
     let packages = resolve::package_inputs(
-        &list(Scope::Project),
-        &list(Scope::Global),
+        &settings_packages(settings, Scope::Project),
+        &settings_packages(settings, Scope::Global),
         base,
         |source, scope| install_location(source, &base(scope)),
     );
@@ -109,6 +99,25 @@ pub fn resolve_resources(
         project: [&project[0], &project[1], &project[2], &project[3]],
         builtins,
     })
+}
+
+/// The `packages` entries of `scope`'s settings.
+pub fn settings_packages(settings: &SettingsManager, scope: Scope) -> Vec<Value> {
+    settings
+        .document(scope)
+        .get("packages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// The directory a scope's packages and relative settings paths use: the
+/// agent directory for the user, the project's config directory otherwise.
+pub fn scope_dir(scope: Scope, cwd: &Path, agent_dir: &Path) -> PathBuf {
+    match scope {
+        Scope::Global => agent_dir.to_path_buf(),
+        Scope::Project => cwd.join(PROJECT_DIR),
+    }
 }
 
 /// A settings entry: a source string or a filtered package.
@@ -184,12 +193,8 @@ impl PackageManager {
         &self.settings
     }
 
-    /// The directory a scope's packages and relative settings paths use.
     fn base(&self, scope: Scope) -> PathBuf {
-        match scope {
-            Scope::Global => self.agent_dir.clone(),
-            Scope::Project => self.cwd.join(PROJECT_DIR),
-        }
+        scope_dir(scope, &self.cwd, &self.agent_dir)
     }
 
     fn npm_root(&self, scope: Scope) -> PathBuf {
@@ -348,12 +353,7 @@ impl PackageManager {
     }
 
     fn packages(&self, scope: Scope) -> Vec<Value> {
-        self.settings
-            .document(scope)
-            .get("packages")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
+        settings_packages(&self.settings, scope)
     }
 
     /// Whether settings entry `entry` of `scope` names the same package as
@@ -435,8 +435,14 @@ impl PackageManager {
                     let extensions = installed_path
                         .as_deref()
                         .map(|root| {
-                            package_resources(root, filters.as_ref(), source::is_local(&source))
-                                .extensions
+                            resolve::package_resources(
+                                root,
+                                filters.as_ref(),
+                                source::is_local(&source),
+                            )
+                            .enabled(resolve::ResourceType::Extensions)
+                            .map(|info| PathBuf::from(&info.path))
+                            .collect()
                         })
                         .unwrap_or_default();
                     Some(Configured {

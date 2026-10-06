@@ -260,8 +260,8 @@ impl AgentSession {
         }
     }
 
-    /// Model registry access; always `Some`.
-    pub fn with_registry<T>(&self, f: impl FnOnce(&ModelRegistry) -> T) -> Option<T> {
-        Some(f(&read(&self.inner.registry)))
+    /// Runs `f` with the model registry.
+    pub fn with_registry<T>(&self, f: impl FnOnce(&ModelRegistry) -> T) -> T {
+        f(&read(&self.inner.registry))
     }
 }

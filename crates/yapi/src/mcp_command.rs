@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use yapi_core::config::{APP_NAME, PROJECT_DIR, agent_dir};
+use yapi_core::mcp::ResourceKind;
 use yapi_core::mcp::config::{
     LoadedConfig, Scope, ServerEntry, ServerTransport, add_server_config, load,
     remove_server_config, resolve_exposure_aliases, validate_server,
@@ -632,7 +633,7 @@ async fn report(entry: ServerEntry, cwd: &Path, agent_dir: &Path) -> Report {
         .collect();
     if connected && snapshot.has_resources {
         let templates = connection
-            .all_resource_templates(Default::default())
+            .all_resources(ResourceKind::Templates, Default::default())
             .await
             .map(|templates| templates.len())
             .unwrap_or(0);

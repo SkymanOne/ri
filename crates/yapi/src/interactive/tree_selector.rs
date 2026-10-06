@@ -714,7 +714,7 @@ impl TreeSelector {
                 self.shorten(&field("path").map_or_else(|| ".".to_owned(), text))
             ),
             _ => {
-                let json = yapi_types::json::to_string(args).unwrap_or_default();
+                let json = yapi_types::json::stringify(args);
                 let cut: String = json.chars().take(40).collect();
                 let more = if yapi_types::js::len(&json) > 40 {
                     "..."

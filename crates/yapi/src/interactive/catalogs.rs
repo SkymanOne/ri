@@ -116,8 +116,7 @@ impl App {
         let models = self.session.available_models();
         let registry_error = self
             .session
-            .with_registry(|registry| registry.error().map(str::to_owned))
-            .flatten();
+            .with_registry(|registry| registry.error().map(str::to_owned));
         match &mut self.selector {
             Some(Selector::Model(selector)) if selector.refresh_id == id => {
                 let status = match failure(result, "showing cached models.") {

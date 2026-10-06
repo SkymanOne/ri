@@ -1043,15 +1043,22 @@ pub fn resolve(input: &ResolveInput<'_>) -> ResolvedPaths {
 /// The `extensions`, `skills`, `prompts` and `themes` lists of a settings
 /// document.
 pub fn settings_lists(document: &serde_json::Map<String, serde_json::Value>) -> [Vec<String>; 4] {
-    ResourceType::ALL.map(|kind| {
-        document
-            .get(kind.key())
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.as_str().map(str::to_owned))
-            .collect()
-    })
+    ResourceType::ALL.map(|kind| string_list(document, kind.key()))
+}
+
+/// The strings in list `key` of a settings document or package entry;
+/// entries of other types are skipped.
+pub fn string_list(
+    document: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Vec<String> {
+    document
+        .get(key)
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.as_str().map(str::to_owned))
+        .collect()
 }
 
 /// pi's `dedupePackages` and `findAutoloadDeltaBase`: the `packages` entries

@@ -65,7 +65,7 @@ fn configure(local: bool, trust: Option<bool>) -> anyhow::Result<u8> {
         eprintln!("Warning: {error}");
     }
     // Global mode shows what the user's settings alone resolve to.
-    let global_settings = SettingsManager::load(&agent_dir, &cwd, false)?;
+    let global_settings = SettingsManager::load(&agent_dir, &cwd, false);
     let builtins = crate::startup::BUILTINS;
     let global = resolve_resources(&cwd, &agent_dir, &global_settings, &builtins);
     let project = if trusted {
