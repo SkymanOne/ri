@@ -780,7 +780,7 @@ impl SettingsSelector {
                 "auto-resize-images",
                 "Auto-resize images",
                 "Resize large images to 2000x2000 max for better model compatibility",
-                images.auto_resize.unwrap_or(true),
+                settings.image_auto_resize(),
             ),
             bool_item(
                 "block-images",

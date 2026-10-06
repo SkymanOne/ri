@@ -47,7 +47,7 @@ pub const DEFAULT_TOOLS: [&str; 4] = ["read", "bash", "edit", "write"];
 pub const BUILTIN_TOOLS: [&str; 7] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
 /// Session state tools read while running.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Runtime {
     /// The current model.
     pub model: Option<Model>,
@@ -57,6 +57,21 @@ pub struct Runtime {
     pub session_id: Option<String>,
     /// The session file, when persisted.
     pub session_file: Option<PathBuf>,
+    /// The `images.autoResize` setting.
+    pub auto_resize_images: bool,
+}
+
+impl Default for Runtime {
+    /// No session state. Images resize, as in pi's tool factories.
+    fn default() -> Runtime {
+        Runtime {
+            model: None,
+            thinking_level: None,
+            session_id: None,
+            session_file: None,
+            auto_resize_images: true,
+        }
+    }
 }
 
 /// What built-in tools share: the working directory, the session state and

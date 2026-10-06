@@ -45,6 +45,17 @@ Pick a theme in `/settings` or with `"theme"` in settings. `--use-theme <name>` 
 
 `~/.yapi/agent/keybindings.json` changes the keys. The format and every action are in Pi's [key binding documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/keybindings.md), and `/hotkeys` shows the bindings in effect.
 
+## Images
+
+yapi prepares the images in prompts, `@path` arguments and tool results as Pi does before they reach the model.
+
+- BMP images are converted to PNG.
+- With `"images": {"autoResize": true}`, the default, larger images are scaled down to fit 2000×2000 pixels and 4.5 MB, or the limits the model sets. A scaled image may be sent as JPEG, and a note gives the model its original size.
+- An image in a prompt or a `read` result that cannot be converted or made to fit is left out, and a note says so.
+- `"images": {"blockImages": true}` keeps all images from the model.
+
+Both settings are also in `/settings`.
+
 ## Project trust
 
 Files in a project's `.yapi` folder can change how yapi behaves and can run code. The first time yapi starts in a project that has them, it asks whether to trust the folder.

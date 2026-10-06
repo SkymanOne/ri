@@ -12,7 +12,7 @@ use yapi_agent::hooks::AgentHooks;
 use yapi_ai::registry::Auth;
 use yapi_types::event::AgentEvent;
 use yapi_types::message::{
-    Content, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
+    Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
 };
 use yapi_types::model::Model;
 use yapi_types::rpc::StreamingBehavior;
@@ -339,41 +339,29 @@ impl AgentHooks for Hooks {
         call: yapi_agent::hooks::AfterToolCall<'a>,
     ) -> BoxFuture<'a, Option<yapi_agent::hooks::ResultPatch>> {
         Box::pin(async move {
-            let handlers = self.session.handlers_of("tool_result");
-            if handlers.is_empty() {
-                return None;
-            }
-            let ctx = self.session.extension_context(self.cancel.clone());
-            let mut event = serde_json::json!({
-                "type": "tool_result",
-                "toolName": call.tool_call.name,
-                "toolCallId": call.tool_call.id,
-            });
-            if let Some(parent) = call.parent_tool_call_id {
-                event["parentToolCallId"] = Value::String(parent.to_owned());
-            }
-            event["input"] = call.args.clone();
-            event["content"] = serde_json::json!(call.result.content);
-            event["details"] = serde_json::json!(call.result.details);
-            event["isError"] = Value::Bool(call.is_error);
-            let mut modified = false;
-            for extension in handlers {
-                let Some(result) = extension.handle(&ctx, &event).await else {
-                    continue;
-                };
-                for key in ["content", "details", "isError"] {
-                    if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
-                        event[key] = value.clone();
-                        modified = true;
-                    }
+            let mut patch = self.tool_result_handlers(&call).await;
+            // After the handlers, so images they add are normalized too.
+            let content = patch
+                .as_ref()
+                .and_then(|patch| patch.content.as_ref())
+                .unwrap_or(&call.result.content);
+            if content
+                .iter()
+                .any(|block| matches!(block, ContentBlock::Image(_)))
+            {
+                let content = content.clone();
+                let (auto_resize, limits) = self.session.image_options();
+                let normalized = tokio::task::spawn_blocking(move || {
+                    crate::images::normalize_tool_result(&content, auto_resize, limits.as_ref())
+                })
+                .await
+                .ok()
+                .flatten();
+                if let Some(content) = normalized {
+                    patch.get_or_insert_default().content = Some(content);
                 }
             }
-            modified.then(|| yapi_agent::hooks::ResultPatch {
-                content: serde_json::from_value(event["content"].clone()).ok(),
-                details: Some(event["details"].clone()).filter(|details| !details.is_null()),
-                is_error: event["isError"].as_bool(),
-                terminate: None,
-            })
+            patch
         })
     }
 
@@ -400,6 +388,50 @@ impl AgentHooks for Hooks {
     fn follow_up_messages(&self) -> BoxFuture<'_, Vec<Message>> {
         let messages = drain(&self.session.inner.follow_up, self.follow_up_mode);
         Box::pin(async move { messages })
+    }
+}
+
+impl Hooks {
+    /// pi's `tool_result` event: the changes its handlers make, if any.
+    async fn tool_result_handlers(
+        &self,
+        call: &yapi_agent::hooks::AfterToolCall<'_>,
+    ) -> Option<yapi_agent::hooks::ResultPatch> {
+        let handlers = self.session.handlers_of("tool_result");
+        if handlers.is_empty() {
+            return None;
+        }
+        let ctx = self.session.extension_context(self.cancel.clone());
+        let mut event = serde_json::json!({
+            "type": "tool_result",
+            "toolName": call.tool_call.name,
+            "toolCallId": call.tool_call.id,
+        });
+        if let Some(parent) = call.parent_tool_call_id {
+            event["parentToolCallId"] = Value::String(parent.to_owned());
+        }
+        event["input"] = call.args.clone();
+        event["content"] = serde_json::json!(call.result.content);
+        event["details"] = serde_json::json!(call.result.details);
+        event["isError"] = Value::Bool(call.is_error);
+        let mut modified = false;
+        for extension in handlers {
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            for key in ["content", "details", "isError"] {
+                if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
+                    event[key] = value.clone();
+                    modified = true;
+                }
+            }
+        }
+        modified.then(|| yapi_agent::hooks::ResultPatch {
+            content: serde_json::from_value(event["content"].clone()).ok(),
+            details: Some(event["details"].clone()).filter(|details| !details.is_null()),
+            is_error: event["isError"].as_bool(),
+            terminate: None,
+        })
     }
 }
 

@@ -1,12 +1,11 @@
 //! `read`: text files with offset and limit, images as attachments.
 
-use base64::Engine as _;
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
-use yapi_types::message::{ContentBlock, ImageContent, ToolDeclaration};
+use yapi_types::message::{ContentBlock, ToolDeclaration};
 
 use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, format_size, truncate_head,
@@ -38,9 +37,6 @@ impl Read {
         }
     }
 }
-
-/// Default inline image limit when the model sets none: 4.5 MB of base64.
-const DEFAULT_MAX_IMAGE_BYTES: usize = 4_718_592;
 
 impl Tool for Read {
     fn declaration(&self) -> &ToolDeclaration {
@@ -76,45 +72,41 @@ impl Read {
         let bytes = tokio::fs::read(&absolute)
             .await
             .map_err(|err| node_error(&err, "read", &absolute))?;
-        let model = self.env.runtime().model;
-        let non_vision_note = model
+        let runtime = self.env.runtime();
+        let non_vision_note = runtime
+            .model
             .as_ref()
             .filter(|model| !model.accepts_images())
             .map(|_| "[Current model does not support images. The image will be omitted from this request.]");
 
         if let Some(mime_type) = image_mime_type(&bytes) {
-            let max_bytes = model
+            let limits = runtime
+                .model
                 .as_ref()
-                .and_then(|model| model.input_limits.as_ref())
-                .and_then(|limits| limits.images.as_ref())
-                .and_then(|images| images.resize.as_ref())
-                .and_then(|resize| resize.max_bytes)
-                .map_or(DEFAULT_MAX_IMAGE_BYTES, |max| max as usize);
-            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            if mime_type == "image/bmp" || data.len() > max_bytes {
-                let reason = if mime_type == "image/bmp" {
-                    "[Image omitted: could not be converted to a supported inline image format.]"
-                } else {
-                    "[Image omitted: could not be resized below the inline image size limit.]"
-                };
-                let mut note = format!("Read image file [{mime_type}]\n{reason}");
-                if let Some(extra) = non_vision_note {
-                    note += &format!("\n{extra}");
+                .and_then(|model| model.image_resize().cloned());
+            let auto_resize = runtime.auto_resize_images;
+            let processed = tokio::task::spawn_blocking(move || {
+                crate::images::process(&bytes, mime_type, auto_resize, limits.as_ref())
+            })
+            .await
+            .map_err(|err| err.to_string())?;
+            let (mut note, image) = match processed {
+                Ok(processed) => {
+                    let mut note = format!("Read image file [{}]", processed.image.mime_type);
+                    for hint in processed.hints {
+                        note += &format!("\n{hint}");
+                    }
+                    (note, Some(processed.image))
                 }
-                return Ok(text_result(note, None));
-            }
-            let mut note = format!("Read image file [{mime_type}]");
+                Err(message) => (format!("Read image file [{mime_type}]\n{message}"), None),
+            };
             if let Some(extra) = non_vision_note {
                 note += &format!("\n{extra}");
             }
+            let mut content = vec![ContentBlock::text(note)];
+            content.extend(image.map(ContentBlock::Image));
             return Ok(ToolResult {
-                content: vec![
-                    ContentBlock::text(note),
-                    ContentBlock::Image(ImageContent {
-                        data,
-                        mime_type: mime_type.to_owned(),
-                    }),
-                ],
+                content,
                 ..ToolResult::default()
             });
         }
@@ -179,8 +171,10 @@ impl Read {
     }
 }
 
-/// The MIME type of a supported image, from its leading bytes.
+/// The MIME type of a supported image, from its first 4100 bytes as pi
+/// sniffs them.
 pub fn image_mime_type(bytes: &[u8]) -> Option<&'static str> {
+    let bytes = &bytes[..bytes.len().min(4100)];
     if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
         return (bytes.get(3) != Some(&0xf7)).then_some("image/jpeg");
     }
@@ -195,10 +189,35 @@ pub fn image_mime_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
         return Some("image/webp");
     }
-    if bytes.starts_with(b"BM") && bytes.len() >= 26 {
+    if bytes.starts_with(b"BM") && is_bmp(bytes) {
         return Some("image/bmp");
     }
     None
+}
+
+/// pi's `isBmp`: a plausible BMP header with a known pixel format.
+fn is_bmp(bytes: &[u8]) -> bool {
+    if bytes.len() < 26 {
+        return false;
+    }
+    // Bytes past the end read as zero, as in pi.
+    let u16_at = |at: usize| crate::images::array(bytes, at).map_or(0, u16::from_le_bytes);
+    let u32_at = |at: usize| {
+        crate::images::array(bytes, at).map_or(0, |quad| u64::from(u32::from_le_bytes(quad)))
+    };
+    let (file_size, pixel_offset, header_size) = (u32_at(2), u32_at(10), u32_at(14));
+    if (file_size != 0 && file_size < 26)
+        || pixel_offset < 14 + header_size
+        || (file_size != 0 && pixel_offset >= file_size)
+    {
+        return false;
+    }
+    let (planes, bits) = match header_size {
+        12 => (u16_at(22), u16_at(24)),
+        40..=124 if bytes.len() >= 30 => (u16_at(26), u16_at(28)),
+        _ => return false,
+    };
+    planes == 1 && [1, 4, 8, 16, 24, 32].contains(&bits)
 }
 
 fn is_animated_png(bytes: &[u8]) -> bool {

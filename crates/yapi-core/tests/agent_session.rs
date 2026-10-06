@@ -15,7 +15,9 @@ use yapi_ai::stream::{EventStream, Provider, Request};
 use yapi_core::agent_session::{AgentSession, Resources, SessionConfig, TreeNavigation};
 use yapi_core::session::SessionManager;
 use yapi_core::settings::SettingsManager;
-use yapi_types::message::{Message, StopReason, ThinkingLevel};
+use yapi_types::message::{
+    Content, ContentBlock, ImageContent, Message, StopReason, ThinkingLevel,
+};
 use yapi_types::model::Model;
 use yapi_types::session::FileEntry;
 
@@ -219,4 +221,93 @@ async fn a_manual_compaction_cancelled_mid_summary_records_nothing() {
             .entries()
             .any(|entry| matches!(entry, FileEntry::Compaction(_)))
     }));
+}
+
+/// A tool that returns a BMP screenshot, as tools of extensions may.
+struct Screenshot(yapi_types::message::ToolDeclaration, String);
+
+impl yapi_agent::Tool for Screenshot {
+    fn declaration(&self) -> &yapi_types::message::ToolDeclaration {
+        &self.0
+    }
+
+    fn execute(
+        &self,
+        _call_id: String,
+        _args: serde_json::Value,
+        _cancel: tokio_util::sync::CancellationToken,
+        _updates: yapi_agent::UpdateSink,
+    ) -> futures_util::future::BoxFuture<'_, Result<yapi_types::event::ToolResult, String>> {
+        Box::pin(async move {
+            Ok(yapi_types::event::ToolResult {
+                content: vec![ContentBlock::Image(bmp(&self.1))],
+                ..Default::default()
+            })
+        })
+    }
+}
+
+fn bmp(data: &str) -> ImageContent {
+    ImageContent {
+        data: data.to_owned(),
+        mime_type: "image/bmp".into(),
+    }
+}
+
+#[tokio::test]
+async fn prompt_and_tool_result_images_are_converted_as_pi() {
+    use base64::Engine as _;
+    let mut file = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut file, image::ImageOutputFormat::Bmp)
+        .unwrap();
+    let data = base64::engine::general_purpose::STANDARD.encode(file.into_inner());
+    let faux = Faux::new([
+        Response::tool_call("call-1", "screenshot", serde_json::json!({})),
+        Response::text("done"),
+    ]);
+    let session = session(&faux);
+    let declaration = yapi_types::message::ToolDeclaration {
+        name: "screenshot".into(),
+        description: "Take a screenshot".into(),
+        parameters: serde_json::json!({"type": "object"}),
+        constrained_sampling: None,
+    };
+    session
+        .tools()
+        .register(yapi_core::tools::RegisteredTool::direct(
+            Arc::new(Screenshot(declaration, data.clone())),
+            None,
+            Vec::new(),
+        ));
+    session.prompt("Look", vec![bmp(&data)]).await.unwrap();
+
+    let note = "[Image converted from image/bmp to image/png.]";
+    let messages = session.messages();
+    let user = messages
+        .iter()
+        .find_map(|message| match message {
+            Message::User(user) => Some(user),
+            _ => None,
+        })
+        .unwrap();
+    let Content::Blocks(blocks) = &user.content else {
+        panic!("blocks");
+    };
+    assert_eq!(blocks[0], ContentBlock::text(format!("Look\n\n{note}")));
+    let ContentBlock::Image(png) = &blocks[1] else {
+        panic!("image");
+    };
+    assert_eq!(png.mime_type, "image/png");
+    let result = messages
+        .iter()
+        .find_map(|message| match message {
+            Message::ToolResult(result) => Some(result),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        result.content,
+        [ContentBlock::Image(png.clone()), ContentBlock::text(note)]
+    );
 }

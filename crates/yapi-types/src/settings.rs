@@ -138,6 +138,16 @@ pub struct Settings {
     pub fullscreen_wheel_scroll_lines: Option<NumberOr<Auto>>,
 }
 
+impl Settings {
+    /// pi's `getImageAutoResize`: `images.autoResize`, on when unset.
+    pub fn image_auto_resize(&self) -> bool {
+        self.images
+            .as_ref()
+            .and_then(|images| images.auto_resize)
+            .unwrap_or(true)
+    }
+}
+
 /// A boolean or a specific alternative value.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]

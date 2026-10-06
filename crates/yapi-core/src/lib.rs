@@ -8,6 +8,7 @@ pub mod compaction;
 pub mod config;
 pub mod extensions;
 pub mod glob;
+pub mod images;
 pub mod import;
 pub mod llama;
 pub mod mcp;
