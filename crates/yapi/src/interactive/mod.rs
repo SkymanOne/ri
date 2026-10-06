@@ -3097,7 +3097,6 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     if let Some(error) = app
         .session
         .with_registry(|registry| registry.error().map(str::to_owned))
-        .flatten()
     {
         app.error(format!("models.json error: {error}"));
     }
