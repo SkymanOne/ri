@@ -6,7 +6,6 @@
 //! (`tui-alt-screen.ts`): a scrolling transcript above a dock pinned to the
 //! bottom of the alternate screen.
 
-use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use ratatui_core::style::Style;
@@ -29,7 +28,7 @@ fn clip(line: &StyledLine, width: usize) -> String {
 }
 
 /// A frame cursor position: row in the rendered lines and column.
-pub type Cursor = Option<(usize, usize)>;
+pub(crate) type Cursor = Option<(usize, usize)>;
 
 /// A component drawn over the screen, as pi-tui's overlays are: its rows from
 /// screen row `row` and column `col`, `width` columns wide.
@@ -375,7 +374,7 @@ fn replace_last_cell(
 /// of parts with natural heights `sizes` and minimums `minimums` in
 /// `available` rows. Each pass takes from every part above its minimum in
 /// proportion to its height, at least one row each, until the stack fits.
-pub fn shrink_stack(sizes: &[usize], minimums: &[usize], available: usize) -> Vec<usize> {
+pub(crate) fn shrink_stack(sizes: &[usize], minimums: &[usize], available: usize) -> Vec<usize> {
     let mut sizes: Vec<usize> = sizes
         .iter()
         .zip(minimums)
@@ -595,11 +594,6 @@ impl AltScreen {
         self.scroll_top = None;
     }
 
-    /// Whether the view follows new output.
-    pub fn following(&self) -> bool {
-        self.scroll_top.is_none()
-    }
-
     /// Draws a frame and returns the bytes to write. `cursor` is in dock
     /// coordinates.
     pub fn frame(
@@ -730,12 +724,6 @@ impl AltScreen {
     }
 }
 
-/// Writes `data` and flushes.
-pub fn write_all(out: &mut impl Write, data: &str) -> io::Result<()> {
-    out.write_all(data.as_bytes())?;
-    out.flush()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,7 +759,7 @@ mod tests {
         assert!(frame.contains("\x1b[1;1H\x1b[2K2"));
         assert!(frame.contains("Jump to latest"));
         screen.bottom();
-        assert!(screen.following());
+        assert!(screen.scroll_top.is_none());
     }
 
     #[test]

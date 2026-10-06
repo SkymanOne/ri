@@ -21,7 +21,7 @@ pub const SYSTEM_THEME_NAME: &str = "system";
 /// The built-in `dark` theme document.
 pub const DARK_THEME: &str = include_str!("../themes/dark.json");
 /// The built-in `light` theme document.
-pub const LIGHT_THEME: &str = include_str!("../themes/light.json");
+pub(crate) const LIGHT_THEME: &str = include_str!("../themes/light.json");
 
 /// Background tokens; every other token is a foreground.
 pub const BACKGROUND_TOKENS: [&str; 7] = [
@@ -35,7 +35,7 @@ pub const BACKGROUND_TOKENS: [&str; 7] = [
 ];
 
 /// Tokens a theme document must define.
-pub const REQUIRED_TOKENS: [&str; 51] = [
+pub(crate) const REQUIRED_TOKENS: [&str; 51] = [
     "accent",
     "border",
     "borderAccent",
@@ -437,11 +437,6 @@ impl Theme {
         self.mode
     }
 
-    /// The background the theme is designed for, when known.
-    pub fn appearance(&self) -> Option<Appearance> {
-        self.appearance
-    }
-
     /// The `export` section's page, card and info backgrounds as CSS colors,
     /// each `None` when unset.
     pub fn export_colors(&self) -> [Option<&str>; 3] {
@@ -535,7 +530,7 @@ impl Theme {
 }
 
 /// `light/dark` theme settings: the light and dark theme names.
-pub fn parse_auto_theme_setting(setting: &str) -> Option<(String, String)> {
+pub(crate) fn parse_auto_theme_setting(setting: &str) -> Option<(String, String)> {
     let (light, dark) = setting.split_once('/')?;
     if dark.contains('/') {
         return None;
@@ -1131,7 +1126,7 @@ pub struct SystemThemeInput {
 
 /// A generated token value.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SystemValue {
+pub(crate) enum SystemValue {
     /// The terminal's default color.
     Default,
     /// A palette index the terminal renders itself.
@@ -1142,7 +1137,7 @@ pub enum SystemValue {
 
 /// The generated system theme.
 #[derive(Clone, Debug, PartialEq)]
-pub struct SystemThemeColors {
+pub(crate) struct SystemThemeColors {
     /// Token values, in pi's token order.
     pub colors: Vec<(&'static str, SystemValue)>,
     /// Foreground tokens rendered faint.
@@ -1165,7 +1160,7 @@ fn relative_luminance(rgb: [f64; 3]) -> f64 {
 }
 
 /// WCAG 2 contrast ratio, 1 to 21.
-pub fn wcag_contrast(first: [f64; 3], second: [f64; 3]) -> f64 {
+pub(crate) fn wcag_contrast(first: [f64; 3], second: [f64; 3]) -> f64 {
     let (a, b) = (relative_luminance(first), relative_luminance(second));
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
@@ -1308,7 +1303,7 @@ fn indexed_colors(saturation: f64, appearance: Option<Appearance>) -> SystemThem
 }
 
 /// Generates the system theme's colors.
-pub fn generate_system_theme(input: &SystemThemeInput) -> SystemThemeColors {
+pub(crate) fn generate_system_theme(input: &SystemThemeInput) -> SystemThemeColors {
     let saturation = input.saturation.clamp(0.0, 1.0);
     let Some(background) = input.background else {
         return indexed_colors(saturation, input.appearance_hint);
@@ -1483,11 +1478,92 @@ fn set(colors: &mut [(&'static str, SystemValue)], token: &str, value: SystemVal
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
+    /// System theme colors against pi's, recorded by
+    /// `tests/fixtures/pi/generator/theme.mjs`.
+    fn fixture() -> Value {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/pi/theme/theme.json"
+        ))
+        .unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    fn rgb(value: &Value) -> Option<[f64; 3]> {
+        let value = value.as_object()?;
+        Some(["r", "g", "b"].map(|channel| value[channel].as_f64().unwrap()))
+    }
+
+    #[test]
+    fn system_themes_match_pi() {
+        let fixture = fixture();
+        let mut failures = Vec::new();
+        for (name, case) in fixture["system"].as_object().unwrap() {
+            let input = &case["input"];
+            let generated = generate_system_theme(&SystemThemeInput {
+                foreground: rgb(&input["foreground"]),
+                background: rgb(&input["background"]),
+                palette: input["palette"]
+                    .as_array()
+                    .map(|palette| palette.iter().map(|entry| rgb(entry).unwrap()).collect()),
+                saturation: input["saturation"].as_f64().unwrap_or(1.0),
+                appearance_hint: match input["appearanceHint"].as_str() {
+                    Some("light") => Some(Appearance::Light),
+                    Some("dark") => Some(Appearance::Dark),
+                    _ => None,
+                },
+            });
+            for (token, value) in case["colors"].as_object().unwrap() {
+                let expected = match value {
+                    Value::Number(index) => SystemValue::Index(index.as_u64().unwrap() as u8),
+                    Value::String(text) if text.is_empty() => SystemValue::Default,
+                    Value::String(hex) => SystemValue::Rgb(
+                        [1, 3, 5]
+                            .map(|at| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap())),
+                    ),
+                    other => panic!("unexpected value {other}"),
+                };
+                let actual = generated
+                    .colors
+                    .iter()
+                    .find(|(t, _)| t == token)
+                    .map(|(_, value)| *value);
+                if actual != Some(expected) {
+                    failures.push(format!("{name} {token}: pi {expected:?}, yapi {actual:?}"));
+                }
+            }
+            let dim: Vec<&str> = case["dim"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|token| token.as_str().unwrap())
+                .collect();
+            if generated.dim != dim {
+                failures.push(format!("{name} dim: pi {dim:?}, yapi {:?}", generated.dim));
+            }
+            let appearance = match case["appearance"].as_str() {
+                Some("dark") => Some(Appearance::Dark),
+                Some("light") => Some(Appearance::Light),
+                _ => None,
+            };
+            if generated.appearance != appearance {
+                failures.push(format!("{name} appearance"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} differences:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
 
     #[test]
     fn loads_builtin_themes() {
         let dark = Theme::builtin("dark", ColorMode::TrueColor).unwrap();
-        assert_eq!(dark.appearance(), Some(Appearance::Dark));
+        assert_eq!(dark.appearance, Some(Appearance::Dark));
         assert!(matches!(dark.paint("thinkingMax"), Some(Paint::Color(_))));
         assert_eq!(dark.paint("searchMatchText"), dark.paint("muted"));
         let light = Theme::builtin("light", ColorMode::Ansi256).unwrap();

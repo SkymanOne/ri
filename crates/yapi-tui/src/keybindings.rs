@@ -214,15 +214,6 @@ pub fn tui_definitions() -> Vec<Definition> {
     .collect()
 }
 
-/// Two or more actions the user bound to one key.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Conflict {
-    /// The contested key id.
-    pub key: String,
-    /// The actions claiming it, in the order the user listed them.
-    pub actions: Vec<String>,
-}
-
 /// User bindings in file order: action id to key ids. An empty list unbinds
 /// the action.
 pub type UserBindings = IndexMap<String, Vec<String>>;
@@ -243,31 +234,12 @@ pub struct Keybindings {
     keys: Keys,
     definitions: Vec<Definition>,
     resolved: HashMap<&'static str, Vec<String>>,
-    conflicts: Vec<Conflict>,
 }
 
 impl Keybindings {
     /// Bindings for `definitions`, with `user` replacing an action's defaults
     /// wherever it names that action.
     pub fn new(keys: Keys, definitions: Vec<Definition>, user: &UserBindings) -> Keybindings {
-        let mut claims: Vec<(String, Vec<String>)> = Vec::new();
-        for (id, bound) in user {
-            if !definitions.iter().any(|definition| definition.id == id) {
-                continue;
-            }
-            for key in dedup(bound.iter().cloned()) {
-                match claims.iter_mut().find(|(claimed, _)| *claimed == key) {
-                    Some((_, actions)) if !actions.contains(id) => actions.push(id.clone()),
-                    Some(_) => {}
-                    None => claims.push((key, vec![id.clone()])),
-                }
-            }
-        }
-        let conflicts = claims
-            .into_iter()
-            .filter(|(_, actions)| actions.len() > 1)
-            .map(|(key, actions)| Conflict { key, actions })
-            .collect();
         let resolved = definitions
             .iter()
             .map(|definition| {
@@ -282,7 +254,6 @@ impl Keybindings {
             keys,
             definitions,
             resolved,
-            conflicts,
         }
     }
 
@@ -311,11 +282,6 @@ impl Keybindings {
     /// The definitions, in declaration order.
     pub fn definitions(&self) -> &[Definition] {
         &self.definitions
-    }
-
-    /// Keys the user bound to more than one action.
-    pub fn conflicts(&self) -> &[Conflict] {
-        &self.conflicts
     }
 }
 
@@ -349,22 +315,5 @@ mod tests {
         assert!(!bindings.matches("\x1f", "tui.editor.undo"));
         assert!(bindings.matches("\x1b[D", "tui.editor.cursorLeft"));
         assert!(bindings.keys("unknown.action").is_empty());
-        assert!(bindings.conflicts().is_empty());
-    }
-
-    #[test]
-    fn reports_conflicts() {
-        let map = user(&[
-            ("tui.editor.yank", &["ctrl+y"]),
-            ("tui.editor.undo", &["ctrl+y", "ctrl+z"]),
-        ]);
-        let bindings = Keybindings::new(Keys::default(), tui_definitions(), &map);
-        assert_eq!(
-            bindings.conflicts(),
-            [Conflict {
-                key: "ctrl+y".into(),
-                actions: vec!["tui.editor.yank".into(), "tui.editor.undo".into()],
-            }]
-        );
     }
 }

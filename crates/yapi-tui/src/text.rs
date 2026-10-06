@@ -60,7 +60,7 @@ pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool
 }
 
 /// The longest grapheme-aligned prefix of `text` within `width` columns.
-pub fn take_width(text: &str, width: usize) -> String {
+pub(crate) fn take_width(text: &str, width: usize) -> String {
     let mut out = String::new();
     let mut used = 0;
     for grapheme in text.graphemes(true) {
@@ -75,7 +75,7 @@ pub fn take_width(text: &str, width: usize) -> String {
 }
 
 /// JavaScript's `\s`.
-pub fn is_js_whitespace(c: char) -> bool {
+pub(crate) fn is_js_whitespace(c: char) -> bool {
     matches!(
         c,
         '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
@@ -90,12 +90,12 @@ pub fn is_js_whitespace(c: char) -> bool {
 }
 
 /// Whether `text` contains a JavaScript `\s` character.
-pub fn has_whitespace(text: &str) -> bool {
+pub(crate) fn has_whitespace(text: &str) -> bool {
     text.chars().any(is_js_whitespace)
 }
 
 /// pi's `PUNCTUATION_REGEX` class.
-pub fn is_ascii_punctuation(c: char) -> bool {
+pub(crate) fn is_ascii_punctuation(c: char) -> bool {
     "(){}[]<>.,;:'\"!?+-=*/\\|&%^$#@~`".contains(c)
 }
 
@@ -103,7 +103,7 @@ pub fn is_ascii_punctuation(c: char) -> bool {
 /// Script_Extensions, between which lines may break anywhere: pi's
 /// `cjkBreakRegex`. The ranges are the code points that regex matches in
 /// Node 22 (Unicode 16.0).
-pub fn is_cjk(c: char) -> bool {
+pub(crate) fn is_cjk(c: char) -> bool {
     matches!(
         u32::from(c),
         0xB7
@@ -177,14 +177,14 @@ pub fn is_cjk(c: char) -> bool {
 }
 
 /// Whether a grapheme contains a CJK character.
-pub fn has_cjk(text: &str) -> bool {
+pub(crate) fn has_cjk(text: &str) -> bool {
     text.chars().any(is_cjk)
 }
 
 /// Characters that end an autocomplete token: whitespace and pi's
 /// `cjkPunctuationRegex`, CJK characters that are punctuation plus
 /// fullwidth marks. The ranges are the code points it matches in Node 22.
-pub fn is_autocomplete_separator(c: char) -> bool {
+pub(crate) fn is_autocomplete_separator(c: char) -> bool {
     is_js_whitespace(c)
         || matches!(
             u32::from(c),

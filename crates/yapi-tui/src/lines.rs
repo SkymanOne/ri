@@ -227,7 +227,7 @@ pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine
 /// A wide character cut by the left edge becomes spaces; one cut by the
 /// right edge is dropped, so the rest of the base moves left and the line is
 /// padded at its end. The result is no wider than `total`.
-pub fn composite(
+pub(crate) fn composite(
     base: &Line<'_>,
     top: &Line<'_>,
     col: usize,
@@ -279,7 +279,7 @@ pub fn composite(
 }
 
 /// Pads a line with spaces to `width` columns.
-pub fn pad(mut line: StyledLine, width: usize) -> StyledLine {
+pub(crate) fn pad(mut line: StyledLine, width: usize) -> StyledLine {
     let used = self::width(&line);
     if used < width {
         line.spans.push(Span::raw(" ".repeat(width - used)));
@@ -288,7 +288,7 @@ pub fn pad(mut line: StyledLine, width: usize) -> StyledLine {
 }
 
 /// `spans` with `style` under each; a span's own style wins.
-pub fn under(spans: Vec<Span<'static>>, style: Style) -> Vec<Span<'static>> {
+pub(crate) fn under(spans: Vec<Span<'static>>, style: Style) -> Vec<Span<'static>> {
     spans
         .into_iter()
         .map(|span| Span::styled(span.content, style.patch(span.style)))
@@ -296,7 +296,7 @@ pub fn under(spans: Vec<Span<'static>>, style: Style) -> Vec<Span<'static>> {
 }
 
 /// Pads a line to `width`, with `bg` under every span when given.
-pub fn fill(line: StyledLine, width: usize, bg: Option<Style>) -> StyledLine {
+pub(crate) fn fill(line: StyledLine, width: usize, bg: Option<Style>) -> StyledLine {
     let line = pad(line, width);
     match bg {
         Some(bg) => Line::from(under(line.spans, bg)),

@@ -6,11 +6,11 @@
 
 /// Requests Kitty keyboard flags 7 (disambiguate, event types, alternate
 /// keys), queries them, and asks for device attributes as a sentinel.
-pub const KEYBOARD_QUERY: &str = "\x1b[>7u\x1b[?u\x1b[c";
+pub(crate) const KEYBOARD_QUERY: &str = "\x1b[>7u\x1b[?u\x1b[c";
 /// Pops the Kitty keyboard flags.
 pub const KITTY_DISABLE: &str = "\x1b[<u";
 /// Enables xterm `modifyOtherKeys` mode 2.
-pub const MODIFY_OTHER_KEYS_ENABLE: &str = "\x1b[>4;2m";
+pub(crate) const MODIFY_OTHER_KEYS_ENABLE: &str = "\x1b[>4;2m";
 /// Disables `modifyOtherKeys`.
 pub const MODIFY_OTHER_KEYS_DISABLE: &str = "\x1b[>4;0m";
 /// Enables bracketed paste.
@@ -203,7 +203,7 @@ fn osc_color(value: &str) -> Option<[f64; 3]> {
 
 /// Which color an OSC reply reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ColorTarget {
+pub(crate) enum ColorTarget {
     /// OSC 10.
     Foreground,
     /// OSC 11.
@@ -213,7 +213,7 @@ pub enum ColorTarget {
 }
 
 /// Parses an OSC 10, 11 or 4 reply; the color is `None` when unparseable.
-pub fn parse_osc_color(sequence: &str) -> Option<(ColorTarget, Option<[f64; 3]>)> {
+pub(crate) fn parse_osc_color(sequence: &str) -> Option<(ColorTarget, Option<[f64; 3]>)> {
     let body = sequence.strip_prefix("\x1b]")?;
     let body = body
         .strip_suffix('\x07')

@@ -101,7 +101,7 @@ struct LayoutLine {
     clippy::single_range_in_vec_init,
     reason = "a line that fits is one chunk"
 )]
-pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Range<usize>> {
+pub(crate) fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Range<usize>> {
     if line.is_empty() || max_width == 0 {
         return vec![0..0];
     }

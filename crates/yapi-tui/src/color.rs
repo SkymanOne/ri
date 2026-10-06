@@ -216,7 +216,7 @@ fn chroma_stops(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
 }
 
 /// OKHSL (hue in degrees, saturation and lightness 0 to 1) to sRGB.
-pub fn okhsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> [f64; 3] {
+pub(crate) fn okhsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> [f64; 3] {
     let l = okhsl_to_oklab_lightness(lightness);
     let mut lab = [l, 0.0, 0.0];
     if l > 0.0 && l < 1.0 && saturation > 0.0 {
@@ -238,12 +238,12 @@ pub fn okhsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> [f64; 3] {
 }
 
 /// Oklab lightness to OKHSL lightness.
-pub fn oklab_to_okhsl_lightness(x: f64) -> f64 {
+pub(crate) fn oklab_to_okhsl_lightness(x: f64) -> f64 {
     0.5 * (K3 * x - K1 + ((K3 * x - K1).powi(2) + 4.0 * K2 * K3 * x).sqrt())
 }
 
 /// sRGB to OKHSL: hue in degrees (0 for grays), saturation and lightness 0 to 1.
-pub fn rgb_to_okhsl(rgb: [f64; 3]) -> (f64, f64, f64) {
+pub(crate) fn rgb_to_okhsl(rgb: [f64; 3]) -> (f64, f64, f64) {
     let [l, a, b] = rgb_to_oklab(rgb);
     let chroma = a.hypot(b);
     let lightness = oklab_to_okhsl_lightness(l);
@@ -370,7 +370,7 @@ fn component(text: &str, deg: bool) -> Option<(f64, bool)> {
 
 impl Color {
     /// Parses a theme color: `#rgb`, `#rrggbb`, `oklch(L C H)`, `okhsl(H S L)`.
-    pub fn parse(value: &str) -> Result<Color, InvalidColor> {
+    pub(crate) fn parse(value: &str) -> Result<Color, InvalidColor> {
         let invalid = || InvalidColor(value.to_owned());
         if let Some(hex) = value.strip_prefix('#')
             && (hex.len() == 3 || hex.len() == 6)
@@ -417,7 +417,7 @@ impl Color {
     }
 
     /// sRGB channels.
-    pub fn to_rgb(self) -> [f64; 3] {
+    pub(crate) fn to_rgb(self) -> [f64; 3] {
         match self {
             Color::Indexed(index) => indexed_to_rgb(index),
             Color::Rgb(r, g, b) => [r, g, b],
@@ -437,7 +437,7 @@ impl Color {
     }
 
     /// OKLCH channels.
-    pub fn to_oklch(self) -> (f64, f64, f64) {
+    pub(crate) fn to_oklch(self) -> (f64, f64, f64) {
         if let Color::Oklch(l, c, h) = self {
             return (l, c, h);
         }
@@ -446,7 +446,7 @@ impl Color {
     }
 
     /// `amount` (0 to 1) of the way from `self` to `other`, in OKLCH.
-    pub fn mix(self, other: Color, amount: f64) -> Color {
+    pub(crate) fn mix(self, other: Color, amount: f64) -> Color {
         let (al, ac, ah) = self.to_oklch();
         let (bl, bc, bh) = other.to_oklch();
         let first_hue = if ac < 1e-7 { bh } else { ah };
@@ -496,7 +496,7 @@ fn color_distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 /// The nearest 256-color palette entry.
-pub fn rgb_to_ansi256(rgb: [f64; 3]) -> u8 {
+pub(crate) fn rgb_to_ansi256(rgb: [f64; 3]) -> u8 {
     let [r, g, b] = rgb.map(|channel| closest(&CUBE_VALUES, channel));
     let cube = [CUBE_VALUES[r], CUBE_VALUES[g], CUBE_VALUES[b]];
     let cube_index = 16 + 36 * r + 6 * g + b;

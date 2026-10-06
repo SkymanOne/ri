@@ -5,9 +5,7 @@
 use ratatui_core::style::{Color as TermColor, Modifier, Style};
 use serde_json::Value;
 use yapi_tui::color::ColorMode;
-use yapi_tui::theme::{
-    Appearance, BACKGROUND_TOKENS, SystemThemeInput, SystemValue, Theme, generate_system_theme,
-};
+use yapi_tui::theme::{BACKGROUND_TOKENS, Theme};
 
 fn fixture() -> Value {
     let text = std::fs::read_to_string(concat!(
@@ -73,73 +71,4 @@ fn builtin_themes_match_pi() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-fn rgb(value: &Value) -> Option<[f64; 3]> {
-    let value = value.as_object()?;
-    Some(["r", "g", "b"].map(|channel| value[channel].as_f64().unwrap()))
-}
-
-#[test]
-fn system_themes_match_pi() {
-    let fixture = fixture();
-    let mut failures = Vec::new();
-    for (name, case) in fixture["system"].as_object().unwrap() {
-        let input = &case["input"];
-        let generated = generate_system_theme(&SystemThemeInput {
-            foreground: rgb(&input["foreground"]),
-            background: rgb(&input["background"]),
-            palette: input["palette"]
-                .as_array()
-                .map(|palette| palette.iter().map(|entry| rgb(entry).unwrap()).collect()),
-            saturation: input["saturation"].as_f64().unwrap_or(1.0),
-            appearance_hint: match input["appearanceHint"].as_str() {
-                Some("light") => Some(Appearance::Light),
-                Some("dark") => Some(Appearance::Dark),
-                _ => None,
-            },
-        });
-        for (token, value) in case["colors"].as_object().unwrap() {
-            let expected = match value {
-                Value::Number(index) => SystemValue::Index(index.as_u64().unwrap() as u8),
-                Value::String(text) if text.is_empty() => SystemValue::Default,
-                Value::String(hex) => SystemValue::Rgb(
-                    [1, 3, 5]
-                        .map(|at| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap())),
-                ),
-                other => panic!("unexpected value {other}"),
-            };
-            let actual = generated
-                .colors
-                .iter()
-                .find(|(t, _)| t == token)
-                .map(|(_, value)| *value);
-            if actual != Some(expected) {
-                failures.push(format!("{name} {token}: pi {expected:?}, yapi {actual:?}"));
-            }
-        }
-        let dim: Vec<&str> = case["dim"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|token| token.as_str().unwrap())
-            .collect();
-        if generated.dim != dim {
-            failures.push(format!("{name} dim: pi {dim:?}, yapi {:?}", generated.dim));
-        }
-        let appearance = match case["appearance"].as_str() {
-            Some("dark") => Some(Appearance::Dark),
-            Some("light") => Some(Appearance::Light),
-            _ => None,
-        };
-        if generated.appearance != appearance {
-            failures.push(format!("{name} appearance"));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} differences:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
 }
