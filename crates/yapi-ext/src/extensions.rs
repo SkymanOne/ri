@@ -219,28 +219,48 @@ impl ExtensionHost {
         })
     }
 
+    /// A new id for an operation the host may abort in the guest.
+    fn next_id(&self) -> u64 {
+        self.bridge.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Runs guest call `kind` for operation `payload.id`. When `cancel`
+    /// fires first, aborts the operation's signal and waits for the call to
+    /// end, as pi awaits an aborted operation.
+    async fn call_abortable(
+        &self,
+        kind: &str,
+        payload: &Value,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        let mut call = std::pin::pin!(self.instance.call(kind, payload));
+        match cancel.run_until_cancelled(&mut call).await {
+            Some(result) => result,
+            None => {
+                let _ = self
+                    .instance
+                    .call("abort", &json!({"id": payload["id"]}))
+                    .await;
+                call.await
+            }
+        }
+    }
+
     /// Streams `request` through the extension that implements its API, as
     /// the guest emits the events, and aborts the guest's stream when the
     /// request is cancelled.
     async fn stream(&self, request: Request, sender: EventSender) {
-        let id = self.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = self.next_id();
         let cancel = request.options.cancel.clone();
         let output = new_output(&request.model, now_ms());
         lock(&self.bridge.streams).insert(id, (sender.clone(), Some(output)));
         let payload = json!({
-            "stream": id,
+            "id": id,
             "model": request.model,
             "context": {"messages": request.messages},
             "options": crate::streams::options_json(&request.options),
         });
-        let mut call = std::pin::pin!(self.instance.call("stream", &payload));
-        let result = match cancel.run_until_cancelled(&mut call).await {
-            Some(result) => result,
-            None => {
-                let _ = self.instance.call("abort", &json!({"id": id})).await;
-                call.await
-            }
-        };
+        let result = self.call_abortable("stream", &payload, &cancel).await;
         let running = lock(&self.bridge.streams)
             .remove(&id)
             .and_then(|(_, output)| output);
@@ -351,42 +371,46 @@ struct JsOAuth {
 }
 
 impl JsOAuth {
-    /// Runs guest call `kind` for this provider with `payload`, as operation
-    /// `id` that `cancel` aborts.
+    /// Runs guest call `kind` for this provider with `payload`, as an
+    /// operation that `cancel` aborts and whose prompts go to `interaction`.
     async fn call(
         &self,
         kind: &str,
         mut payload: Value,
+        interaction: Option<&Interaction>,
         cancel: &CancellationToken,
     ) -> Result<Value, AuthError> {
         let host = self
             .host
             .upgrade()
             .ok_or_else(|| AuthError::Failed(Error::Stopped.to_string()))?;
-        let id = host.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = host.next_id();
         payload["provider"] = json!(self.provider);
         payload["id"] = json!(id);
-        match cancel
-            .run_until_cancelled(host.instance.call(kind, &payload))
-            .await
-        {
-            Some(result) => result.map_err(|err| AuthError::Failed(err.to_string())),
-            None => {
-                let _ = host.instance.call("abort", &json!({"id": id})).await;
-                Err(AuthError::Cancelled)
-            }
+        if let Some(interaction) = interaction {
+            lock(&host.bridge.logins).insert(id, interaction.clone());
         }
+        let result = host.call_abortable(kind, &payload, cancel).await;
+        lock(&host.bridge.logins).remove(&id);
+        result.map_err(|err| {
+            if cancel.is_cancelled() {
+                AuthError::Cancelled
+            } else {
+                AuthError::Failed(err.to_string())
+            }
+        })
     }
 
     async fn credential(
         &self,
         kind: &str,
         payload: Value,
+        interaction: Option<&Interaction>,
         cancel: &CancellationToken,
     ) -> Result<OAuthCredential, AuthError> {
-        let mut credential: OAuthCredential =
-            serde_json::from_value(self.call(kind, payload, cancel).await?)
-                .map_err(|err| AuthError::Failed(format!("Invalid OAuth credentials: {err}")))?;
+        let value = self.call(kind, payload, interaction, cancel).await?;
+        let mut credential: OAuthCredential = serde_json::from_value(value)
+            .map_err(|err| AuthError::Failed(format!("Invalid OAuth credentials: {err}")))?;
         credential.extra.remove("type");
         Ok(credential)
     }
@@ -406,19 +430,12 @@ impl OAuthProvider for JsOAuth {
         interaction: &'a Interaction,
         _options: &'a LoginOptions,
     ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
-        Box::pin(async move {
-            let host = self
-                .host
-                .upgrade()
-                .ok_or_else(|| AuthError::Failed(Error::Stopped.to_string()))?;
-            let login = host.bridge.next_id.fetch_add(1, Ordering::Relaxed);
-            lock(&host.bridge.logins).insert(login, interaction.clone());
-            let result = self
-                .credential("oauthLogin", json!({"login": login}), interaction.cancel())
-                .await;
-            lock(&host.bridge.logins).remove(&login);
-            result
-        })
+        Box::pin(self.credential(
+            "oauthLogin",
+            json!({}),
+            Some(interaction),
+            interaction.cancel(),
+        ))
     }
 
     fn refresh<'a>(
@@ -426,7 +443,12 @@ impl OAuthProvider for JsOAuth {
         credential: &'a OAuthCredential,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
-        Box::pin(self.credential("oauthRefresh", json!({"credential": credential}), cancel))
+        Box::pin(self.credential(
+            "oauthRefresh",
+            json!({"credential": credential}),
+            None,
+            cancel,
+        ))
     }
 
     fn to_auth<'a>(
@@ -438,6 +460,7 @@ impl OAuthProvider for JsOAuth {
                 .call(
                     "oauthApiKey",
                     json!({"credential": credential}),
+                    None,
                     &CancellationToken::new(),
                 )
                 .await?;
@@ -639,22 +662,18 @@ impl JsExtension {
         allow_network: bool,
         options: &RefreshOptions,
     ) -> Result<Option<Vec<ModelDefinition>>, String> {
-        let id = self.shared.bridge.next_id.fetch_add(1, Ordering::Relaxed);
         let stored = registry
             .models_store()
             .and_then(|store| store.read(provider));
         let payload = json!({
-            "provider": provider, "id": id, "credential": credential, "stored": stored,
-            "allowNetwork": allow_network, "force": options.force,
+            "provider": provider, "id": self.shared.next_id(), "credential": credential,
+            "stored": stored, "allowNetwork": allow_network, "force": options.force,
         });
-        let call = self.shared.instance.call("refreshModels", &payload);
-        let models = match options.cancel.run_until_cancelled(call).await {
-            Some(result) => result.map_err(|err| err.to_string())?,
-            None => {
-                let _ = self.shared.instance.call("abort", &json!({"id": id})).await;
-                return Err(format!("Model refresh aborted for {provider}"));
-            }
-        };
+        let models = self
+            .shared
+            .call_abortable("refreshModels", &payload, &options.cancel)
+            .await
+            .map_err(|err| err.to_string())?;
         if models.is_null() {
             return Ok(None);
         }
@@ -850,9 +869,9 @@ impl Extension for JsExtension {
                 .collect();
             let mut lists = Vec::new();
             for provider in providers {
-                let stored = registry.store().get(&provider);
+                let credential = registry.store().get(&provider);
                 let offline = self
-                    .refresh_phase(&provider, registry, stored, false, options)
+                    .refresh_phase(&provider, registry, credential, false, options)
                     .await;
                 let failed = offline.is_err();
                 lists.extend(offline.transpose().map(|list| (provider.clone(), list)));
@@ -1084,7 +1103,8 @@ struct SessionBridge {
     /// Running extension streams by id, with an empty message for failures
     /// until their final event.
     streams: Mutex<HashMap<u64, (EventSender, Option<AssistantMessage>)>>,
-    /// The next id of a stream.
+    /// The next id of an operation the host may abort in the guest: a
+    /// stream, a sign-in or a model refresh.
     next_id: AtomicU64,
     owner: OnceLock<Weak<ExtensionHost>>,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
@@ -1427,9 +1447,9 @@ impl Bridge for SessionBridge {
             return Ok(Value::Null);
         }
         if kind == "oauth.notify" {
-            let interaction = payload["login"]
+            let interaction = payload["id"]
                 .as_u64()
-                .and_then(|login| lock(&self.logins).get(&login).cloned());
+                .and_then(|id| lock(&self.logins).get(&id).cloned());
             if let (Some(interaction), Some(event)) = (interaction, auth_event(&payload["event"])) {
                 interaction.notify(event);
             }
@@ -1437,9 +1457,8 @@ impl Bridge for SessionBridge {
         }
         if kind == "provider.event" {
             let mut streams = lock(&self.streams);
-            let Some((sender, running)) = payload["stream"]
-                .as_u64()
-                .and_then(|id| streams.get_mut(&id))
+            let Some((sender, running)) =
+                payload["id"].as_u64().and_then(|id| streams.get_mut(&id))
             else {
                 return Ok(Value::Null);
             };
@@ -1620,9 +1639,9 @@ impl Bridge for SessionBridge {
 
     fn start(&self, kind: &str, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
         if kind == "oauth.prompt" {
-            let interaction = payload["login"]
+            let interaction = payload["id"]
                 .as_u64()
-                .and_then(|login| lock(&self.logins).get(&login).cloned());
+                .and_then(|id| lock(&self.logins).get(&id).cloned());
             return Box::pin(async move {
                 let interaction = interaction.ok_or_else(|| AuthError::Cancelled.to_string())?;
                 interaction

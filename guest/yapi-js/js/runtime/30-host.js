@@ -1008,32 +1008,34 @@
 			}
 		}
 	}
-	/** Runs `run` with provider `payload.provider`'s `oauth` and an abort signal for `payload.id`. */
-	async function withOAuth(payload, run) {
-		const oauth = providerConfig(payload.provider)?.oauth;
-		if (!oauth) throw new Error(`Provider ${payload.provider} has no OAuth sign-in`);
+	/** Runs `run` with an abort signal that the host's `abort` of `id` fires. */
+	async function abortable(id, run) {
 		const controller = new AbortController();
-		aborts.set(payload.id, controller);
+		aborts.set(id, controller);
 		try {
-			return plain(await run(oauth, controller.signal)) ?? null;
+			return await run(controller.signal);
 		} finally {
-			aborts.delete(payload.id);
+			aborts.delete(id);
 		}
 	}
-	/** pi's `lazyStream` message for a stream that failed. */
-	function setupError(model, error) {
-		return {
-			role: "assistant",
-			content: [],
-			api: model.api,
-			provider: model.provider,
-			model: model.id,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-			stopReason: "error",
-			errorMessage: errorMessage(error),
-			timestamp: Date.now(),
-		};
+	/** Runs `run` with provider `payload.provider`'s `oauth` as operation `payload.id`. */
+	function withOAuth(payload, run) {
+		const oauth = providerConfig(payload.provider)?.oauth;
+		if (!oauth) throw new Error(`Provider ${payload.provider} has no OAuth sign-in`);
+		return abortable(payload.id, async (signal) => plain(await run(oauth, signal)) ?? null);
 	}
+	/** pi's `lazyStream` message for a stream that failed; pi-ai's facade uses it too. */
+	const setupError = (yapi.setupError = (model, error) => ({
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "error",
+		errorMessage: errorMessage(error),
+		timestamp: Date.now(),
+	}));
 
 	// ----- dispatch -------------------------------------------------------------------------------
 	const extensionOf = (id) => {
@@ -1204,29 +1206,27 @@
 		 * with pi's setup error.
 		 */
 		async stream(payload) {
-			const { stream: id, model, context } = payload;
-			const controller = new AbortController();
-			aborts.set(id, controller);
-			const send = (event) => yapi.request("provider.event", { stream: id, ...event });
-			try {
-				const config = providerConfig(model.provider);
-				const options = { ...payload.options, signal: controller.signal };
-				let events;
-				if (typeof config?.streamSimple === "function" && config.api === model.api) events = config.streamSimple(model, context, options);
-				else {
-					const api = yapi.apiProviders?.get(model.api)?.provider;
-					if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
-					events = api.streamSimple(model, context, options);
+			const { id, model, context } = payload;
+			const send = (event) => yapi.request("provider.event", { id, ...event });
+			await abortable(id, async (signal) => {
+				try {
+					const config = providerConfig(model.provider);
+					const options = { ...payload.options, signal };
+					let events;
+					if (typeof config?.streamSimple === "function" && config.api === model.api) events = config.streamSimple(model, context, options);
+					else {
+						const api = yapi.apiProviders?.get(model.api)?.provider;
+						if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
+						events = api.streamSimple(model, context, options);
+					}
+					for await (const event of events) {
+						send(wireEvent(event));
+						if (event.type === "done" || event.type === "error") break;
+					}
+				} catch (error) {
+					send({ type: "error", message: setupError(model, error) });
 				}
-				for await (const event of events) {
-					send(wireEvent(event));
-					if (event.type === "done" || event.type === "error") break;
-				}
-			} catch (error) {
-				send({ type: "error", message: setupError(model, error) });
-			} finally {
-				aborts.delete(id);
-			}
+			});
 			return null;
 		},
 		/** Aborts stream or sign-in `id`. */
@@ -1236,11 +1236,11 @@
 		},
 		/**
 		 * Runs provider `provider`'s `oauth.login` with callbacks that reach
-		 * the host's sign-in `login`, as pi's provider composer adapts them.
+		 * the host's sign-in `id`, as pi's provider composer adapts them.
 		 */
 		oauthLogin(payload) {
-			const notify = (event) => yapi.request("oauth.notify", { login: payload.login, event });
-			const prompt = (question) => yapi.op("oauth.prompt", { login: payload.login, prompt: question });
+			const notify = (event) => yapi.request("oauth.notify", { id: payload.id, event });
+			const prompt = (question) => yapi.op("oauth.prompt", { id: payload.id, prompt: question });
 			return withOAuth(payload, (oauth, signal) =>
 				oauth.login({
 					onAuth: (info) => notify({ type: "auth_url", ...info }),
@@ -1267,25 +1267,21 @@
 		async refreshModels(payload) {
 			const config = providerConfig(payload.provider);
 			if (typeof config?.refreshModels !== "function") return null;
-			const controller = new AbortController();
-			aborts.set(payload.id, controller);
-			try {
-				const models = await config.refreshModels({
+			const models = await abortable(payload.id, (signal) =>
+				config.refreshModels({
 					credential: payload.credential ?? undefined,
 					stored: payload.stored ?? undefined,
 					allowNetwork: !!payload.allowNetwork,
 					force: payload.allowNetwork ? payload.force : undefined,
-					signal: controller.signal,
+					signal,
 					publish: async (publication) => {
 						if (publication.persist !== undefined) await yapi.op("models.persist", { provider: payload.provider, entry: plain(publication.persist) ?? null });
 						publication.update?.();
 						return true;
 					},
-				});
-				return plain(models) ?? null;
-			} finally {
-				aborts.delete(payload.id);
-			}
+				}),
+			);
+			return plain(models) ?? null;
 		},
 		/**
 		 * Builds the component a tool's `renderCall`/`renderResult` or a

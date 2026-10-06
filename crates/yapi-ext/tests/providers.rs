@@ -155,6 +155,28 @@ fn registry_and_apis(host: &Arc<ExtensionHost>, dir: &Path) -> (ModelRegistry, A
     (registry, apis)
 }
 
+/// A session on the extensions' providers in `dir`, without a model.
+fn session_config(host: &Arc<ExtensionHost>, dir: &Path) -> SessionConfig {
+    let (registry, apis) = registry_and_apis(host, dir);
+    SessionConfig {
+        cwd: dir.to_path_buf(),
+        agent_dir: dir.join("agent"),
+        settings: SettingsManager::in_memory(),
+        registry,
+        apis,
+        session: SessionManager::in_memory(dir),
+        model: None,
+        thinking_level: ThinkingLevel::Off,
+        tools: Vec::new(),
+        extensions: host.for_session(),
+        include_extension_tools: true,
+        allowed_tools: None,
+        excluded_tools: Vec::new(),
+        docs: yapi_core::docs::Locations::default(),
+        resources: Resources::default(),
+    }
+}
+
 fn request(model: Model, cancel: CancellationToken) -> Request {
     Request {
         model,
@@ -310,28 +332,17 @@ async fn registered_apis_stream_models_of_any_provider() {
 async fn the_session_runs_on_an_extension_provider() {
     let dir = scratch("provider-session");
     let host = load(&dir).await;
-    let (registry, apis) = registry_and_apis(&host, &dir);
-    let model = registry.find("echo", "options").unwrap().clone();
-    assert!(registry.has_auth("echo"));
+    let config = session_config(&host, &dir);
+    let model = config.registry.find("echo", "options").unwrap().clone();
+    assert!(config.registry.has_auth("echo"));
     let session = AgentSession::new(SessionConfig {
-        cwd: dir.clone(),
-        agent_dir: dir.join("agent"),
-        settings: SettingsManager::in_memory(),
-        registry,
-        apis,
-        session: SessionManager::in_memory(&dir),
         model: Some(model),
         thinking_level: ThinkingLevel::High,
-        tools: Vec::new(),
-        extensions: host.for_session(),
-        include_extension_tools: true,
-        allowed_tools: None,
-        excluded_tools: Vec::new(),
-        docs: yapi_core::docs::Locations::default(),
         resources: Resources {
             custom_prompt: Some("Be brief.".into()),
             ..Resources::default()
         },
+        ..config
     });
     session.prompt("hi", Vec::new()).await.unwrap();
     let Some(Message::Assistant(reply)) = session.messages().last().cloned() else {
@@ -447,25 +458,6 @@ async fn oauth_providers_sign_in_store_and_refresh() {
 async fn refresh_models_replaces_and_persists_the_model_list() {
     let dir = scratch("provider-refresh");
     let host = load(&dir).await;
-    let session = |registry: ModelRegistry, apis: Apis| {
-        AgentSession::new(SessionConfig {
-            cwd: dir.clone(),
-            agent_dir: dir.join("agent"),
-            settings: SettingsManager::in_memory(),
-            registry,
-            apis,
-            session: SessionManager::in_memory(&dir),
-            model: None,
-            thinking_level: ThinkingLevel::Off,
-            tools: Vec::new(),
-            extensions: host.for_session(),
-            include_extension_tools: true,
-            allowed_tools: None,
-            excluded_tools: Vec::new(),
-            docs: yapi_core::docs::Locations::default(),
-            resources: Resources::default(),
-        })
-    };
     let ids = |session: &AgentSession| -> Vec<(String, String)> {
         session
             .registry()
@@ -482,8 +474,7 @@ async fn refresh_models_replaces_and_persists_the_model_list() {
     };
 
     // Online, the extension's list replaces the registered one and persists.
-    let (registry, apis) = registry_and_apis(&host, &dir);
-    let first = session(registry, apis);
+    let first = AgentSession::new(session_config(&host, &dir));
     assert_eq!(ids(&first), [("dyn-static".into(), "Static".into())]);
     let result = first.refresh_model_catalogs(only_dyn(true)).await;
     assert!(result.errors.is_empty(), "{:?}", result.errors);
@@ -499,8 +490,7 @@ async fn refresh_models_replaces_and_persists_the_model_list() {
     first.shutdown().await;
 
     // Offline, a later session restores the stored list.
-    let (registry, apis) = registry_and_apis(&host, &dir);
-    let second = session(registry, apis);
+    let second = AgentSession::new(session_config(&host, &dir));
     second.refresh_model_catalogs(only_dyn(false)).await;
     assert_eq!(
         ids(&second),

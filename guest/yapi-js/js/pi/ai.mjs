@@ -182,7 +182,7 @@ function hostStream(model, context, options, api) {
 		} finally {
 			signal?.removeEventListener("abort", abort);
 		}
-	})().catch((error) => stream.push({ type: "error", reason: "error", error: setupErrorMessage(model, error) }));
+	})().catch((error) => stream.push({ type: "error", reason: "error", error: yapi.setupError(model, error) }));
 	return stream;
 }
 /** yapi's implementation of wire API `api`. */
@@ -240,8 +240,6 @@ export function stream(model, context, options) {
 }
 export const complete = (model, context, options) => streamSimple(model, context, options).result();
 export const completeSimple = complete;
-
-const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 
 // ----- models ------------------------------------------------------------------------------------
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -572,19 +570,6 @@ const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses
 export function hasApi(api) {
 	return HOST_APIS.includes(api);
 }
-function setupErrorMessage(model, error) {
-	return {
-		role: "assistant",
-		content: [],
-		api: model.api,
-		provider: model.provider,
-		model: model.id,
-		usage: emptyUsage(),
-		stopReason: "error",
-		errorMessage: error instanceof Error ? error.message : String(error),
-		timestamp: Date.now(),
-	};
-}
 export function lazyStream(model, setup) {
 	const outer = new AssistantMessageEventStream();
 	setup()
@@ -593,7 +578,7 @@ export function lazyStream(model, setup) {
 			outer.end(typeof inner.result === "function" ? await inner.result() : undefined);
 		})
 		.catch((error) => {
-			const message = setupErrorMessage(model, error);
+			const message = yapi.setupError(model, error);
 			outer.push({ type: "error", reason: "error", error: message });
 			outer.end(message);
 		});
