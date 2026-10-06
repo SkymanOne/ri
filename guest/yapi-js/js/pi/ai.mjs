@@ -114,20 +114,82 @@ export function createAssistantMessageEventStream() {
 }
 
 // ----- completions on yapi's providers --------------------------------------------------------------
-function hostStream(model, context, options) {
+/**
+ * Streams with yapi's implementation of `api`, or of the model's API. The
+ * host sends the events that have arrived each time it is asked; the live
+ * message is rebuilt here from them.
+ */
+function hostStream(model, context, options, api) {
 	const stream = new AssistantMessageEventStream();
-	const { signal, onPayload, ...rest } = options ?? {};
-	yapi.op("ai.complete", { model, context, options: rest }).then(
-		(message) => {
-			stream.push({ type: "start", partial: message });
-			stream.push(message.stopReason === "error" || message.stopReason === "aborted" ? { type: "error", reason: message.stopReason, error: message } : { type: "done", reason: message.stopReason, message });
-		},
-		(error) => stream.push({ type: "error", reason: "error", error: { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: "error", errorMessage: error.message, timestamp: Date.now() } }),
-	);
+	const { signal, onPayload, onResponse, onProviderStreamEvent, ...rest } = options ?? {};
+	(async () => {
+		const id = await yapi.op("ai.stream", { api, model, context: normalizeContext(context), options: rest });
+		const abort = () => yapi.request("ai.abort", { id });
+		if (signal?.aborted) abort();
+		else signal?.addEventListener("abort", abort, { once: true });
+		try {
+			let partial;
+			const arguments_ = [];
+			for (;;) {
+				const batch = await yapi.op("ai.next", { id });
+				if (batch.length === 0) return;
+				for (const wire of batch) {
+					if (wire.type === "start") {
+						partial = wire.message;
+						stream.push({ type: "start", partial });
+					} else if (wire.type === "done") stream.push({ type: "done", reason: wire.message.stopReason, message: wire.message });
+					else if (wire.type === "error") stream.push({ type: "error", reason: wire.message.stopReason, error: wire.message });
+					else {
+						const { id: callId, toolName, ...event } = wire.event;
+						const index = event.contentIndex;
+						const content = partial.content;
+						switch (event.type) {
+							case "text_start":
+								content[index] = { type: "text", text: "" };
+								break;
+							case "text_delta":
+								content[index].text += event.delta;
+								break;
+							case "text_end":
+								content[index].text = event.content;
+								break;
+							case "thinking_start":
+								content[index] = { type: "thinking", thinking: "" };
+								break;
+							case "thinking_delta":
+								content[index].thinking += event.delta;
+								break;
+							case "thinking_end":
+								content[index].thinking = event.content;
+								break;
+							case "toolcall_start":
+								content[index] = { type: "toolCall", id: callId, name: toolName, arguments: {} };
+								arguments_[index] = "";
+								break;
+							case "toolcall_delta":
+								arguments_[index] += event.delta;
+								content[index].arguments = parseStreamingJson(arguments_[index]);
+								break;
+							case "toolcall_end":
+								content[index] = event.toolCall;
+								break;
+						}
+						partial.usage = wire.usage;
+						stream.push({ ...event, partial });
+					}
+				}
+			}
+		} finally {
+			signal?.removeEventListener("abort", abort);
+		}
+	})().catch((error) => stream.push({ type: "error", reason: "error", error: setupErrorMessage(model, error) }));
 	return stream;
 }
-/** Every wire API runs on yapi's provider for the model's `api`. */
-const hostApi = { stream: hostStream, streamSimple: hostStream };
+/** yapi's implementation of wire API `api`. */
+const hostApi = (api) => {
+	const run = (model, context, options) => hostStream(model, context, options, api);
+	return { stream: run, streamSimple: run };
+};
 
 // ----- API providers -----------------------------------------------------------------------------
 // pi-ai's registry. A stream an extension registers for an API serves its
@@ -158,7 +220,7 @@ export function registerApiProvider(provider, sourceId) {
 	});
 }
 export function getApiProvider(api) {
-	return apiProviders.get(api)?.provider ?? (BUILTIN_APIS.includes(api) ? { api, ...hostApi } : undefined);
+	return apiProviders.get(api)?.provider ?? (BUILTIN_APIS.includes(api) ? { api, ...hostApi(api) } : undefined);
 }
 export const getApiProviders = () => Array.from(apiProviders.values(), (entry) => entry.provider);
 export function unregisterApiProviders(sourceId) {
@@ -380,13 +442,13 @@ export class ModelsError extends Error {
 	}
 }
 export function anthropicMessagesApi() {
-	return hostApi;
+	return hostApi("anthropic-messages");
 }
 export function azureOpenAIResponsesApi() {
-	return hostApi;
+	return hostApi("azure-openai-responses");
 }
 export function bedrockConverseStreamApi() {
-	return hostApi;
+	return hostApi("bedrock-converse-stream");
 }
 const KNOWN_MODEL_TYPES = ["chat", "image", "classifier"];
 export function createProvider(input) {
@@ -501,10 +563,10 @@ export function envApiKeyAuth(name, envVars) {
 	};
 }
 export function googleGenerativeAIApi() {
-	return hostApi;
+	return hostApi("google-generative-ai");
 }
 export function googleVertexApi() {
-	return hostApi;
+	return hostApi("google-vertex");
 }
 const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses", "azure-openai-responses", "openai-codex-responses", "google-generative-ai", "mistral-conversations"];
 export function hasApi(api) {
@@ -517,7 +579,7 @@ function setupErrorMessage(model, error) {
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		usage: emptyUsage(),
 		stopReason: "error",
 		errorMessage: error instanceof Error ? error.message : String(error),
 		timestamp: Date.now(),
@@ -572,36 +634,36 @@ export function lazyOAuth(input) {
 	};
 }
 export function mistralConversationsApi() {
-	return hostApi;
+	return hostApi("mistral-conversations");
 }
 export function openAICodexResponsesApi() {
-	return hostApi;
+	return hostApi("openai-codex-responses");
 }
 export function openAICompletionsApi() {
-	return hostApi;
+	return hostApi("openai-completions");
 }
 export function openAIResponsesApi() {
-	return hostApi;
+	return hostApi("openai-responses");
 }
 export function piMessagesApi() {
-	return hostApi;
+	return hostApi("pi-messages");
 }
-export const streamAnthropic = hostStream;
-export const streamAzureOpenAIResponses = hostStream;
-export const streamGoogle = hostStream;
-export const streamGoogleVertex = hostStream;
-export const streamMistral = hostStream;
-export const streamOpenAICodexResponses = hostStream;
-export const streamOpenAICompletions = hostStream;
-export const streamOpenAIResponses = hostStream;
-export const streamSimpleAnthropic = hostStream;
-export const streamSimpleAzureOpenAIResponses = hostStream;
-export const streamSimpleGoogle = hostStream;
-export const streamSimpleGoogleVertex = hostStream;
-export const streamSimpleMistral = hostStream;
-export const streamSimpleOpenAICodexResponses = hostStream;
-export const streamSimpleOpenAICompletions = hostStream;
-export const streamSimpleOpenAIResponses = hostStream;
+export const streamAnthropic = hostApi("anthropic-messages").stream;
+export const streamAzureOpenAIResponses = hostApi("azure-openai-responses").stream;
+export const streamGoogle = hostApi("google-generative-ai").stream;
+export const streamGoogleVertex = hostApi("google-vertex").stream;
+export const streamMistral = hostApi("mistral-conversations").stream;
+export const streamOpenAICodexResponses = hostApi("openai-codex-responses").stream;
+export const streamOpenAICompletions = hostApi("openai-completions").stream;
+export const streamOpenAIResponses = hostApi("openai-responses").stream;
+export const streamSimpleAnthropic = hostApi("anthropic-messages").streamSimple;
+export const streamSimpleAzureOpenAIResponses = hostApi("azure-openai-responses").streamSimple;
+export const streamSimpleGoogle = hostApi("google-generative-ai").streamSimple;
+export const streamSimpleGoogleVertex = hostApi("google-vertex").streamSimple;
+export const streamSimpleMistral = hostApi("mistral-conversations").streamSimple;
+export const streamSimpleOpenAICodexResponses = hostApi("openai-codex-responses").streamSimple;
+export const streamSimpleOpenAICompletions = hostApi("openai-completions").streamSimple;
+export const streamSimpleOpenAIResponses = hostApi("openai-responses").streamSimple;
 
 // ----- subpath modules ------------------------------------------------------------------------------
 // pi-ai's subpaths (`/providers/*`, `/api/*`, `/utils/*`, `/models`, `/compat`,

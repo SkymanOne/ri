@@ -1,19 +1,28 @@
 //! Requests and operations the runtime itself answers: modules, the process
-//! environment, randomness, hashing, processes, HTTP and JSON helpers. Grants
+//! environment, randomness, hashing, processes, HTTP, yapi's wire APIs and
+//! JSON helpers. Grants
 //! gate the ones that reach outside the instance; everything else goes to the
 //! [`Bridge`](crate::Bridge).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
 use serde_json::{Map, Value, json};
 use sha2::Digest as _;
 
 use tokio_util::sync::CancellationToken;
+use yapi_ai::api::Apis;
+use yapi_ai::stream::{EventStream, Request, StreamEvent};
 use yapi_core::tools::{RegisteredTool, ToolEnv};
+use yapi_types::message::Message;
+use yapi_types::model::Model;
+use yapi_types::sync::lock;
 
 use crate::instance::Options;
 use crate::loader::Loader;
@@ -24,6 +33,94 @@ pub(crate) struct Host {
     pub(crate) loader: Loader,
     pub(crate) bridge: Arc<dyn Bridge>,
     pub(crate) options: Options,
+    pub(crate) ai_streams: AiStreams,
+}
+
+/// A running stream of one of yapi's wire APIs, with its cancellation.
+type AiStream = (Arc<tokio::sync::Mutex<EventStream>>, CancellationToken);
+
+/// Streams of yapi's wire APIs that extensions read through pi-ai, by id.
+#[derive(Clone, Default)]
+pub(crate) struct AiStreams {
+    running: Arc<Mutex<HashMap<u64, AiStream>>>,
+    next_id: Arc<AtomicU64>,
+}
+
+impl AiStreams {
+    /// Starts streaming `{api, model, context, options}` with yapi's
+    /// implementation of `api`, or with the model's provider and API as
+    /// pi-ai's `streamSimple` does without one, and returns the stream's id.
+    /// A request without a key takes the provider's key variable when
+    /// `env_keys` allows it.
+    fn start(&self, payload: &Value, env_keys: bool) -> Result<Value, String> {
+        let model: Model = serde_json::from_value(payload["model"].clone())
+            .map_err(|err| format!("Invalid model: {err}"))?;
+        let messages: Vec<Message> = serde_json::from_value(payload["context"]["messages"].clone())
+            .map_err(|err| format!("Invalid context: {err}"))?;
+        let cancel = CancellationToken::new();
+        let mut options = crate::streams::options_from_json(&payload["options"], cancel.clone());
+        if env_keys
+            && options
+                .api_key
+                .as_deref()
+                .is_none_or(|key| key.trim().is_empty())
+        {
+            let key = yapi_ai::credentials::env_api_key(&model.provider, options.env.as_ref())
+                .map(|(_, key)| key)
+                .filter(|key| key != yapi_ai::credentials::AMBIENT_CREDENTIALS);
+            options.api_key = key.or(options.api_key);
+        }
+        let request = Request {
+            model,
+            messages,
+            options,
+        };
+        let events = match payload["api"].as_str() {
+            Some(api) => {
+                let provider = yapi_ai::api::builtin(api)
+                    .ok_or_else(|| format!("No API provider registered for api: {api}"))?;
+                provider.stream(request)
+            }
+            None => Apis::default().stream(request),
+        };
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        lock(&self.running).insert(id, (Arc::new(tokio::sync::Mutex::new(events)), cancel));
+        Ok(json!(id))
+    }
+
+    /// The events of stream `id` that have arrived, waiting for at least
+    /// one; none once the stream has ended.
+    async fn next(&self, id: u64) -> Value {
+        let Some(events) = lock(&self.running)
+            .get(&id)
+            .map(|(events, _)| events.clone())
+        else {
+            return json!([]);
+        };
+        let mut events = events.lock().await;
+        let mut batch = Vec::new();
+        let mut next = events.next().await;
+        let mut ended = next.is_none();
+        while let Some(event) = next {
+            ended = matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_));
+            batch.push(crate::streams::event_json(&event));
+            if ended {
+                break;
+            }
+            next = events.next().now_or_never().flatten();
+        }
+        if ended {
+            lock(&self.running).remove(&id);
+        }
+        Value::Array(batch)
+    }
+
+    /// Cancels stream `id`.
+    fn abort(&self, id: u64) {
+        if let Some((_, cancel)) = lock(&self.running).get(&id) {
+            cancel.cancel();
+        }
+    }
 }
 
 fn denied(what: &str) -> String {
@@ -141,6 +238,11 @@ impl Host {
                     "promptGuidelines": tool.guidelines,
                 }))
             }
+            "ai.abort" => {
+                self.ai_streams
+                    .abort(payload["id"].as_u64().unwrap_or_default());
+                Ok(Value::Null)
+            }
             "frontmatter.parse" => {
                 let (frontmatter, body) =
                     yapi_core::resources::parse_frontmatter(text(payload, "content"))?;
@@ -164,6 +266,19 @@ impl Host {
             "fetch" => Box::pin(async { Err(denied("Network access")) }),
             "dns.lookup" if self.options.grants.network => Box::pin(ops::dns_lookup(payload)),
             "dns.lookup" => Box::pin(async { Err(denied("Network access")) }),
+            "ai.stream" if self.options.grants.network => {
+                let streams = self.ai_streams.clone();
+                let env_keys =
+                    self.options.grants.environment && self.options.environment.is_none();
+                // The stream starts on the runtime.
+                Box::pin(async move { streams.start(&payload, env_keys) })
+            }
+            "ai.stream" => Box::pin(async { Err(denied("Network access")) }),
+            "ai.next" => {
+                let streams = self.ai_streams.clone();
+                let id = payload["id"].as_u64().unwrap_or_default();
+                Box::pin(async move { Ok(streams.next(id).await) })
+            }
             "builtin.execute" => {
                 let tool = match self.builtin_tool(&payload, true) {
                     Ok(tool) => tool.tool,

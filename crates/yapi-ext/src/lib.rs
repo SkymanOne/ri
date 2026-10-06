@@ -13,6 +13,7 @@ mod instance;
 mod loader;
 mod ops;
 mod requests;
+mod streams;
 
 pub use engine::Engine;
 pub use extensions::{ExtensionHost, Flag, LoadError, RegisteredProvider};

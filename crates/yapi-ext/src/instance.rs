@@ -24,7 +24,7 @@ use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxView, WasiView};
 use crate::Error;
 use crate::engine::{Engine, Extension, yapi as wit};
 use crate::loader::Loader;
-use crate::requests::Host;
+use crate::requests::{AiStreams, Host};
 
 /// How long one guest export may compute, not counting time spent in host
 /// requests, before the instance is stopped.
@@ -240,6 +240,7 @@ impl Instance {
             loader: Loader::new(options.cwd.clone(), options.cache_dir.clone()),
             bridge,
             options,
+            ai_streams: AiStreams::default(),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();

@@ -14,8 +14,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use yapi_ai::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    ThinkingBudgets, new_output, now_ms, send_error,
+    EventSender, EventStream, Provider, Request, StreamEvent, new_output, now_ms, send_error,
 };
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
@@ -209,7 +208,7 @@ impl ExtensionHost {
             "stream": id,
             "model": request.model,
             "context": {"messages": request.messages},
-            "options": stream_options(&request.options),
+            "options": crate::streams::options_json(&request.options),
         });
         let mut call = std::pin::pin!(self.instance.call("stream", &payload));
         let result = match cancel.run_until_cancelled(&mut call).await {
@@ -344,70 +343,6 @@ impl Provider for JsStream {
         }
         stream
     }
-}
-
-/// pi's `SimpleStreamOptions` for a request: the options the agent passes.
-fn stream_options(options: &StreamOptions) -> Value {
-    let mut out = serde_json::Map::new();
-    let mut set = |key: &str, value: Value| {
-        if !value.is_null() {
-            out.insert(key.to_owned(), value);
-        }
-    };
-    set("apiKey", json!(options.api_key));
-    if !options.headers.is_empty() {
-        set("headers", json!(options.headers));
-    }
-    set(
-        "reasoning",
-        json!(
-            options
-                .reasoning
-                .filter(|level| *level != ThinkingLevel::Off)
-                .map(ThinkingLevel::as_str)
-        ),
-    );
-    set("maxTokens", json!(options.max_tokens));
-    set("temperature", json!(options.temperature));
-    set("sessionId", json!(options.session_id));
-    set(
-        "cacheRetention",
-        json!(options.cache_retention.map(|retention| match retention {
-            CacheRetention::None => "none",
-            CacheRetention::Short => "short",
-            CacheRetention::Long => "long",
-        })),
-    );
-    let budgets = &options.thinking_budgets;
-    if *budgets != ThinkingBudgets::default() {
-        set(
-            "thinkingBudgets",
-            json!({"minimal": budgets.minimal, "low": budgets.low, "medium": budgets.medium, "high": budgets.high}),
-        );
-    }
-    set("maxRetryDelayMs", json!(options.max_retry_delay_ms));
-    set("env", json!(options.env));
-    Value::Object(out)
-}
-
-/// A stream event the guest sent, as `{type, ...}`: `start` with its
-/// message, `update` with the event and the usage so far, `done` and `error`
-/// with the final message.
-fn stream_event(payload: &Value) -> Result<StreamEvent, String> {
-    let message = || {
-        serde_json::from_value(payload["message"].clone())
-            .map_err(|err| format!("Invalid assistant message from extension stream: {err}"))
-    };
-    Ok(match payload["type"].as_str() {
-        Some("start") => StreamEvent::Start(message()?),
-        Some("done") => StreamEvent::Done(message()?),
-        Some("error") => StreamEvent::Error(message()?),
-        _ => StreamEvent::Update {
-            event: serde_json::from_value(payload["event"].clone())
-                .map_err(|err| format!("Invalid stream event from extension: {err}"))?,
-            usage: serde_json::from_value(payload["usage"].clone()).unwrap_or_default(),
-        },
-    })
 }
 
 fn api_ids(result: &Value) -> Vec<String> {
@@ -1245,7 +1180,7 @@ impl Bridge for SessionBridge {
             let Some(output) = running else {
                 return Ok(Value::Null);
             };
-            match stream_event(payload) {
+            match crate::streams::event_from_json(payload) {
                 Ok(event) => {
                     if matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_)) {
                         *running = None;
