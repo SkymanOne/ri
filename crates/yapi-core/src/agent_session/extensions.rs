@@ -15,9 +15,10 @@ use yapi_types::message::{
     Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
 };
 use yapi_types::model::Model;
+use yapi_types::rpc::SourceInfo;
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::QueueMode;
-use yapi_types::sync::lock;
+use yapi_types::sync::{lock, write};
 
 use crate::extensions::{Context, Extension, ExtensionUi, Mode, ToolRenderers};
 use crate::messages::convert_to_llm;
@@ -715,6 +716,9 @@ impl AgentSession {
         }
         let start = lock(&self.inner.start).clone();
         let mut event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        let reload = start
+            .as_ref()
+            .is_some_and(|(reason, _)| *reason == Replacement::Reload);
         if let Some((reason, previous)) = start {
             event["reason"] = reason.as_str().into();
             // pi reports no previous file on reload.
@@ -724,6 +728,75 @@ impl AgentSession {
         }
         self.emit_extension_event(&event, CancellationToken::new())
             .await;
+        self.discover_resources(if reload { "reload" } else { "startup" })
+            .await;
+    }
+
+    /// pi's `resources_discover`, after `session_start`: adds the skills,
+    /// prompt templates and themes extensions name, each with its extension
+    /// as source.
+    async fn discover_resources(&self, reason: &str) {
+        let handlers = self.extensions_handling("resources_discover");
+        if handlers.is_empty() {
+            return;
+        }
+        let event = serde_json::json!({"type": "resources_discover", "cwd": self.inner.cwd, "reason": reason});
+        let ctx = self.extension_context(CancellationToken::new());
+        let mut found: [Vec<SourceInfo>; 3] = Default::default();
+        for extension in handlers {
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            let origin = extension.source().path;
+            let synthetic = origin.starts_with("builtin:") || origin.starts_with('<');
+            let source = if synthetic {
+                format!("extension:{}", origin.replace(['<', '>'], ""))
+            } else {
+                let name = std::path::Path::new(&origin)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let name = name
+                    .strip_suffix(".ts")
+                    .or_else(|| name.strip_suffix(".js"))
+                    .unwrap_or(&name);
+                format!("extension:{name}")
+            };
+            let base_dir = (!synthetic)
+                .then(|| std::path::Path::new(&origin).parent())
+                .flatten()
+                .map(|dir| dir.display().to_string());
+            for (kind, paths) in ["skillPaths", "promptPaths", "themePaths"]
+                .iter()
+                .zip(found.iter_mut())
+            {
+                for path in result[*kind].as_array().into_iter().flatten() {
+                    let Some(path) = path.as_str() else { continue };
+                    let path = crate::tools::path::resolve_to_cwd(path.trim(), &self.inner.cwd);
+                    paths.push(SourceInfo {
+                        path: path.display().to_string(),
+                        source: source.clone(),
+                        scope: "temporary".into(),
+                        origin: "top-level".into(),
+                        base_dir: base_dir.clone(),
+                    });
+                }
+            }
+        }
+        let [skills, prompts, themes] = found;
+        let mut resources = write(&self.inner.resources);
+        let resources = &mut *resources;
+        crate::resources::extend_skills(
+            &mut resources.skills,
+            &mut resources.skill_diagnostics,
+            &skills,
+        );
+        crate::resources::extend_templates(
+            &mut resources.templates,
+            &mut resources.template_diagnostics,
+            &prompts,
+        );
+        resources.themes.extend(themes);
     }
 
     /// Stops extensions before the session ends: pi's `session_shutdown`

@@ -29,7 +29,7 @@ use yapi_types::model::Model;
 use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
-use yapi_types::sync::{lock, write};
+use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
 use crate::extensions::{BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
@@ -201,7 +201,7 @@ struct Inner {
     next_turn: Mutex<Vec<Message>>,
     /// Extension messages sent during a turn, appended when it ends.
     pending_custom: Mutex<Vec<Message>>,
-    resources: Resources,
+    resources: RwLock<Resources>,
     runtime: Arc<RwLock<Runtime>>,
     listeners: Mutex<Vec<Listener>>,
     steering: Mutex<VecDeque<Message>>,
@@ -397,7 +397,7 @@ impl AgentSession {
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),
                 pending_custom: Mutex::new(Vec::new()),
-                resources,
+                resources: RwLock::new(resources),
                 runtime,
                 listeners: Mutex::new(Vec::new()),
                 steering: Mutex::new(VecDeque::new()),
@@ -534,9 +534,10 @@ impl AgentSession {
             .map_err(|err| err.to_string())
     }
 
-    /// The prompt resources the session was built with.
-    pub fn resources(&self) -> &Resources {
-        &self.inner.resources
+    /// The prompt resources: those the session was built with, and those
+    /// its extensions discovered.
+    pub fn resources(&self) -> Resources {
+        read(&self.inner.resources).clone()
     }
 
     /// Empties the steering and follow-up queues and returns their texts.
@@ -971,7 +972,7 @@ impl AgentSession {
 
     fn expand(&self, text: &str) -> String {
         let text = self.expand_skill(text);
-        expand_prompt_template(&text, &self.inner.resources.templates)
+        expand_prompt_template(&text, &read(&self.inner.resources).templates)
     }
 
     /// `/skill:name args` becomes the skill's content with the arguments.
@@ -984,10 +985,9 @@ impl AgentSession {
             None => (rest, ""),
         };
         let Some(skill) = self
-            .inner
-            .resources
+            .resources()
             .skills
-            .iter()
+            .into_iter()
             .find(|skill| skill.name == name)
         else {
             return text.to_owned();
@@ -1009,14 +1009,15 @@ impl AgentSession {
     }
 
     fn prompt_options(&self, active: &[String]) -> PromptOptions {
+        let resources = self.resources();
         let mut options = PromptOptions {
-            custom_prompt: self.inner.resources.custom_prompt.clone(),
+            custom_prompt: resources.custom_prompt,
             selected_tools: active.to_vec(),
-            append: self.inner.resources.append_prompt.clone(),
+            append: resources.append_prompt,
             cwd: self.inner.cwd.clone(),
             docs: self.inner.docs.clone(),
-            context_files: self.inner.resources.context_files.clone(),
-            skills: self.inner.resources.skills.clone(),
+            context_files: resources.context_files,
+            skills: resources.skills,
             sections: lock(&self.inner.run_sections).clone(),
             ..PromptOptions::default()
         };

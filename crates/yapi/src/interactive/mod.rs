@@ -1064,7 +1064,7 @@ impl App {
                 .collect();
             header.extend(header::listing(
                 &self.theme,
-                self.session.resources(),
+                &self.session.resources(),
                 &extensions,
                 &self.cwd,
                 self.home.as_deref(),
@@ -3818,6 +3818,9 @@ impl App {
             }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
             Event::Bound => {
+                // Extensions may have added skills, prompt templates and themes.
+                self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
+                self.install_autocomplete();
                 // Items shown before the extensions started get their components.
                 self.redraw_transcript();
                 let mut initial = std::mem::take(&mut self.initial).into_iter();
