@@ -350,17 +350,13 @@ async fn oauth_sign_in_refresh_and_sign_out() {
     let agent_dir = scratch("oauth");
     let connection = http_connection(&url, json!({}), &agent_dir, None);
 
-    // Without credentials the server needs a sign-in, and its challenge names its metadata.
+    // Without credentials the server needs a sign-in.
     let error = connection.client().await.err().unwrap();
     assert_eq!(
         error.to_string(),
         "MCP server \"demo\" requires sign-in. Run /mcp to sign in."
     );
     assert_eq!(connection.snapshot().state, State::NeedsAuth);
-    assert_eq!(
-        connection.challenge().unwrap().resource_metadata_url,
-        Some(format!("{base}/.well-known/oauth-protected-resource/mcp"))
-    );
 
     // Discovery, registration and the code flow with PKCE.
     let opened = Arc::new(Mutex::new(Vec::new()));
@@ -374,7 +370,6 @@ async fn oauth_sign_in_refresh_and_sign_out() {
     assert_eq!(params["scope"], "mcp:read");
     assert_eq!(params["resource"], url);
     assert!(params["redirect_uri"].starts_with("http://127.0.0.1:"));
-    assert!(connection.challenge().is_none());
     // pi's state, in the order pi's sign-in writes it.
     let state = stored_state(&agent_dir, &url);
     let keys: Vec<&str> = state.keys().map(String::as_str).collect();
@@ -392,6 +387,11 @@ async fn oauth_sign_in_refresh_and_sign_out() {
     );
     assert_eq!(state["serverUrl"], json!(url));
     assert_eq!(state["discovery"]["authorizationServerUrl"], json!(base));
+    // Discovery started from the metadata URL of the server's challenge.
+    assert_eq!(
+        state["discovery"]["resourceMetadataUrl"],
+        json!(format!("{base}/.well-known/oauth-protected-resource/mcp"))
+    );
     assert_eq!(
         state["clientInformation"]["redirect_uris"],
         json!([params["redirect_uri"]])

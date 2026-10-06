@@ -365,7 +365,7 @@ impl McpAuth {
     }
 
     /// The last challenge the server sent.
-    pub fn challenge(&self) -> Option<Challenge> {
+    fn challenge(&self) -> Option<Challenge> {
         lock(&self.challenge).clone()
     }
 

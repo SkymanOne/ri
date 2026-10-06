@@ -14,7 +14,6 @@ use super::client::{ClientOptions, McpClient, RequestOptions, ResourceKind, Root
 use super::config::{ServerEntry, ServerTransport};
 use super::http::{HttpAuth, HttpOptions, HttpTransport, ProviderToken};
 use super::jsonrpc::{METHOD_NOT_FOUND, McpError};
-use super::oauth::Challenge;
 use super::sign_in::{CredentialStore, McpAuth, SignInPrompt};
 use super::stdio::{StdioOptions, StdioTransport};
 use super::tools::is_app_resource;
@@ -200,11 +199,6 @@ impl Connection {
             Some(HttpAuth::OAuth(auth)) => Some(auth),
             _ => None,
         }
-    }
-
-    /// The server's last OAuth challenge.
-    pub fn challenge(&self) -> Option<Challenge> {
-        self.oauth().and_then(|auth| auth.challenge())
     }
 
     /// Signs in to an OAuth server; the caller reconnects afterwards.
