@@ -19,7 +19,7 @@ use yapi_core::extensions::{
     Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
-use yapi_types::autocomplete::AutocompleteItem;
+use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
@@ -364,14 +364,13 @@ impl Extension for JsExtension {
 
     /// pi awaits `getArgumentCompletions`; the editor asks synchronously, so
     /// a request the guest has not answered yet starts it in the background,
-    /// offers nothing while [`Extension::completing`], and has the editor ask
-    /// again once it is answered.
-    fn complete(&self, command: &str, prefix: &str) -> Option<Vec<AutocompleteItem>> {
+    /// is pending, and has the editor ask again once it is answered.
+    fn complete(&self, command: &str, prefix: &str) -> ArgumentCompletions {
         let completes = list(&self.description["commands"])
             .iter()
             .any(|entry| entry["name"] == command && entry["hasCompletions"] == true);
         if !completes {
-            return None;
+            return ArgumentCompletions::Ready(None);
         }
         let key = (command.to_owned(), prefix.to_owned());
         {
@@ -381,8 +380,8 @@ impl Extension for JsExtension {
                 Fetched::Ready(at, _) => at.elapsed() < COMPLETIONS_TTL,
             });
             match cache.get(&key) {
-                Some(Fetched::Ready(_, items)) => return items.clone(),
-                Some(Fetched::Pending) => return None,
+                Some(Fetched::Ready(_, items)) => return ArgumentCompletions::Ready(items.clone()),
+                Some(Fetched::Pending) => return ArgumentCompletions::Pending,
                 None => {
                     cache.insert(key.clone(), Fetched::Pending);
                 }
@@ -403,14 +402,7 @@ impl Extension for JsExtension {
                 session.extension_binding().0.refresh_completions();
             }
         });
-        None
-    }
-
-    fn completing(&self, command: &str, prefix: &str) -> bool {
-        matches!(
-            lock(&self.completions).get(&(command.to_owned(), prefix.to_owned())),
-            Some(Fetched::Pending)
-        )
+        ArgumentCompletions::Pending
     }
 
     fn commands(&self) -> Vec<Command> {

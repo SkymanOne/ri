@@ -17,6 +17,18 @@ pub struct AutocompleteItem {
     pub description: Option<String>,
 }
 
+impl AutocompleteItem {
+    /// An item that shows its value.
+    pub fn new(value: impl Into<String>) -> AutocompleteItem {
+        let value = value.into();
+        AutocompleteItem {
+            label: value.clone(),
+            value,
+            description: None,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct ItemJson {
     value: String,
@@ -31,6 +43,22 @@ impl From<ItemJson> for AutocompleteItem {
             value: item.value,
             description: item.description,
         }
+    }
+}
+
+/// What completing a command's argument offers: pi awaits
+/// `getArgumentCompletions`, which may still be computing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ArgumentCompletions {
+    /// Completions; `None` or empty offers none.
+    Ready(Option<Vec<AutocompleteItem>>),
+    /// Still being computed; the editor asks again once they are ready.
+    Pending,
+}
+
+impl From<Option<Vec<AutocompleteItem>>> for ArgumentCompletions {
+    fn from(items: Option<Vec<AutocompleteItem>>) -> ArgumentCompletions {
+        ArgumentCompletions::Ready(items)
     }
 }
 

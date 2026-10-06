@@ -24,7 +24,7 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-use yapi_types::autocomplete::AutocompleteItem;
+use yapi_types::autocomplete::ArgumentCompletions;
 use yapi_types::rpc::SourceInfo;
 
 use crate::agent_session::WeakSession;
@@ -322,16 +322,11 @@ pub trait Extension: Send + Sync {
         Vec::new()
     }
 
-    /// Completions for the argument of `command`; `None` offers none.
-    fn complete(&self, _command: &str, _prefix: &str) -> Option<Vec<AutocompleteItem>> {
-        None
-    }
-
-    /// Whether completions for the argument of `command` are still being
-    /// computed after [`Extension::complete`] offered none; the UI's
-    /// `refresh_completions` follows once they are ready.
-    fn completing(&self, _command: &str, _prefix: &str) -> bool {
-        false
+    /// Completions for the argument of `command`. While they are
+    /// [`ArgumentCompletions::Pending`], the UI's `refresh_completions`
+    /// follows once they are ready.
+    fn complete(&self, _command: &str, _prefix: &str) -> ArgumentCompletions {
+        ArgumentCompletions::Ready(None)
     }
 
     /// The keys it binds.

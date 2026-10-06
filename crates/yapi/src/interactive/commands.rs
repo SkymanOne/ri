@@ -11,14 +11,14 @@ use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use yapi_core::agent_session::AgentSession;
 use yapi_core::session::SessionManager;
-use yapi_tui::autocomplete::{Arguments, CombinedProvider, SlashCommand};
+use yapi_tui::autocomplete::{CombinedProvider, SlashCommand};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::keys::Keys;
 use yapi_tui::lines::{self, StyledLine, styled};
 use yapi_tui::markdown::{self, MarkdownOptions};
-use yapi_tui::select_list::SelectItem;
 use yapi_tui::theme::Theme;
+use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 
 use super::chat::group_thousands;
 use super::footer::format_tokens;
@@ -157,14 +157,14 @@ pub fn autocomplete(
                 command.complete = Some(Box::new(move |prefix: &str| {
                     let models = session.models_in_scope();
                     if models.is_empty() {
-                        return Arguments::Ready(None);
+                        return ArgumentCompletions::Ready(None);
                     }
                     let filtered = fuzzy_filter(models, prefix, super::scoped_models::search_text);
                     (!filtered.is_empty())
                         .then(|| {
                             filtered
                                 .into_iter()
-                                .map(|model| SelectItem {
+                                .map(|model| AutocompleteItem {
                                     value: model.reference(),
                                     label: model.id,
                                     description: Some(model.provider),
@@ -185,7 +185,7 @@ pub fn autocomplete(
                         .then(|| {
                             levels
                                 .into_iter()
-                                .map(|level| SelectItem::new(level.as_str()))
+                                .map(|level| AutocompleteItem::new(level.as_str()))
                                 .collect()
                         })
                         .into()
@@ -204,7 +204,7 @@ pub fn autocomplete(
                         .then(|| {
                             providers
                                 .into_iter()
-                                .map(|provider| SelectItem {
+                                .map(|provider| AutocompleteItem {
                                     description: Some(provider.description()),
                                     value: provider.id.clone(),
                                     label: provider.id,
@@ -250,15 +250,7 @@ pub fn autocomplete(
                 name: resolved.invocation,
                 description: Some(description),
                 argument_hint: None,
-                complete: Some(Box::new(move |prefix: &str| {
-                    match owner.complete(&name, prefix) {
-                        Some(items) => Arguments::Ready(Some(
-                            items.into_iter().map(SelectItem::from).collect(),
-                        )),
-                        None if owner.completing(&name, prefix) => Arguments::Pending,
-                        None => Arguments::Ready(None),
-                    }
-                })),
+                complete: Some(Box::new(move |prefix: &str| owner.complete(&name, prefix))),
             });
         }
     }

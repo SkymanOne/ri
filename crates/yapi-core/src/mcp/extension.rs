@@ -16,7 +16,7 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio::sync::watch;
-use yapi_types::autocomplete::AutocompleteItem;
+use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::config::ConfigFile;
 use yapi_types::rpc::SourceInfo;
 use yapi_types::sync::lock;
@@ -905,23 +905,9 @@ impl McpExtension {
             _ => ctx.ui.notify(USAGE, NotifyKind::Warning),
         }
     }
-}
 
-impl Extension for McpExtension {
-    fn source(&self) -> SourceInfo {
-        builtin_source("mcp")
-    }
-
-    fn commands(&self) -> Vec<Command> {
-        vec![Command {
-            name: "mcp".into(),
-            description:
-                "Manage MCP servers: sign in, reconnect, enable or disable, and change exposure"
-                    .into(),
-        }]
-    }
-
-    fn complete(&self, _command: &str, prefix: &str) -> Option<Vec<AutocompleteItem>> {
+    /// pi-mcp's completions of `/mcp` arguments.
+    fn argument_completions(&self, prefix: &str) -> Option<Vec<AutocompleteItem>> {
         let words: Vec<&str> = prefix.split_whitespace().collect();
         let trailing = prefix.ends_with(char::is_whitespace);
         let (action, server) = match (words.as_slice(), trailing) {
@@ -966,6 +952,25 @@ impl Extension for McpExtension {
             })
             .collect();
         (!items.is_empty()).then_some(items)
+    }
+}
+
+impl Extension for McpExtension {
+    fn source(&self) -> SourceInfo {
+        builtin_source("mcp")
+    }
+
+    fn commands(&self) -> Vec<Command> {
+        vec![Command {
+            name: "mcp".into(),
+            description:
+                "Manage MCP servers: sign in, reconnect, enable or disable, and change exposure"
+                    .into(),
+        }]
+    }
+
+    fn complete(&self, _command: &str, prefix: &str) -> ArgumentCompletions {
+        self.argument_completions(prefix).into()
     }
 
     fn run_command<'a>(

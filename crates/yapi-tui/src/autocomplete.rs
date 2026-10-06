@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use yapi_types::autocomplete::ArgumentCompletions;
 use yapi_types::collate::locale_compare;
 use yapi_types::sync::lock;
 
@@ -71,21 +72,7 @@ pub trait AutocompleteProvider {
 }
 
 /// Completes a command's argument text.
-pub type ArgumentCompleter = Box<dyn Fn(&str) -> Arguments>;
-
-/// What an [`ArgumentCompleter`] offers.
-pub enum Arguments {
-    /// Completions; `None` or empty shows no list.
-    Ready(Option<Vec<SelectItem>>),
-    /// Still being computed; the host asks again once they are ready.
-    Pending,
-}
-
-impl From<Option<Vec<SelectItem>>> for Arguments {
-    fn from(items: Option<Vec<SelectItem>>) -> Arguments {
-        Arguments::Ready(items)
-    }
-}
+pub type ArgumentCompleter = Box<dyn Fn(&str) -> ArgumentCompletions>;
 
 /// A command offered after `/`.
 pub struct SlashCommand {
@@ -774,11 +761,15 @@ impl AutocompleteProvider for CombinedProvider {
                 .find(|command| command.name == name)?
                 .complete
                 .as_ref()?;
-            let Arguments::Ready(items) = complete(argument) else {
+            let ArgumentCompletions::Ready(items) = complete(argument) else {
                 self.pending.store(true, Ordering::Relaxed);
                 return None;
             };
-            let items = items.filter(|items| !items.is_empty())?;
+            let items: Vec<SelectItem> = items
+                .filter(|items| !items.is_empty())?
+                .into_iter()
+                .map(SelectItem::from)
+                .collect();
             return Some(Suggestions {
                 items,
                 prefix: argument.to_owned(),
