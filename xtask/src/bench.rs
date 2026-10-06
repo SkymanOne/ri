@@ -611,6 +611,23 @@ fn copy_examples(pi_install: &Path, dir: &Path) -> anyhow::Result<usize> {
     Ok(count)
 }
 
+/// The `x`s in the editor: the rows between the last two border rows, which
+/// start with `─`. The transcript and footer, such as a path in the
+/// temporary directory, may hold others.
+fn typed(rows: &[String]) -> usize {
+    let border = |row: &String| row.starts_with('─');
+    let Some(bottom) = rows.iter().rposition(border) else {
+        return 0;
+    };
+    let Some(top) = rows[..bottom].iter().rposition(border) else {
+        return 0;
+    };
+    rows[top + 1..bottom]
+        .iter()
+        .map(|row| row.matches('x').count())
+        .sum()
+}
+
 /// Keystroke-to-paint latencies in a session of about `lines` lines.
 fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec<Duration>> {
     let session_args = large_session(program, root, args.lines)?;
@@ -618,17 +635,11 @@ fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec
     pty.wait_for(Duration::from_secs(60), ready)
         .context("large session did not open")?;
     pty.settle();
-    let count = |rows: &[String]| {
-        rows.iter()
-            .map(|row| row.matches('x').count())
-            .sum::<usize>()
-    };
-    let base = count(&pty.rows());
     let mut keys = Vec::new();
-    for typed in 1..=args.keys {
+    for count in 1..=args.keys {
         pty.write("x")?;
         let latency = pty
-            .wait_for(Duration::from_secs(5), |rows| count(rows) >= base + typed)
+            .wait_for(Duration::from_secs(5), |rows| typed(rows) >= count)
             .context("keystroke not painted")?;
         keys.push(latency);
         std::thread::sleep(Duration::from_millis(20));
@@ -908,10 +919,29 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn typed_counts_only_the_editor() {
+        let rows: Vec<String> = [
+            "Line 1 of a box",
+            "",
+            "────────────────",
+            "xxx",
+            "xx",
+            "────────────────",
+            "/var/folders/xx/T/yapi-bench-1/project",
+            "0.0%/1.0M (auto)   (anthropic) claude-sonnet-4-5",
+        ]
+        .map(str::to_owned)
+        .into();
+        assert_eq!(typed(&rows), 5);
+        assert_eq!(typed(&rows[2..4]), 0);
+    }
+
+    #[cfg(unix)]
     #[test]
     fn print_mode_that_exits_early_fails_with_its_stderr() {
         use std::os::unix::fs::PermissionsExt as _;
