@@ -836,11 +836,13 @@ pub mod huggingface {
             }
             _ => stem,
         };
-        let pattern = regex_lite::Regex::new(
-            r"(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$",
-        )
-        .ok()?;
-        pattern
+        static PATTERN: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
+            regex_lite::Regex::new(
+                r"(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$",
+            )
+            .expect("constant pattern; `normalizes_server_urls_like_pi`")
+        });
+        PATTERN
             .captures(stem)
             .and_then(|captures| captures.get(1))
             .map(|found| found.as_str().to_uppercase())
