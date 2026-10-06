@@ -28,4 +28,6 @@ Long sessions fill the model's context window. yapi summarizes older messages au
 
 ## Export
 
-`/export` writes the session to a standalone HTML file, and `yapi --export <session>` does the same from the command line.
+`/export` writes the session to a standalone HTML file, and `yapi --export <session>` does the same from the command line. `/export <path>.jsonl` writes a copy of the session file instead.
+
+`/import <path>.jsonl` copies a session file into the project's session folder and resumes it.

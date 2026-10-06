@@ -23,11 +23,27 @@ yapi reads `AGENTS.md` (or `CLAUDE.md`) from the working folder and each parent 
 
 ## Skills and prompt templates
 
-Skills follow the [Agent Skills specification](https://agentskills.io/specification). Each skill is a folder with a `SKILL.md` file. yapi lists every skill's name and description in the system prompt, and the model reads the full instructions when a task calls for them. `/skill:name` loads one directly. Prompt templates are Markdown files that become slash commands.
+Skills follow the [Agent Skills specification](https://agentskills.io/specification). Each skill is a folder with a `SKILL.md` file. yapi lists every skill's name and description in the system prompt, and the model reads the full instructions when a task calls for them. `/skill:name` loads one directly.
+
+Prompt templates are Markdown files that become slash commands. Save this as `~/.yapi/agent/prompts/review.md`:
+
+```markdown
+---
+description: Review staged git changes
+argument-hint: "[focus]"
+---
+Review the staged changes. Focus on ${1:-correctness and error handling}.
+```
+
+`/review` then sends the prompt, and `/review concurrency` fills in the focus. Pi's [prompt template documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/prompt-templates.md) lists every argument form.
 
 ## Themes
 
-Pick a theme in `/settings` or with `"theme"` in settings. `--use-theme <name>` applies one for a single run. Theme files use Pi's JSON format.
+Pick a theme in `/settings` or with `"theme"` in settings. `--use-theme <name>` applies one for a single run. Theme files use Pi's JSON format, described in Pi's [theme documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/themes.md).
+
+## Key bindings
+
+`~/.yapi/agent/keybindings.json` changes the keys. The format and every action are in Pi's [key binding documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/keybindings.md), and `/hotkeys` shows the bindings in effect.
 
 ## Project trust
 
