@@ -660,3 +660,30 @@ export default function (pi) {
         "{loaded}"
     );
 }
+
+/// A bridge that sets its flag when the instance's thread drops it.
+struct DropFlag(Arc<std::sync::atomic::AtomicBool>);
+
+impl yapi_ext::Bridge for DropFlag {}
+
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn join_stopped_waits_for_dropped_instances() {
+    let dir = scratch("join-stopped");
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let instance = Instance::start(
+        &engine(),
+        Options::new(dir),
+        Arc::new(DropFlag(dropped.clone())),
+    )
+    .await
+    .unwrap();
+    drop(instance);
+    yapi_ext::join_stopped();
+    assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+}
