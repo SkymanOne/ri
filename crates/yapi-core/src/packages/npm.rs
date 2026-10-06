@@ -238,18 +238,29 @@ fn text(value: &Value) -> String {
     value.as_str().unwrap_or_default().to_owned()
 }
 
-/// Checks `bytes` against the registry's `integrity` (sha512) or `shasum`.
+/// Checks `bytes` against the strongest algorithm of the registry's
+/// `integrity` that yapi knows (sha512, then sha1), as npm's ssri does, and
+/// against `shasum` when `integrity` has neither.
 fn verify(bytes: &[u8], dist: &Value) -> bool {
-    if let Some(integrity) = dist["integrity"].as_str() {
-        let digest = STANDARD.encode(sha2::Sha512::digest(bytes));
-        return integrity
+    let integrity = dist["integrity"].as_str().unwrap_or_default();
+    let hashes = |prefix: &str| -> Vec<&str> {
+        integrity
             .split_whitespace()
-            .any(|entry| entry.strip_prefix("sha512-") == Some(digest.as_str()));
+            .filter_map(|entry| entry.strip_prefix(prefix))
+            .collect()
+    };
+    let sha512 = hashes("sha512-");
+    if !sha512.is_empty() {
+        return sha512.contains(&STANDARD.encode(sha2::Sha512::digest(bytes)).as_str());
     }
-    if let Some(shasum) = dist["shasum"].as_str() {
-        return crate::time::hex(&sha1::Sha1::digest(bytes)).eq_ignore_ascii_case(shasum);
+    let sha1 = sha1::Sha1::digest(bytes);
+    let sha1_hashes = hashes("sha1-");
+    if !sha1_hashes.is_empty() {
+        return sha1_hashes.contains(&STANDARD.encode(sha1).as_str());
     }
-    false
+    dist["shasum"]
+        .as_str()
+        .is_some_and(|shasum| crate::time::hex(&sha1).eq_ignore_ascii_case(shasum))
 }
 
 /// Unpacks an npm tarball into `dir`, dropping each entry's first path
@@ -576,5 +587,26 @@ mod tests {
         assert!(!satisfies("1.2.4", "1.2.3 || 2"));
         assert!(satisfies("1.2.9", "1.2.x"));
         assert!(!satisfies("1.3.0", "1.2.x"));
+    }
+
+    #[test]
+    fn verifies_the_strongest_known_integrity_then_shasum() {
+        let bytes = b"tarball";
+        let sha512 = format!("sha512-{}", STANDARD.encode(sha2::Sha512::digest(bytes)));
+        let sha1 = format!("sha1-{}", STANDARD.encode(sha1::Sha1::digest(bytes)));
+        let shasum = crate::time::hex(&sha1::Sha1::digest(bytes));
+        let wrong512 = format!("sha512-{}", STANDARD.encode(sha2::Sha512::digest(b"other")));
+        let check = |dist: Value| verify(bytes, &dist);
+        assert!(check(json!({"integrity": sha512})));
+        assert!(check(json!({"integrity": sha1})));
+        assert!(!check(json!({"integrity": "sha1-AAAA"})));
+        // sha512 decides when present, as the strongest algorithm.
+        assert!(!check(json!({"integrity": format!("{wrong512} {sha1}")})));
+        assert!(check(json!({"integrity": format!("{wrong512} {sha512}")})));
+        // An integrity without a known algorithm falls back to `shasum`.
+        assert!(check(json!({"integrity": "sha384-AAAA", "shasum": shasum})));
+        assert!(check(json!({"shasum": shasum.to_uppercase()})));
+        assert!(!check(json!({"integrity": "sha384-AAAA"})));
+        assert!(!check(json!({})));
     }
 }
