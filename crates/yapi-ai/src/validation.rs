@@ -30,7 +30,8 @@ pub fn validate_tool_arguments(tool: &ToolDeclaration, call: &ToolCall) -> Resul
     ))
 }
 
-fn schema_types(schema: &Value) -> Vec<&str> {
+/// The types a schema's `type` names: one string or an array of them.
+pub(crate) fn schema_types(schema: &Value) -> Vec<&str> {
     match schema.get("type") {
         Some(Value::String(kind)) => vec![kind.as_str()],
         Some(Value::Array(kinds)) => kinds.iter().filter_map(Value::as_str).collect(),
