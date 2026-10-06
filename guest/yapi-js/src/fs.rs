@@ -5,7 +5,7 @@
 //! `{"error": {"code", "message", "syscall", "path"}}` with Node's codes and
 //! messages, which the shim throws as Node errors.
 
-use std::io::Write as _;
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -129,6 +129,34 @@ fn text(args: &Value, key: &str) -> String {
     args[key].as_str().unwrap_or_default().to_owned()
 }
 
+/// The bytes to write: `base64`, else `text`.
+fn data(args: &Value) -> Vec<u8> {
+    match args["base64"].as_str() {
+        Some(data) => STANDARD.decode(data).unwrap_or_default(),
+        None => text(args, "text").into_bytes(),
+    }
+}
+
+/// Up to `length` bytes of the file at `path`, from byte `position`.
+fn read_at(path: &str, position: u64, length: u64) -> std::io::Result<Vec<u8>> {
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(position))?;
+    let mut bytes = Vec::new();
+    file.take(length).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Writes `bytes` over the file at `path` from byte `position`.
+fn write_at(path: &str, position: u64, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new().write(true).open(path)?;
+    file.seek(SeekFrom::Start(position))?;
+    file.write_all(bytes)
+}
+
+fn number(args: &Value, key: &str) -> u64 {
+    args[key].as_u64().unwrap_or_default()
+}
+
 fn run(op: &str, args: &Value) -> Value {
     let path = text(args, "path");
     let result: Result<Value, (std::io::Error, &str)> = match op {
@@ -141,11 +169,20 @@ fn run(op: &str, args: &Value) -> Value {
                 }
             })
             .map_err(|err| (err, "open")),
+        "read" => read_at(&path, number(args, "position"), number(args, "length"))
+            .map(|bytes| json!({"base64": STANDARD.encode(bytes)}))
+            .map_err(|err| (err, "read")),
+        "write" => write_at(&path, number(args, "position"), &data(args))
+            .map(|()| Value::Null)
+            .map_err(|err| (err, "write")),
+        "truncate" => std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_len(number(args, "length")))
+            .map(|()| Value::Null)
+            .map_err(|err| (err, "open")),
         "writeFile" => {
-            let bytes = match args["base64"].as_str() {
-                Some(data) => STANDARD.decode(data).unwrap_or_default(),
-                None => text(args, "text").into_bytes(),
-            };
+            let bytes = data(args);
             let mut options = std::fs::OpenOptions::new();
             options.create(true);
             if args["append"].as_bool() == Some(true) {

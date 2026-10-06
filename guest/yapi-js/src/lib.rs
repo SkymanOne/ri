@@ -7,20 +7,24 @@
 //! `fail` finish calls. Module sources come from the host, except the builtins
 //! embedded here: the Node shims, pi's API facade and the vendored pi packages.
 
-wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
+/// The `yapi:extension` world's bindings.
+mod bindings {
+    wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
+}
 
 mod builtins;
 mod codemode;
+mod encoding;
 mod fs;
 
 use std::cell::{Cell, RefCell};
 
-use exports::yapi::extension::guest::Guest;
+use bindings::exports::yapi::extension::guest::Guest;
+use bindings::yapi::extension::host;
+use bindings::yapi::extension::types::Outcome;
 use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::module::Declared;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Module, Object, Runtime, Value};
-use yapi::extension::host;
-use yapi::extension::types::Outcome;
 
 /// QuickJS's own limit; the host bounds the whole instance's memory.
 const STACK_SIZE: usize = 1024 * 1024;
@@ -43,7 +47,7 @@ impl Resolver for HostResolver {
         name: &str,
         _attributes: Option<ImportAttributes<'js>>,
     ) -> rquickjs::Result<String> {
-        if let Some(builtin) = builtins::resolve(base, name) {
+        if let Some(builtin) = builtins::resolve(ctx, base, name)? {
             return Ok(builtin);
         }
         let payload = serde_json::json!({"specifier": name, "referrer": base}).to_string();
@@ -88,9 +92,7 @@ impl Loader for HostLoader {
 
 /// An ES module that re-exports CommonJS module `path`, which runs now.
 fn cjs_module(ctx: &Ctx<'_>, path: &str) -> rquickjs::Result<String> {
-    let yapi: Object<'_> = ctx.globals().get("__yapi")?;
-    let exports: Function<'_> = yapi.get("cjsExports")?;
-    let names: Vec<String> = exports.call((path,))?;
+    let names: Vec<String> = builtins::runtime_function(ctx, "cjsExports")?.call((path,))?;
     Ok(format!(
         "const m = globalThis.__yapi_cjs({});\nexport default m !== null && typeof m === \"object\" && m.__esModule && \"default\" in m ? m.default : m;\n{}",
         serde_json::Value::from(path),
@@ -181,6 +183,26 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
             },
         )?,
     )?;
+    native.set(
+        "utf8Encode",
+        Function::new(ctx.clone(), encoding::utf8_encode)?,
+    )?;
+    native.set(
+        "utf8Decode",
+        Function::new(ctx.clone(), encoding::utf8_decode)?,
+    )?;
+    native.set(
+        "latin1Decode",
+        Function::new(ctx.clone(), encoding::latin1_decode)?,
+    )?;
+    native.set(
+        "base64Encode",
+        Function::new(ctx.clone(), encoding::base64_encode)?,
+    )?;
+    native.set(
+        "base64Decode",
+        Function::new(ctx.clone(), encoding::base64_decode)?,
+    )?;
     native.set("compile", Function::new(ctx.clone(), compile)?)?;
     ctx.globals().set("__yapi_native", native)?;
     Ok(())
@@ -207,29 +229,32 @@ fn eval<'js, T: rquickjs::FromJs<'js>>(
 
 /// The runtime and its context, created on first use.
 fn js() -> (Runtime, Context) {
-    JS.with(|js| {
-        let mut js = js.borrow_mut();
-        if js.is_none() {
-            // A panic aborts the instance; report it first so the host can log why.
-            std::panic::set_hook(Box::new(|info| {
-                log_error(&format!("yapi-js panicked: {info}"));
-            }));
-            let runtime = Runtime::new().expect("QuickJS runtime");
-            runtime.set_max_stack_size(STACK_SIZE);
-            runtime.set_loader(HostResolver, HostLoader);
-            let context = Context::full(&runtime).expect("QuickJS context");
-            context.with(|ctx| {
-                install_natives(&ctx).expect("natives");
-                // The runtime script sets up globals, shims and the dispatcher.
-                let result: rquickjs::Result<Value<'_>> = ctx.eval(builtins::RUNTIME);
-                if let Err(error) = result.catch(&ctx) {
-                    log_error(&error.to_string());
-                }
-            });
-            *js = Some((runtime, context));
+    JS.with(|js| js.borrow_mut().get_or_insert_with(start).clone())
+}
+
+/// A new runtime and context with the natives and the runtime script.
+fn start() -> (Runtime, Context) {
+    // A panic aborts the instance; report it first so the host can log why.
+    std::panic::set_hook(Box::new(|info| {
+        log_error(&format!("yapi-js panicked: {info}"));
+    }));
+    // Invariant: QuickJS fails to create a runtime or a context, or to define
+    // the natives on a new context, only when it cannot allocate. The
+    // component can do nothing without them, so it traps after the hook above
+    // reports why.
+    let runtime = Runtime::new().expect("QuickJS runtime");
+    runtime.set_max_stack_size(STACK_SIZE);
+    runtime.set_loader(HostResolver, HostLoader);
+    let context = Context::full(&runtime).expect("QuickJS context");
+    context.with(|ctx| {
+        install_natives(&ctx).expect("natives");
+        // The runtime script sets up globals, shims and the dispatcher.
+        let result: rquickjs::Result<Value<'_>> = ctx.eval(builtins::RUNTIME);
+        if let Err(error) = result.catch(&ctx) {
+            log_error(&error.to_string());
         }
-        js.clone().expect("initialized above")
-    })
+    });
+    (runtime, context)
 }
 
 fn log_error(message: &str) {
@@ -265,11 +290,8 @@ fn call_runtime(
     args: impl for<'js> rquickjs::function::IntoArgs<'js>,
 ) -> Vec<Outcome> {
     with_ctx(|ctx| {
-        let result = (|| -> rquickjs::Result<()> {
-            let yapi: Object<'_> = ctx.globals().get("__yapi")?;
-            let function: Function<'_> = yapi.get(name)?;
-            function.call::<_, ()>(args)
-        })();
+        let result =
+            builtins::runtime_function(ctx, name).and_then(|function| function.call::<_, ()>(args));
         if let Err(error) = result.catch(ctx) {
             let message = error.to_string();
             match id {
@@ -304,12 +326,10 @@ impl Guest for Runtime_ {
 
     fn render(handle: u32, width: u32) -> Vec<String> {
         with_ctx(|ctx| {
-            let result = (|| -> rquickjs::Result<Vec<String>> {
-                let yapi: Object<'_> = ctx.globals().get("__yapi")?;
-                let function: Function<'_> = yapi.get("render")?;
-                function.call((handle, width))
-            })();
-            result.catch(ctx).unwrap_or_default()
+            builtins::runtime_function(ctx, "render")
+                .and_then(|function| function.call((handle, width)))
+                .catch(ctx)
+                .unwrap_or_default()
         })
     }
 
@@ -318,4 +338,4 @@ impl Guest for Runtime_ {
     }
 }
 
-export!(Runtime_);
+bindings::export!(Runtime_ with_types_in bindings);

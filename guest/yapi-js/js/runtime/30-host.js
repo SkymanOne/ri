@@ -11,7 +11,6 @@
 
 	const extensions = new Map();
 	const flagValues = new Map();
-	const busEmitter = new EventEmitter();
 	let bound = false;
 
 	const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
@@ -19,23 +18,32 @@
 	const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 	const orUndefined = (value) => value ?? undefined;
 
-	// ----- the shared event bus ------------------------------------------------
-	const eventBus = {
-		emit: (channel, data) => {
-			busEmitter.emit(channel, data);
-		},
-		on: (channel, handler) => {
-			const safe = async (data) => {
-				try {
-					await handler(data);
-				} catch (error) {
-					console.error(`Event handler error (${channel}):`, error);
-				}
-			};
-			busEmitter.on(channel, safe);
-			return () => busEmitter.off(channel, safe);
-		},
+	// ----- event buses --------------------------------------------------------
+	/** pi's `createEventBus`. */
+	yapi.createEventBus = () => {
+		const emitter = new EventEmitter();
+		return {
+			emit: (channel, data) => {
+				emitter.emit(channel, data);
+			},
+			on: (channel, handler) => {
+				const safe = async (data) => {
+					try {
+						await handler(data);
+					} catch (error) {
+						console.error(`Event handler error (${channel}):`, error);
+					}
+				};
+				emitter.on(channel, safe);
+				return () => emitter.off(channel, safe);
+			},
+			clear: () => {
+				emitter.removeAllListeners();
+			},
+		};
 	};
+	// `pi.events`, which every extension shares.
+	const eventBus = yapi.createEventBus();
 
 	// ----- runtime actions -----------------------------------------------------------
 	const notInitialized = () => {
@@ -47,12 +55,19 @@
 	function createApi(extension) {
 		const pendingFlagValues = new Map();
 		let state = "loading";
-		const assertActive = () => {
-			if (state === "failed") throw new Error(`Extension "${extension.path}" failed to load and its API is no longer active.`);
+		// Every method throws once the extension has failed to load.
+		const active = (methods) => {
+			for (const [name, method] of Object.entries(methods)) {
+				if (typeof method !== "function") continue;
+				methods[name] = (...args) => {
+					if (state === "failed") throw new Error(`Extension "${extension.path}" failed to load and its API is no longer active.`);
+					return method(...args);
+				};
+			}
+			return methods;
 		};
-		const api = {
+		const api = active({
 			on(event, handler) {
-				assertActive();
 				const registered = (...args) => handler(...args);
 				const list = extension.handlers.get(event) ?? [];
 				list.push(registered);
@@ -66,7 +81,6 @@
 				};
 			},
 			registerTool(tool) {
-				assertActive();
 				if (typeof tool.parameters !== "object" || tool.parameters === null || Array.isArray(tool.parameters)) {
 					throw new Error(`Tool "${tool.name}" registered by extension "${extension.path}" must define an object parameter schema.`);
 				}
@@ -74,7 +88,6 @@
 				if (bound) yapi.request("tools.refresh", { extension: extension.id, tools: [describeTool(tool)] });
 			},
 			registerCommand(name, options) {
-				assertActive();
 				if (typeof name !== "string" || name.length === 0) {
 					throw new Error(`Command registered by extension "${extension.path}" must have a non-empty string name. Use pi.registerCommand("name", { description, handler }).`);
 				}
@@ -84,11 +97,9 @@
 				extension.commands.set(name, { name, ...options });
 			},
 			registerShortcut(shortcut, options) {
-				assertActive();
 				extension.shortcuts.set(shortcut, { shortcut, ...options });
 			},
 			registerFlag(name, options) {
-				assertActive();
 				if (options.default !== undefined && typeof options.default !== options.type) {
 					throw new Error(`Invalid default for flag "${name}": expected ${options.type}, got ${typeof options.default}`);
 				}
@@ -100,125 +111,97 @@
 				}
 			},
 			registerMessageRenderer(customType, renderer) {
-				assertActive();
 				extension.messageRenderers.set(customType, renderer);
 			},
 			registerMarkdownTransformer(transformer) {
-				assertActive();
 				extension.markdownTransformer = transformer;
 			},
 			registerEntryRenderer(customType, renderer) {
-				assertActive();
 				extension.entryRenderers.set(customType, renderer);
 			},
 			getFlag(name) {
-				assertActive();
 				if (!extension.flags.has(name)) return undefined;
 				return flagValues.has(name) ? flagValues.get(name) : pendingFlagValues.get(name);
 			},
 			sendMessage(message, options) {
-				assertActive();
 				action("session.sendMessage")({ message: plain(message), options: plain(options) });
 			},
 			sendUserMessage(content, options) {
-				assertActive();
 				action("session.sendUserMessage")({ content: plain(content), options: plain(options) });
 			},
 			appendEntry(customType, data) {
-				assertActive();
 				action("session.appendEntry")({ customType, data: plain(data) });
 			},
 			setSessionName(name) {
-				assertActive();
 				action("session.setName")({ name });
 			},
 			getSessionName() {
-				assertActive();
 				return action("session.getName")({}) ?? undefined;
 			},
 			setLabel(entryId, label) {
-				assertActive();
 				action("session.setLabel")({ entryId, label });
 			},
 			exec(command, args, options) {
-				assertActive();
 				return execCommand(command, args, options?.cwd ?? yapi.cwd, options);
 			},
 			getActiveTools() {
-				assertActive();
 				return action("tools.getActive")({});
 			},
 			getAllTools() {
-				assertActive();
 				return action("tools.getAll")({});
 			},
 			getSettings() {
-				assertActive();
 				return action("settings.get")({});
 			},
 			setActiveTools(names) {
-				assertActive();
 				action("tools.setActive")({ names });
 			},
 			getCommands() {
-				assertActive();
 				return action("commands.list")({});
 			},
 			setModel(model) {
-				assertActive();
 				if (!bound) return Promise.reject(new Error("Extension runtime not initialized"));
 				return yapi.op("model.set", { provider: model.provider, id: model.id });
 			},
 			getThinkingLevel() {
-				assertActive();
 				return action("thinking.get")({});
 			},
 			setThinkingLevel(level) {
-				assertActive();
 				action("thinking.set")({ level });
 			},
 			registerProvider(nameOrProvider, config) {
-				assertActive();
 				if (typeof nameOrProvider === "string") {
 					if (!config) throw new Error("Provider config is required when registering by name");
 					extension.providers.push({ name: nameOrProvider, config: describeProvider(config) });
 				} else extension.providers.push({ name: nameOrProvider.id, native: true });
 			},
 			unregisterProvider(name) {
-				assertActive();
 				extension.providers = extension.providers.filter((provider) => provider.name !== name);
 			},
 			registerMcpServer(name, config) {
-				assertActive();
 				extension.mcpServers.set(name, plain(config));
 			},
 			unregisterMcpServer(name) {
-				assertActive();
 				extension.mcpServers.delete(name);
 			},
 			getMcpServers() {
-				assertActive();
 				return [...extension.mcpServers].map(([name, config]) => ({ name, config, extensionPath: extension.path }));
 			},
 			registerVirtualModel(model) {
-				assertActive();
 				extension.virtualModels.push(model);
 			},
 			unregisterVirtualModel(provider, id) {
-				assertActive();
 				extension.virtualModels = extension.virtualModels.filter((model) => model.provider !== provider || model.id !== id);
 			},
-			events: {
+			events: active({
 				emit(channel, data) {
-					assertActive();
 					eventBus.emit(channel, data);
 				},
 				on(channel, handler) {
-					assertActive();
 					return eventBus.on(channel, handler);
 				},
-			},
-		};
+			}),
+		});
 		return {
 			api,
 			commit() {
@@ -417,7 +400,6 @@
 	const theme = new Theme(null);
 	globalThis.__yapi_theme = theme;
 
-	// ----- contexts --------------------------------------------------------------------------------------
 	// ----- components ---------------------------------------------------------------------------------------
 	// Components live here, by handle; the host renders them through
 	// `yapi.render` and delivers keys through `yapi.input`.
@@ -487,6 +469,7 @@
 		}
 	};
 
+	// ----- contexts --------------------------------------------------------------------------------------
 	function createUi(data) {
 		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
 		const shown = !!(data.hasUI && data.components);
@@ -962,9 +945,6 @@
 			const handle = mount(component);
 			views[slot] = { handle, component };
 			return { handle };
-		},
-		async eval(payload) {
-			return plain(await (0, eval)(payload.source));
 		},
 	};
 

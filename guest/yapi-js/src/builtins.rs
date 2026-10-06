@@ -39,76 +39,32 @@ const ALIASES: &[(&str, &str)] = &[
     ("@sinclair/typebox/compile", "yapi:vendor/typebox-compile"),
 ];
 
-/// Node's built-in modules the runtime provides, by their names without the
-/// `node:` prefix. A name in `__yapi_builtins` that is missing here can still be
-/// imported with the prefix.
-const NODE: &[&str] = &[
-    "assert",
-    "assert/strict",
-    "async_hooks",
-    "buffer",
-    "child_process",
-    "cluster",
-    "crypto",
-    "dgram",
-    "diagnostics_channel",
-    "dns",
-    "events",
-    "fs",
-    "fs/promises",
-    "http",
-    "http2",
-    "https",
-    "inspector",
-    "module",
-    "net",
-    "os",
-    "path",
-    "path/posix",
-    "perf_hooks",
-    "process",
-    "readline",
-    "readline/promises",
-    "repl",
-    "stream",
-    "stream/promises",
-    "string_decoder",
-    "timers",
-    "timers/promises",
-    "tls",
-    "tty",
-    "url",
-    "util",
-    "v8",
-    "vm",
-    "worker_threads",
-    "zlib",
-];
-
 /// The embedded module `name` imported from `base` resolves to, if any.
-pub fn resolve(base: &str, name: &str) -> Option<String> {
+pub fn resolve(ctx: &Ctx<'_>, base: &str, name: &str) -> rquickjs::Result<Option<String>> {
     // Vendored bundles import their shared chunks by relative path.
     if let (Some(_), Some(chunk)) = (base.strip_prefix("yapi:vendor/"), name.strip_prefix("./")) {
-        return Some(format!("yapi:vendor/{}", chunk.trim_end_matches(".mjs")));
-    }
-    if let Some(builtin) = name.strip_prefix("node:") {
-        return Some(format!("node:{builtin}"));
+        return Ok(Some(format!(
+            "yapi:vendor/{}",
+            chunk.trim_end_matches(".mjs")
+        )));
     }
     // Embedded modules import each other by name.
-    if name.starts_with("yapi:") {
-        return Some(name.to_owned());
-    }
-    if NODE.contains(&name) {
-        return Some(format!("node:{name}"));
+    if name.starts_with("node:") || name.starts_with("yapi:") {
+        return Ok(Some(name.to_owned()));
     }
     if let Some((_, module)) = ALIASES.iter().find(|(alias, _)| *alias == name) {
-        return Some((*module).to_owned());
+        return Ok(Some((*module).to_owned()));
+    }
+    // A Node built-in by its bare name, as `require` resolves it.
+    let builtin: Option<String> = runtime_function(ctx, "builtinName")?.call((name,))?;
+    if let Some(builtin) = builtin {
+        return Ok(Some(format!("node:{builtin}")));
     }
     // Every pi-ai entry point maps to the facade, a superset of the root.
-    ["@earendil-works/pi-ai/", "@mariozechner/pi-ai/"]
+    Ok(["@earendil-works/pi-ai/", "@mariozechner/pi-ai/"]
         .iter()
         .any(|prefix| name.starts_with(prefix))
-        .then(|| "yapi:pi/ai".to_owned())
+        .then(|| "yapi:pi/ai".to_owned()))
 }
 
 /// The source of embedded module `name`. A Node module is an ES module view
@@ -131,12 +87,16 @@ fn node_module(ctx: &Ctx<'_>, name: &str) -> rquickjs::Result<String> {
             &format!("Cannot find module 'node:{name}'"),
         ));
     }
-    let yapi: Object<'_> = ctx.globals().get("__yapi")?;
-    let exports: Function<'_> = yapi.get("builtinExports")?;
-    let names: Vec<String> = exports.call((name,))?;
+    let names: Vec<String> = runtime_function(ctx, "builtinExports")?.call((name,))?;
     Ok(format!(
         "const m = globalThis.__yapi_builtins[{}];\nexport default m;\n{}",
         serde_json::Value::from(name),
         crate::reexports(&names)
     ))
+}
+
+/// The runtime script's function `__yapi.<name>`.
+pub fn runtime_function<'js>(ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<Function<'js>> {
+    let yapi: Object<'js> = ctx.globals().get("__yapi")?;
+    yapi.get(name)
 }

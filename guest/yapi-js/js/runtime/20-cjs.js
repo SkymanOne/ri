@@ -7,10 +7,7 @@
 	const builtins = globalThis.__yapi_builtins;
 	const cache = new Map();
 
-	const builtinName = (specifier) => {
-		const name = String(specifier).replace(/^node:/, "");
-		return Object.hasOwn(builtins, name) ? name : undefined;
-	};
+	const builtinName = yapi.builtinName;
 	const dirname = (path) => builtins.path.dirname(path);
 
 	function requireFor(referrer) {
@@ -66,5 +63,5 @@
 globalThis.__yapi.cjsExports = (path) => {
 	const exports = globalThis.__yapi_cjs(path);
 	if (exports === null || (typeof exports !== "object" && typeof exports !== "function")) return [];
-	return Object.keys(exports).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
+	return globalThis.__yapi.exportNames(exports);
 };

@@ -124,8 +124,33 @@
 	const toPath = (p) => (p instanceof URL ? builtins.url.fileURLToPath(p) : Buffer.isBuffer(p) ? p.toString() : String(p));
 	const absolute = (p) => path.resolve(toPath(p));
 	const encodingOf = (options) => (typeof options === "string" ? options : options?.encoding ?? null);
-	class Stats {
+	// The file type checks of `Stats` and `Dirent`.
+	class FileType {
+		isFile() {
+			return this._type === "file";
+		}
+		isDirectory() {
+			return this._type === "dir";
+		}
+		isSymbolicLink() {
+			return this._type === "symlink";
+		}
+		isFIFO() {
+			return false;
+		}
+		isSocket() {
+			return false;
+		}
+		isBlockDevice() {
+			return false;
+		}
+		isCharacterDevice() {
+			return false;
+		}
+	}
+	class Stats extends FileType {
 		constructor(raw) {
+			super();
 			this.size = raw.size;
 			this.mode = raw.mode;
 			this.mtimeMs = raw.mtimeMs;
@@ -145,55 +170,14 @@
 			this.blocks = Math.ceil(raw.size / 512);
 			this._type = raw.type;
 		}
-		isFile() {
-			return this._type === "file";
-		}
-		isDirectory() {
-			return this._type === "dir";
-		}
-		isSymbolicLink() {
-			return this._type === "symlink";
-		}
-		isFIFO() {
-			return false;
-		}
-		isSocket() {
-			return false;
-		}
-		isBlockDevice() {
-			return false;
-		}
-		isCharacterDevice() {
-			return false;
-		}
 	}
-	class Dirent {
+	class Dirent extends FileType {
 		constructor(name, type, parent) {
+			super();
 			this.name = name;
 			this._type = type;
 			this.parentPath = parent;
 			this.path = parent;
-		}
-		isFile() {
-			return this._type === "file";
-		}
-		isDirectory() {
-			return this._type === "dir";
-		}
-		isSymbolicLink() {
-			return this._type === "symlink";
-		}
-		isFIFO() {
-			return false;
-		}
-		isSocket() {
-			return false;
-		}
-		isBlockDevice() {
-			return false;
-		}
-		isCharacterDevice() {
-			return false;
 		}
 	}
 	const decodeFile = (result, encoding) => {
@@ -210,6 +194,15 @@
 		} else if (ArrayBuffer.isView(data)) args.base64 = yapi.base64Encode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 		else args.text = String(data);
 		return args;
+	};
+	/** `statSync` or `lstatSync`, by the host call `op`. */
+	const statWith = (op) => (p, options) => {
+		try {
+			return new Stats(call(op, { path: absolute(p) }));
+		} catch (error) {
+			if (options?.throwIfNoEntry === false && error.code === "ENOENT") return undefined;
+			throw error;
+		}
 	};
 	const readdirSync = (p, options) => {
 		const dir = absolute(p);
@@ -230,7 +223,7 @@
 	};
 	// ----- file descriptors -------------------------------------------------------------
 	// The host works on paths, so a descriptor is an open path and a position,
-	// and each read or write goes through the path.
+	// and each read or write reaches its range of the file through the path.
 	const descriptors = new Map();
 	let nextDescriptor = 3;
 	const errno = (code, number, message, syscall, path) => {
@@ -265,7 +258,7 @@
 		length ??= buffer.byteLength - offset;
 		const entry = descriptor(fd, "read");
 		const start = explicit(position) ? Number(position) : entry.position;
-		const chunk = fsSync.readFileSync(entry.path).subarray(start, start + length);
+		const chunk = yapi.base64Decode(call("read", { path: entry.path, position: start, length }).base64);
 		new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(chunk, offset);
 		if (!explicit(position)) entry.position += chunk.length;
 		return chunk.length;
@@ -287,15 +280,8 @@
 			bytes = Buffer.from(data.buffer, data.byteOffset + offset, b ?? data.byteLength - offset);
 			position = c;
 		}
-		const size = fsSync.statSync(entry.path).size;
-		const at = entry.append ? size : explicit(position) ? Number(position) : entry.position;
-		if (at === size) fsSync.appendFileSync(entry.path, bytes);
-		else {
-			const next = Buffer.alloc(Math.max(size, at + bytes.length));
-			next.set(fsSync.readFileSync(entry.path));
-			next.set(bytes, at);
-			fsSync.writeFileSync(entry.path, next);
-		}
+		const at = entry.append ? fsSync.statSync(entry.path).size : explicit(position) ? Number(position) : entry.position;
+		call("write", { path: entry.path, position: at, base64: yapi.base64Encode(bytes) });
 		if (!explicit(position)) entry.position = at + bytes.length;
 		return bytes.length;
 	}
@@ -304,11 +290,7 @@
 		descriptors.delete(fd);
 	}
 	function truncateSync(p, length = 0) {
-		const target = typeof p === "number" ? descriptor(p, "ftruncate").path : absolute(p);
-		const current = fsSync.readFileSync(target);
-		const next = Buffer.alloc(length);
-		next.set(current.subarray(0, length));
-		fsSync.writeFileSync(target, next);
+		call("truncate", { path: typeof p === "number" ? descriptor(p, "ftruncate").path : absolute(p), length });
 	}
 	class FileHandle {
 		constructor(fd) {
@@ -486,22 +468,8 @@
 		appendFileSync: (p, data, options) => {
 			call("writeFile", writeArgs(p, data, options, true));
 		},
-		statSync: (p, options) => {
-			try {
-				return new Stats(call("stat", { path: absolute(p) }));
-			} catch (error) {
-				if (options?.throwIfNoEntry === false && error.code === "ENOENT") return undefined;
-				throw error;
-			}
-		},
-		lstatSync: (p, options) => {
-			try {
-				return new Stats(call("lstat", { path: absolute(p) }));
-			} catch (error) {
-				if (options?.throwIfNoEntry === false && error.code === "ENOENT") return undefined;
-				throw error;
-			}
-		},
+		statSync: statWith("stat"),
+		lstatSync: statWith("lstat"),
 		readdirSync,
 		mkdirSync: (p, options) => {
 			const recursive = typeof options === "object" && !!options?.recursive;
@@ -775,6 +743,9 @@
 	EventEmitter.default = EventEmitter;
 	builtins.events = EventEmitter;
 	yapi.EventEmitter = EventEmitter;
+	// As in Node, `process` is an EventEmitter.
+	Object.setPrototypeOf(process, EventEmitter.prototype);
+	EventEmitter.call(process);
 
 	// ----- util -------------------------------------------------------------------------------------
 	const util = {
@@ -847,16 +818,14 @@
 			return this;
 		}
 	}
-	const runProcess = (command, args, options = {}) =>
-		yapi.op("exec", {
-			command,
-			args,
-			shell: !!options.shell,
-			cwd: options.cwd ? toPath(options.cwd) : process.cwd(),
-			env: options.env,
-			timeout: options.timeout,
-			input: typeof options.input === "string" ? options.input : undefined,
-		});
+	/** The host's `exec` payload: `target`'s command and arguments with Node's spawn `options`. */
+	const execPayload = (target, options) => ({
+		...target,
+		cwd: options.cwd ? toPath(options.cwd) : process.cwd(),
+		env: options.env,
+		timeout: options.timeout,
+		input: typeof options.input === "string" ? options.input : undefined,
+	});
 	const shell = (command) => ({ command: "/bin/sh", args: ["-c", command] });
 	const childProcess = {
 		ChildProcess,
@@ -867,7 +836,7 @@
 			}
 			const child = new ChildProcess();
 			const target = options.shell ? shell([command, ...args].join(" ")) : { command, args };
-			runProcess(target.command, target.args, options).then(
+			yapi.op("exec", execPayload(target, options)).then(
 				(result) => {
 					if (result.stdout) child.stdout.emit("data", Buffer.from(result.stdout));
 					if (result.stderr) child.stderr.emit("data", Buffer.from(result.stderr));
@@ -905,15 +874,14 @@
 			return child;
 		},
 		execSync(command, options = {}) {
-			const target = shell(command);
-			return syncResult(yapi.request("exec.sync", { ...target, cwd: options.cwd ? toPath(options.cwd) : process.cwd(), env: options.env, input: options.input, timeout: options.timeout }), options, command);
+			return syncResult(yapi.request("exec.sync", execPayload(shell(command), options)), options, command);
 		},
 		execFileSync(file, args = [], options = {}) {
-			return syncResult(yapi.request("exec.sync", { command: file, args, cwd: options.cwd ? toPath(options.cwd) : process.cwd(), env: options.env, input: options.input, timeout: options.timeout }), options, [file, ...args].join(" "));
+			return syncResult(yapi.request("exec.sync", execPayload({ command: file, args }, options)), options, [file, ...args].join(" "));
 		},
 		spawnSync(command, args = [], options = {}) {
 			const target = options.shell ? shell([command, ...args].join(" ")) : { command, args };
-			const result = yapi.request("exec.sync", { ...target, cwd: options.cwd ? toPath(options.cwd) : process.cwd(), env: options.env, input: options.input, timeout: options.timeout });
+			const result = yapi.request("exec.sync", execPayload(target, options));
 			const encode = (text) => (options.encoding && options.encoding !== "buffer" ? text : Buffer.from(text));
 			return { pid: 0, status: result.code, signal: result.signal ?? null, stdout: encode(result.stdout), stderr: encode(result.stderr), output: [null, encode(result.stdout), encode(result.stderr)], error: result.error ? new Error(result.error) : undefined };
 		},
@@ -1033,31 +1001,19 @@
 	builtins.tty = { isatty: () => false };
 	builtins.string_decoder = {
 		StringDecoder: class StringDecoder {
+			#utf8;
 			constructor(encoding = "utf8") {
 				this.encoding = encoding;
-				this.pending = new Uint8Array();
+				// UTF-8 keeps a sequence split between writes for the next one.
+				if (/^utf-?8$/i.test(encoding)) this.#utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 			}
 			write(buffer) {
-				const bytes = new Uint8Array(this.pending.length + buffer.length);
-				bytes.set(this.pending);
-				bytes.set(buffer, this.pending.length);
-				let end = bytes.length;
-				// Keep an incomplete UTF-8 sequence for the next write.
-				for (let back = 1; back <= 3 && back <= bytes.length; back++) {
-					const byte = bytes[bytes.length - back];
-					if ((byte & 0xc0) === 0x80) continue;
-					const need = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-					if (need > back) end = bytes.length - back;
-					break;
-				}
-				this.pending = bytes.slice(end);
-				return Buffer.from(bytes.subarray(0, end)).toString(this.encoding);
+				if (typeof buffer === "string") return buffer;
+				return this.#utf8 ? this.#utf8.decode(buffer, { stream: true }) : Buffer.from(buffer).toString(this.encoding);
 			}
 			end(buffer) {
 				const text = buffer ? this.write(buffer) : "";
-				const rest = Buffer.from(this.pending).toString(this.encoding);
-				this.pending = new Uint8Array();
-				return text + rest;
+				return this.#utf8 ? text + this.#utf8.decode() : text;
 			}
 		},
 	};
@@ -1556,12 +1512,24 @@
 		},
 		AsyncResource: class AsyncResource {},
 	};
+	// Node loads these only by their `node:` names.
+	const prefixOnly = new Set(["sea", "sqlite", "test", "test/reporters"]);
+	/** The built-in module `specifier` names as Node resolves it, if any. */
+	yapi.builtinName = (specifier) => {
+		const text = String(specifier);
+		const name = text.startsWith("node:") ? text.slice(5) : text;
+		if (!Object.hasOwn(builtins, name) || (name === text && prefixOnly.has(name))) return undefined;
+		return name;
+	};
 	builtins.module = {
 		createRequire: (filename) => globalThis.__yapi_require_for(toPath(filename)),
 		builtinModules: Object.keys(builtins),
-		isBuiltin: (name) => String(name).replace(/^node:/, "") in builtins,
+		isBuiltin: (name) => yapi.builtinName(name) !== undefined,
 	};
 })();
 
+// The names an ES module wrapper of `object` exports: its keys that are
+// identifiers, except `default`.
+globalThis.__yapi.exportNames = (object) => Object.keys(object).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
 // The names an ES module wrapper of builtin `name` exports.
-globalThis.__yapi.builtinExports = (name) => Object.keys(globalThis.__yapi_builtins[name] ?? {}).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
+globalThis.__yapi.builtinExports = (name) => globalThis.__yapi.exportNames(globalThis.__yapi_builtins[name] ?? {});
