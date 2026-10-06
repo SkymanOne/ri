@@ -89,6 +89,11 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.wasmparser]
 opt-level = 3
+# `cargo xtask bench` parses terminal output inside timed intervals.
+[profile.dev.package.vt100]
+opt-level = 3
+[profile.dev.package.vte]
+opt-level = 3
 
 # Binary size budget: see AGENTS.md.
 [profile.release]
