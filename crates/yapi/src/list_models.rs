@@ -42,7 +42,13 @@ pub fn run(pattern: Option<&str>, to_stderr: bool) -> u8 {
     };
     let available = registry.available();
     if available.is_empty() {
-        let _ = writeln!(out, "{}", yapi_core::auth_guidance::no_models_available());
+        let _ = writeln!(
+            out,
+            "{}",
+            yapi_core::auth_guidance::no_models_available(&yapi_core::docs::Locations::find(
+                &agent_dir()
+            ))
+        );
         return 0;
     }
     let mut models = match pattern {

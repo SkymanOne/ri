@@ -94,6 +94,7 @@ pub fn session_with_tools(
         allowed_tools: None,
         excluded_tools: Vec::new(),
         resources: Resources::default(),
+        docs: yapi_core::docs::Locations::default(),
     })
 }
 

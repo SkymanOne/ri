@@ -853,7 +853,10 @@ impl super::App {
                 ),
                 styled("See:", theme.fg("muted")),
                 styled(
-                    format!("  {}", yapi_core::auth_guidance::providers_doc()),
+                    format!(
+                        "  {}",
+                        yapi_core::auth_guidance::providers_doc(self.session.docs())
+                    ),
                     theme.fg("accent"),
                 ),
             ]);

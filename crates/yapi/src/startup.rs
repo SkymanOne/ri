@@ -450,6 +450,8 @@ fn build(
 ) -> anyhow::Result<(AgentSession, Option<String>)> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
+    // The prompt, the sign-in help and codemode agree on where the docs are.
+    let docs = yapi_core::docs::Locations::find(&agent_dir);
     let (settings, trusted) = match preloaded {
         Some(preloaded) => preloaded,
         None => load_settings(&cwd, &agent_dir, args.project_trust_override, false)?,
@@ -568,7 +570,7 @@ fn build(
             settings_view.default_model.as_deref(),
         );
         fallback = match (&model, fallback) {
-            (None, _) => Some(yapi_core::auth_guidance::no_models_available()),
+            (None, _) => Some(yapi_core::auth_guidance::no_models_available(&docs)),
             (Some(model), Some(message)) => {
                 Some(format!("{message}. Using {}/{}", model.provider, model.id))
             }
@@ -716,10 +718,7 @@ fn build(
     };
 
     let codemode_cache = agent_dir.join("cache").join("wasm");
-    let codemode_docs = format!(
-        "{}/codemode.md",
-        yapi_core::docs::Locations::find(&agent_dir).pi_docs
-    );
+    let codemode_docs = format!("{}/codemode.md", docs.pi_docs);
     let session = AgentSession::new(SessionConfig {
         cwd,
         agent_dir,
@@ -757,6 +756,7 @@ fn build(
         allowed_tools: args.tools.clone().or_else(|| args.no_tools.then(Vec::new)),
         excluded_tools: args.exclude_tools.clone().unwrap_or_default(),
         resources,
+        docs,
     });
     session.set_scoped_models(scoped);
     Ok((session, fallback))

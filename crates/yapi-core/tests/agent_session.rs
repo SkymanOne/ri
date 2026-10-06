@@ -57,7 +57,38 @@ fn session_with(provider: Arc<dyn Provider>) -> AgentSession {
         allowed_tools: None,
         excluded_tools: Vec::new(),
         resources: Resources::default(),
+        docs: yapi_core::docs::Locations::default(),
     })
+}
+
+/// The sign-in help names the docs the session was given, as its prompt does.
+#[tokio::test]
+async fn sign_in_help_names_the_sessions_docs() {
+    let session = AgentSession::new(SessionConfig {
+        cwd: Path::new("/work").to_path_buf(),
+        agent_dir: Path::new("/agent").to_path_buf(),
+        settings: SettingsManager::in_memory(),
+        registry: ModelRegistry::builtin(),
+        apis: Apis::default(),
+        session: SessionManager::in_memory(Path::new("/work")),
+        model: None,
+        thinking_level: ThinkingLevel::Off,
+        tools: Vec::new(),
+        extensions: Vec::new(),
+        include_extension_tools: false,
+        allowed_tools: None,
+        excluded_tools: Vec::new(),
+        resources: Resources::default(),
+        docs: yapi_core::docs::Locations {
+            pi_docs: "/agent/docs/pi/docs".into(),
+            ..yapi_core::docs::Locations::default()
+        },
+    });
+    let err = session.prompt("hi", Vec::new()).await.unwrap_err();
+    assert!(
+        err.ends_with("See:\n  /agent/docs/pi/docs/providers.md\n  /agent/docs/pi/docs/models.md"),
+        "{err}"
+    );
 }
 
 fn entry_id(session: &AgentSession, text: &str) -> String {
