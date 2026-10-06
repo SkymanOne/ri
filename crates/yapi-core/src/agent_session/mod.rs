@@ -32,7 +32,7 @@ use yapi_types::settings::QueueMode;
 use yapi_types::sync::{lock, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
-use crate::extensions::{Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
+use crate::extensions::{BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
 use crate::settings::SettingsManager;
@@ -96,6 +96,16 @@ impl Replacement {
             Replacement::Reload => "reload",
         }
     }
+}
+
+/// What `user_bash` handlers decided for a `!` command.
+pub enum UserBash {
+    /// Run it with the session's shell.
+    Local,
+    /// Run it through an extension's operations.
+    Operations(BashOperations),
+    /// An extension ran it; its result, not yet recorded.
+    Done(crate::bash_executor::BashResult),
 }
 
 /// Receives every session event.
@@ -613,16 +623,18 @@ impl AgentSession {
         }
     }
 
-    /// Runs a user `!` command in the session's directory, streaming output to
-    /// `on_chunk` and as `bash_execution_update` events tagged `id`, and
-    /// records it. `exclude_from_context` (`!!`) keeps the output from the
-    /// model; it is recorded as given. While a run streams, the record waits
-    /// for its end.
+    /// Runs a user `!` command in the session's directory, with the
+    /// session's shell or through an extension's `operations`, streaming
+    /// output to `on_chunk` and as `bash_execution_update` events tagged
+    /// `id`, and records it. `exclude_from_context` (`!!`) keeps the output
+    /// from the model; it is recorded as given. While a run streams, the
+    /// record waits for its end.
     pub async fn execute_bash(
         &self,
         command: &str,
         exclude_from_context: Option<bool>,
         id: Option<String>,
+        operations: Option<BashOperations>,
         mut on_chunk: impl FnMut(&str),
     ) -> Result<crate::bash_executor::BashResult, String> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -635,28 +647,91 @@ impl AgentSession {
             _ => command.to_owned(),
         };
         let cwd = self.with_session(|session| session.cwd().to_path_buf());
-        let result = crate::bash_executor::execute(
-            &resolved,
-            &cwd,
-            settings.shell_path.as_deref(),
-            &crate::config::bin_dir(&self.inner.agent_dir),
-            cancel.clone(),
-            |delta| {
-                on_chunk(delta);
-                self.emit(&AgentEvent::BashExecutionUpdate {
-                    id: id.clone(),
-                    delta: delta.to_owned(),
-                });
-            },
-        )
-        .await;
+        let on_chunk = |delta: &str| {
+            on_chunk(delta);
+            self.emit(&AgentEvent::BashExecutionUpdate {
+                id: id.clone(),
+                delta: delta.to_owned(),
+            });
+        };
+        let result = match &operations {
+            None => {
+                crate::bash_executor::execute(
+                    &resolved,
+                    &cwd,
+                    settings.shell_path.as_deref(),
+                    &crate::config::bin_dir(&self.inner.agent_dir),
+                    cancel.clone(),
+                    on_chunk,
+                )
+                .await
+            }
+            Some(operations) => {
+                let run = |output| {
+                    operations.extension.run_bash(
+                        &operations.handle,
+                        &resolved,
+                        &cwd,
+                        output,
+                        cancel.clone(),
+                    )
+                };
+                crate::bash_executor::execute_with(run, &cancel, on_chunk).await
+            }
+        };
         lock(&self.inner.bash).retain(|(running, _)| *running != token);
         let result = result?;
         self.record_bash(command, &result, exclude_from_context);
         Ok(result)
     }
 
-    fn record_bash(
+    /// pi's `user_bash` event for a `!` command: whether an extension ran
+    /// it, runs it through its operations, or leaves it to the session's
+    /// shell. Fails with the error of a handler, which extension error
+    /// reporting has already shown.
+    pub async fn user_bash(
+        &self,
+        command: &str,
+        exclude_from_context: bool,
+    ) -> Result<UserBash, String> {
+        let handlers = self.extensions_handling("user_bash");
+        if handlers.is_empty() {
+            return Ok(UserBash::Local);
+        }
+        let event = serde_json::json!({
+            "type": "user_bash",
+            "command": command,
+            "excludeFromContext": exclude_from_context,
+            "cwd": self.with_session(|session| session.cwd().to_path_buf()),
+        });
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in handlers {
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            if let Some(error) = result["error"].as_str() {
+                return Err(error.to_owned());
+            }
+            if !result["operations"].is_null() {
+                return Ok(UserBash::Operations(BashOperations {
+                    extension,
+                    handle: result["operations"].clone(),
+                }));
+            }
+            if let Ok(done) = serde_json::from_value(result["result"].clone()) {
+                return Ok(UserBash::Done(done));
+            }
+            let error = "Invalid user_bash handler result: return undefined for local execution or exactly one valid { operations } or { result } object";
+            ctx.ui
+                .extension_error(&extension.source().path, "user_bash", error, None);
+            return Err(error.to_owned());
+        }
+        Ok(UserBash::Local)
+    }
+
+    /// pi's `recordBashResult`: records a `!` command's result, after the
+    /// current run when one streams.
+    pub fn record_bash(
         &self,
         command: &str,
         result: &crate::bash_executor::BashResult,

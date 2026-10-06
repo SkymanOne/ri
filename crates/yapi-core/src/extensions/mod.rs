@@ -421,6 +421,30 @@ pub trait Extension: Send + Sync {
     ) -> BoxFuture<'a, Option<String>> {
         Box::pin(async { None })
     }
+
+    /// Runs `command` in `cwd` through the operations its `user_bash`
+    /// handler returned as `handle`, sending output to `output`, until the
+    /// command ends or `cancel` fires; returns the exit code.
+    fn run_bash<'a>(
+        &'a self,
+        _handle: &'a Value,
+        _command: &'a str,
+        _cwd: &'a std::path::Path,
+        _output: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        _cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<Option<i32>, String>> {
+        Box::pin(async { Err("This extension has no bash operations".to_owned()) })
+    }
+}
+
+/// Operations a `user_bash` handler returned to run a `!` command with; pi's
+/// `BashOperations`.
+#[derive(Clone)]
+pub struct BashOperations {
+    /// The extension whose handler returned them.
+    pub extension: Arc<dyn Extension>,
+    /// What the extension knows them by.
+    pub handle: Value,
 }
 
 /// The built-in extensions each session starts with.

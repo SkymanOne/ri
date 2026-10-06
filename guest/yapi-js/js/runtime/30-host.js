@@ -742,6 +742,32 @@
 		});
 	}
 
+	// ----- bash operations -----------------------------------------------------------------------
+	// Operations `user_bash` handlers returned, by id, until the host runs them.
+	const bashOperations = new Map();
+	let nextBashOperations = 1;
+	const bashAborts = new Map();
+	/** pi's `isUserBashEventResult`. */
+	function isUserBashEventResult(value) {
+		if (typeof value !== "object" || value === null) return false;
+		const hasOperations = value.operations !== undefined;
+		const hasResult = value.result !== undefined;
+		if (hasOperations === hasResult) return false;
+		if (hasOperations) {
+			return typeof value.operations === "object" && value.operations !== null && typeof value.operations.exec === "function";
+		}
+		const result = value.result;
+		if (typeof result !== "object" || result === null) return false;
+		return (
+			typeof result.output === "string" &&
+			"exitCode" in result &&
+			(result.exitCode === undefined || typeof result.exitCode === "number") &&
+			typeof result.cancelled === "boolean" &&
+			typeof result.truncated === "boolean" &&
+			(result.fullOutputPath === undefined || typeof result.fullOutputPath === "string")
+		);
+	}
+
 	// ----- emitting to one extension -----------------------------------------------------------
 	/** Runs `extension`'s handlers for `event` as pi's runner does for each handler. */
 	async function emit(extension, event, ctx) {
@@ -849,12 +875,23 @@
 				break;
 			}
 			case "user_bash": {
+				// Errors propagate: a failing handler stops the command.
 				for (const handler of handlers) {
 					const handlerResult = await handler(event, ctx);
-					if (handlerResult !== undefined) {
-						result = handlerResult;
-						break;
+					if (handlerResult === undefined) continue;
+					if (!isUserBashEventResult(handlerResult)) {
+						throw new Error(
+							"Invalid user_bash handler result: return undefined for local execution or exactly one valid { operations } or { result } object",
+						);
 					}
+					if (handlerResult.operations) {
+						const id = nextBashOperations++;
+						bashOperations.set(id, handlerResult.operations);
+						result = { operations: { id } };
+					} else {
+						result = { result: handlerResult.result };
+					}
+					break;
 				}
 				break;
 			}
@@ -1024,6 +1061,25 @@
 				if ("focused" in editor) editor.focused = !!payload.focused;
 				tui.terminal.rows = payload.rows;
 			}
+			return null;
+		},
+		/** Runs a `!` command through the operations with `id`; `{ exitCode }`. */
+		async bash(payload) {
+			const operations = bashOperations.get(payload.id);
+			bashOperations.delete(payload.id);
+			if (!operations) throw new Error(`No bash operations ${payload.id}`);
+			const controller = new AbortController();
+			bashAborts.set(payload.id, controller);
+			try {
+				const onData = (data) => yapi.request("bash.data", { id: payload.id, data: yapi.base64Encode(Buffer.from(data)) });
+				const result = await operations.exec(payload.command, payload.cwd, { onData, signal: controller.signal });
+				return { exitCode: result?.exitCode ?? null };
+			} finally {
+				bashAborts.delete(payload.id);
+			}
+		},
+		bashAbort(payload) {
+			bashAborts.get(payload.id)?.abort();
 			return null;
 		},
 		async shortcut(payload) {

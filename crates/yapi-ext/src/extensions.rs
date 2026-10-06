@@ -514,6 +514,37 @@ impl Extension for JsExtension {
             .is_some_and(|events| events.iter().any(|event| event == kind))
     }
 
+    fn run_bash<'a>(
+        &'a self,
+        handle: &'a Value,
+        command: &'a str,
+        cwd: &'a std::path::Path,
+        output: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<Option<i32>, String>> {
+        Box::pin(async move {
+            let id = handle["id"].as_u64().unwrap_or_default();
+            let bridge = &self.shared.bridge;
+            lock(&bridge.bash).insert(id, output);
+            let payload = json!({"id": id, "command": command, "cwd": cwd});
+            let run = self.shared.instance.call("bash", &payload);
+            tokio::pin!(run);
+            let result = tokio::select! {
+                result = &mut run => result,
+                () = cancel.cancelled() => {
+                    // The operations see their signal abort and finish.
+                    let _ = self.shared.instance.call("bashAbort", &json!({"id": id})).await;
+                    run.await
+                }
+            };
+            lock(&bridge.bash).remove(&id);
+            let result = result.map_err(|err| err.to_string())?;
+            Ok(result["exitCode"]
+                .as_i64()
+                .and_then(|code| i32::try_from(code).ok()))
+        })
+    }
+
     fn handle<'a>(&'a self, ctx: &'a Context, event: &'a Value) -> BoxFuture<'a, Option<Value>> {
         Box::pin(async move {
             let kind = event["type"].as_str().unwrap_or_default();
@@ -533,6 +564,12 @@ impl Extension for JsExtension {
                 // A failing `tool_call` handler blocks the call, as in pi.
                 Err(err) if kind == "tool_call" => {
                     Some(json!({"block": true, "reason": err.to_string()}))
+                }
+                // A failing `user_bash` handler stops the command, as in pi.
+                Err(err) if kind == "user_bash" => {
+                    ctx.ui
+                        .extension_error(&self.path_text(), kind, &err.to_string(), None);
+                    Some(json!({"error": err.to_string()}))
                 }
                 Err(err) => {
                     ctx.ui
@@ -674,6 +711,9 @@ struct SessionBridge {
     session: Mutex<WeakSession>,
     /// Update sinks and cancellation of running extension tools, by call id.
     updates: Mutex<HashMap<String, (UpdateSink, CancellationToken)>>,
+    /// Where the output of `!` commands that bash operations run goes, by
+    /// their operations' id.
+    bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
     owner: OnceLock<Weak<ExtensionHost>>,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
     codemode: Arc<crate::codemode::Runner>,
@@ -695,6 +735,7 @@ impl SessionBridge {
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
+            bash: Mutex::default(),
             owner: OnceLock::new(),
         })
     }
@@ -982,6 +1023,19 @@ fn session_read(session: &AgentSession, method: &str, args: &Value) -> Result<Va
 
 impl Bridge for SessionBridge {
     fn request(&self, kind: &str, payload: &Value) -> Result<Value, String> {
+        if kind == "bash.data" {
+            let sink = lock(&self.bash)
+                .get(&payload["id"].as_u64().unwrap_or_default())
+                .cloned();
+            if let (Some(sink), Some(data)) = (sink, payload["data"].as_str()) {
+                use base64::Engine as _;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data)
+                    .map_err(|err| err.to_string())?;
+                let _ = sink.send(bytes);
+            }
+            return Ok(Value::Null);
+        }
         if kind == "tool.update" {
             let sink = lock(&self.updates)
                 .get(payload["toolCallId"].as_str().unwrap_or_default())

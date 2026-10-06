@@ -21,7 +21,7 @@ use yapi_types::sync::lock;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncBufReadExt;
-use yapi_core::agent_session::{AgentSession, InputSource, Replacement};
+use yapi_core::agent_session::{AgentSession, InputSource, Replacement, UserBash};
 use yapi_core::session::SessionManager;
 use yapi_types::message::Message;
 use yapi_types::rpc::{
@@ -611,9 +611,20 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             command,
             exclude_from_context,
         } => {
+            let operations = match session
+                .user_bash(&command, exclude_from_context.unwrap_or(false))
+                .await?
+            {
+                UserBash::Done(result) => {
+                    session.record_bash(&command, &result, exclude_from_context);
+                    return data(&result);
+                }
+                UserBash::Operations(operations) => Some(operations),
+                UserBash::Local => None,
+            };
             let tag = id.and_then(Value::as_str).map(str::to_owned);
             let result = session
-                .execute_bash(&command, exclude_from_context, tag, |_| {})
+                .execute_bash(&command, exclude_from_context, tag, operations, |_| {})
                 .await?;
             data(&result)
         }

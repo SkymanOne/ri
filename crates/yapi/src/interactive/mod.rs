@@ -36,8 +36,9 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use yapi_core::agent_session::{AgentSession, Replacement, TreeNavigation, TreeOutcome};
+use yapi_core::agent_session::{AgentSession, Replacement, TreeNavigation, TreeOutcome, UserBash};
 use yapi_core::bash_executor::BashResult;
+use yapi_core::extensions::BashOperations;
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
 use yapi_tui::autocomplete::AutocompleteProvider;
@@ -2036,22 +2037,67 @@ impl App {
         self.start_prompt(text, Vec::new());
     }
 
+    /// pi's `!` command: `user_bash` handlers may run it or say how, and
+    /// a handler's failure, which is already shown, stops it.
     fn run_bash(&mut self, command: String, exclude: bool) {
-        self.next_bash += 1;
-        let id = self.next_bash;
-        let view = BashView::new(id, &command, exclude);
+        if !self.session.has_handlers("user_bash") {
+            self.start_bash(command, exclude, None);
+            return;
+        }
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        let epoch = self.epoch;
+        tokio::spawn(async move {
+            let then: Box<dyn FnOnce(&mut App) + Send> = match session
+                .user_bash(&command, exclude)
+                .await
+            {
+                Err(_) => return,
+                Ok(UserBash::Done(result)) => {
+                    Box::new(move |app| app.show_bash_result(&command, exclude, result))
+                }
+                Ok(UserBash::Operations(operations)) => {
+                    Box::new(move |app| app.start_bash(command, exclude, Some(operations)))
+                }
+                Ok(UserBash::Local) => Box::new(move |app| app.start_bash(command, exclude, None)),
+            };
+            let _ = tx.send(Event::Then(epoch, then));
+        });
+    }
+
+    /// Shows a `!` command's view, where it waits for the current response
+    /// when one streams.
+    fn add_bash_view(&mut self, view: BashView) {
         if self.running {
             self.pending_bash.push(view);
         } else {
             self.push(Item::Bash(Box::new(view)));
         }
+    }
+
+    /// Shows and records the result an extension's `user_bash` handler gave.
+    fn show_bash_result(&mut self, command: &str, exclude: bool, result: BashResult) {
+        self.next_bash += 1;
+        let mut view = BashView::new(self.next_bash, command, exclude);
+        if !result.output.is_empty() {
+            view.append(&result.output);
+        }
+        self.session.record_bash(command, &result, Some(exclude));
+        view.finish(result);
+        self.add_bash_view(view);
+    }
+
+    fn start_bash(&mut self, command: String, exclude: bool, operations: Option<BashOperations>) {
+        self.next_bash += 1;
+        let id = self.next_bash;
+        self.add_bash_view(BashView::new(id, &command, exclude));
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
             let chunks = tx.clone();
             let result = session
-                .execute_bash(&command, Some(exclude), None, move |chunk| {
+                .execute_bash(&command, Some(exclude), None, operations, move |chunk| {
                     let _ = chunks.send(Event::BashChunk(epoch, id, chunk.to_owned()));
                 })
                 .await;

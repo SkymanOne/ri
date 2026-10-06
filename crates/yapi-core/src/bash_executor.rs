@@ -182,6 +182,46 @@ pub async fn execute(
     Ok(output.finish(exit_code, cancelled))
 }
 
+/// pi's `executeBashWithOperations`: runs a command through `exec`, which
+/// sends its output to the sender it gets and returns the exit code, and
+/// collects the output as [`execute`] does. A run that fails or ends after
+/// `cancel` fired is cancelled.
+pub async fn execute_with<F>(
+    exec: impl FnOnce(tokio::sync::mpsc::UnboundedSender<Vec<u8>>) -> F,
+    cancel: &CancellationToken,
+    mut on_chunk: impl FnMut(&str),
+) -> Result<BashResult, String>
+where
+    F: std::future::Future<Output = Result<Option<i32>, String>>,
+{
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut output = Output {
+        chunks: Vec::new(),
+        kept: 0,
+        total_bytes: 0,
+        pending: Vec::new(),
+        file: None,
+    };
+    let run = exec(sender);
+    tokio::pin!(run);
+    let outcome = loop {
+        tokio::select! {
+            biased;
+            Some(bytes) = receiver.recv() => output.push(&bytes, &mut on_chunk),
+            outcome = &mut run => break outcome,
+        }
+    };
+    while let Ok(bytes) = receiver.try_recv() {
+        output.push(&bytes, &mut on_chunk);
+    }
+    let cancelled = cancel.is_cancelled();
+    match outcome {
+        Ok(exit_code) => Ok(output.finish(exit_code, cancelled)),
+        Err(_) if cancelled => Ok(output.finish(None, true)),
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

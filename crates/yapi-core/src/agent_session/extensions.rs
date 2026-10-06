@@ -474,6 +474,11 @@ impl AgentSession {
             .collect()
     }
 
+    /// [`AgentSession::handlers_of`], owned.
+    pub(super) fn extensions_handling(&self, kind: &str) -> Vec<Arc<dyn Extension>> {
+        self.handlers_of(kind).into_iter().cloned().collect()
+    }
+
     /// Whether any extension handles pi events of type `kind`.
     pub fn has_handlers(&self, kind: &str) -> bool {
         self.inner
