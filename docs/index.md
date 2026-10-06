@@ -42,7 +42,7 @@ yapi is tested against Pi itself. Every check below runs both programs on the sa
 
 | Check | Result |
 |---|---|
-| End-to-end scenarios | 245 of 245 match Pi: 97 terminal screens, 51 JSON event streams, 77 CLI and print mode runs, 19 RPC sessions and Pi's own RPC client |
+| End-to-end scenarios | Every scenario matches Pi's recorded output: terminal screens, JSON event streams, CLI and print mode runs, RPC sessions and Pi's own RPC client |
 | Settings, credentials and session files | Read and written back byte for byte |
 | Pi's example extensions | 79 of 79 register the same tools, commands, flags, shortcuts and event handlers as in Pi |
 | The 500 most-downloaded Pi packages on npm | 418 of 500 work without errors. [Extensions](extensions.md#compatibility-with-pi-extensions) has the breakdown. |
