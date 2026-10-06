@@ -291,16 +291,43 @@ pub fn load_settings(
     } else {
         resolve_trusted(cwd, &store, override_, default)
     };
-    Ok((SettingsManager::load(agent_dir, cwd, trusted)?, trusted))
+    let settings = if trusted {
+        SettingsManager::load(agent_dir, cwd, true)?
+    } else {
+        global
+    };
+    Ok((settings, trusted))
+}
+
+/// The working directory's settings as the run starts, loaded once for the
+/// steps that build the first session.
+pub struct RunSettings {
+    /// The process's working directory.
+    pub cwd: PathBuf,
+    /// Its settings.
+    pub settings: SettingsManager,
+    /// Whether its project is trusted.
+    pub trusted: bool,
+}
+
+/// Loads the [`RunSettings`] without prompting.
+fn run_settings(args: &Args) -> anyhow::Result<RunSettings> {
+    let cwd = std::env::current_dir()
+        .map_err(|err| anyhow::anyhow!("reading the working directory: {err}"))?;
+    let (settings, trusted) =
+        load_settings(&cwd, &agent_dir(), args.project_trust_override, false)?;
+    Ok(RunSettings {
+        cwd,
+        settings,
+        trusted,
+    })
 }
 
 /// Where `--resume` looks: the working directory, the custom session
 /// directory if any, and the theme setting.
-pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<String>)> {
-    let cwd = std::env::current_dir().context("reading the working directory")?;
-    let (settings, _) = load_settings(&cwd, &agent_dir(), args.project_trust_override, false)?;
-    let custom = custom_session_dir(args, &settings, &cwd);
-    Ok((cwd, custom, settings.settings().theme.clone()))
+pub fn resume_context(args: &Args, run: &RunSettings) -> (Option<PathBuf>, Option<String>) {
+    let custom = custom_session_dir(args, &run.settings, &run.cwd);
+    (custom, run.settings.settings().theme.clone())
 }
 
 /// The user cancelled a startup prompt; the run ends without an error.
@@ -315,10 +342,14 @@ pub fn start(
     stdin: Option<String>,
     extensions: &Extensions,
     interactive: bool,
+    run: RunSettings,
 ) -> anyhow::Result<Startup> {
-    let cwd = std::env::current_dir().context("reading the working directory")?;
+    let RunSettings {
+        cwd,
+        settings,
+        trusted,
+    } = run;
     let agent_dir = agent_dir();
-    let (settings, _) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
     let mut session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
     // pi's missing-cwd check: the interactive mode offers to continue in the
@@ -366,7 +397,9 @@ pub fn start(
             .append_session_info(name)
             .map_err(|err| anyhow::anyhow!("Error: {err}"))?;
     }
-    let (session, model_fallback) = build(args, session, true, extensions)?;
+    // Settings for another working directory load with the session.
+    let preloaded = (session.cwd() == cwd).then_some((settings, trusted));
+    let (session, model_fallback) = build(args, session, true, extensions, preloaded)?;
 
     let (file_text, images) = file_arguments(&args.file_args, &cwd)?;
     let mut parts = Vec::new();
@@ -389,31 +422,35 @@ pub fn start(
     })
 }
 
-/// Builds a session around `session` in its working directory, as pi's
-/// runtime factory does for the first session and every one that replaces it:
-/// settings, model, thinking level, tools and prompt resources follow the
-/// arguments. `warn` reports model problems on stderr, which only the first
-/// session may do.
-pub fn create(
-    args: &Args,
-    session: SessionManager,
-    warn: bool,
-    extensions: &Extensions,
-) -> anyhow::Result<AgentSession> {
-    build(args, session, warn, extensions).map(|(session, _)| session)
+/// pi's runtime factory for the sessions that replace the first: each is
+/// built around its file in its working directory, with the settings on disk
+/// then, as the first one was from the arguments.
+pub fn factory(args: &Args, extensions: Extensions) -> crate::runtime::SessionFactory {
+    let args = args.clone();
+    Box::new(move |session| {
+        build(&args, session, false, &extensions, None).map(|(session, _)| session)
+    })
 }
 
-/// [`create`], with pi's `modelFallbackMessage`: why the session's model
-/// could not be restored, or that no model is available.
+/// Builds a session around `session` in its working directory: settings,
+/// model, thinking level, tools and prompt resources follow the arguments.
+/// `preloaded` are the settings of that directory and whether it is trusted,
+/// when already loaded. `warn` reports model problems on stderr, which only
+/// the first session may do. Returns pi's `modelFallbackMessage` too: why
+/// the session's model could not be restored, or that no model is available.
 fn build(
     args: &Args,
     session: SessionManager,
     warn: bool,
     extensions: &Extensions,
+    preloaded: Option<(SettingsManager, bool)>,
 ) -> anyhow::Result<(AgentSession, Option<String>)> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
-    let (settings, trusted) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)?;
+    let (settings, trusted) = match preloaded {
+        Some(preloaded) => preloaded,
+        None => load_settings(&cwd, &agent_dir, args.project_trust_override, false)?,
+    };
     yapi_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
     // A `models.json` error is shown by the interactive mode, as in pi.
     let mut registry = ModelRegistry::load(&agent_dir);
@@ -782,19 +819,19 @@ pub struct ExtensionErrors {
     pub load_failed: bool,
 }
 
-/// Loads the run's pi extensions: `-e` paths, then, unless `--no-extensions`,
-/// those installed in a trusted project and in the agent directory. Applies
-/// extension flags from the command line, which must name registered flags.
-pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors> {
+/// Loads the run's settings and its pi extensions: `-e` paths, then, unless
+/// `--no-extensions`, those installed in a trusted project and in the agent
+/// directory. Applies extension flags from the command line, which must name
+/// registered flags.
+pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), ExtensionErrors> {
     let fail = |message: String| ExtensionErrors {
         messages: vec![message],
         load_failed: false,
     };
-    let cwd = std::env::current_dir()
-        .map_err(|err| fail(format!("reading the working directory: {err}")))?;
+    let run = run_settings(args).map_err(|err| fail(err.to_string()))?;
+    let cwd = run.cwd.clone();
     let agent_dir = agent_dir();
-    let (settings, _) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)
-        .map_err(|err| fail(err.to_string()))?;
+    let settings = run.settings.clone();
     let mut messages = Vec::new();
     let mut missing = Vec::new();
     let mut requested = Vec::new();
@@ -942,12 +979,15 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
                 .map_err(|err| fail(err.to_string()))?;
         }
     }
-    Ok(Extensions {
-        hosts,
-        skills,
-        prompts,
-        themes,
-    })
+    Ok((
+        Extensions {
+            hosts,
+            skills,
+            prompts,
+            themes,
+        },
+        run,
+    ))
 }
 
 /// pi's extension conflicts: each tool or flag that an extension registers
