@@ -1,8 +1,8 @@
 //! The system prompt: named sections the transcript carries and later patches.
 //!
 //! Port of `packages/coding-agent/src/core/system-prompt.ts` in pi `v1.0.0`. The
-//! preamble names yapi, and the pi documentation section is omitted; see
-//! `docs/compat.md`.
+//! preamble and the documentation section name yapi, and the section points
+//! to the local docs, or to the published ones without a local copy.
 
 use std::path::PathBuf;
 
@@ -30,6 +30,8 @@ pub struct PromptOptions {
     pub sections: IndexMap<String, String>,
     /// Working directory.
     pub cwd: PathBuf,
+    /// Where the model reads yapi's and pi's docs.
+    pub docs: crate::docs::Locations,
     /// Context files.
     pub context_files: Vec<ContextFile>,
     /// Skills.
@@ -71,6 +73,22 @@ fn rules(options: &PromptOptions) -> String {
         .map(|rule| format!("- {rule}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// pi's `docs` section, naming yapi, with where the docs are: yapi's main
+/// page, and pi's docs and examples.
+fn docs(docs: &crate::docs::Locations) -> String {
+    format!(
+        "yapi documentation (read only when the user asks about yapi itself, its SDK, extensions, themes, skills, or TUI):
+- Main documentation: {}
+- Additional docs: {}
+- Examples: {} (extensions, custom tools, SDK)
+- When reading yapi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
+- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
+- When working on yapi topics, read the docs and examples, and follow .md cross-references before implementing
+- Always read yapi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
+        docs.main, docs.pi_docs, docs.pi_examples,
+    )
 }
 
 /// Whether a custom section name is valid: lowercase, then letters, digits, `_`,
@@ -121,6 +139,7 @@ pub fn build_sections(options: &PromptOptions) -> Result<IndexMap<String, String
                 format!("{tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."),
             );
             raw.insert("rules".into(), rules(options));
+            raw.insert("docs".into(), docs(&options.docs));
         }
     }
     if let Some(append) = options.append.as_ref().filter(|text| !text.is_empty()) {
@@ -211,6 +230,11 @@ mod tests {
         let mut options = PromptOptions {
             selected_tools: vec!["read".into(), "bash".into()],
             cwd: PathBuf::from("/work"),
+            docs: crate::docs::Locations {
+                main: "/agent/docs/index.md".into(),
+                pi_docs: "/agent/docs/pi/docs".into(),
+                pi_examples: "/agent/docs/pi/examples".into(),
+            },
             ..PromptOptions::default()
         };
         options
@@ -227,12 +251,15 @@ mod tests {
         let sections = build_sections(&options).unwrap();
         assert_eq!(
             sections.keys().cloned().collect::<Vec<_>>(),
-            ["preamble", "tools", "rules", "cwd"]
+            ["preamble", "tools", "rules", "docs", "cwd"]
         );
         assert_eq!(
             sections["rules"],
             "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>"
         );
+        assert!(sections["docs"].starts_with(
+            "<docs>\nyapi documentation (read only when the user asks about yapi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /agent/docs/index.md\n- Additional docs: /agent/docs/pi/docs\n- Examples: /agent/docs/pi/examples (extensions, custom tools, SDK)\n"
+        ));
         assert_eq!(sections["cwd"], "<cwd>\n/work\n</cwd>");
     }
 }

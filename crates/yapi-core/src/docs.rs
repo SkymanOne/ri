@@ -14,6 +14,46 @@ const ARCHIVE: &str = "yapi-docs.tar.gz";
 /// The file in the docs naming the yapi version they document.
 const VERSION_FILE: &str = ".version";
 
+/// The published yapi book.
+const BOOK_URL: &str = "https://nikolish.in/yapi/";
+/// pi's docs and examples at the release yapi follows.
+const PI_URL: &str = "https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent";
+
+/// Where the model reads the docs: the local copy in the agent directory
+/// when there is one, else the published pages.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Locations {
+    /// yapi's main page, in place of pi's `getReadmePath`.
+    pub main: String,
+    /// pi's docs, pi's `getDocsPath`.
+    pub pi_docs: String,
+    /// pi's examples, pi's `getExamplesPath`.
+    pub pi_examples: String,
+}
+
+impl Locations {
+    /// The local docs in `agent_dir` when they are installed, else the
+    /// published ones.
+    pub fn find(agent_dir: &Path) -> Locations {
+        let dir = crate::config::docs_dir(agent_dir);
+        if dir.join(VERSION_FILE).is_file() {
+            Locations {
+                main: dir.join("index.md").display().to_string(),
+                pi_docs: crate::config::pi_docs_dir(agent_dir).display().to_string(),
+                pi_examples: crate::config::pi_examples_dir(agent_dir)
+                    .display()
+                    .to_string(),
+            }
+        } else {
+            Locations {
+                main: BOOK_URL.to_owned(),
+                pi_docs: format!("{PI_URL}/docs"),
+                pi_examples: format!("{PI_URL}/examples"),
+            }
+        }
+    }
+}
+
 /// Whether `YAPI_NO_DOCS` turns the download off.
 pub fn opted_out() -> bool {
     crate::config::env_flag("YAPI_NO_DOCS")
@@ -75,4 +115,39 @@ fn replace(archive: &[u8], dir: &Path, version: &str) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&fresh);
     let _ = std::fs::remove_dir_all(&old);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_local_docs_else_the_published_ones() {
+        let agent = std::env::temp_dir().join(format!("yapi-docs-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&agent);
+        let published = Locations::find(&agent);
+        assert_eq!(published.main, "https://nikolish.in/yapi/");
+        assert_eq!(
+            published.pi_docs,
+            "https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs"
+        );
+        assert_eq!(
+            published.pi_examples,
+            "https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/examples"
+        );
+        std::fs::create_dir_all(agent.join("docs")).unwrap();
+        std::fs::write(agent.join("docs").join(VERSION_FILE), "0.1.0\n").unwrap();
+        let local = Locations::find(&agent);
+        let docs = agent.join("docs");
+        assert_eq!(local.main, docs.join("index.md").display().to_string());
+        assert_eq!(
+            local.pi_docs,
+            docs.join("pi").join("docs").display().to_string()
+        );
+        assert_eq!(
+            local.pi_examples,
+            docs.join("pi").join("examples").display().to_string()
+        );
+        std::fs::remove_dir_all(&agent).unwrap();
+    }
 }

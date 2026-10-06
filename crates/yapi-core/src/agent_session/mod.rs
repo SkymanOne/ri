@@ -173,6 +173,9 @@ struct Inner {
     bash: Mutex<Vec<(u64, CancellationToken)>>,
     pending_bash: Mutex<Vec<Message>>,
     agent_dir: PathBuf,
+    /// Where the prompt points the model to the docs, fixed for the session
+    /// so a first-run download does not change the prompt mid-session.
+    docs: crate::docs::Locations,
     /// Woken when a run ends.
     idle: tokio::sync::Notify,
     /// Compactions and branch summaries in progress.
@@ -357,6 +360,7 @@ impl AgentSession {
                 recovery: Mutex::new(Recovery::default()),
                 bash: Mutex::new(Vec::new()),
                 pending_bash: Mutex::new(Vec::new()),
+                docs: crate::docs::Locations::find(&agent_dir),
                 agent_dir,
                 idle: tokio::sync::Notify::new(),
                 compacting: AtomicUsize::new(0),
@@ -888,6 +892,7 @@ impl AgentSession {
             selected_tools: active.to_vec(),
             append: self.inner.resources.append_prompt.clone(),
             cwd: self.inner.cwd.clone(),
+            docs: self.inner.docs.clone(),
             context_files: self.inner.resources.context_files.clone(),
             skills: self.inner.resources.skills.clone(),
             sections: lock(&self.inner.run_sections).clone(),

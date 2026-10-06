@@ -14,6 +14,7 @@ yapi keeps global state in `~/.yapi/agent` and project state in a `.yapi` folder
 | Models and providers | `~/.yapi/agent/models.json` |
 | Credentials | `~/.yapi/agent/auth.json` |
 | MCP servers | `~/.yapi/agent/mcp.json` and `.yapi/mcp.json` |
+| Documentation for the model | `~/.yapi/agent/docs`, installed with yapi |
 
 `/settings` edits the common settings in place and saves them as Pi does.
 
@@ -36,6 +37,12 @@ Review the staged changes. Focus on ${1:-correctness and error handling}.
 ```
 
 `/review` then sends the prompt, and `/review concurrency` fills in the focus. Pi's [prompt template documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/prompt-templates.md) lists every argument form.
+
+## Documentation for the model
+
+yapi can explain its own features and look up its docs. When you ask about yapi, the system prompt sends the model to its documentation in `~/.yapi/agent/docs`: these pages, with Pi's documentation and examples in `pi/`. Pi's pages describe the extension API, themes, skills and the other features yapi shares with Pi, under Pi's names. [Coming from Pi](migrating.md) lists the names that change. Without a local copy, the prompt points to this site and to Pi's documentation on GitHub. [Install](install.md#documentation-for-the-model) shows how each way of installing yapi gets the local copy.
+
+yapi replaces these files when it is upgraded, so keep your own notes elsewhere.
 
 ## Themes
 
