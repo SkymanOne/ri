@@ -202,7 +202,7 @@ fn legacy_modified(data: &str, key: &str, modifier: u32) -> bool {
 
 /// A press, repeat or release (Kitty flag 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum KeyEventType {
+pub(crate) enum KeyEventType {
     /// The key went down.
     Press,
     /// The key is held.

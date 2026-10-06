@@ -4,14 +4,14 @@
 
 /// Killed text, most recent last.
 #[derive(Clone, Debug, Default)]
-pub struct KillRing {
+pub(crate) struct KillRing {
     entries: Vec<String>,
 }
 
 impl KillRing {
     /// Records killed text. With `accumulate`, it joins the latest entry:
     /// before it when `prepend`, after it otherwise. Empty text is ignored.
-    pub fn push(&mut self, text: &str, prepend: bool, accumulate: bool) {
+    pub(crate) fn push(&mut self, text: &str, prepend: bool, accumulate: bool) {
         if text.is_empty() {
             return;
         }
@@ -28,25 +28,20 @@ impl KillRing {
     }
 
     /// The most recent entry.
-    pub fn peek(&self) -> Option<&str> {
+    pub(crate) fn peek(&self) -> Option<&str> {
         self.entries.last().map(String::as_str)
     }
 
     /// Moves the most recent entry to the oldest position.
-    pub fn rotate(&mut self) {
+    pub(crate) fn rotate(&mut self) {
         if let Some(last) = self.entries.pop() {
             self.entries.insert(0, last);
         }
     }
 
     /// The number of entries.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    /// Whether nothing was killed yet.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 }
 

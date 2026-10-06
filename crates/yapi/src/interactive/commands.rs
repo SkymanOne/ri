@@ -529,15 +529,10 @@ fn framed_markdown(
     let border = ctx.theme.fg("border");
     let mut out = lines::spacer(1);
     out.push(lines::border(width, border));
-    out.extend(lines::text(
-        &[styled(
-            title,
-            ctx.theme.fg("accent").add_modifier(Modifier::BOLD),
-        )],
+    out.extend(lines::text_row(
+        styled(title, ctx.theme.fg("accent").add_modifier(Modifier::BOLD)),
         width,
         1,
-        0,
-        None,
     ));
     out.extend(lines::spacer(1));
     out.extend(markdown::render(
@@ -552,74 +547,68 @@ fn framed_markdown(
     out
 }
 
-/// pi built-ins that belong to pi's services and brand, which yapi does not offer.
-const UNAVAILABLE: &[&str] = &["/share", "/bug", "/arminsayshi", "/dementedelves"];
+/// pi's built-in commands in the order `onSubmit` checks them, and whether
+/// each takes arguments after a space.
+const COMMANDS: &[(&str, bool)] = &[
+    ("/settings", false),
+    ("/scoped-models", false),
+    ("/model", true),
+    ("/thinking", true),
+    ("/export", true),
+    ("/import", true),
+    ("/share", false),
+    ("/bug", true),
+    ("/copy", false),
+    ("/name", true),
+    ("/session", false),
+    ("/changelog", false),
+    ("/hotkeys", false),
+    ("/fork", false),
+    ("/clone", false),
+    ("/tree", false),
+    ("/trust", false),
+    ("/login", true),
+    ("/logout", false),
+    ("/new", false),
+    ("/compact", true),
+    ("/reload", false),
+    ("/debug", false),
+    ("/arminsayshi", false),
+    ("/dementedelves", false),
+    ("/resume", false),
+    ("/quit", false),
+];
 
 impl super::App {
     /// Runs `text` when it is a built-in command, as pi's `onSubmit` matches
     /// them: exact names, or the name and a space for commands with arguments.
     pub(super) fn run_builtin(&mut self, text: &str) -> bool {
-        let with_args = |name: &str| text == name || text.starts_with(&format!("{name} "));
-        let argument = |name: &str| text.get(name.len()..).unwrap_or_default().trim().to_owned();
-        if let Some(name) = UNAVAILABLE.iter().find(|name| {
-            if matches!(**name, "/bug") {
-                with_args(name)
-            } else {
-                text == **name
+        let Some(&(command, _)) = COMMANDS.iter().find(|(name, arguments)| {
+            text == *name || (*arguments && text.starts_with(&format!("{name} ")))
+        }) else {
+            return false;
+        };
+        let argument = text
+            .get(command.len()..)
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        self.editor.set_text("");
+        match command {
+            // pi built-ins that belong to pi's services and brand.
+            "/share" | "/bug" | "/arminsayshi" | "/dementedelves" => {
+                self.error(format!("{command} is not available in yapi"));
             }
-        }) {
-            self.editor.set_text("");
-            self.error(format!("{name} is not available in yapi"));
-            return true;
-        }
-        if with_args("/login") {
-            self.editor.set_text("");
-            self.login_command(&argument("/login"));
-            return true;
-        }
-        if text == "/logout" {
-            self.editor.set_text("");
-            self.logout_command();
-            return true;
-        }
-        if text == "/scoped-models" {
-            self.editor.set_text("");
-            self.open_scoped_models();
-            return true;
-        }
-        if text == "/settings" {
-            self.open_settings();
-            self.editor.set_text("");
-            return true;
-        }
-        if with_args("/model") {
-            self.editor.set_text("");
-            let reference = argument("/model");
-            if reference.is_empty() {
-                self.open_model_selector("");
-            } else {
-                self.select_model(&reference);
-            }
-            return true;
-        }
-        if with_args("/thinking") {
-            self.editor.set_text("");
-            let level = argument("/thinking");
-            if level.is_empty() {
-                self.open_thinking_selector();
-            } else {
-                self.set_thinking(&level);
-            }
-            return true;
-        }
-        if with_args("/export") {
-            self.editor.set_text("");
-            self.export(text);
-            return true;
-        }
-        if with_args("/import") {
-            self.editor.set_text("");
-            match path_argument(text, "/import") {
+            "/login" => self.login_command(&argument),
+            "/logout" => self.logout_command(),
+            "/scoped-models" => self.open_scoped_models(),
+            "/settings" => self.open_settings(),
+            "/model" if argument.is_empty() => self.open_model_selector(""),
+            "/model" => self.select_model(&argument),
+            "/thinking" if argument.is_empty() => self.open_thinking_selector(),
+            "/thinking" => self.set_thinking(&argument),
+            "/export" => self.export(text),
+            "/import" => match path_argument(text, "/import") {
                 None => self.error("Usage: /import <path.jsonl>"),
                 Some(path) => {
                     self.dialog = Some(super::Dialog::Import(path.clone()));
@@ -628,20 +617,9 @@ impl super::App {
                         &["Yes", "No"],
                     )));
                 }
-            }
-            return true;
-        }
-        let command = match text {
-            "/copy" | "/session" | "/changelog" | "/hotkeys" | "/fork" | "/clone" | "/tree"
-            | "/new" | "/reload" | "/debug" | "/resume" | "/trust" | "/quit" => text,
-            _ if with_args("/name") => "/name",
-            _ if with_args("/compact") => "/compact",
-            _ => return false,
-        };
-        self.editor.set_text("");
-        match command {
+            },
             "/copy" => self.copy_last(),
-            "/name" => self.name(&argument("/name")),
+            "/name" => self.name(&argument),
             "/session" => {
                 let info = session_info(&self.session, &self.theme);
                 self.text_item(info, true, (1, 0));
@@ -679,11 +657,10 @@ impl super::App {
             "/tree" => self.open_tree(None),
             "/new" => self.new_session(),
             "/compact" => {
-                let instructions = text.get(9..).unwrap_or_default().trim().to_owned();
                 self.indicator = None;
                 let session = self.session.clone();
                 tokio::spawn(async move {
-                    let instructions = (!instructions.is_empty()).then_some(instructions);
+                    let instructions = (!argument.is_empty()).then_some(argument);
                     let _ = session.compact(instructions.as_deref()).await;
                 });
             }
@@ -754,20 +731,7 @@ impl super::App {
     fn export(&mut self, text: &str) {
         let path = path_argument(text, "/export");
         let Some(path) = path.clone().filter(|path| path.ends_with(".jsonl")) else {
-            let rgb =
-                |rgb: Option<[f64; 3]>| rgb.map(|[r, g, b]| yapi_tui::color::Color::Rgb(r, g, b));
-            let appearance = match self.colors.background {
-                Some(background) => {
-                    yapi_tui::theme::terminal_appearance(background, self.colors.foreground)
-                }
-                None => yapi_tui::theme::Appearance::Dark,
-            };
-            let theme = crate::export_html::ExportTheme {
-                theme: &self.theme,
-                foreground: rgb(self.colors.foreground),
-                background: rgb(self.colors.background),
-                appearance,
-            };
+            let theme = self.html_theme();
             match crate::export_html::export_session(&self.session, path.as_deref(), &theme) {
                 Ok(target) => self.status(format!("Session exported to: {}", target.display())),
                 Err(error) => self.error(format!("Failed to export session: {error}")),
@@ -792,6 +756,17 @@ impl super::App {
         match written {
             Ok(()) => self.status(format!("Session exported to: {}", target.display())),
             Err(error) => self.error(format!("Failed to export session: {error}")),
+        }
+    }
+
+    /// The theme and terminal colors an HTML export is drawn with.
+    fn html_theme(&self) -> crate::export_html::ExportTheme<'_> {
+        let rgb = |rgb: Option<[f64; 3]>| rgb.map(|[r, g, b]| yapi_tui::color::Color::Rgb(r, g, b));
+        crate::export_html::ExportTheme {
+            theme: &self.theme,
+            foreground: rgb(self.colors.foreground),
+            background: rgb(self.colors.background),
+            appearance: super::appearance(&self.colors),
         }
     }
 
@@ -948,6 +923,30 @@ impl super::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn html_export_reads_colorfgbg_without_a_reported_background() {
+        // COLORFGBG comes from the environment, so a child process checks it.
+        const CHILD: &str = "YAPI_TEST_HTML_THEME_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "interactive::commands::tests::html_export_reads_colorfgbg_without_a_reported_background",
+                ])
+                .env(CHILD, "1")
+                .env("COLORFGBG", "0;15")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let (app, _events) = super::super::tests::app();
+        assert_eq!(
+            app.html_theme().appearance,
+            yapi_tui::theme::Appearance::Light
+        );
+    }
 
     #[test]
     fn reads_path_arguments() {

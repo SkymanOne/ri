@@ -249,7 +249,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
     if parsed.help {
         let flags: Vec<yapi_ext::Flag> = loaded
             .as_ref()
-            .map(|extensions| {
+            .map(|(extensions, _)| {
                 extensions
                     .hosts
                     .iter()
@@ -260,8 +260,8 @@ async fn run(parsed: &mut args::Args) -> u8 {
         help::print(&flags, metadata_to_stderr);
         return 0;
     }
-    let extensions = match loaded {
-        Ok(extensions) => extensions,
+    let (extensions, run_settings) = match loaded {
+        Ok(loaded) => loaded,
         Err(errors) => {
             for message in &errors.messages {
                 eprintln!("Error: {message}");
@@ -280,7 +280,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
         && std::io::stdin().is_terminal()
         && std::io::stdout().is_terminal()
     {
-        match pick_session(parsed) {
+        match pick_session(parsed, &run_settings) {
             Ok(Some(path)) => {
                 parsed.session = Some(path.display().to_string());
                 parsed.resume = false;
@@ -301,13 +301,9 @@ async fn run(parsed: &mut args::Args) -> u8 {
             Some(_) => Some(yapi_types::settings::TuiMode::Fullscreen),
             None => None,
         };
-        let startup = match startup::start(parsed, None, &extensions, true) {
+        let startup = match start(parsed, None, &extensions, true, run_settings) {
             Ok(startup) => startup,
-            Err(err) if err.is::<startup::Cancelled>() => return 0,
-            Err(err) => {
-                eprintln!("{err}");
-                return 1;
-            }
+            Err(code) => return code,
         };
         // pi attaches `@` images to the initial message only.
         let initial_images = match startup.initial_message {
@@ -316,7 +312,6 @@ async fn run(parsed: &mut args::Args) -> u8 {
         };
         let mut initial: Vec<String> = startup.initial_message.into_iter().collect();
         initial.extend(startup.messages);
-        let args = parsed.clone();
         let run = interactive::run(
             startup.session,
             yapi_core::config::agent_dir(),
@@ -325,9 +320,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 verbose: parsed.verbose,
                 initial,
                 initial_images,
-                factory: Box::new(move |session| {
-                    startup::create(&args, session, false, &extensions)
-                }),
+                factory: startup::factory(parsed, extensions),
                 use_theme: parsed.use_theme.clone(),
                 model_fallback: startup.model_fallback,
                 model_network: model_network(parsed),
@@ -335,17 +328,21 @@ async fn run(parsed: &mut args::Args) -> u8 {
         );
         return survive_crash(run).await;
     }
-    if parsed.mode == Some(Mode::Rpc) {
-        let startup = match startup::start(parsed, None, &extensions, false) {
-            Ok(startup) => startup,
-            Err(err) => {
-                eprintln!("{err}");
-                return 1;
-            }
-        };
-        for error in startup.session.settings_errors() {
-            eprintln!("Warning: {error}");
-        }
+    let rpc = parsed.mode == Some(Mode::Rpc);
+    // RPC commands arrive on stdin.
+    let stdin = if rpc {
+        None
+    } else {
+        startup::read_piped_stdin()
+    };
+    let startup = match start(parsed, stdin, &extensions, false, run_settings) {
+        Ok(startup) => startup,
+        Err(code) => return code,
+    };
+    for error in startup.session.settings_errors() {
+        eprintln!("Warning: {error}");
+    }
+    if rpc {
         // pi refreshes model catalogs in the background for RPC.
         if model_network(parsed) {
             let session = startup.session.clone();
@@ -360,23 +357,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
         }
         // pi's RPC mode starts without a model, on a placeholder; prompts
         // then fail with the missing-key message.
-        let args = parsed.clone();
-        return modes::rpc::run(
-            startup.session,
-            Box::new(move |session| startup::create(&args, session, false, &extensions)),
-        )
-        .await;
-    }
-    let stdin = startup::read_piped_stdin();
-    let startup = match startup::start(parsed, stdin, &extensions, false) {
-        Ok(startup) => startup,
-        Err(err) => {
-            eprintln!("{err}");
-            return 1;
-        }
-    };
-    for error in startup.session.settings_errors() {
-        eprintln!("Warning: {error}");
+        return modes::rpc::run(startup.session, startup::factory(parsed, extensions)).await;
     }
     // pi's print mode kills running commands and exits with the signal's
     // code on SIGTERM and SIGHUP. The run stays alive until they are killed:
@@ -390,6 +371,24 @@ async fn run(parsed: &mut args::Args) -> u8 {
             code
         }
     }
+}
+
+/// [`startup::start`], or the exit code once its error is printed; a
+/// cancelled prompt exits quietly.
+fn start(
+    parsed: &mut args::Args,
+    stdin: Option<String>,
+    extensions: &startup::Extensions,
+    interactive: bool,
+    run_settings: startup::RunSettings,
+) -> Result<startup::Startup, u8> {
+    startup::start(parsed, stdin, extensions, interactive, run_settings).map_err(|err| {
+        if err.is::<startup::Cancelled>() {
+            return 0;
+        }
+        eprintln!("{err}");
+        1
+    })
 }
 
 /// Asks whether to trust the working directory when its project resources
@@ -416,12 +415,16 @@ fn ask_project_trust(parsed: &mut args::Args) -> anyhow::Result<()> {
 }
 
 /// pi's `--resume` picker over this project's sessions, then all of them.
-fn pick_session(parsed: &args::Args) -> anyhow::Result<Option<std::path::PathBuf>> {
+fn pick_session(
+    parsed: &args::Args,
+    run_settings: &startup::RunSettings,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
     let agent_dir = yapi_core::config::agent_dir();
-    let (cwd, custom, theme) = startup::resume_context(parsed)?;
-    let default_dir = yapi_core::config::default_session_dir(&agent_dir, &cwd);
+    let cwd = &run_settings.cwd;
+    let (custom, theme) = startup::resume_context(parsed, run_settings);
+    let default_dir = yapi_core::config::default_session_dir(&agent_dir, cwd);
     let custom = custom.filter(|dir| *dir != default_dir);
-    let sources = interactive::session_sources(&agent_dir, &cwd, custom);
+    let sources = interactive::session_sources(&agent_dir, cwd, custom);
     Ok(interactive::picker::pick_session(
         &agent_dir,
         sources,

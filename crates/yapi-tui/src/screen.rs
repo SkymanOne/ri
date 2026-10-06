@@ -6,7 +6,6 @@
 //! (`tui-alt-screen.ts`): a scrolling transcript above a dock pinned to the
 //! bottom of the alternate screen.
 
-use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use ratatui_core::style::Style;
@@ -29,7 +28,7 @@ fn clip(line: &StyledLine, width: usize) -> String {
 }
 
 /// A frame cursor position: row in the rendered lines and column.
-pub type Cursor = Option<(usize, usize)>;
+pub(crate) type Cursor = Option<(usize, usize)>;
 
 /// A component drawn over the screen, as pi-tui's overlays are: its rows from
 /// screen row `row` and column `col`, `width` columns wide.
@@ -182,16 +181,15 @@ impl MainScreen {
         let mut top = prev_top;
         let mut hardware_row = self.hardware_cursor_row;
 
-        if self.previous.is_empty() && !width_changed && !height_changed {
-            self.full_render(&mut out, lines, false, cursor, width, height);
-            return out;
-        }
-        if width_changed || height_changed {
-            self.full_render(&mut out, lines, true, cursor, width, height);
-            return out;
-        }
-        if self.clear_on_shrink && lines.len() < self.max_lines_rendered {
-            self.full_render(&mut out, lines, true, cursor, width, height);
+        // The first frame draws without clearing; a resize, or a shrink with
+        // `clearOnShrink`, redraws everything.
+        let first_frame = self.previous.is_empty() && !width_changed && !height_changed;
+        if first_frame
+            || width_changed
+            || height_changed
+            || (self.clear_on_shrink && lines.len() < self.max_lines_rendered)
+        {
+            self.full_render(&mut out, lines, !first_frame, cursor, width, height);
             return out;
         }
 
@@ -338,47 +336,6 @@ impl MainScreen {
     }
 }
 
-impl AltScreen {
-    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
-    /// last column, scrolled to `top`, while the scrollbar shows.
-    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], top: usize, width: usize) -> bool {
-        let (track, content) = (self.viewport, self.transcript_len);
-        let visible = match self.scrollbar {
-            Scrollbar::Always => track > 0,
-            Scrollbar::Auto => content > track && self.scrollbar_deadline().is_some(),
-            Scrollbar::Hidden => false,
-        };
-        if !visible || width == 0 || content == 0 {
-            if self.scrollbar_deadline().is_none() {
-                self.scrollbar_until = None;
-            }
-            return false;
-        }
-        let round = |value: f64| value.round() as usize;
-        let thumb = (track * track)
-            .checked_div(content)
-            .map_or(track, |_| round((track * track) as f64 / content as f64))
-            .min(track)
-            .max(2.min(track));
-        let max_top = content.saturating_sub(track);
-        let offset = if max_top == 0 {
-            0
-        } else {
-            round(top.min(max_top) as f64 / max_top as f64 * (track - thumb) as f64)
-        };
-        let keep_background = self.scrollbar != Scrollbar::Always;
-        for (row, line) in rows.iter_mut().take(track).enumerate() {
-            let (glyph, style) = if row >= offset && row < offset + thumb {
-                ("┃", self.scrollbar_thumb)
-            } else {
-                ("│", self.scrollbar_track)
-            };
-            *line = replace_last_cell(line, width, glyph, style, keep_background);
-        }
-        true
-    }
-}
-
 /// pi's `replaceScrollbarCell` for the last column: the line up to it, a
 /// wide character crossing it given up for spaces, then `glyph`, over the
 /// cell's own background when `keep_background`.
@@ -417,7 +374,7 @@ fn replace_last_cell(
 /// of parts with natural heights `sizes` and minimums `minimums` in
 /// `available` rows. Each pass takes from every part above its minimum in
 /// proportion to its height, at least one row each, until the stack fits.
-pub fn shrink_stack(sizes: &[usize], minimums: &[usize], available: usize) -> Vec<usize> {
+pub(crate) fn shrink_stack(sizes: &[usize], minimums: &[usize], available: usize) -> Vec<usize> {
     let mut sizes: Vec<usize> = sizes
         .iter()
         .zip(minimums)
@@ -637,11 +594,6 @@ impl AltScreen {
         self.scroll_top = None;
     }
 
-    /// Whether the view follows new output.
-    pub fn following(&self) -> bool {
-        self.scroll_top.is_none()
-    }
-
     /// Draws a frame and returns the bytes to write. `cursor` is in dock
     /// coordinates.
     pub fn frame(
@@ -731,12 +683,45 @@ impl AltScreen {
         self.previous_cursor = cursor;
         out
     }
-}
 
-/// Writes `data` and flushes.
-pub fn write_all(out: &mut impl Write, data: &str) -> io::Result<()> {
-    out.write_all(data.as_bytes())?;
-    out.flush()
+    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
+    /// last column, scrolled to `top`, while the scrollbar shows.
+    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], top: usize, width: usize) -> bool {
+        let (track, content) = (self.viewport, self.transcript_len);
+        let visible = match self.scrollbar {
+            Scrollbar::Always => track > 0,
+            Scrollbar::Auto => content > track && self.scrollbar_deadline().is_some(),
+            Scrollbar::Hidden => false,
+        };
+        if !visible || width == 0 || content == 0 {
+            if self.scrollbar_deadline().is_none() {
+                self.scrollbar_until = None;
+            }
+            return false;
+        }
+        let round = |value: f64| value.round() as usize;
+        let thumb = (track * track)
+            .checked_div(content)
+            .map_or(track, |_| round((track * track) as f64 / content as f64))
+            .min(track)
+            .max(2.min(track));
+        let max_top = content.saturating_sub(track);
+        let offset = if max_top == 0 {
+            0
+        } else {
+            round(top.min(max_top) as f64 / max_top as f64 * (track - thumb) as f64)
+        };
+        let keep_background = self.scrollbar != Scrollbar::Always;
+        for (row, line) in rows.iter_mut().take(track).enumerate() {
+            let (glyph, style) = if row >= offset && row < offset + thumb {
+                ("┃", self.scrollbar_thumb)
+            } else {
+                ("│", self.scrollbar_track)
+            };
+            *line = replace_last_cell(line, width, glyph, style, keep_background);
+        }
+        true
+    }
 }
 
 #[cfg(test)]
@@ -774,7 +759,7 @@ mod tests {
         assert!(frame.contains("\x1b[1;1H\x1b[2K2"));
         assert!(frame.contains("Jump to latest"));
         screen.bottom();
-        assert!(screen.following());
+        assert!(screen.scroll_top.is_none());
     }
 
     #[test]

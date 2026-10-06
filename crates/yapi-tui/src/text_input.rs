@@ -351,12 +351,7 @@ mod tests {
     use crate::keys::Keys;
 
     fn kb() -> Keybindings {
-        Keybindings::new(
-            Keys::default(),
-            tui_definitions(),
-            &UserBindings::new(),
-            &[],
-        )
+        Keybindings::new(Keys::default(), tui_definitions(), &UserBindings::new())
     }
 
     fn text(line: &Line<'_>) -> String {

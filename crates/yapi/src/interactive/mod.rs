@@ -78,6 +78,39 @@ const DOUBLE_PRESS: Duration = Duration::from_millis(500);
 const COLOR_QUERY_TIMEOUT: Duration = Duration::from_millis(100);
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 const STDIN_POLL: Duration = Duration::from_millis(50);
+/// The app's actions that keys trigger from the editor, in the order pi
+/// registers their handlers.
+const APP_KEYS: &[&str] = &[
+    "app.clear",
+    "app.suspend",
+    "app.thinking.cycle",
+    "app.model.cycleForward",
+    "app.model.cycleBackward",
+    "app.model.select",
+    "app.tools.expand",
+    "app.thinking.toggle",
+    "app.editor.external",
+    "app.message.copy",
+    "app.message.followUp",
+    "app.message.dequeue",
+    "app.session.new",
+    "app.session.tree",
+    "app.session.fork",
+    "app.session.resume",
+];
+/// Fullscreen scrolling keys, in the order pi-tui checks them.
+const VIEWPORT_KEYS: &[&str] = &[
+    "tui.altScreen.pageUp",
+    "tui.altScreen.pageDown",
+    "tui.altScreen.halfPageUp",
+    "tui.altScreen.halfPageDown",
+    "tui.altScreen.lineUp",
+    "tui.altScreen.lineDown",
+    "tui.altScreen.previousPrompt",
+    "tui.altScreen.nextPrompt",
+    "tui.altScreen.top",
+    "tui.altScreen.bottom",
+];
 
 /// Events the loop handles. Session events carry the epoch of the session
 /// that sent them, so a replaced session's late events are dropped.
@@ -591,12 +624,10 @@ impl App {
         let (text, style) = (text.into(), style.to_owned());
         self.push(Item::Render(Box::new(move |width, ctx| {
             let mut out = lines::spacer(1);
-            out.extend(lines::text(
-                &[lines::styled(text.clone(), ctx.theme.fg(&style))],
+            out.extend(lines::text_row(
+                lines::styled(text.clone(), ctx.theme.fg(&style)),
                 width,
                 1,
-                0,
-                None,
             ));
             out
         })));
@@ -641,6 +672,20 @@ impl App {
         self.cache.clear();
         self.streaming = None;
         self.tool_items.clear();
+    }
+
+    /// Removes the item at `index`; the indices of later items shift down.
+    fn remove_item(&mut self, index: usize) {
+        self.chat.remove(index);
+        self.cache.remove(index);
+        self.tool_items.retain(|_, item| *item != index);
+        let shift = |item: usize| if item > index { item - 1 } else { item };
+        for item in self.tool_items.values_mut() {
+            *item = shift(*item);
+        }
+        self.streaming = self.streaming.filter(|item| *item != index).map(shift);
+        // The flattened rows still hold the removed item.
+        self.flat_key = None;
     }
 
     fn ui(&self) -> Ui<'_> {
@@ -1176,7 +1221,9 @@ impl App {
                 reasoning: model.as_ref().is_some_and(|model| model.reasoning),
                 thinking: self.session.thinking_level().as_str(),
                 several_providers: providers.len() > 1,
-                subscription: false,
+                subscription: model.as_ref().is_some_and(|model| {
+                    footer::subscription(&self.session.registry(), &model.provider)
+                }),
             },
             &self.theme,
             width,
@@ -1615,9 +1662,7 @@ impl App {
                     self.indicator = None;
                 }
                 if let Some(index) = self.streaming.take() {
-                    self.chat.remove(index);
-                    self.cache.remove(index);
-                    self.tool_items.retain(|_, item| *item != index);
+                    self.remove_item(index);
                 }
             }
             AgentEvent::QueueUpdate {
@@ -1736,23 +1781,10 @@ impl App {
             .iter()
             .position(|item| matches!(item, Item::Compaction { .. }))
         {
-            self.chat.remove(position);
-            self.cache.remove(position);
-            let shift: Vec<(String, usize)> = self
-                .tool_items
-                .iter()
-                .map(|(id, index)| {
-                    (
-                        id.clone(),
-                        if *index > position { index - 1 } else { *index },
-                    )
-                })
-                .collect();
-            self.tool_items = shift.into_iter().collect();
+            self.remove_item(position);
         }
         if let Some(Item::Status(_)) = self.chat.last() {
-            self.chat.pop();
-            self.cache.pop();
+            self.remove_item(self.chat.len() - 1);
         }
     }
 
@@ -1786,7 +1818,7 @@ impl App {
         if messages.is_empty() {
             return;
         }
-        let (session, tx, epoch) = (self.session.clone(), self.tx.clone(), self.epoch);
+        let (session, notify) = (self.session.clone(), self.notifier());
         tokio::spawn(async move {
             for (text, behavior) in messages {
                 let source = yapi_core::agent_session::InputSource::Interactive;
@@ -1794,10 +1826,19 @@ impl App {
                     .queue_input(&text, Vec::new(), behavior, source)
                     .await
                 {
-                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                    notify(error, NotifyKind::Error);
                 }
             }
         });
+    }
+
+    /// Shows a notice from a task beside the loop, unless the session it
+    /// belongs to has been replaced by then.
+    fn notifier(&self) -> impl Fn(String, NotifyKind) + Send + 'static {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        move |message, kind| {
+            let _ = tx.send(Event::Notify(epoch, message, kind));
+        }
     }
 
     // Input
@@ -1841,12 +1882,10 @@ impl App {
         if self.session.is_extension_command(&text) {
             // Extension commands run at once, even while a response streams.
             self.editor.add_to_history(&text);
-            let session = self.session.clone();
-            let tx = self.tx.clone();
-            let epoch = self.epoch;
+            let (session, notify) = (self.session.clone(), self.notifier());
             tokio::spawn(async move {
                 if let Err(error) = session.prompt(&text, Vec::new()).await {
-                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                    notify(error, NotifyKind::Error);
                 }
             });
             return;
@@ -2017,13 +2056,13 @@ impl App {
             .find(|binding| decoder.matches(data, &binding.key))
             .cloned()
         {
-            let session = self.session.clone();
-            let tx = self.tx.clone();
-            let epoch = self.epoch;
+            let (session, notify) = (self.session.clone(), self.notifier());
             tokio::spawn(async move {
                 if let Err(error) = session.run_shortcut(&binding).await {
-                    let message = format!("Shortcut handler error: {error}");
-                    let _ = tx.send(Event::Notify(epoch, message, NotifyKind::Error));
+                    notify(
+                        format!("Shortcut handler error: {error}"),
+                        NotifyKind::Error,
+                    );
                 }
             });
             return true;
@@ -2037,10 +2076,22 @@ impl App {
             self.quit = true;
             return true;
         }
-        if !(keys.matches(data, "tui.editor.historyPrevious")
-            || keys.matches(data, "tui.editor.historyNext"))
-        {
-            if keys.matches(data, "app.clear") {
+        let history = keys.matches(data, "tui.editor.historyPrevious")
+            || keys.matches(data, "tui.editor.historyNext");
+        let Some(&action) = APP_KEYS
+            .iter()
+            .find(|action| !history && keys.matches(data, action))
+        else {
+            return match self.editor.handle_input(data, &self.keys) {
+                EditorEvent::Submit(text) => {
+                    self.on_submit(text);
+                    true
+                }
+                EditorEvent::None => false,
+            };
+        };
+        match action {
+            "app.clear" => {
                 if self
                     .last_clear
                     .is_some_and(|at| at.elapsed() < DOUBLE_PRESS)
@@ -2050,35 +2101,17 @@ impl App {
                     self.editor.set_text("");
                     self.last_clear = Some(Instant::now());
                 }
-                return true;
             }
-            if keys.matches(data, "app.suspend") {
-                self.suspend(terminal);
-                return true;
-            }
-            if keys.matches(data, "app.thinking.cycle") {
-                match self.session.cycle_thinking_level() {
-                    Some(level) => self.status(format!("Thinking level: {}", level.as_str())),
-                    None => self.status("Current model does not support thinking"),
-                }
-                return true;
-            }
-            if keys.matches(data, "app.model.cycleForward")
-                || keys.matches(data, "app.model.cycleBackward")
-            {
-                let forward = keys.matches(data, "app.model.cycleForward");
-                self.cycle_model(forward);
-                return true;
-            }
-            if keys.matches(data, "app.model.select") {
-                self.open_model_selector("");
-                return true;
-            }
-            if keys.matches(data, "app.tools.expand") {
-                self.toggle_tools();
-                return true;
-            }
-            if keys.matches(data, "app.thinking.toggle") {
+            "app.suspend" => self.suspend(terminal),
+            "app.thinking.cycle" => match self.session.cycle_thinking_level() {
+                Some(level) => self.status(format!("Thinking level: {}", level.as_str())),
+                None => self.status("Current model does not support thinking"),
+            },
+            "app.model.cycleForward" => self.cycle_model(true),
+            "app.model.cycleBackward" => self.cycle_model(false),
+            "app.model.select" => self.open_model_selector(""),
+            "app.tools.expand" => self.toggle_tools(),
+            "app.thinking.toggle" => {
                 self.hide_thinking = !self.hide_thinking;
                 let _ = self
                     .session
@@ -2089,17 +2122,10 @@ impl App {
                 } else {
                     "Thinking blocks: visible"
                 });
-                return true;
             }
-            if keys.matches(data, "app.editor.external") {
-                self.external_editor(terminal);
-                return true;
-            }
-            if keys.matches(data, "app.message.copy") {
-                self.copy_last();
-                return true;
-            }
-            if keys.matches(data, "app.message.followUp") {
+            "app.editor.external" => self.external_editor(terminal),
+            "app.message.copy" => self.copy_last(),
+            "app.message.followUp" => {
                 let text = self.editor.expanded_text().trim().to_owned();
                 if text.is_empty() {
                     return true;
@@ -2117,9 +2143,8 @@ impl App {
                     self.editor.set_text("");
                     self.on_submit(text);
                 }
-                return true;
             }
-            if keys.matches(data, "app.message.dequeue") {
+            "app.message.dequeue" => {
                 let count = self.restore_queue(false);
                 if count == 0 {
                     self.status("No queued messages to restore");
@@ -2129,32 +2154,14 @@ impl App {
                         if count > 1 { "s" } else { "" }
                     ));
                 }
-                return true;
             }
-            if keys.matches(data, "app.session.new") {
-                self.new_session();
-                return true;
-            }
-            if keys.matches(data, "app.session.tree") {
-                self.open_tree(None);
-                return true;
-            }
-            if keys.matches(data, "app.session.fork") {
-                self.open_fork();
-                return true;
-            }
-            if keys.matches(data, "app.session.resume") {
-                self.open_resume();
-                return true;
-            }
+            "app.session.new" => self.new_session(),
+            "app.session.tree" => self.open_tree(None),
+            "app.session.fork" => self.open_fork(),
+            "app.session.resume" => self.open_resume(),
+            _ => {}
         }
-        match self.editor.handle_input(data, &self.keys) {
-            EditorEvent::Submit(text) => {
-                self.on_submit(text);
-                true
-            }
-            EditorEvent::None => false,
-        }
+        true
     }
 
     fn toggle_tools(&mut self) {
@@ -2174,10 +2181,18 @@ impl App {
             self.error("No agent messages to copy yet.");
             return;
         };
-        match clipboard::copy(&text, emit) {
-            Ok(()) => self.status("Copied last agent message to clipboard"),
-            Err(error) => self.error(error),
-        }
+        self.copy_to_clipboard(text, "Copied last agent message to clipboard");
+    }
+
+    /// pi's `copyToClipboard` beside the loop, then `done` or the error.
+    fn copy_to_clipboard(&self, text: String, done: &'static str) {
+        let notify = self.notifier();
+        tokio::spawn(async move {
+            match clipboard::copy(&text, emit).await {
+                Ok(()) => notify(done.to_owned(), NotifyKind::Info),
+                Err(error) => notify(error, NotifyKind::Error),
+            }
+        });
     }
 
     fn cycle_model(&mut self, forward: bool) {
@@ -2223,29 +2238,24 @@ impl App {
             }
             return true;
         }
-        let keys = &self.keys;
-        if keys.matches(data, "tui.altScreen.pageUp") {
-            self.alt.page(-1);
-        } else if keys.matches(data, "tui.altScreen.pageDown") {
-            self.alt.page(1);
-        } else if keys.matches(data, "tui.altScreen.halfPageUp") {
-            self.alt.half_page(-1);
-        } else if keys.matches(data, "tui.altScreen.halfPageDown") {
-            self.alt.half_page(1);
-        } else if keys.matches(data, "tui.altScreen.lineUp") {
-            self.alt.scroll_by(-1);
-        } else if keys.matches(data, "tui.altScreen.lineDown") {
-            self.alt.scroll_by(1);
-        } else if keys.matches(data, "tui.altScreen.previousPrompt") {
-            self.scroll_to_prompt(false);
-        } else if keys.matches(data, "tui.altScreen.nextPrompt") {
-            self.scroll_to_prompt(true);
-        } else if keys.matches(data, "tui.altScreen.top") {
-            self.alt.top();
-        } else if keys.matches(data, "tui.altScreen.bottom") {
-            self.alt.bottom();
-        } else {
+        let Some(&action) = VIEWPORT_KEYS
+            .iter()
+            .find(|action| self.keys.matches(data, action))
+        else {
             return false;
+        };
+        match action {
+            "tui.altScreen.pageUp" => self.alt.page(-1),
+            "tui.altScreen.pageDown" => self.alt.page(1),
+            "tui.altScreen.halfPageUp" => self.alt.half_page(-1),
+            "tui.altScreen.halfPageDown" => self.alt.half_page(1),
+            "tui.altScreen.lineUp" => self.alt.scroll_by(-1),
+            "tui.altScreen.lineDown" => self.alt.scroll_by(1),
+            "tui.altScreen.previousPrompt" => self.scroll_to_prompt(false),
+            "tui.altScreen.nextPrompt" => self.scroll_to_prompt(true),
+            "tui.altScreen.top" => self.alt.top(),
+            "tui.altScreen.bottom" => self.alt.bottom(),
+            _ => {}
         }
         true
     }
@@ -2332,10 +2342,7 @@ impl App {
             }
             Action::Copy(text) => match text {
                 None => self.error("Selected entry has no text to copy"),
-                Some(text) => match clipboard::copy(&text, emit) {
-                    Ok(()) => self.status("Copied selected message to clipboard"),
-                    Err(error) => self.error(error),
-                },
+                Some(text) => self.copy_to_clipboard(text, "Copied selected message to clipboard"),
             },
             Action::ToggleTools => self.toggle_tools(),
             Action::Provider(option) => self.provider_chosen(*option),
@@ -2798,9 +2805,7 @@ impl App {
         }
         let mut edited: Option<String> = None;
         self.with_terminal_released(terminal, || {
-            emit(&format!(
-                "Launching external editor: {command}\nri will resume when the editor exits.\n"
-            ));
+            emit(&external_editor_notice(&command));
             let mut parts = command.split(' ').filter(|part| !part.is_empty());
             if let Some(program) = parts.next() {
                 let status = std::process::Command::new(program)
@@ -2820,6 +2825,11 @@ impl App {
             self.editor.set_text(&text);
         }
     }
+}
+
+/// pi's notice before the external editor takes the terminal.
+fn external_editor_notice(command: &str) -> String {
+    format!("Launching external editor: {command}\nyapi will resume when the editor exits.\n")
 }
 
 /// pi's `CompactionStatusIndicator` label for `reason`.
@@ -2995,7 +3005,7 @@ fn quote(value: &str) -> String {
 }
 
 /// Runs interactive mode until the user quits. Returns the exit code.
-pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) -> u8 {
+pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options) -> u8 {
     #[cfg(unix)]
     let raw = match yapi_tui::terminal::RawMode::enable() {
         Ok(raw) => raw,
@@ -3051,121 +3061,16 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         }
     }
 
-    let mode = color_mode();
-    let theme_files = themes::ThemeFiles::load(&session.resources().themes);
-    let theme_override = options.use_theme.clone();
-    let model_fallback = options.model_fallback;
-    let (theme, theme_error) = load_theme(
-        theme_override
-            .as_deref()
-            .or(session.settings().theme.as_deref()),
-        &theme_files,
-        &agent_dir,
-        &query.colors(),
-        mode,
+    let model_fallback = options.model_fallback.take();
+    let (mut app, theme_error) = App::new(
+        session,
+        agent_dir.clone(),
+        options,
+        tx.clone(),
+        query.colors(),
+        terminal.protocol.kitty,
     );
-    let mut keys = keybindings::load(&agent_dir, Keys::detect(terminal.protocol.kitty));
-    keys.set_kitty(terminal.protocol.kitty);
-    let settings = session.settings();
-    let fullscreen = options.tui_mode.or(settings.tui_mode) != Some(TuiMode::Regular);
-    let quiet = settings.quiet_startup.as_ref();
-    let show_details = options.verbose
-        || !matches!(
-            quiet,
-            Some(yapi_types::settings::BoolOr::Bool(true))
-                | Some(yapi_types::settings::BoolOr::Other(_))
-        );
-    // `quietStartup: true` hides the header too; `"header"` only the details.
-    let show_header =
-        options.verbose || !matches!(quiet, Some(yapi_types::settings::BoolOr::Bool(true)));
-    let mut editor = Editor::new(
-        editor_theme(&theme),
-        usize::from(settings.editor_padding_x.unwrap_or(0).min(3)),
-        usize::from(settings.autocomplete_max_visible.unwrap_or(5)),
-    );
-    editor.focused = true;
-    let cwd = session.cwd().to_path_buf();
-    let expand_key = keybindings::keys_text(&keys, "app.tools.expand");
-    let cancel_key = keybindings::keys_text(&keys, "tui.select.cancel");
-    let mut app = App {
-        markdown: markdown_theme(&theme),
-        theme,
-        keys,
-        editor,
-        selector: None,
-        dialog: None,
-        chat: Vec::new(),
-        cache: Vec::new(),
-        flat: Vec::new(),
-        flat_header: Vec::new(),
-        flat_key: None,
-        flat_offsets: Vec::new(),
-        footer_cache: None,
-        generation: 0,
-        streaming: None,
-        tool_items: HashMap::new(),
-        pending: (Vec::new(), Vec::new()),
-        pending_bash: Vec::new(),
-        next_bash: 0,
-        compaction_queue: Vec::new(),
-        manual_compaction: false,
-        progress: None,
-        indicator: None,
-        expanded: options.verbose,
-        hide_thinking: settings.hide_thinking_block.unwrap_or(false),
-        output_pad: usize::from(settings.output_pad.unwrap_or(1).min(1)),
-        show_details,
-        fullscreen,
-        alt: AltScreen::new(),
-        main: MainScreen::new(),
-        size: yapi_tui::terminal::size(),
-        last_clear: None,
-        last_escape: None,
-        running: false,
-        quit: false,
-        exit_code: 0,
-        branch: footer::git_branch(&cwd),
-        cwd,
-        home: home_dir(),
-        expand_key,
-        cancel_key,
-        fd: None,
-        colors: query.colors(),
-        color_mode: mode,
-        kitty: terminal.protocol.kitty,
-        tx: tx.clone(),
-        session: session.clone(),
-        factory: options.factory,
-        agent_dir: agent_dir.clone(),
-        epoch: 0,
-        login: None,
-        next_login: 0,
-        anthropic_warning_shown: false,
-        ext: extension_ui::ExtensionState::default(),
-        initial: options.initial,
-        initial_images: options.initial_images,
-        provider_count: 0,
-        model_network: options.model_network,
-        next_refresh: 0,
-        binding: None,
-        overlay: None,
-        overlays_below: Vec::new(),
-        show_header,
-        theme_files,
-        theme_override,
-        shortcuts: Vec::new(),
-        shutdown_requested: false,
-        extension_issues: Vec::new(),
-    };
-    app.style_alt_screen();
-    app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
-    app.main.show_hardware_cursor = settings.show_hardware_cursor.unwrap_or(false);
-    app.alt.show_hardware_cursor = app.main.show_hardware_cursor;
-    app.main.clear_on_shrink = settings
-        .terminal
-        .as_ref()
-        .and_then(|terminal| terminal.clear_on_shrink)
-        .unwrap_or(false);
+    let (show_details, fullscreen) = (app.show_details, app.fullscreen);
     let scoped = app.session.scoped_models();
     if !scoped.is_empty() && show_details {
         let list: Vec<String> = scoped
@@ -3212,7 +3117,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         app.warning(message);
     }
     for event in early_events {
-        app.on_event(event, &mut terminal);
+        app.on_event(event);
     }
     app.editor.begin_input_batch();
     for key in early {
@@ -3276,7 +3181,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
                     app.keys.set_kitty(terminal.protocol.kitty);
                     app.kitty = terminal.protocol.kitty;
                 } else {
-                    app.on_event(event, &mut terminal);
+                    app.on_event(event);
                 }
                 dirty = true;
             }
@@ -3379,6 +3284,133 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
 }
 
 impl App {
+    /// The app for `session` before anything is drawn, with the error from
+    /// loading the configured theme.
+    fn new(
+        session: AgentSession,
+        agent_dir: PathBuf,
+        options: Options,
+        tx: UnboundedSender<Event>,
+        colors: yapi_tui::terminal::TerminalColors,
+        kitty: bool,
+    ) -> (App, Option<String>) {
+        let mode = color_mode();
+        let theme_files = themes::ThemeFiles::load(&session.resources().themes);
+        let theme_override = options.use_theme.clone();
+        let (theme, theme_error) = load_theme(
+            theme_override
+                .as_deref()
+                .or(session.settings().theme.as_deref()),
+            &theme_files,
+            &agent_dir,
+            &colors,
+            mode,
+        );
+        let mut keys = keybindings::load(&agent_dir, Keys::detect(kitty));
+        keys.set_kitty(kitty);
+        let settings = session.settings();
+        let fullscreen = options.tui_mode.or(settings.tui_mode) != Some(TuiMode::Regular);
+        let quiet = settings.quiet_startup.as_ref();
+        let show_details = options.verbose
+            || !matches!(
+                quiet,
+                Some(yapi_types::settings::BoolOr::Bool(true))
+                    | Some(yapi_types::settings::BoolOr::Other(_))
+            );
+        // `quietStartup: true` hides the header too; `"header"` only the details.
+        let show_header =
+            options.verbose || !matches!(quiet, Some(yapi_types::settings::BoolOr::Bool(true)));
+        let mut editor = Editor::new(
+            editor_theme(&theme),
+            usize::from(settings.editor_padding_x.unwrap_or(0).min(3)),
+            usize::from(settings.autocomplete_max_visible.unwrap_or(5)),
+        );
+        editor.focused = true;
+        let cwd = session.cwd().to_path_buf();
+        let expand_key = keybindings::keys_text(&keys, "app.tools.expand");
+        let cancel_key = keybindings::keys_text(&keys, "tui.select.cancel");
+        let mut app = App {
+            markdown: markdown_theme(&theme),
+            theme,
+            keys,
+            editor,
+            selector: None,
+            dialog: None,
+            chat: Vec::new(),
+            cache: Vec::new(),
+            flat: Vec::new(),
+            flat_header: Vec::new(),
+            flat_key: None,
+            flat_offsets: Vec::new(),
+            footer_cache: None,
+            generation: 0,
+            streaming: None,
+            tool_items: HashMap::new(),
+            pending: (Vec::new(), Vec::new()),
+            pending_bash: Vec::new(),
+            next_bash: 0,
+            compaction_queue: Vec::new(),
+            manual_compaction: false,
+            progress: None,
+            indicator: None,
+            expanded: options.verbose,
+            hide_thinking: settings.hide_thinking_block.unwrap_or(false),
+            output_pad: usize::from(settings.output_pad.unwrap_or(1).min(1)),
+            show_details,
+            fullscreen,
+            alt: AltScreen::new(),
+            main: MainScreen::new(),
+            size: yapi_tui::terminal::size(),
+            last_clear: None,
+            last_escape: None,
+            running: false,
+            quit: false,
+            exit_code: 0,
+            branch: footer::git_branch(&cwd),
+            cwd,
+            home: home_dir(),
+            expand_key,
+            cancel_key,
+            fd: None,
+            colors,
+            color_mode: mode,
+            kitty,
+            tx,
+            session,
+            factory: options.factory,
+            agent_dir,
+            epoch: 0,
+            login: None,
+            next_login: 0,
+            anthropic_warning_shown: false,
+            ext: extension_ui::ExtensionState::default(),
+            initial: options.initial,
+            initial_images: options.initial_images,
+            provider_count: 0,
+            model_network: options.model_network,
+            next_refresh: 0,
+            binding: None,
+            overlay: None,
+            overlays_below: Vec::new(),
+            show_header,
+            theme_files,
+            theme_override,
+            shortcuts: Vec::new(),
+            shutdown_requested: false,
+            extension_issues: Vec::new(),
+        };
+        app.style_alt_screen();
+        app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
+        app.main.show_hardware_cursor = settings.show_hardware_cursor.unwrap_or(false);
+        app.alt.show_hardware_cursor = app.main.show_hardware_cursor;
+        app.main.clear_on_shrink = settings
+            .terminal
+            .as_ref()
+            .and_then(|terminal| terminal.clear_on_shrink)
+            .unwrap_or(false);
+        (app, theme_error)
+    }
+
     /// Starts the current session's extensions once the event that replaced
     /// the session is handled, so they see the app's state (the theme) as it
     /// ends. Handlers may wait for dialogs, so they run beside the loop.
@@ -3404,7 +3436,7 @@ impl App {
     }
 
     /// Handles everything but input.
-    fn on_event(&mut self, event: Event, _terminal: &mut Terminal) {
+    fn on_event(&mut self, event: Event) {
         self.footer_cache = None;
         // pi draws an extension's footer every frame; its stats change with
         // the agent's events.
@@ -3503,6 +3535,61 @@ impl App {
 mod tests {
     use super::*;
 
+    /// An app around an in-memory session without a model, as `run` builds
+    /// it, and the receiver of its events.
+    pub(super) fn app() -> (App, UnboundedReceiver<Event>) {
+        let cwd = Path::new("/work");
+        let session = AgentSession::new(yapi_core::agent_session::SessionConfig {
+            cwd: cwd.to_path_buf(),
+            agent_dir: PathBuf::from("/agent"),
+            settings: yapi_core::settings::SettingsManager::in_memory(),
+            registry: yapi_ai::registry::ModelRegistry::builtin(),
+            apis: yapi_ai::api::Apis::default(),
+            session: SessionManager::in_memory(cwd),
+            model: None,
+            thinking_level: yapi_types::message::ThinkingLevel::Off,
+            tools: Vec::new(),
+            extensions: Vec::new(),
+            include_extension_tools: false,
+            allowed_tools: None,
+            excluded_tools: Vec::new(),
+            resources: yapi_core::agent_session::Resources::default(),
+        });
+        let options = Options {
+            tui_mode: None,
+            verbose: false,
+            initial: Vec::new(),
+            initial_images: Vec::new(),
+            factory: Box::new(|_| anyhow::bail!("no sessions in tests")),
+            use_theme: None,
+            model_fallback: None,
+            model_network: false,
+        };
+        let (tx, rx) = unbounded_channel();
+        let colors = yapi_tui::terminal::TerminalColors::default();
+        let (app, _) = App::new(session, PathBuf::from("/agent"), options, tx, colors, false);
+        (app, rx)
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_message_leaves_later_items_in_place() {
+        let (mut app, _events) = app();
+        let streaming = app.push(Item::Status("streaming".into()));
+        app.streaming = Some(streaming);
+        let tool = app.push(Item::Tool(Box::new(ToolView::new("read", Value::Null))));
+        app.tool_items.insert("call".into(), tool);
+        app.refresh_transcript(40);
+        app.on_agent_event(AgentEvent::AgentEnd {
+            messages: Vec::new(),
+            will_retry: false,
+        });
+        app.error("after");
+        assert!(matches!(app.chat[app.tool_items["call"]], Item::Tool(_)));
+        let rows = app.transcript(40);
+        app.flat_key = None;
+        assert_eq!(rows, app.transcript(40));
+    }
+
     fn text(line: &StyledLine) -> String {
         line.spans
             .iter()
@@ -3515,6 +3602,14 @@ mod tests {
         let status = yapi_tui::ansi::parse_line(status).0;
         let spinner = Line::from("●");
         text(&status_border(status, spinner, hidden, width, style).expect("a status"))
+    }
+
+    #[test]
+    fn external_editor_notice_names_yapi() {
+        assert_eq!(
+            external_editor_notice("vim"),
+            "Launching external editor: vim\nyapi will resume when the editor exits.\n"
+        );
     }
 
     #[test]

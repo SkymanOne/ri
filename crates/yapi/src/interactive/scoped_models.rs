@@ -256,29 +256,37 @@ impl ScopedModelsSelector {
         ui: &Ui<'_>,
     ) -> (Vec<StyledLine>, Option<(usize, usize)>) {
         let theme = ui.theme;
-        let row = |line: StyledLine| lines::text(&[line], width, 0, 0, None);
         let muted = theme.fg("muted");
         let accent = theme.fg("accent");
         let mut out = vec![ui.border(width)];
         out.extend(lines::spacer(1));
-        out.extend(row(styled(
-            "Model Configuration",
-            accent.add_modifier(Modifier::BOLD),
-        )));
-        out.extend(row(styled(
-            format!(
-                "Session-only. {} to save to settings.",
-                keys_display(ui.keys, "app.models.save")
+        out.extend(lines::text_row(
+            styled("Model Configuration", accent.add_modifier(Modifier::BOLD)),
+            width,
+            0,
+        ));
+        out.extend(lines::text_row(
+            styled(
+                format!(
+                    "Session-only. {} to save to settings.",
+                    keys_display(ui.keys, "app.models.save")
+                ),
+                muted,
             ),
-            muted,
-        )));
+            width,
+            0,
+        ));
         out.extend(lines::spacer(1));
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
         out.push(input);
         out.extend(lines::spacer(1));
         if self.rows.is_empty() {
-            out.extend(row(styled("  No matching models", muted)));
+            out.extend(lines::text_row(
+                styled("  No matching models", muted),
+                width,
+                0,
+            ));
         } else {
             let count = self.rows.len();
             let (start, end) = visible_range(self.selected, count, MAX_VISIBLE);
@@ -296,33 +304,38 @@ impl ScopedModelsSelector {
                     Some(model) => format!(" [{}]", model.provider),
                     None => " [unavailable]".to_owned(),
                 };
-                out.extend(row(Line::from(vec![
-                    if selected {
-                        Span::styled("→ ", accent)
-                    } else {
-                        Span::raw("  ")
-                    },
-                    if item.model.is_some() && item.enabled {
-                        Span::styled("✓ ", accent)
-                    } else {
-                        Span::raw("  ")
-                    },
-                    Span::styled(id, id_style),
-                    Span::styled(badge, muted),
-                ])));
+                out.extend(lines::text_row(
+                    Line::from(vec![
+                        if selected {
+                            Span::styled("→ ", accent)
+                        } else {
+                            Span::raw("  ")
+                        },
+                        if item.model.is_some() && item.enabled {
+                            Span::styled("✓ ", accent)
+                        } else {
+                            Span::raw("  ")
+                        },
+                        Span::styled(id, id_style),
+                        Span::styled(badge, muted),
+                    ]),
+                    width,
+                    0,
+                ));
             }
             if start > 0 || end < count {
-                out.extend(row(styled(
-                    format!("  ({}/{count})", self.selected + 1),
-                    muted,
-                )));
+                out.extend(lines::text_row(
+                    styled(format!("  ({}/{count})", self.selected + 1), muted),
+                    width,
+                    0,
+                ));
             }
             let name = match &self.rows[self.selected].model {
                 Some(model) => format!("  Model Name: {}", model.name),
                 None => "  Model unavailable".to_owned(),
             };
             out.extend(lines::spacer(1));
-            out.extend(row(styled(name, muted)));
+            out.extend(lines::text_row(styled(name, muted), width, 0));
         }
         out.extend(lines::spacer(1));
         let (text, color) = match &self.catalogs {
@@ -330,8 +343,12 @@ impl ScopedModelsSelector {
             RefreshStatus::Done => (RefreshStatus::DONE, "success"),
             RefreshStatus::Failed(message) => (message.as_str(), "warning"),
         };
-        out.extend(row(styled(format!("  {text}"), theme.fg(color))));
-        out.extend(row(self.footer(ui)));
+        out.extend(lines::text_row(
+            styled(format!("  {text}"), theme.fg(color)),
+            width,
+            0,
+        ));
+        out.extend(lines::text_row(self.footer(ui), width, 0));
         out.push(ui.border(width));
         (out, cursor)
     }

@@ -16,6 +16,7 @@ use yapi_core::extensions::{
 };
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
+use yapi_types::sync::lock;
 
 use super::{Event, Indicator};
 
@@ -68,12 +69,6 @@ pub(super) struct Shared {
     pub tools_expanded: bool,
     pub theme: Value,
     pub footer: Value,
-}
-
-fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
-    shared
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The extension UI of one session.
@@ -398,15 +393,13 @@ impl WidgetView {
                 let mut out = Vec::new();
                 for line in text.iter().take(MAX_WIDGET_LINES) {
                     let (line, _) = yapi_tui::ansi::parse_line(line);
-                    out.extend(lines::text(&[line], width, 1, 0, None));
+                    out.extend(lines::text_row(line, width, 1));
                 }
                 if text.len() > MAX_WIDGET_LINES {
-                    out.extend(lines::text(
-                        &[lines::styled("... (widget truncated)", theme.fg("muted"))],
+                    out.extend(lines::text_row(
+                        lines::styled("... (widget truncated)", theme.fg("muted")),
                         width,
                         1,
-                        0,
-                        None,
                     ));
                 }
                 out

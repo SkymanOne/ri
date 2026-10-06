@@ -25,12 +25,7 @@ fn edits_like_pi() {
     ))
     .unwrap();
     let cases: Vec<Value> = serde_json::from_str(&text).unwrap();
-    let keybindings = Keybindings::new(
-        Keys::default(),
-        tui_definitions(),
-        &UserBindings::new(),
-        &[],
-    );
+    let keybindings = Keybindings::new(Keys::default(), tui_definitions(), &UserBindings::new());
     let mut failures = Vec::new();
     for case in &cases {
         let name = case["name"].as_str().unwrap();

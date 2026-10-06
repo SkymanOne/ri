@@ -164,7 +164,7 @@ impl InputBuffer {
     }
 
     /// Feeds decoded text, appending what it completes to `out`.
-    pub fn push_str(&mut self, text: &str, out: &mut Vec<Input>) {
+    pub(crate) fn push_str(&mut self, text: &str, out: &mut Vec<Input>) {
         self.buffer.push_str(text);
         if let Some(paste) = &mut self.paste {
             paste.push_str(&self.buffer);
@@ -240,11 +240,6 @@ impl InputBuffer {
         let mut out = Vec::new();
         self.emit(sequence, &mut out);
         out
-    }
-
-    /// Drops all buffered input.
-    pub fn clear(&mut self) {
-        *self = InputBuffer::default();
     }
 }
 

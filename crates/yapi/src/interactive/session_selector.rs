@@ -12,7 +12,7 @@ use ratatui_core::text::{Line, Span};
 use yapi_core::session::{SessionManager, SessionSummary};
 use yapi_tui::fuzzy::fuzzy_match;
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::select_list::visible_range;
+use yapi_tui::select_list::{nudge, visible_range};
 use yapi_tui::text::{truncate_to_width, visible_width};
 use yapi_tui::text_input::{InputEvent, TextInput};
 
@@ -720,34 +720,27 @@ impl SessionSelector {
         out.extend(lines::spacer(1));
         let cursor;
         if let Some((_, input)) = &mut self.rename {
-            out.extend(lines::text(
-                &[styled(
-                    "Rename Session",
-                    Style::new().add_modifier(Modifier::BOLD),
-                )],
+            out.extend(lines::text_row(
+                styled("Rename Session", Style::new().add_modifier(Modifier::BOLD)),
                 width,
                 1,
-                0,
-                None,
             ));
             out.extend(lines::spacer(1));
             let row = input.render(width);
             cursor = input.cursor_column().map(|col| (out.len(), col));
             out.push(row);
             out.extend(lines::spacer(1));
-            out.extend(lines::text(
-                &[styled(
+            out.extend(lines::text_row(
+                styled(
                     format!(
                         "{} to save · {} to cancel",
                         super::keybindings::keys_text(ui.keys, "tui.select.confirm"),
                         super::keybindings::keys_text(ui.keys, "tui.select.cancel")
                     ),
                     ui.theme.fg("muted"),
-                )],
+                ),
                 width,
                 1,
-                0,
-                None,
             ));
         } else {
             out.extend(self.header(width, ui));
@@ -925,9 +918,9 @@ impl SessionSelector {
         self.touched = true;
         let count = self.rows.len();
         if kb.matches(data, "tui.select.up") {
-            self.selected = self.selected.saturating_sub(1);
+            self.selected = nudge(self.selected, count, false);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = (self.selected + 1).min(count.saturating_sub(1));
+            self.selected = nudge(self.selected, count, true);
         } else if kb.matches(data, "tui.select.pageUp") {
             self.selected = self.selected.saturating_sub(MAX_VISIBLE);
         } else if kb.matches(data, "tui.select.pageDown") {

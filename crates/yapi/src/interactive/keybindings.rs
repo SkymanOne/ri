@@ -32,178 +32,162 @@ pub fn definitions() -> Vec<Definition> {
             _ => None,
         };
         if let Some(keys) = keys {
-            definition.default_keys = keys.to_vec();
+            definition.default_keys = keys;
         }
     }
     let mac = cfg!(target_os = "macos");
-    let app: Vec<(&'static str, Vec<&'static str>, &'static str)> = vec![
-        ("app.interrupt", vec!["escape"], "Cancel or abort"),
-        ("app.clear", vec!["ctrl+c"], "Clear editor"),
-        ("app.exit", vec!["ctrl+d"], "Exit when editor is empty"),
+    let app: Vec<(&'static str, &'static [&'static str], &'static str)> = vec![
+        ("app.interrupt", &["escape"], "Cancel or abort"),
+        ("app.clear", &["ctrl+c"], "Clear editor"),
+        ("app.exit", &["ctrl+d"], "Exit when editor is empty"),
         (
             "app.suspend",
-            if cfg!(windows) {
-                vec![]
-            } else {
-                vec!["ctrl+z"]
-            },
+            if cfg!(windows) { &[] } else { &["ctrl+z"] },
             "Suspend to background",
         ),
-        (
-            "app.thinking.cycle",
-            vec!["shift+tab"],
-            "Cycle thinking level",
-        ),
-        ("app.thinking.save", vec!["ctrl+s"], "Save thinking level"),
-        (
-            "app.model.cycleForward",
-            vec!["ctrl+p"],
-            "Cycle to next model",
-        ),
+        ("app.thinking.cycle", &["shift+tab"], "Cycle thinking level"),
+        ("app.thinking.save", &["ctrl+s"], "Save thinking level"),
+        ("app.model.cycleForward", &["ctrl+p"], "Cycle to next model"),
         (
             "app.model.cycleBackward",
-            vec![if windows { "alt+p" } else { "shift+ctrl+p" }],
+            if windows {
+                &["alt+p"]
+            } else {
+                &["shift+ctrl+p"]
+            },
             "Cycle to previous model",
         ),
-        ("app.model.select", vec!["ctrl+l"], "Open model selector"),
-        ("app.tools.expand", vec!["ctrl+o"], "Toggle tool output"),
-        (
-            "app.thinking.toggle",
-            vec!["ctrl+t"],
-            "Toggle thinking blocks",
-        ),
+        ("app.model.select", &["ctrl+l"], "Open model selector"),
+        ("app.tools.expand", &["ctrl+o"], "Toggle tool output"),
+        ("app.thinking.toggle", &["ctrl+t"], "Toggle thinking blocks"),
         (
             "app.session.toggleNamedFilter",
-            vec!["ctrl+n"],
+            &["ctrl+n"],
             "Toggle named session filter",
         ),
-        (
-            "app.editor.external",
-            vec!["ctrl+g"],
-            "Open external editor",
-        ),
+        ("app.editor.external", &["ctrl+g"], "Open external editor"),
         (
             "app.message.copy",
-            vec!["ctrl+x"],
+            &["ctrl+x"],
             "Copy selection or last assistant message",
         ),
         (
             "app.message.followUp",
-            vec![if windows { "ctrl+q" } else { "alt+enter" }],
+            if windows { &["ctrl+q"] } else { &["alt+enter"] },
             "Queue follow-up message",
         ),
         (
             "app.message.dequeue",
-            vec![if windows { "alt+q" } else { "alt+up" }],
+            if windows { &["alt+q"] } else { &["alt+up"] },
             "Restore queued messages",
         ),
         (
             "app.clipboard.pasteImage",
-            vec![if windows { "alt+v" } else { "ctrl+v" }],
+            if windows { &["alt+v"] } else { &["ctrl+v"] },
             "Paste files on macOS, images, or text from clipboard",
         ),
-        ("app.session.new", vec![], "Start a new session"),
-        ("app.session.tree", vec![], "Open session tree"),
-        ("app.session.fork", vec![], "Fork current session"),
-        ("app.session.resume", vec![], "Resume a session"),
+        ("app.session.new", &[], "Start a new session"),
+        ("app.session.tree", &[], "Open session tree"),
+        ("app.session.fork", &[], "Fork current session"),
+        ("app.session.resume", &[], "Resume a session"),
         (
             "app.tree.foldOrUp",
             if mac {
-                vec!["alt+left", "ctrl+left"]
+                &["alt+left", "ctrl+left"]
             } else {
-                vec!["ctrl+left", "alt+left"]
+                &["ctrl+left", "alt+left"]
             },
             "Fold tree branch or move up",
         ),
         (
             "app.tree.unfoldOrDown",
             if mac {
-                vec!["alt+right", "ctrl+right"]
+                &["alt+right", "ctrl+right"]
             } else {
-                vec!["ctrl+right", "alt+right"]
+                &["ctrl+right", "alt+right"]
             },
             "Unfold tree branch or move down",
         ),
-        ("app.tree.editLabel", vec!["shift+l"], "Edit tree label"),
+        ("app.tree.editLabel", &["shift+l"], "Edit tree label"),
         (
             "app.tree.toggleLabelTimestamp",
-            vec!["shift+t"],
+            &["shift+t"],
             "Toggle tree label timestamps",
         ),
         (
             "app.session.togglePath",
-            vec!["ctrl+p"],
+            &["ctrl+p"],
             "Toggle session path display",
         ),
         (
             "app.session.toggleSort",
-            vec!["ctrl+s"],
+            &["ctrl+s"],
             "Toggle session sort mode",
         ),
-        ("app.session.rename", vec!["ctrl+r"], "Rename session"),
-        ("app.session.delete", vec!["ctrl+d"], "Delete session"),
+        ("app.session.rename", &["ctrl+r"], "Rename session"),
+        ("app.session.delete", &["ctrl+d"], "Delete session"),
         (
             "app.session.deleteNoninvasive",
-            vec!["ctrl+backspace"],
+            &["ctrl+backspace"],
             "Delete session when query is empty",
         ),
-        ("app.models.save", vec!["ctrl+s"], "Save model selection"),
-        ("app.models.enableAll", vec!["ctrl+a"], "Enable all models"),
-        ("app.models.clearAll", vec!["ctrl+x"], "Clear all models"),
+        ("app.models.save", &["ctrl+s"], "Save model selection"),
+        ("app.models.enableAll", &["ctrl+a"], "Enable all models"),
+        ("app.models.clearAll", &["ctrl+x"], "Clear all models"),
         (
             "app.models.toggleProvider",
-            vec!["ctrl+p"],
+            &["ctrl+p"],
             "Toggle all models for provider",
         ),
         (
             "app.models.reorderUp",
-            vec!["alt+up"],
+            &["alt+up"],
             "Move model up in order",
         ),
         (
             "app.models.reorderDown",
-            vec!["alt+down"],
+            &["alt+down"],
             "Move model down in order",
         ),
         (
             "app.tree.filter.default",
-            vec!["ctrl+d"],
+            &["ctrl+d"],
             "Tree filter: default view",
         ),
         (
             "app.tree.filter.noTools",
-            vec!["ctrl+t"],
+            &["ctrl+t"],
             "Tree filter: hide tool results",
         ),
         (
             "app.tree.filter.userOnly",
-            vec!["ctrl+u"],
+            &["ctrl+u"],
             "Tree filter: user messages only",
         ),
         (
             "app.tree.filter.labeledOnly",
-            vec!["ctrl+l"],
+            &["ctrl+l"],
             "Tree filter: labeled entries only",
         ),
         (
             "app.tree.filter.all",
-            vec!["ctrl+a"],
+            &["ctrl+a"],
             "Tree filter: show all entries",
         ),
         (
             "app.tree.filter.cycleForward",
-            vec!["ctrl+o"],
+            &["ctrl+o"],
             "Tree filter: cycle forward",
         ),
         (
             "app.tree.filter.cycleBackward",
-            vec!["shift+ctrl+o"],
+            &["shift+ctrl+o"],
             "Tree filter: cycle backward",
         ),
     ];
     definitions.extend(
         app.into_iter()
-            .map(|(id, keys, description)| Definition::new(id, &keys, description)),
+            .map(|(id, keys, description)| Definition::new(id, keys, description)),
     );
     definitions
 }
@@ -333,7 +317,6 @@ pub fn migrate_file(agent_dir: &Path) {
 /// The effective bindings: defaults with `keybindings.json` applied.
 pub fn load(agent_dir: &Path, keys: Keys) -> Keybindings {
     let mut user = UserBindings::new();
-    let mut order = Vec::new();
     if let Some(raw) = read_object(&agent_dir.join("keybindings.json")) {
         for (id, value) in migrate(&raw).0 {
             let keys = match value {
@@ -344,11 +327,10 @@ pub fn load(agent_dir: &Path, keys: Keys) -> Keybindings {
                     .collect(),
                 _ => continue,
             };
-            order.push(id.clone());
             user.insert(id, keys);
         }
     }
-    Keybindings::new(keys, definitions(), &user, &order)
+    Keybindings::new(keys, definitions(), &user)
 }
 
 /// A key id for display: `ctrl+c`, with `option` for `alt` on macOS.
@@ -422,7 +404,7 @@ mod tests {
 
     #[test]
     fn formats_keys() {
-        let bindings = Keybindings::new(Keys::default(), definitions(), &UserBindings::new(), &[]);
+        let bindings = Keybindings::new(Keys::default(), definitions(), &UserBindings::new());
         assert_eq!(keys_text(&bindings, "tui.select.cancel"), "escape/ctrl+c");
         if !windows_keys() && !cfg!(target_os = "macos") {
             assert_eq!(keys_display(&bindings, "app.message.dequeue"), "Alt+Up");

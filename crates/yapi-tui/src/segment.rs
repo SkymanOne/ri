@@ -10,7 +10,7 @@ use crate::text::{has_whitespace, is_ascii_punctuation};
 
 /// A segment of text.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Segment<'a> {
+pub(crate) struct Segment<'a> {
     /// Byte offset in the segmented text.
     pub index: usize,
     /// The segment.
@@ -21,7 +21,7 @@ pub struct Segment<'a> {
 
 /// Grapheme clusters or UAX #29 words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Granularity {
+pub(crate) enum Granularity {
     /// Extended grapheme clusters.
     Grapheme,
     /// Word boundaries.
@@ -30,7 +30,7 @@ pub enum Granularity {
 
 /// `[paste #N]`, `[paste #N +L lines]` or `[paste #N C chars]` at the start of
 /// `text`: the id and the marker's byte length.
-pub fn parse_paste_marker(text: &str) -> Option<(u32, usize)> {
+pub(crate) fn parse_paste_marker(text: &str) -> Option<(u32, usize)> {
     let rest = text.strip_prefix("[paste #")?;
     let digits = rest
         .find(|c: char| !c.is_ascii_digit())
@@ -58,12 +58,12 @@ pub fn parse_paste_marker(text: &str) -> Option<(u32, usize)> {
 }
 
 /// Whether a whole segment is a paste marker.
-pub fn is_paste_marker(segment: &str) -> bool {
+pub(crate) fn is_paste_marker(segment: &str) -> bool {
     segment.len() >= 10 && parse_paste_marker(segment).is_some_and(|(_, len)| len == segment.len())
 }
 
 /// Byte spans of the paste markers in `text`, in order.
-pub fn paste_marker_spans(text: &str) -> Vec<(u32, usize, usize)> {
+pub(crate) fn paste_marker_spans(text: &str) -> Vec<(u32, usize, usize)> {
     let mut spans = Vec::new();
     let mut from = 0;
     while let Some(found) = text[from..].find("[paste #") {
@@ -85,7 +85,11 @@ fn word_like(segment: &str) -> bool {
 
 /// Segments `text`, merging paste markers whose id is in `valid_ids` into one
 /// segment each.
-pub fn segment<'a>(text: &'a str, granularity: Granularity, valid_ids: &[u32]) -> Vec<Segment<'a>> {
+pub(crate) fn segment<'a>(
+    text: &'a str,
+    granularity: Granularity,
+    valid_ids: &[u32],
+) -> Vec<Segment<'a>> {
     let base: Vec<Segment<'a>> = match granularity {
         Granularity::Grapheme => text
             .grapheme_indices(true)
@@ -139,7 +143,7 @@ pub fn segment<'a>(text: &'a str, granularity: Granularity, valid_ids: &[u32]) -
 
 /// The cursor after moving one word left from `cursor`: trailing whitespace is
 /// skipped, then one word, punctuation run or atomic segment.
-pub fn find_word_backward(text: &str, cursor: usize, valid_ids: &[u32]) -> usize {
+pub(crate) fn find_word_backward(text: &str, cursor: usize, valid_ids: &[u32]) -> usize {
     if cursor == 0 {
         return 0;
     }
@@ -181,7 +185,7 @@ pub fn find_word_backward(text: &str, cursor: usize, valid_ids: &[u32]) -> usize
 
 /// The cursor after moving one word right from `cursor`: leading whitespace is
 /// skipped, then one word, punctuation run or atomic segment.
-pub fn find_word_forward(text: &str, cursor: usize, valid_ids: &[u32]) -> usize {
+pub(crate) fn find_word_forward(text: &str, cursor: usize, valid_ids: &[u32]) -> usize {
     if cursor >= text.len() {
         return text.len();
     }

@@ -7,7 +7,7 @@ use ratatui_core::text::{Line, Span};
 
 /// Resets all attributes at the end of every line, as pi does, so styles never
 /// leak across lines.
-pub const LINE_RESET: &str = "\x1b[0m";
+pub(crate) const LINE_RESET: &str = "\x1b[0m";
 
 /// The 16 named colors in SGR order: 30-37, then the bright 90-97.
 const NAMED: [Color; 16] = [
@@ -98,7 +98,7 @@ pub fn line_to_ansi(line: &Line<'_>) -> String {
 
 /// pi-tui's `CURSOR_MARKER`: an APC sequence a focused component puts where
 /// the terminal cursor belongs.
-pub const CURSOR_MARKER: &str = "\x1b_pi:c\x07";
+pub(crate) const CURSOR_MARKER: &str = "\x1b_pi:c\x07";
 
 fn basic_color(index: u16, bright: bool) -> Color {
     NAMED[usize::from(index.min(7)) + 8 * usize::from(bright)]
