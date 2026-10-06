@@ -23,7 +23,7 @@ The first release of yapi, a Rust reimplementation of the [Pi](https://github.co
 ### Known issues
 
 - Requests to Amazon Bedrock, Google Vertex AI and Cloudflare, and the llama.cpp router, are tested against mock servers only. They are not yet checked against the live services.
-- The `x86_64-apple-darwin` archive is built in CI but not run on an Intel Mac.
+- CI runs the `x86_64-apple-darwin` archive only under Rosetta on Apple silicon, not on an Intel Mac.
 - Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Rust SDK and the host requests they use may change in any release before then, and extensions may need to be rebuilt. Pi extensions from npm use Pi's extension API and are not affected.
 - [Differences from Pi](https://skymanone.github.io/yapi/compat.html) lists every intentional difference and the Pi features not yet ported.
 
