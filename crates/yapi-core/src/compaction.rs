@@ -693,14 +693,13 @@ pub fn prepare_compaction(
 }
 
 /// What summary requests need besides the messages.
-#[derive(Clone)]
 pub struct Summarizer<'a> {
     /// The model to summarize with.
     pub model: &'a Model,
     /// Wire APIs.
     pub apis: &'a Apis,
     /// Credentials for the model.
-    pub auth: &'a Auth,
+    pub auth: Auth,
     /// The session's thinking level; used when the model reasons.
     pub thinking_level: ThinkingLevel,
     /// Retries for transient failures.
@@ -708,7 +707,7 @@ pub struct Summarizer<'a> {
     /// Cancels the requests.
     pub cancel: CancellationToken,
     /// Hears about retries.
-    pub on_retry: Option<&'a (dyn Fn(SummaryRetry) + Sync)>,
+    pub on_retry: Box<dyn Fn(SummaryRetry) + Send + Sync + 'a>,
 }
 
 /// What a summarizer reports while it retries; pi-ai's `RetryCallbacks`.
@@ -819,11 +818,7 @@ impl Summarizer<'_> {
         } else {
             0
         };
-        let notify = |retry: SummaryRetry| {
-            if let Some(on_retry) = self.on_retry {
-                on_retry(retry);
-            }
-        };
+        let notify = &self.on_retry;
         let mut attempt = 0;
         loop {
             let response = self.complete_once(prompt, max_tokens, &session_id).await;

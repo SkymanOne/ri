@@ -1916,13 +1916,11 @@ impl AgentSession {
                     .await
             }
             CompactionCheck::OverflowFailed(error_message) => {
-                self.emit(&AgentEvent::CompactionEnd {
-                    reason: CompactionReason::Overflow,
-                    result: None,
-                    aborted: false,
-                    will_retry: false,
-                    error_message: Some(error_message),
-                });
+                self.emit_compaction_end(
+                    CompactionReason::Overflow,
+                    Err(Some(error_message)),
+                    false,
+                );
                 false
             }
             CompactionCheck::Overflow { will_retry } => {
@@ -1937,7 +1935,31 @@ impl AgentSession {
         }
     }
 
-    async fn summarize(
+    /// A summarizer for `model` with the session's credentials and retry
+    /// policy, reporting retries as `source` summaries.
+    async fn summarizer<'a>(
+        &'a self,
+        model: &'a Model,
+        thinking_level: ThinkingLevel,
+        source: SummarySource,
+        reason: Option<CompactionReason>,
+        cancel: CancellationToken,
+    ) -> Summarizer<'a> {
+        Summarizer {
+            model,
+            apis: &self.inner.apis,
+            auth: self.registry().auth(model).await,
+            thinking_level,
+            retry: self.retry_policy(),
+            cancel,
+            on_retry: Box::new(move |retry| self.emit_summary_retry(retry, source, reason)),
+        }
+    }
+
+    /// What manual and automatic compaction share: summarizes `preparation`
+    /// and records the compaction with the estimate after it, unless `cancel`
+    /// fired meanwhile.
+    async fn run_compaction(
         &self,
         model: &Model,
         preparation: &Preparation,
@@ -1945,19 +1967,60 @@ impl AgentSession {
         reason: CompactionReason,
         cancel: &CancellationToken,
     ) -> Result<CompactionResult, String> {
-        let auth = self.registry().auth(model).await;
-        let on_retry =
-            |retry| self.emit_summary_retry(retry, SummarySource::Compaction, Some(reason));
-        let summarizer = Summarizer {
-            model,
-            apis: &self.inner.apis,
-            auth: &auth,
-            thinking_level: self.thinking_level(),
-            retry: self.retry_policy(),
-            cancel: cancel.clone(),
-            on_retry: Some(&on_retry),
+        let summarizer = self
+            .summarizer(
+                model,
+                self.thinking_level(),
+                SummarySource::Compaction,
+                Some(reason),
+                cancel.clone(),
+            )
+            .await;
+        let mut result = summarizer.compact(preparation, custom_instructions).await?;
+        // As pi, a summary cut short by an abort is not recorded.
+        if cancel.is_cancelled() {
+            return Err("Compaction cancelled".to_owned());
+        }
+        let estimate = self.with_session(|session| {
+            let _ = session.append_compaction(
+                result.summary.clone(),
+                Some(result.first_kept_entry_id.clone()),
+                result.tokens_before,
+                result.details.clone(),
+                Some(false),
+                result.usage.clone(),
+            );
+            session
+                .build_context()
+                .messages
+                .iter()
+                .map(estimate_tokens)
+                .sum()
+        });
+        result.estimated_tokens_after = Some(estimate);
+        Ok(result)
+    }
+
+    /// pi's `compaction_end` event: with the result, or aborted (`Err(None)`),
+    /// or failed with an error message.
+    fn emit_compaction_end(
+        &self,
+        reason: CompactionReason,
+        outcome: Result<CompactionResult, Option<String>>,
+        will_retry: bool,
+    ) {
+        let (result, aborted, error_message) = match outcome {
+            Ok(result) => (Some(result), false, None),
+            Err(None) => (None, true, None),
+            Err(Some(error)) => (None, false, Some(error)),
         };
-        summarizer.compact(preparation, custom_instructions).await
+        self.emit(&AgentEvent::CompactionEnd {
+            reason,
+            result,
+            aborted,
+            will_retry,
+            error_message,
+        });
     }
 
     /// pi's `summarization_retry_*` events for a summary request's retries.
@@ -1986,28 +2049,6 @@ impl AgentSession {
         });
     }
 
-    /// Records a compaction result and fills in the estimate after it.
-    fn record_compaction(&self, mut result: CompactionResult) -> CompactionResult {
-        let estimate = self.with_session(|session| {
-            let _ = session.append_compaction(
-                result.summary.clone(),
-                Some(result.first_kept_entry_id.clone()),
-                result.tokens_before,
-                result.details.clone(),
-                Some(false),
-                result.usage.clone(),
-            );
-            session
-                .build_context()
-                .messages
-                .iter()
-                .map(estimate_tokens)
-                .sum()
-        });
-        result.estimated_tokens_after = Some(estimate);
-        result
-    }
-
     async fn run_auto_compaction(
         &self,
         reason: CompactionReason,
@@ -2027,40 +2068,23 @@ impl AgentSession {
         self.emit(&AgentEvent::CompactionStart { reason });
         let compacting = Compacting::start(&self.inner.compacting);
         let outcome = self
-            .summarize(&model, &preparation, None, reason, cancel)
+            .run_compaction(&model, &preparation, None, reason, cancel)
             .await;
         drop(compacting);
         self.inner.idle.notify_waiters();
         match outcome {
-            Ok(result) if !cancel.is_cancelled() => {
-                let result = self.record_compaction(result);
-                self.emit(&AgentEvent::CompactionEnd {
-                    reason,
-                    result: Some(result),
-                    aborted: false,
-                    will_retry,
-                    error_message: None,
-                });
+            Ok(result) => {
+                self.emit_compaction_end(reason, Ok(result), will_retry);
                 will_retry || self.has_queued()
             }
-            outcome => {
-                let aborted = cancel.is_cancelled();
-                let message = outcome
-                    .err()
-                    .unwrap_or_else(|| "Compaction cancelled".into());
-                let error_message = (!aborted).then(|| match reason {
+            Err(message) => {
+                let error_message = (!cancel.is_cancelled()).then(|| match reason {
                     CompactionReason::Overflow => {
                         format!("Context overflow recovery failed: {message}")
                     }
                     _ => format!("Auto-compaction failed: {message}"),
                 });
-                self.emit(&AgentEvent::CompactionEnd {
-                    reason,
-                    result: None,
-                    aborted,
-                    will_retry: false,
-                    error_message,
-                });
+                self.emit_compaction_end(reason, Err(error_message), false);
                 false
             }
         }
@@ -2097,20 +2121,14 @@ impl AgentSession {
                     None => Err("Nothing to compact (session too small)".to_owned()),
                 }
             })?;
-            let result = self
-                .summarize(
-                    &model,
-                    &preparation,
-                    custom_instructions,
-                    CompactionReason::Manual,
-                    &cancel,
-                )
-                .await?;
-            // As pi, a summary cut short by an abort is not recorded.
-            if cancel.is_cancelled() {
-                return Err("Compaction cancelled".to_owned());
-            }
-            Ok(self.record_compaction(result))
+            self.run_compaction(
+                &model,
+                &preparation,
+                custom_instructions,
+                CompactionReason::Manual,
+                &cancel,
+            )
+            .await
         }
         .await;
         *lock(&self.inner.cancel) = None;
@@ -2118,41 +2136,23 @@ impl AgentSession {
         drop(compacting);
         // Waiters for idle run once this returns, after its own outcome.
         self.inner.idle.notify_waiters();
+        let reason = CompactionReason::Manual;
         if cancel.is_cancelled() {
-            self.emit(&AgentEvent::CompactionEnd {
-                reason: CompactionReason::Manual,
-                result: None,
-                aborted: true,
-                will_retry: false,
-                error_message: None,
-            });
+            self.emit_compaction_end(reason, Err(None), false);
             // pi reports the summarizer's error, such as an aborted request.
             return Err(outcome
                 .err()
                 .unwrap_or_else(|| "Compaction cancelled".into()));
         }
-        match outcome {
-            Ok(result) => {
-                self.emit(&AgentEvent::CompactionEnd {
-                    reason: CompactionReason::Manual,
-                    result: Some(result.clone()),
-                    aborted: false,
-                    will_retry: false,
-                    error_message: None,
-                });
-                Ok(result)
-            }
-            Err(message) => {
-                self.emit(&AgentEvent::CompactionEnd {
-                    reason: CompactionReason::Manual,
-                    result: None,
-                    aborted: false,
-                    will_retry: false,
-                    error_message: Some(format!("Compaction failed: {message}")),
-                });
-                Err(message)
-            }
+        match &outcome {
+            Ok(result) => self.emit_compaction_end(reason, Ok(result.clone()), false),
+            Err(message) => self.emit_compaction_end(
+                reason,
+                Err(Some(format!("Compaction failed: {message}"))),
+                false,
+            ),
         }
+        outcome
     }
 
     /// Moves to another point of the session tree, as `/tree` does. A user or
@@ -2197,24 +2197,21 @@ impl AgentSession {
             let cancel = CancellationToken::new();
             *lock(&self.inner.cancel) = Some(cancel.clone());
             let compacting = Compacting::start(&self.inner.compacting);
-            let auth = self.registry().auth(model).await;
+            let summarizer = self
+                .summarizer(
+                    model,
+                    ThinkingLevel::Off,
+                    SummarySource::BranchSummary,
+                    None,
+                    cancel,
+                )
+                .await;
             let reserve = lock(&self.inner.settings)
                 .settings()
                 .branch_summary
                 .as_ref()
                 .and_then(|settings| settings.reserve_tokens)
                 .unwrap_or(16384);
-            let on_retry =
-                |retry| self.emit_summary_retry(retry, SummarySource::BranchSummary, None);
-            let summarizer = Summarizer {
-                model,
-                apis: &self.inner.apis,
-                auth: &auth,
-                thinking_level: ThinkingLevel::Off,
-                retry: self.retry_policy(),
-                cancel,
-                on_retry: Some(&on_retry),
-            };
             let result = summarizer
                 .branch_summary(
                     &entries,
