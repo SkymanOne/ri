@@ -217,3 +217,63 @@ export default function (pi) {
          SessionManager"
     );
 }
+
+/// The API of an extension that failed to load throws, as in pi.
+#[tokio::test(flavor = "multi_thread")]
+async fn api_of_a_failed_extension_throws() {
+    let dir = common::scratch("guest-failed");
+    let broken = dir.join("broken.ts");
+    std::fs::write(
+        &broken,
+        "export default function (pi) {\n\tglobalThis.stale = pi;\n\tthrow new Error(\"broken\");\n}\n",
+    )
+    .unwrap();
+    let probe = dir.join("probe.ts");
+    std::fs::write(
+        &probe,
+        r#"
+const failure = (run) => {
+	try {
+		run();
+		return "ran";
+	} catch (error) {
+		return error.message;
+	}
+};
+export default function (pi) {
+	const { stale } = globalThis;
+	pi.registerCommand("probe", {
+		description: [failure(() => stale.getFlag("x")), failure(() => stale.events.on("x", () => {}))].join("|"),
+		handler: async () => {},
+	});
+}
+"#,
+    )
+    .unwrap();
+    let instance = Instance::start(
+        &common::engine(),
+        Options::new(dir.clone()),
+        Arc::new(NoBridge),
+    )
+    .await
+    .unwrap();
+    let loaded = instance
+        .call(
+            "load",
+            &json!({"cwd": dir, "extensions": [{"id": 1, "path": broken}, {"id": 2, "path": probe}]}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        loaded["extensions"][0]["error"],
+        "Failed to load extension: broken"
+    );
+    let inactive = format!(
+        "Extension \"{}\" failed to load and its API is no longer active.",
+        broken.display()
+    );
+    assert_eq!(
+        loaded["extensions"][1]["commands"][0]["description"],
+        format!("{inactive}|{inactive}")
+    );
+}
