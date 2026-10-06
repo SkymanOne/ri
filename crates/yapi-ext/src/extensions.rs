@@ -473,6 +473,10 @@ impl Extension for JsExtension {
         })
     }
 
+    fn settle(&self) -> BoxFuture<'_, ()> {
+        Box::pin(self.shared.instance.settle())
+    }
+
     fn session_start<'a>(&'a self, ctx: &'a Context) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             self.shared.bind(self.generation, ctx).await;

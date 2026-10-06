@@ -198,6 +198,7 @@ enum Command {
         handle: u32,
         data: String,
     },
+    Settle(oneshot::Sender<()>),
     Stop,
 }
 
@@ -301,6 +302,16 @@ impl Instance {
             return Vec::new();
         }
         result.await.unwrap_or_default()
+    }
+
+    /// Resolves once the instance has handled what was sent to it before,
+    /// such as a call it is running: a call that finished has delivered its
+    /// result by then.
+    pub async fn settle(&self) {
+        let (done, settled) = oneshot::channel();
+        if self.commands.send(Command::Settle(done)).is_ok() {
+            let _ = settled.await;
+        }
     }
 
     /// Delivers raw terminal input to component `handle`.
@@ -439,6 +450,9 @@ impl Actor {
                         .yapi_extension_guest()
                         .call_input(store, handle, &data)
                 }),
+                Command::Settle(done) => {
+                    let _ = done.send(());
+                }
                 Command::Stop => break,
             }
             if self.interrupt.load(Ordering::Relaxed) {

@@ -402,6 +402,12 @@ fn command_name(value: &Value) -> Option<String> {
 }
 
 async fn handle_line(rpc: Rc<Rpc>, line: String) {
+    // pi runs extension code to completion before it reads the next line, so
+    // a command that such code finished answers before this one.
+    let session = rpc.session();
+    for extension in session.extensions() {
+        extension.settle().await;
+    }
     let parsed: Value = match serde_json::from_str(&line) {
         Ok(parsed) => parsed,
         Err(error) => {
