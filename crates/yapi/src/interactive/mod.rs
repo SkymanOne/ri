@@ -2181,16 +2181,12 @@ impl App {
     /// input listeners see input before everything else. The listeners run
     /// beside the loop; later keys wait behind them, in order.
     fn on_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
-        if self.ext.listeners.is_none() && self.input_queue.is_empty() && !self.listening {
-            self.handle_keys(keys, terminal);
-            return;
-        }
         self.input_queue.extend(keys);
         self.pump_input(terminal);
     }
 
-    /// Hands the waiting keys to the listeners, or handles them once no
-    /// extension listens any more.
+    /// Hands the waiting keys to the listeners, or handles them when no
+    /// extension listens.
     fn pump_input(&mut self, terminal: &mut Terminal) {
         if self.listening || self.input_queue.is_empty() {
             return;
