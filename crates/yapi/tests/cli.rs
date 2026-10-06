@@ -336,3 +336,109 @@ fn update_self_names_the_installer() {
             .starts_with("Unknown option --force for \"install\".\n")
     );
 }
+
+/// `yapi mcp login` signs in through the browser, here a script that follows
+/// the authorization redirect to the callback, against the OAuth test server
+/// in `tests/fixtures/mcp`. Needs `python3` on `PATH`.
+#[cfg(unix)]
+#[test]
+fn mcp_login_and_logout() {
+    use std::io::BufRead;
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = common::scratch("mcp-login");
+    let mut server = Command::new("python3")
+        .arg(common::fixtures().join("mcp/server.py"))
+        .args(["--http", "--oauth"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut url = String::new();
+    std::io::BufReader::new(server.stdout.take().unwrap())
+        .read_line(&mut url)
+        .unwrap();
+    let url = url.trim().to_owned();
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for name in ["open", "xdg-open"] {
+        let script = bin.join(name);
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nexec python3 -c 'import sys, urllib.request; urllib.request.urlopen(sys.argv[1]).read()' \"$1\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::fs::create_dir_all(home.join("agent")).unwrap();
+    std::fs::write(
+        home.join("agent/mcp.json"),
+        format!("{{\"mcpServers\": {{\"demo\": {{\"url\": \"{url}\"}}}}}}\n"),
+    )
+    .unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        let output = common::yapi(&home)
+            .env("PATH", &path)
+            .args(args)
+            .output()
+            .unwrap();
+        (
+            output.status.code(),
+            String::from_utf8(output.stdout).unwrap(),
+            String::from_utf8(output.stderr).unwrap(),
+        )
+    };
+
+    let (code, stdout, _) = run(&["mcp", "list"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(
+        stdout,
+        format!(
+            "demo: needs sign-in (codemode, global)\n  {url}\n  sign in with: yapi mcp login demo\n"
+        )
+    );
+    let (code, stdout, stderr) = run(&["mcp", "login", "demo", "--timeout", "30"]);
+    assert_eq!(code, Some(0), "{stderr}");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines[0], "Sign in to MCP server \"demo\" in your browser:");
+    assert!(
+        lines[1]
+            .starts_with(&url.replace("/mcp", "/authorize?response_type=code&client_id=client-1&"))
+    );
+    assert_eq!(lines[2..], ["Signed in to MCP server \"demo\" (9 tools)."]);
+    let (code, stdout, _) = run(&["mcp", "login", "demo"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        stdout,
+        "Already signed in to MCP server \"demo\" (9 tools).\n"
+    );
+    let (code, stdout, _) = run(&["mcp", "list"]);
+    assert_eq!(code, Some(0));
+    assert!(stdout.starts_with("demo: connected, 9 tools (codemode, global)\n"));
+    assert_eq!(
+        run(&["mcp", "logout", "demo"]),
+        (
+            Some(0),
+            "Signed out of MCP server \"demo\".\n".into(),
+            String::new()
+        )
+    );
+    assert_eq!(
+        run(&["mcp", "logout", "demo"]),
+        (
+            Some(0),
+            "No stored credentials for MCP server \"demo\".\n".into(),
+            String::new()
+        )
+    );
+    assert_eq!(
+        run(&["mcp", "login", "demo", "--timeout", "0"]).2,
+        "--timeout must be a positive number of seconds.\n"
+    );
+    server.kill().unwrap();
+    server.wait().unwrap();
+}

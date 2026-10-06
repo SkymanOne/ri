@@ -1,6 +1,6 @@
 # pi golden fixtures
 
-Files written by pi `v1.0.0` (commit `a13d35a`). `crates/yapi-types/tests/golden.rs` checks that yapi reads and writes them back byte-identically, `crates/yapi-core/tests/session.rs` that yapi builds the same model context from each session, `crates/yapi-tui/tests/keys.rs` that yapi decodes terminal input as pi does, `crates/yapi-tui/tests/editor.rs` that yapi's editor behaves as pi's, `crates/yapi-tui/tests/theme.rs` that yapi's themes produce pi's colors, and `crates/yapi-tui/tests/text.rs` that yapi lays out text and markdown as pi does. Do not edit them by hand; regenerate instead.
+Files written by pi `v1.0.0` (commit `a13d35a`). `crates/yapi-types/tests/golden.rs` checks that yapi reads and writes them back byte-identically, `crates/yapi-core/tests/session.rs` that yapi builds the same model context from each session, `crates/yapi-core/tests/mcp.rs` that yapi's MCP sign-in stores the same state, `crates/yapi-tui/tests/keys.rs` that yapi decodes terminal input as pi does, `crates/yapi-tui/tests/editor.rs` that yapi's editor behaves as pi's, `crates/yapi-tui/tests/theme.rs` that yapi's themes produce pi's colors, and `crates/yapi-tui/tests/text.rs` that yapi lays out text and markdown as pi does. Do not edit them by hand; regenerate instead.
 
 ## Regenerate
 
@@ -17,6 +17,7 @@ node theme.mjs
 node text.mjs
 node autocomplete.mjs   # needs fd on PATH
 node models-api.mjs
+node mcp-auth.mjs       # needs python3 on PATH
 ```
 
 The generator's packages also serve the end-to-end scenarios: `cargo xtask e2e` runs this pi install, and `rpc-client.mjs`, pi's `RpcClient` example, drives the program under test in client scenarios.
@@ -33,6 +34,7 @@ The script runs pi offline in `/tmp/ri-pi-fixtures` with faux providers. Ids and
 | `agent/models.json` | Generator; validated by pi | Custom provider, model definition, overrides |
 | `agent/keybindings.json` | pi startup migration | Legacy action names rewritten |
 | `agent/mcp.json`, `project/mcp.json` | `pi mcp add` | stdio and HTTP servers, global and project scope |
+| `agent/mcp-auth.json` | pi's MCP sign-in, as `pi mcp login` runs it, against the OAuth mode of `tests/fixtures/mcp/server.py` | Discovery state, dynamic client registration and tokens of an MCP server |
 | `project/settings.json` | `SettingsManager` project setters | Project scope |
 | `sessions/main.jsonl` | `AgentSession` with faux providers | Every entry type, message role, content block and stop reason |
 | `sessions/{export,branched,forked,child}.jsonl` | Export, branch, fork, `parentSession` | Header variants |

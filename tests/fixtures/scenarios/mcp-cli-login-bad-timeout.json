@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "--timeout must be a positive number of seconds.\n",
+  "requests": []
+}

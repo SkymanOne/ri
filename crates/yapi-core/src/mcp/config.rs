@@ -81,7 +81,29 @@ pub enum ServerTransport {
         headers: IndexMap<String, String>,
         /// The `/login` provider whose token is sent.
         auth_provider: Option<String>,
+        /// OAuth client settings.
+        oauth: Option<OAuthConfig>,
     },
+}
+
+/// pi's `McpOAuthConfig`: OAuth client settings for servers that do not
+/// support dynamic client registration.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OAuthConfig {
+    /// Pre-registered client id.
+    pub client_id: Option<String>,
+    /// Client secret, which may reference variables or commands.
+    pub client_secret: Option<String>,
+    /// Port of the loopback callback server.
+    pub callback_port: Option<u16>,
+    /// Redirect URI registered for `client_id`.
+    pub callback_url: Option<String>,
+    /// Scopes to request, separated by spaces.
+    pub scope: Option<String>,
+    /// `client_name` for dynamic client registration.
+    pub client_name: Option<String>,
+    /// Authorization server metadata document to use instead of discovery.
+    pub auth_server_metadata_url: Option<String>,
 }
 
 impl ServerTransport {
@@ -355,6 +377,22 @@ pub fn validate_server(name: &str, raw: &Value) -> Result<ServerConfig, String> 
         {
             return Err(format!("server \"{name}\": {problem}"));
         }
+        let oauth = value.get("oauth").map(|oauth| {
+            let string = |key: &str| oauth.get(key).and_then(Value::as_str).map(str::to_owned);
+            OAuthConfig {
+                client_id: string("clientId"),
+                client_secret: string("clientSecret"),
+                // Validated as a whole number from 1 to 65535.
+                callback_port: oauth
+                    .get("callbackPort")
+                    .and_then(Value::as_f64)
+                    .map(|port| port as u16),
+                callback_url: string("callbackUrl"),
+                scope: string("scope"),
+                client_name: string("clientName"),
+                auth_server_metadata_url: string("authServerMetadataUrl"),
+            }
+        });
         let auth_provider = match value.get("auth") {
             None => None,
             Some(auth) => {
@@ -377,6 +415,7 @@ pub fn validate_server(name: &str, raw: &Value) -> Result<ServerConfig, String> 
             url: url.to_owned(),
             headers,
             auth_provider,
+            oauth,
         }));
     }
     if let Some(command) = value.get("command").and_then(Value::as_str)

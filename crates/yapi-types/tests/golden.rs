@@ -39,6 +39,7 @@ fn config_kind(path: &Path) -> ConfigFile {
         "models.json" => ConfigFile::Models,
         "keybindings.json" => ConfigFile::Keybindings,
         "mcp.json" => ConfigFile::Mcp,
+        "mcp-auth.json" => ConfigFile::McpAuth,
         other => panic!("unknown config fixture {other}"),
     }
 }
@@ -127,7 +128,7 @@ fn config_views_cover_fixtures() {
             ConfigFile::Settings => assert_covers::<Settings>(&document, &location),
             ConfigFile::Auth => assert_covers::<AuthFile>(&document, &location),
             ConfigFile::Models => assert_covers::<ModelsConfig>(&document, &location),
-            ConfigFile::Keybindings | ConfigFile::Mcp => {}
+            ConfigFile::Keybindings | ConfigFile::Mcp | ConfigFile::McpAuth => {}
         }
     }
 }

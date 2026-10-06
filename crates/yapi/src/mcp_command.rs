@@ -1,15 +1,16 @@
-//! `yapi mcp`: add, remove and check MCP servers outside a session.
+//! `yapi mcp`: add, remove and check MCP servers and sign in to them outside
+//! a session. Running sessions pick up new credentials on their next turn.
 //!
 //! Port of `packages/coding-agent/src/extensions/mcp/cli.ts` in pi `v1.0.0`.
-//! OAuth sign-in for MCP servers is not available in yapi yet, so `login` and
-//! `logout` report that once they have found the server.
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{Map, Value, json};
+use tokio_util::sync::CancellationToken;
 use yapi_core::config::{APP_NAME, PROJECT_DIR, agent_dir};
 use yapi_core::mcp::ResourceKind;
 use yapi_core::mcp::config::{
@@ -17,6 +18,7 @@ use yapi_core::mcp::config::{
     remove_server_config, resolve_exposure_aliases, validate_server,
 };
 use yapi_core::mcp::connection::{Connection, State};
+use yapi_core::mcp::sign_in::SignInPrompt;
 use yapi_core::trust::TrustStore;
 
 use crate::{err, out};
@@ -251,16 +253,40 @@ pub async fn run(args: &[String]) -> u8 {
                 ));
                 return 1;
             };
-            if !entry.config.transport.uses_oauth() {
+            let connection = connection(entry.clone(), &cwd, &agent_dir);
+            if connection.oauth_url().is_none() {
                 err(&format!(
                     "MCP server \"{name}\" does not use OAuth. Only HTTP servers without an Authorization header do."
                 ));
                 return 1;
             }
-            err(&format!(
-                "Signing in to MCP servers is not available in {APP_NAME} yet; \"{name}\" cannot be signed in to or out of."
-            ));
-            1
+            if command == "logout" {
+                return match connection.remove_credentials().await {
+                    Ok(true) => {
+                        out(&format!("Signed out of MCP server \"{name}\"."));
+                        0
+                    }
+                    Ok(false) => {
+                        out(&format!("No stored credentials for MCP server \"{name}\"."));
+                        0
+                    }
+                    Err(error) => {
+                        err(&error.to_string());
+                        1
+                    }
+                };
+            }
+            let timeout = parsed
+                .value("timeout")
+                .map_or(DEFAULT_LOGIN_TIMEOUT_SECONDS, yapi_types::json::js_number);
+            let timeout = Some(timeout).filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+            let Some(timeout) = timeout else {
+                err("--timeout must be a positive number of seconds.");
+                return 1;
+            };
+            let code = login(name, &connection, timeout).await;
+            connection.close().await;
+            code
         }
         _ => {
             err(&format!(
@@ -269,6 +295,105 @@ pub async fn run(args: &[String]) -> u8 {
             ));
             1
         }
+    }
+}
+
+const DEFAULT_LOGIN_TIMEOUT_SECONDS: f64 = 300.0;
+
+/// A connection for the commands, which reads no provider tokens.
+fn connection(entry: ServerEntry, cwd: &Path, agent_dir: &Path) -> Arc<Connection> {
+    Connection::new(
+        entry,
+        cwd.to_path_buf(),
+        agent_dir.to_path_buf(),
+        Arc::new(|_: &Arc<Connection>| {}),
+        Arc::new(|_: &str| false),
+        None,
+    )
+}
+
+/// pi's `login`: connects first, which tells whether a sign-in is needed and
+/// records the server's challenge, then signs in through the browser.
+async fn login(name: &str, connection: &Arc<Connection>, timeout_seconds: f64) -> u8 {
+    if connection.client().await.is_ok() {
+        let tools = connection.snapshot().tools.len();
+        out(&format!(
+            "Already signed in to MCP server \"{name}\" ({tools} tools)."
+        ));
+        return 0;
+    }
+    let snapshot = connection.snapshot();
+    if snapshot.state != State::NeedsAuth {
+        err(&format!(
+            "MCP server \"{name}\" failed to connect: {}",
+            snapshot.error.as_deref().unwrap_or("unknown error")
+        ));
+        return 1;
+    }
+    let timeout = Duration::try_from_secs_f64(timeout_seconds).unwrap_or(Duration::MAX);
+    let interactive = std::io::stdin().is_terminal();
+    let server = name.to_owned();
+    let prompt = SignInPrompt {
+        show_authorization_url: Box::new(move |url: &str| {
+            out(&format!(
+                "Sign in to MCP server \"{server}\" in your browser:\n{url}"
+            ));
+            yapi_ai::auth::open_browser(url);
+        }),
+        redirect_url: Box::new(move |cancel| {
+            Box::pin(wait_for_redirect_url(cancel, timeout, interactive))
+        }),
+    };
+    if let Err(error) = connection.sign_in(&prompt).await {
+        err(&match error {
+            yapi_ai::auth::AuthError::Cancelled => format!(
+                "Sign-in to MCP server \"{name}\" was cancelled or not completed within {} seconds.",
+                timeout_seconds.round()
+            ),
+            error => format!("Sign-in to MCP server \"{name}\" failed: {error}"),
+        });
+        return 1;
+    }
+    if let Err(error) = connection.reconnect().await {
+        err(&format!("Signed in, but {error}"));
+        return 1;
+    }
+    let tools = connection.snapshot().tools.len();
+    out(&format!(
+        "Signed in to MCP server \"{name}\" ({tools} tools)."
+    ));
+    0
+}
+
+/// The redirect URL pasted in a terminal; otherwise only the browser callback
+/// can finish the sign-in. `None`, which cancels the sign-in, after `timeout`
+/// or once the callback arrived.
+async fn wait_for_redirect_url(
+    cancel: CancellationToken,
+    timeout: Duration,
+    interactive: bool,
+) -> Option<String> {
+    let deadline = tokio::time::sleep(timeout);
+    if !interactive {
+        tokio::select! {
+            () = cancel.cancelled() => {}
+            () = deadline => {}
+        }
+        return None;
+    }
+    eprint!("If the browser cannot reach this machine, paste the URL it was redirected to: ");
+    let (sender, line) = tokio::sync::oneshot::channel();
+    // A detached thread: a blocked read must not keep the process from exiting.
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_ok() {
+            let _ = sender.send(line);
+        }
+    });
+    tokio::select! {
+        () = cancel.cancelled() => None,
+        () = deadline => None,
+        line = line => line.ok().map(|line| line.trim_end_matches(['\n', '\r']).to_owned()),
     }
 }
 
@@ -370,7 +495,10 @@ fn add(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> 
             oauth.insert("clientSecret".into(), json!(secret));
         }
         if let Some(port) = parsed.value("oauth-callback-port") {
-            oauth.insert("callbackPort".into(), js_number(port));
+            oauth.insert(
+                "callbackPort".into(),
+                yapi_types::json::number(yapi_types::json::js_number(port)),
+            );
         }
         if let Some(client_name) = parsed.value("oauth-client-name") {
             oauth.insert("clientName".into(), json!(client_name));
@@ -454,49 +582,6 @@ fn add(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> 
     };
     out(&format!("Check it with: {APP_NAME} mcp list{sign_in}"));
     0
-}
-
-/// `Number(text)` as JSON: an integer when it is one, else a float, else
-/// `null` for `NaN`.
-fn js_number(text: &str) -> Value {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return json!(0);
-    }
-    // `0x`, `0o` and `0b` integers, without a sign.
-    for (prefix, radix) in [("0x", 16), ("0o", 8), ("0b", 2)] {
-        if let Some(digits) = trimmed
-            .get(..2)
-            .filter(|start| start.eq_ignore_ascii_case(prefix))
-            .and_then(|_| trimmed.get(2..))
-        {
-            let value = digits.chars().try_fold(0.0_f64, |value, c| {
-                c.to_digit(radix)
-                    .map(|digit| value * f64::from(radix) + f64::from(digit))
-            });
-            return match value {
-                Some(value) if !digits.is_empty() => js_integer(value),
-                _ => Value::Null,
-            };
-        }
-    }
-    match trimmed.parse::<f64>() {
-        Ok(number) if number.fract() == 0.0 && number.abs() < 9_007_199_254_740_992.0 => {
-            json!(number as i64)
-        }
-        Ok(number) if number.is_finite() => json!(number),
-        _ => Value::Null,
-    }
-}
-
-fn js_integer(value: f64) -> Value {
-    if value < 9_007_199_254_740_992.0 {
-        json!(value as i64)
-    } else if value.is_finite() {
-        json!(value)
-    } else {
-        Value::Null
-    }
 }
 
 fn remove(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> u8 {
@@ -608,13 +693,7 @@ async fn report(entry: ServerEntry, cwd: &Path, agent_dir: &Path) -> Report {
         return report;
     }
     let config = entry.config.clone();
-    let connection = Connection::new(
-        entry,
-        cwd.to_path_buf(),
-        agent_dir.to_path_buf(),
-        Arc::new(|_: &Arc<Connection>| {}),
-        Arc::new(|_: &str| false),
-    );
+    let connection = connection(entry, cwd, agent_dir);
     let connected = connection.client().await.is_ok();
     let snapshot = connection.snapshot();
     report.state = snapshot.state.as_str();
@@ -795,19 +874,5 @@ mod tests {
                 .as_deref(),
             Some("--env needs a value.")
         );
-    }
-
-    #[test]
-    fn numbers_follow_javascript() {
-        assert_eq!(js_number("8080"), json!(8080));
-        assert_eq!(js_number("1.5"), json!(1.5));
-        assert_eq!(js_number("x"), Value::Null);
-        // `Number()`'s radix prefixes.
-        assert_eq!(js_number("0x1F90"), json!(8080));
-        assert_eq!(js_number(" 0o17 "), json!(15));
-        assert_eq!(js_number("0B101"), json!(5));
-        assert_eq!(js_number("0x"), Value::Null);
-        assert_eq!(js_number("-0x10"), Value::Null);
-        assert_eq!(js_number("0x+1"), Value::Null);
     }
 }

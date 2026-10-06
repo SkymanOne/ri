@@ -499,7 +499,7 @@ impl LoginDialog {
                     self.rows.push(Row::Spacer);
                     self.text(styled(instructions, theme.fg("warning")));
                 }
-                open_browser(&url);
+                yapi_ai::auth::open_browser(&url);
             }
             AuthEvent::DeviceCode {
                 user_code,
@@ -1190,21 +1190,6 @@ impl super::App {
             self.warning("Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage. Disable this warning in /settings.");
         }
     }
-}
-
-/// Opens `target` in the platform browser, best effort and without a shell.
-fn open_browser(target: &str) {
-    let program = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    let _ = std::process::Command::new(program)
-        .arg(target)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
 }
 
 #[cfg(test)]

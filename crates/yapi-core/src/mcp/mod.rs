@@ -9,6 +9,8 @@ pub mod extension;
 pub mod http;
 pub mod jsonrpc;
 pub mod log;
+pub mod oauth;
+pub mod sign_in;
 pub mod stdio;
 pub mod tools;
 pub mod transport;

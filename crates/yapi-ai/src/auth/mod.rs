@@ -12,7 +12,7 @@ pub mod device;
 pub mod federation;
 pub mod google_adc;
 pub mod kimi;
-pub(crate) mod lock;
+pub mod lock;
 pub mod meta;
 pub mod openrouter;
 pub mod pkce;
@@ -304,6 +304,22 @@ pub fn builtin_oauth(provider: &str) -> Option<Arc<dyn OAuthProvider>> {
 
 pub(crate) use yapi_types::time::now_ms;
 
+/// pi's `openBrowser`: opens `target` in the platform browser, best effort and
+/// without a shell.
+pub fn open_browser(target: &str) {
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(program)
+        .arg(target)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 /// pi's `OAUTH_CALLBACK_HOST`: `PI_OAUTH_CALLBACK_HOST`, else `127.0.0.1`.
 pub(crate) fn callback_host() -> String {
     std::env::var("PI_OAUTH_CALLBACK_HOST")
@@ -352,10 +368,7 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
 }
 
 /// A POST of `fields` as a form that accepts JSON, without a timeout.
-pub(crate) fn post_form(
-    url: impl reqwest::IntoUrl,
-    fields: &[(&str, &str)],
-) -> reqwest::RequestBuilder {
+pub fn post_form(url: impl reqwest::IntoUrl, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
     crate::http::client()
         .post(url)
         .header("Content-Type", "application/x-www-form-urlencoded")

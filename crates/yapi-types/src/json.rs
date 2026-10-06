@@ -30,6 +30,52 @@ pub fn stringify(value: &impl JsonValue) -> String {
     to_string(value).unwrap_or_default()
 }
 
+/// A JavaScript number as JSON: an integer when it is a safe one, so it
+/// compares equal to the same number parsed from a pi file.
+pub fn number(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
+        Value::from(value as i64)
+    } else {
+        serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
+    }
+}
+
+/// JavaScript's `Number(text)`: surrounding whitespace ignored, `0` for
+/// empty text, unsigned `0x`, `0o` and `0b` integers, `Infinity` with an
+/// optional sign, else a decimal literal, and `NaN` for anything else.
+pub fn js_number(text: &str) -> f64 {
+    let text = text.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if text.is_empty() {
+        return 0.0;
+    }
+    for (prefix, radix) in [("0x", 16), ("0o", 8), ("0b", 2)] {
+        if let Some(digits) = text
+            .get(..2)
+            .filter(|start| start.eq_ignore_ascii_case(prefix))
+            .and_then(|_| text.get(2..))
+        {
+            let value = digits.chars().try_fold(0.0_f64, |value, c| {
+                c.to_digit(radix)
+                    .map(|digit| value * f64::from(radix) + f64::from(digit))
+            });
+            return value.filter(|_| !digits.is_empty()).unwrap_or(f64::NAN);
+        }
+    }
+    match text {
+        "Infinity" | "+Infinity" => return f64::INFINITY,
+        "-Infinity" => return f64::NEG_INFINITY,
+        _ => {}
+    }
+    // Rust also reads `inf` and `NaN`, which JavaScript does not.
+    if !text
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || b"+-.eE".contains(&byte))
+    {
+        return f64::NAN;
+    }
+    text.parse().unwrap_or(f64::NAN)
+}
+
 /// Serializes `value` like `JSON.stringify(value, null, indent)`.
 pub fn to_string_pretty<T: Serialize + ?Sized>(
     value: &T,
@@ -140,6 +186,23 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    #[test]
+    fn reads_numbers_like_javascript() {
+        let number = |text| super::number(js_number(text));
+        assert_eq!(number("8080"), json!(8080));
+        assert_eq!(number(" 1.5e1 "), json!(15));
+        assert_eq!(number(""), json!(0));
+        assert_eq!(number("x"), Value::Null);
+        assert_eq!(number("0x1F90"), json!(8080));
+        assert_eq!(number(" 0o17 "), json!(15));
+        assert_eq!(number("0B101"), json!(5));
+        for nan in ["0x", "-0x10", "0x+1", "inf", "NaN", "1e", "1_000"] {
+            assert!(js_number(nan).is_nan(), "{nan}");
+        }
+        assert_eq!(js_number("-Infinity"), f64::NEG_INFINITY);
+        assert_eq!(number("Infinity"), Value::Null);
+    }
 
     #[test]
     fn parses_past_a_byte_order_mark() {

@@ -45,15 +45,18 @@ pub fn error_page(message: &str, details: Option<&str>) -> String {
 }
 
 /// The reply to one request, and what it means for the sign-in.
-pub(crate) struct Reply<T> {
+pub struct Reply<T> {
+    /// HTTP status.
     pub status: u16,
+    /// The page.
     pub html: String,
     /// Ends the wait with a value or an error.
     pub outcome: Option<Result<T, AuthError>>,
 }
 
 impl<T> Reply<T> {
-    pub(crate) fn page(status: u16, html: String) -> Reply<T> {
+    /// A page that does not end the wait.
+    pub fn page(status: u16, html: String) -> Reply<T> {
         Reply {
             status,
             html,
@@ -62,11 +65,13 @@ impl<T> Reply<T> {
     }
 }
 
-type Handler<T> = Box<dyn FnMut(&str, &Url) -> Reply<T> + Send>;
+/// Answers one request, given its method and URL.
+pub type Handler<T> = Box<dyn FnMut(&str, &Url) -> Reply<T> + Send>;
 
 /// A running loopback server. Dropping it closes the listener and every open
 /// connection.
-pub(crate) struct Server<T> {
+pub struct Server<T> {
+    port: u16,
     redirect_uri: String,
     outcome: oneshot::Receiver<Result<T, AuthError>>,
     cancel: CancellationToken,
@@ -76,7 +81,7 @@ pub(crate) struct Server<T> {
 impl<T: Send + 'static> Server<T> {
     /// Listens on `host:port` (0 picks a port) and answers each request with
     /// `handler`, until a reply carries an outcome.
-    pub(crate) async fn start(
+    pub async fn start(
         host: &str,
         port: u16,
         path: &str,
@@ -84,7 +89,8 @@ impl<T: Send + 'static> Server<T> {
         handler: Handler<T>,
     ) -> std::io::Result<Server<T>> {
         let listener = TcpListener::bind((host, port)).await?;
-        let redirect_uri = format!("http://{host}:{}{path}", listener.local_addr()?.port());
+        let port = listener.local_addr()?.port();
+        let redirect_uri = format!("http://{host}:{port}{path}");
         let (sender, outcome) = oneshot::channel();
         let state = Arc::new(Mutex::new((handler, Some(sender))));
         let tasks = tokio::spawn(async move {
@@ -94,6 +100,7 @@ impl<T: Send + 'static> Server<T> {
             }
         });
         Ok(Server {
+            port,
             redirect_uri,
             outcome,
             cancel: cancel.clone(),
@@ -102,12 +109,17 @@ impl<T: Send + 'static> Server<T> {
     }
 
     /// `http://<host>:<port><path>`, with the port the listener bound.
-    pub(crate) fn redirect_uri(&self) -> &str {
+    pub fn redirect_uri(&self) -> &str {
         &self.redirect_uri
     }
 
+    /// The port the listener bound.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// The outcome of the first conclusive request.
-    pub(crate) async fn wait(&mut self) -> Result<T, AuthError> {
+    pub async fn wait(&mut self) -> Result<T, AuthError> {
         match self.cancel.run_until_cancelled(&mut self.outcome).await {
             Some(outcome) => {
                 outcome.unwrap_or_else(|_| Err(AuthError::failed("OAuth callback server closed")))
@@ -172,7 +184,7 @@ async fn serve_connection<T>(mut stream: TcpStream, state: Shared<T>) {
 }
 
 /// The first value of the query parameter `name`.
-pub(crate) fn query(url: &Url, name: &str) -> Option<String> {
+pub fn query(url: &Url, name: &str) -> Option<String> {
     url.query_pairs()
         .find(|(key, _)| key == name)
         .map(|(_, value)| value.into_owned())

@@ -248,6 +248,30 @@ impl CredentialStore {
     }
 }
 
+/// pi's `FileAuthStorageBackend.withLock` for another credential file, such
+/// as `mcp-auth.json`: creates the directory (mode 0700) and the file (mode
+/// 0600, `{}`) when missing, locks the file, passes its text to `change`, and
+/// writes the text `change` returns, if any.
+pub async fn with_file_lock<T>(
+    path: &Path,
+    change: impl FnOnce(&str) -> Result<(T, Option<String>), AuthError>,
+) -> Result<T, AuthError> {
+    prepare(path)?;
+    let _lock = FileLock::acquire(path, &CancellationToken::new())
+        .await
+        .map_err(failed)?;
+    let current = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(failed(err)),
+    };
+    let (result, next) = change(&current)?;
+    if let Some(next) = next {
+        write_text(path, &next)?;
+    }
+    Ok(result)
+}
+
 /// Creates the directory (mode 0700) and an empty file (mode 0600) when missing.
 fn prepare(path: &Path) -> Result<(), AuthError> {
     if let Some(dir) = path.parent()

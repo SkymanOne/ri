@@ -11,6 +11,7 @@ pub const AGENT_ENTRIES: &[&str] = &[
     "models.json",
     "keybindings.json",
     "mcp.json",
+    "mcp-auth.json",
     "trust.json",
     "SYSTEM.md",
     "APPEND_SYSTEM.md",
@@ -152,6 +153,7 @@ mod tests {
         let (pi, yapi) = (dir.join("pi"), dir.join("yapi"));
         write(&pi, "settings.json", "{\"theme\":\"light\"}\n");
         write(&pi, "auth.json", "{}\n");
+        write(&pi, "mcp-auth.json", "{}\n");
         write(&pi, "sessions/--a--/one.jsonl", "{}\n");
         write(&pi, "sessions/--a--/two.jsonl", "{}\n");
         write(&pi, "bin/fd", "binary");
@@ -169,6 +171,7 @@ mod tests {
             [
                 ("settings.json", 1, 0),
                 ("auth.json", 0, 1),
+                ("mcp-auth.json", 1, 0),
                 ("sessions", 2, 0)
             ]
         );
