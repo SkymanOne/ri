@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use yapi_core::extensions::{
     ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement,
-    RemoteComponent, Widget, WorkingIndicator,
+    RemoteComponent, ShortcutBinding, Widget, WorkingIndicator,
 };
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
@@ -61,8 +61,8 @@ pub(super) enum Request {
     SetEditor(Option<RemoteComponent>, bool),
     EditorChanged(String),
     EditorSubmit(String),
-    /// Raw input that matched an extension shortcut.
-    Shortcut(String),
+    /// An extension shortcut whose keys an extension's editor received.
+    Shortcut(ShortcutBinding),
     /// Input listeners started or stopped listening.
     TerminalInput(Option<Arc<dyn ComponentHost>>),
     /// Composed autocomplete providers, with their trigger characters.
@@ -83,8 +83,8 @@ pub(super) struct Shared {
     pub footer: Value,
     /// See [`ExtensionUi::keybindings`].
     pub keybindings: Value,
-    /// The keys of extension shortcuts, and the decoder they match with.
-    pub shortcuts: Vec<String>,
+    /// The extension shortcuts, and the decoder their keys match with.
+    pub shortcuts: Vec<ShortcutBinding>,
     pub keys: yapi_tui::keys::Keys,
 }
 
@@ -288,14 +288,11 @@ impl ExtensionUi for InteractiveUi {
 
     fn editor_shortcut(&self, data: &str) -> bool {
         let shared = lock(&self.shared);
-        let found = shared
-            .shortcuts
-            .iter()
-            .any(|key| shared.keys.matches(data, key));
-        if found {
-            self.send(Request::Shortcut(data.to_owned()));
-        }
-        found
+        let Some(binding) = shortcut_for(&shared.shortcuts, shared.keys, data) else {
+            return false;
+        };
+        self.send(Request::Shortcut(binding.clone()));
+        true
     }
 
     fn keybindings(&self) -> Value {
@@ -330,6 +327,17 @@ impl ExtensionUi for InteractiveUi {
     fn footer_data(&self) -> Value {
         lock(&self.shared).footer.clone()
     }
+}
+
+/// The extension shortcut raw input `data` triggers.
+pub(super) fn shortcut_for<'a>(
+    shortcuts: &'a [ShortcutBinding],
+    keys: yapi_tui::keys::Keys,
+    data: &str,
+) -> Option<&'a ShortcutBinding> {
+    shortcuts
+        .iter()
+        .find(|binding| keys.matches(data, &binding.key))
 }
 
 /// `theme` as extensions see it: the escape sequence that starts each token's
@@ -789,9 +797,7 @@ impl super::App {
                 }
             }
             Request::EditorSubmit(text) => self.on_submit(text),
-            Request::Shortcut(data) => {
-                self.run_shortcut(&data);
-            }
+            Request::Shortcut(binding) => self.run_shortcut(binding),
             Request::TerminalInput(listeners) => self.ext.listeners = listeners,
             Request::Autocomplete(providers, triggers) => {
                 self.ext.completions = Some((providers, triggers));

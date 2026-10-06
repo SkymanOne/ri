@@ -845,11 +845,7 @@ impl App {
         let mut shared = yapi_types::sync::lock(&self.ext.shared);
         shared.keybindings =
             json!({"kitty": self.kitty, "bindings": bindings, "actions": APP_KEYS});
-        shared.shortcuts = self
-            .shortcuts
-            .iter()
-            .map(|binding| binding.key.clone())
-            .collect();
+        shared.shortcuts = self.shortcuts.clone();
         shared.keys = self.keys.decoder();
     }
 
@@ -2242,7 +2238,10 @@ impl App {
             return false;
         }
         // Extension shortcuts come first, as in pi's editor.
-        if self.run_shortcut(data) {
+        if let Some(binding) =
+            extension_ui::shortcut_for(&self.shortcuts, self.keys.decoder(), data).cloned()
+        {
+            self.run_shortcut(binding);
             return true;
         }
         let keys = &self.keys;
@@ -2272,17 +2271,8 @@ impl App {
         true
     }
 
-    /// Runs the extension shortcut bound to `data`, if any.
-    fn run_shortcut(&self, data: &str) -> bool {
-        let decoder = self.keys.decoder();
-        let Some(binding) = self
-            .shortcuts
-            .iter()
-            .find(|binding| decoder.matches(data, &binding.key))
-            .cloned()
-        else {
-            return false;
-        };
+    /// Runs extension shortcut `binding` beside the loop.
+    fn run_shortcut(&self, binding: yapi_core::extensions::ShortcutBinding) {
         let (session, notify) = (self.session.clone(), self.notifier());
         tokio::spawn(async move {
             if let Err(error) = session.run_shortcut(&binding).await {
@@ -2292,7 +2282,6 @@ impl App {
                 );
             }
         });
-        true
     }
 
     /// Runs app action `action`, a key binding id, as the built-in editor's
