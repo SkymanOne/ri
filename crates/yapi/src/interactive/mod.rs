@@ -1818,7 +1818,7 @@ impl App {
         if messages.is_empty() {
             return;
         }
-        let (session, tx, epoch) = (self.session.clone(), self.tx.clone(), self.epoch);
+        let (session, notify) = (self.session.clone(), self.notifier());
         tokio::spawn(async move {
             for (text, behavior) in messages {
                 let source = yapi_core::agent_session::InputSource::Interactive;
@@ -1826,10 +1826,19 @@ impl App {
                     .queue_input(&text, Vec::new(), behavior, source)
                     .await
                 {
-                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                    notify(error, NotifyKind::Error);
                 }
             }
         });
+    }
+
+    /// Shows a notice from a task beside the loop, unless the session it
+    /// belongs to has been replaced by then.
+    fn notifier(&self) -> impl Fn(String, NotifyKind) + Send + 'static {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        move |message, kind| {
+            let _ = tx.send(Event::Notify(epoch, message, kind));
+        }
     }
 
     // Input
@@ -1873,12 +1882,10 @@ impl App {
         if self.session.is_extension_command(&text) {
             // Extension commands run at once, even while a response streams.
             self.editor.add_to_history(&text);
-            let session = self.session.clone();
-            let tx = self.tx.clone();
-            let epoch = self.epoch;
+            let (session, notify) = (self.session.clone(), self.notifier());
             tokio::spawn(async move {
                 if let Err(error) = session.prompt(&text, Vec::new()).await {
-                    let _ = tx.send(Event::Notify(epoch, error, NotifyKind::Error));
+                    notify(error, NotifyKind::Error);
                 }
             });
             return;
@@ -2049,13 +2056,13 @@ impl App {
             .find(|binding| decoder.matches(data, &binding.key))
             .cloned()
         {
-            let session = self.session.clone();
-            let tx = self.tx.clone();
-            let epoch = self.epoch;
+            let (session, notify) = (self.session.clone(), self.notifier());
             tokio::spawn(async move {
                 if let Err(error) = session.run_shortcut(&binding).await {
-                    let message = format!("Shortcut handler error: {error}");
-                    let _ = tx.send(Event::Notify(epoch, message, NotifyKind::Error));
+                    notify(
+                        format!("Shortcut handler error: {error}"),
+                        NotifyKind::Error,
+                    );
                 }
             });
             return true;
@@ -2179,13 +2186,12 @@ impl App {
 
     /// pi's `copyToClipboard` beside the loop, then `done` or the error.
     fn copy_to_clipboard(&self, text: String, done: &'static str) {
-        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        let notify = self.notifier();
         tokio::spawn(async move {
-            let (message, kind) = match clipboard::copy(&text, emit).await {
-                Ok(()) => (done.to_owned(), NotifyKind::Info),
-                Err(error) => (error, NotifyKind::Error),
-            };
-            let _ = tx.send(Event::Notify(epoch, message, kind));
+            match clipboard::copy(&text, emit).await {
+                Ok(()) => notify(done.to_owned(), NotifyKind::Info),
+                Err(error) => notify(error, NotifyKind::Error),
+            }
         });
     }
 
@@ -3111,7 +3117,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         app.warning(message);
     }
     for event in early_events {
-        app.on_event(event, &mut terminal);
+        app.on_event(event);
     }
     app.editor.begin_input_batch();
     for key in early {
@@ -3175,7 +3181,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
                     app.keys.set_kitty(terminal.protocol.kitty);
                     app.kitty = terminal.protocol.kitty;
                 } else {
-                    app.on_event(event, &mut terminal);
+                    app.on_event(event);
                 }
                 dirty = true;
             }
@@ -3430,7 +3436,7 @@ impl App {
     }
 
     /// Handles everything but input.
-    fn on_event(&mut self, event: Event, _terminal: &mut Terminal) {
+    fn on_event(&mut self, event: Event) {
         self.footer_cache = None;
         // pi draws an extension's footer every frame; its stats change with
         // the agent's events.

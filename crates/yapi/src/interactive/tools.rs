@@ -1165,8 +1165,7 @@ fn generic_call(name: &str, args: &Value, theme: &Theme, expanded: bool) -> Vec<
             let text = replace_tabs(&text)
                 .replace('\r', "")
                 .replace('\n', "\n    ");
-            for (index, part) in format!("  {key}: {text}").split('\n').enumerate() {
-                let _ = index;
+            for part in format!("  {key}: {text}").split('\n') {
                 lines.push(lines::styled(part.to_owned(), theme.fg("muted")));
             }
         }

@@ -390,10 +390,6 @@ impl ConfigSelector {
         }
     }
 
-    fn document(&self, scope: Scope) -> Map<String, Value> {
-        self.settings.document(scope).clone()
-    }
-
     /// The `packages` entries of `scope`'s settings.
     fn packages(&self, scope: Scope) -> Vec<Value> {
         self.settings
@@ -433,19 +429,6 @@ impl ConfigSelector {
         list.extend(sign.map(|sign| format!("{sign}{pattern}")));
     }
 
-    /// pi's `getResourcePattern`.
-    fn resource_pattern(&self, item: &Item) -> String {
-        if item.info.source == "builtin" {
-            return item.path.clone();
-        }
-        let base = item
-            .info
-            .base_dir
-            .as_ref()
-            .map_or_else(|| self.base(Self::item_scope(item)), PathBuf::from);
-        relative(&base, Path::new(&item.path))
-    }
-
     /// pi's `getPackageResourcePattern`.
     fn package_pattern(item: &Item) -> String {
         let base = item.info.base_dir.as_ref().map_or_else(
@@ -467,8 +450,9 @@ impl ConfigSelector {
         let key = item.kind.key();
         let sign = Some(if enabled { "+" } else { "-" });
         if item.info.origin == "top-level" {
-            let mut list = Self::list(&self.document(scope), key);
-            Self::set_pattern(&mut list, &self.resource_pattern(item), sign);
+            // pi's `getResourcePattern`: the pattern in the item's own scope.
+            let mut list = Self::list(self.settings.document(scope), key);
+            Self::set_pattern(&mut list, &self.pattern_for_scope(item, scope), sign);
             self.write(scope, key, Some(Value::from(list)));
             return enabled;
         }
@@ -585,7 +569,7 @@ impl ConfigSelector {
             return Override::Inherit;
         }
         if item.info.origin == "top-level" {
-            let entries = Self::list(&self.document(Scope::Project), item.kind.key());
+            let entries = Self::list(self.settings.document(Scope::Project), item.kind.key());
             return Self::state_from_entries(&entries, &self.top_level_patterns(item), false);
         }
         let Some(Value::Object(entry)) = self.matching_package(item) else {
@@ -629,7 +613,7 @@ impl ConfigSelector {
                 self.pattern_for_scope(item, Scope::Project)
             };
             let patterns = self.top_level_patterns(item);
-            let mut list = Self::list(&self.document(Scope::Project), key);
+            let mut list = Self::list(self.settings.document(Scope::Project), key);
             list.retain(|entry| {
                 let target = strip_sign(entry);
                 if entry.starts_with(['!', '+', '-'])

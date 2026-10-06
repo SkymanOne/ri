@@ -16,6 +16,7 @@ use yapi_core::extensions::{
 };
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
+use yapi_types::sync::lock;
 
 use super::{Event, Indicator};
 
@@ -68,12 +69,6 @@ pub(super) struct Shared {
     pub tools_expanded: bool,
     pub theme: Value,
     pub footer: Value,
-}
-
-fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
-    shared
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The extension UI of one session.

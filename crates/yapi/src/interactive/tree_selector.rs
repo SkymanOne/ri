@@ -13,7 +13,7 @@ use yapi_core::session::{SessionTree, TreeNode};
 use yapi_tui::lines::{self, StyledLine, styled};
 use yapi_tui::select_list::{step, visible_range};
 use yapi_tui::text::grapheme_width;
-use yapi_tui::text_input::{InputEvent, TextInput};
+use yapi_tui::text_input::TextInput;
 use yapi_types::message::{Content, ContentBlock, Message, StopReason, blocks_text};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::TreeFilterMode as Filter;
@@ -280,10 +280,7 @@ impl TreeSelector {
         selector.apply_filter();
         let target = initial.or_else(|| selector.leaf.clone());
         selector.selected = selector.nearest_visible(target.as_deref());
-        selector.last_selected = selector
-            .filtered
-            .get(selector.selected)
-            .map(|flat| selector.id(flat.node).to_owned());
+        selector.last_selected = selector.selected_id();
         selector
     }
 
@@ -293,6 +290,19 @@ impl TreeSelector {
 
     fn id(&self, index: usize) -> &str {
         entry_id(&self.tree.nodes[index].entry)
+    }
+
+    /// The selected entry's id.
+    fn selected_id(&self) -> Option<String> {
+        self.filtered
+            .get(self.selected)
+            .map(|flat| self.id(flat.node).to_owned())
+    }
+
+    /// The id of the entry above `id`.
+    fn parent_of(&self, id: &str) -> Option<String> {
+        let &node = self.by_id.get(id)?;
+        parent_id(&self.node(node).entry).map(str::to_owned)
     }
 
     fn nearest_visible(&self, id: Option<&str>) -> usize {
@@ -305,29 +315,14 @@ impl TreeSelector {
             .enumerate()
             .map(|(position, flat)| (self.id(flat.node), position))
             .collect();
-        let mut current = id.map(str::to_owned);
-        while let Some(id) = current {
-            if let Some(&position) = visible.get(id.as_str()) {
-                return position;
-            }
-            let Some(&node) = self.by_id.get(&id) else {
-                break;
-            };
-            current = parent_id(&self.node(node).entry).map(str::to_owned);
-        }
-        self.filtered.len() - 1
+        std::iter::successors(id.map(str::to_owned), |id| self.parent_of(id))
+            .find_map(|id| visible.get(id.as_str()).copied())
+            .unwrap_or(self.filtered.len() - 1)
     }
 
     fn build_active_path(&mut self) {
-        self.active_path.clear();
-        let mut current = self.leaf.clone();
-        while let Some(id) = current {
-            self.active_path.insert(id.clone());
-            let Some(&node) = self.by_id.get(&id) else {
-                break;
-            };
-            current = parent_id(&self.node(node).entry).map(str::to_owned);
-        }
+        let path = std::iter::successors(self.leaf.clone(), |id| self.parent_of(id)).collect();
+        self.active_path = path;
     }
 
     /// pi's `flattenTree`: depth-first, the branch holding the leaf first.
@@ -460,8 +455,8 @@ impl TreeSelector {
     }
 
     fn apply_filter(&mut self) {
-        if let Some(flat) = self.filtered.get(self.selected) {
-            self.last_selected = Some(self.id(flat.node).to_owned());
+        if let Some(id) = self.selected_id() {
+            self.last_selected = Some(id);
         }
         let tokens: Vec<String> = self
             .search
@@ -534,8 +529,8 @@ impl TreeSelector {
         } else if self.selected >= self.filtered.len() {
             self.selected = self.filtered.len().saturating_sub(1);
         }
-        if let Some(flat) = self.filtered.get(self.selected) {
-            self.last_selected = Some(self.id(flat.node).to_owned());
+        if let Some(id) = self.selected_id() {
+            self.last_selected = Some(id);
         }
     }
 
@@ -550,23 +545,9 @@ impl TreeSelector {
             .iter()
             .map(|flat| self.id(flat.node).to_owned())
             .collect();
-        let visible_ancestor = |id: &str| -> Option<String> {
-            let mut current = self
-                .by_id
-                .get(id)
-                .and_then(|&node| parent_id(&self.node(node).entry))
-                .map(str::to_owned);
-            while let Some(id) = current {
-                if visible.contains(&id) {
-                    return Some(id);
-                }
-                current = self
-                    .by_id
-                    .get(&id)
-                    .and_then(|&node| parent_id(&self.node(node).entry))
-                    .map(str::to_owned);
-            }
-            None
+        let visible_ancestor = |id: &str| {
+            std::iter::successors(self.parent_of(id), |id| self.parent_of(id))
+                .find(|id| visible.contains(id))
         };
         let mut parents: HashMap<String, Option<String>> = HashMap::new();
         let mut children: HashMap<Option<String>, Vec<String>> = HashMap::new();
@@ -1256,9 +1237,8 @@ impl TreeSelector {
                 self.label_input = None;
                 return Outcome::None;
             }
-            if let InputEvent::Submit(_) = input.handle_input(data, kb) {
-                // Enter is handled above; `\n` falls through to here.
-            }
+            // Enter is handled above; a `\n` submit does nothing.
+            input.handle_input(data, kb);
             return Outcome::None;
         }
         let count = self.filtered.len();
@@ -1276,11 +1256,7 @@ impl TreeSelector {
         } else if kb.matches(data, "tui.select.down") {
             self.selected = step(self.selected, count, true);
         } else if kb.matches(data, "app.tree.foldOrUp") {
-            let id = self
-                .filtered
-                .get(self.selected)
-                .map(|flat| self.id(flat.node).to_owned());
-            match id {
+            match self.selected_id() {
                 Some(id) if self.foldable(&id) && !self.folded.contains(&id) => {
                     self.folded.insert(id);
                     self.apply_filter();
@@ -1288,11 +1264,7 @@ impl TreeSelector {
                 _ => self.selected = self.segment_start(false),
             }
         } else if kb.matches(data, "app.tree.unfoldOrDown") {
-            let id = self
-                .filtered
-                .get(self.selected)
-                .map(|flat| self.id(flat.node).to_owned());
-            match id {
+            match self.selected_id() {
                 Some(id) if self.folded.contains(&id) => {
                     self.folded.remove(&id);
                     self.apply_filter();
@@ -1307,8 +1279,8 @@ impl TreeSelector {
         {
             self.selected = (self.selected + self.max_visible).min(count.saturating_sub(1));
         } else if kb.matches(data, "tui.select.confirm") {
-            if let Some(flat) = self.filtered.get(self.selected) {
-                return Outcome::Done(Action::Tree(self.id(flat.node).to_owned()));
+            if let Some(id) = self.selected_id() {
+                return Outcome::Done(Action::Tree(id));
             }
         } else if kb.matches(data, "app.message.copy") {
             let text = self
@@ -1357,12 +1329,7 @@ impl TreeSelector {
             }
         } else if kb.matches(data, "app.tree.toggleLabelTimestamp") {
             self.show_label_times = !self.show_label_times;
-        } else if !data.is_empty()
-            && !data.chars().any(|c| {
-                let code = c as u32;
-                code < 32 || code == 0x7f || (0x80..=0x9f).contains(&code)
-            })
-        {
+        } else if !data.is_empty() && !data.chars().any(char::is_control) {
             self.search.push_str(data);
             self.folded.clear();
             self.apply_filter();

@@ -117,6 +117,14 @@ fn submenu_item(id: &str, label: &str, description: &str, value: String) -> Sett
     }
 }
 
+/// The name a setting's value serializes to, or `default` when unset.
+fn setting_name(value: impl serde::Serialize, default: &str) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| default.to_owned())
+}
+
 fn overrides_summary(count: usize) -> String {
     if count == 0 {
         "none".to_owned()
@@ -727,11 +735,6 @@ impl SettingsSelector {
         let settings = &config.settings;
         let terminal = settings.terminal.clone().unwrap_or_default();
         let images = settings.images.clone().unwrap_or_default();
-        let json = |value: Option<serde_json::Value>, default: &str| {
-            value
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .unwrap_or_else(|| default.to_owned())
-        };
         let follow_up_key = keys_display(ui.keys, "app.message.followUp");
         let cycle_key = keys_display(ui.keys, "app.thinking.cycle");
         let overrides: Vec<(String, ThinkingLevel)> = settings
@@ -745,10 +748,7 @@ impl SettingsSelector {
             Some(serde_json::Value::String(text)) if text == "header" => "header",
             _ => "false",
         };
-        let trust = json(
-            serde_json::to_value(settings.default_project_trust).ok(),
-            "ask",
-        );
+        let trust = setting_name(settings.default_project_trust, "ask");
         let wheel = match serde_json::to_value(&settings.fullscreen_wheel_scroll_lines).ok() {
             Some(serde_json::Value::Number(number)) => number
                 .as_f64()
@@ -862,7 +862,7 @@ impl SettingsSelector {
                 "transport",
                 "Transport",
                 "Preferred transport for providers that support multiple transports",
-                json(serde_json::to_value(settings.transport).ok(), "auto"),
+                setting_name(settings.transport, "auto"),
                 &["sse", "websocket", "websocket-cached", "auto"],
             ),
             item(
@@ -876,10 +876,7 @@ impl SettingsSelector {
                 "cache-warming-mode",
                 "Cache warming",
                 "off; streaming while the agent runs; idle also between runs while continuation stays profitable",
-                json(
-                    serde_json::to_value(settings.cache_warming).ok(),
-                    "streaming",
-                ),
+                setting_name(settings.cache_warming, "streaming"),
                 &["off", "streaming", "idle"],
             ),
             bool_item(
@@ -940,20 +937,14 @@ impl SettingsSelector {
                 "double-escape-action",
                 "Double-escape action",
                 "Action when pressing Escape twice with empty editor",
-                json(
-                    serde_json::to_value(settings.double_escape_action).ok(),
-                    "tree",
-                ),
+                setting_name(settings.double_escape_action, "tree"),
                 &["tree", "fork", "none"],
             ),
             item(
                 "tree-filter-mode",
                 "Tree filter mode",
                 "Default filter when opening /tree",
-                json(
-                    serde_json::to_value(settings.tree_filter_mode).ok(),
-                    "default",
-                ),
+                setting_name(settings.tree_filter_mode, "default"),
                 &["default", "no-tools", "user-only", "labeled-only", "all"],
             ),
             submenu_item(
@@ -986,20 +977,14 @@ impl SettingsSelector {
                 "fullscreen-exit-output",
                 "Fullscreen exit output",
                 "Print the transcript or only a session resume hint when exiting fullscreen mode",
-                json(
-                    serde_json::to_value(settings.fullscreen_exit_output).ok(),
-                    "transcript",
-                ),
+                setting_name(settings.fullscreen_exit_output, "transcript"),
                 &["transcript", "resume-hint"],
             ),
             item(
                 "fullscreen-scrollbar",
                 "Fullscreen scrollbar",
                 "Scrollbar behavior in fullscreen mode; has no effect in regular mode",
-                json(
-                    serde_json::to_value(settings.fullscreen_scrollbar).ok(),
-                    "auto",
-                ),
+                setting_name(settings.fullscreen_scrollbar, "auto"),
                 &["auto", "always", "hidden"],
             ),
             bool_item(
