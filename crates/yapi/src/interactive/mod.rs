@@ -1190,7 +1190,9 @@ impl App {
                 reasoning: model.as_ref().is_some_and(|model| model.reasoning),
                 thinking: self.session.thinking_level().as_str(),
                 several_providers: providers.len() > 1,
-                subscription: false,
+                subscription: model.as_ref().is_some_and(|model| {
+                    footer::subscription(&self.session.registry(), &model.provider)
+                }),
             },
             &self.theme,
             width,

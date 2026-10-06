@@ -39,6 +39,16 @@ pub fn format_cwd(cwd: &Path, home: Option<&Path>) -> String {
     }
 }
 
+/// pi's `(sub)` condition: `provider` signs in with a subscription's OAuth
+/// credential. Kimi Coding bills by subscription even with an API key.
+pub fn subscription(registry: &yapi_ai::registry::ModelRegistry, provider: &str) -> bool {
+    provider == "kimi-coding"
+        || (registry.is_using_oauth(provider)
+            && registry
+                .oauth_flow(provider)
+                .is_some_and(|flow| flow.is_subscription()))
+}
+
 /// The current git branch of `cwd`, read from `.git/HEAD`; a short commit for
 /// a detached head.
 pub fn git_branch(cwd: &Path) -> Option<String> {
@@ -217,6 +227,28 @@ pub fn render(data: &FooterData<'_>, theme: &Theme, width: usize) -> Vec<StyledL
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subscriptions_are_oauth_sign_ins_of_subscription_providers() {
+        let dir = std::env::temp_dir().join(format!("yapi-footer-sub-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let oauth = r#"{"type": "oauth", "access": "a", "refresh": "r", "expires": 0}"#;
+        std::fs::write(
+            dir.join("auth.json"),
+            format!(
+                r#"{{"anthropic": {oauth}, "openrouter": {oauth},
+                    "openai": {{"type": "api_key", "key": "k"}}}}"#
+            ),
+        )
+        .unwrap();
+        let registry = yapi_ai::registry::ModelRegistry::load(&dir);
+        assert!(subscription(&registry, "anthropic"));
+        assert!(!subscription(&registry, "openrouter"));
+        assert!(!subscription(&registry, "openai"));
+        assert!(!subscription(&registry, "github-copilot"));
+        assert!(subscription(&registry, "kimi-coding"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn formats_token_counts() {
