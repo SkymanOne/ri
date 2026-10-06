@@ -10,7 +10,7 @@
 # <agent dir>/docs.
 #
 # Usage: scripts/package-docs.sh <out-dir>
-# Needs curl, openssl and python3.
+# Needs curl, openssl, python3 and sha256sum.
 set -eu
 
 if [ $# -ne 1 ]; then
@@ -42,7 +42,7 @@ if [ "$actual" != "$integrity" ]; then
     exit 1
 fi
 curl -fsSL -o "$work/LICENSE" "https://raw.githubusercontent.com/earendil-works/pi/v$pi_version/LICENSE"
-if [ "$(openssl dgst -sha256 -r "$work/LICENSE" | cut -d ' ' -f 1)" != "$license_sha256" ]; then
+if ! echo "$license_sha256  $work/LICENSE" | sha256sum -c - >/dev/null; then
     echo "pi's LICENSE at v$pi_version is not the one this script pins" >&2
     exit 1
 fi
@@ -67,9 +67,5 @@ tar -xzf "$work/pi.tgz" -C "$work/npm"
 (cd "$docs" && COPYFILE_DISABLE=1 tar -czf "$out/yapi-docs.tar.gz" .version *.md pi)
 
 cd "$out"
-if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum yapi-docs.tar.gz >yapi-docs.tar.gz.sha256
-else
-    shasum -a 256 yapi-docs.tar.gz >yapi-docs.tar.gz.sha256
-fi
+sha256sum yapi-docs.tar.gz >yapi-docs.tar.gz.sha256
 echo "$out/yapi-docs.tar.gz"
