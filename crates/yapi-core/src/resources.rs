@@ -4,8 +4,11 @@
 //! `prompt-templates.ts` in pi `v1.0.0`. Project `.yapi/` resources load only for a
 //! trusted project; `AGENTS.md` and `CLAUDE.md` files always load.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use regex_lite::Regex;
 use serde_json::Value;
 pub use yapi_types::rpc::SourceInfo;
 
@@ -202,36 +205,46 @@ pub fn context_files(cwd: &Path, agent_dir: &Path) -> Vec<ContextFile> {
     files
 }
 
-/// Discovery metadata for resources under one directory; the path is filled
-/// in per resource.
-#[derive(Clone)]
-struct Origin {
-    source: String,
-    scope: String,
-    origin: String,
-    base_dir: Option<PathBuf>,
+/// The source of a resource at `path` found under `origin`, whose path it
+/// replaces.
+fn found_at(origin: &SourceInfo, path: &Path) -> SourceInfo {
+    SourceInfo {
+        path: path.display().to_string(),
+        ..origin.clone()
+    }
 }
 
-impl Origin {
-    /// The origin `info` gives the resources under its path.
-    fn of(info: &SourceInfo) -> Origin {
-        Origin {
-            source: info.source.clone(),
-            scope: info.scope.clone(),
-            origin: info.origin.clone(),
-            base_dir: info.base_dir.as_ref().map(PathBuf::from),
+/// pi's collision rule for resources in precedence order: the first of each
+/// name is kept and later ones are reported as collisions. `meta` gives a
+/// resource's name, source and file. A resource whose `real_path` a kept one
+/// has is the same file reached again and is skipped silently.
+fn first_by_name<T>(
+    found: Vec<T>,
+    meta: impl Fn(&T) -> (&str, &SourceInfo, &Path),
+    real_path: impl Fn(&T) -> Option<PathBuf>,
+) -> (Vec<T>, Vec<Diagnostic>) {
+    let mut kept: Vec<T> = Vec::new();
+    let mut files = HashSet::new();
+    let mut collisions = Vec::new();
+    for item in found {
+        let real = real_path(&item);
+        if real.as_ref().is_some_and(|real| files.contains(real)) {
+            continue;
+        }
+        let (name, _, file) = meta(&item);
+        match kept.iter().find(|existing| meta(existing).0 == name) {
+            Some(existing) => collisions.push(Diagnostic::Collision {
+                name: name.to_owned(),
+                winner: meta(existing).1.clone(),
+                loser: file.to_path_buf(),
+            }),
+            None => {
+                files.extend(real);
+                kept.push(item);
+            }
         }
     }
-
-    fn info(&self, path: &Path) -> SourceInfo {
-        SourceInfo {
-            path: path.display().to_string(),
-            source: self.source.clone(),
-            scope: self.scope.clone(),
-            origin: self.origin.clone(),
-            base_dir: self.base_dir.as_ref().map(|dir| dir.display().to_string()),
-        }
-    }
+    (kept, collisions)
 }
 
 /// A path given on the command line, as pi records it: source `cli`, scope
@@ -254,7 +267,7 @@ const MAX_DESCRIPTION_LENGTH: usize = 1024;
 /// pi's `validateName`.
 fn name_problems(name: &str) -> Vec<String> {
     let mut problems = Vec::new();
-    let length = name.encode_utf16().count();
+    let length = yapi_types::js::len(name);
     if length > MAX_NAME_LENGTH {
         problems.push(format!(
             "name exceeds {MAX_NAME_LENGTH} characters ({length})"
@@ -282,17 +295,19 @@ fn name_problems(name: &str) -> Vec<String> {
 /// pi's `loadSkillFromFile`: a `SKILL.md` file, or another markdown file with
 /// a description. Problems with the name or description are reported; a
 /// skill without a description does not load.
-fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -> Option<Skill> {
+fn load_skill(
+    path: &Path,
+    origin: &SourceInfo,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Skill> {
     let warn = |message: String| Diagnostic::Warning {
         message,
         path: path.to_path_buf(),
     };
     let declared = path.file_name().is_some_and(|name| name == "SKILL.md");
+    // The frontmatter parser skips a byte order mark.
     let text = match std::fs::read_to_string(path) {
-        Ok(text) => text
-            .strip_prefix('\u{feff}')
-            .map(str::to_owned)
-            .unwrap_or(text),
+        Ok(text) => text,
         Err(error) => {
             diagnostics.push(warn(crate::tools::node_error(&error, "open", path)));
             return None;
@@ -317,7 +332,7 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
     match description {
         None => diagnostics.push(warn("description is required".to_owned())),
         Some(text) => {
-            let length = text.encode_utf16().count();
+            let length = yapi_types::js::len(text);
             if length > MAX_DESCRIPTION_LENGTH {
                 diagnostics.push(warn(format!(
                     "description exceeds {MAX_DESCRIPTION_LENGTH} characters ({length})"
@@ -344,7 +359,7 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
         base_dir,
         disable_model_invocation: frontmatter.get("disable-model-invocation")
             == Some(&Value::Bool(true)),
-        source: origin.info(path),
+        source: found_at(origin, path),
     })
 }
 
@@ -354,7 +369,7 @@ fn load_skill(path: &Path, origin: &Origin, diagnostics: &mut Vec<Diagnostic>) -
 fn skills_in(
     dir: &Path,
     top: bool,
-    origin: &Origin,
+    origin: &SourceInfo,
     skills: &mut Vec<Skill>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -392,7 +407,6 @@ pub fn skills_from(sources: &[SourceInfo]) -> (Vec<Skill>, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
     for source in sources {
         let path = Path::new(&source.path);
-        let origin = Origin::of(source);
         let warn = |message: &str| Diagnostic::Warning {
             message: message.to_owned(),
             path: path.to_path_buf(),
@@ -400,36 +414,21 @@ pub fn skills_from(sources: &[SourceInfo]) -> (Vec<Skill>, Vec<Diagnostic>) {
         if !path.exists() {
             diagnostics.push(warn("skill path does not exist"));
         } else if path.is_dir() {
-            skills_in(path, true, &origin, &mut found, &mut diagnostics);
+            skills_in(path, true, source, &mut found, &mut diagnostics);
         } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            found.extend(load_skill(path, &origin, &mut diagnostics));
+            found.extend(load_skill(path, source, &mut diagnostics));
         } else {
             diagnostics.push(warn("skill path is not a markdown file"));
         }
     }
-    let mut unique: Vec<Skill> = Vec::new();
-    let mut files = std::collections::HashSet::new();
-    let mut collisions = Vec::new();
-    for skill in found {
-        // The same file reached twice, through a symlink, loads once.
-        let real = std::fs::canonicalize(&skill.file_path).unwrap_or(skill.file_path.clone());
-        if files.contains(&real) {
-            continue;
-        }
-        match unique.iter().find(|existing| existing.name == skill.name) {
-            Some(existing) => collisions.push(Diagnostic::Collision {
-                name: skill.name.clone(),
-                winner: existing.source.clone(),
-                loser: skill.file_path,
-            }),
-            None => {
-                files.insert(real);
-                unique.push(skill);
-            }
-        }
-    }
+    // The same file reached twice, through a symlink, loads once.
+    let (skills, collisions) = first_by_name(
+        found,
+        |skill| (&skill.name, &skill.source, &skill.file_path),
+        |skill| Some(std::fs::canonicalize(&skill.file_path).unwrap_or(skill.file_path.clone())),
+    );
     diagnostics.extend(collisions);
-    (unique, diagnostics)
+    (skills, diagnostics)
 }
 
 fn escape_xml(text: &str) -> String {
@@ -480,7 +479,7 @@ pub fn format_skills(skills: &[Skill], read_tool: &str) -> String {
 
 fn templates_in(
     dir: &Path,
-    origin: &Origin,
+    origin: &SourceInfo,
     templates: &mut Vec<PromptTemplate>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -500,7 +499,7 @@ fn templates_in(
 /// cannot be read or whose frontmatter does not parse is reported.
 fn template_at(
     path: PathBuf,
-    origin: &Origin,
+    origin: &SourceInfo,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<PromptTemplate> {
     let parsed = std::fs::read_to_string(&path)
@@ -525,9 +524,8 @@ fn template_at(
     if description.is_empty()
         && let Some(first) = body.lines().find(|line| !line.trim().is_empty())
     {
-        let units: Vec<u16> = first.encode_utf16().collect();
-        description = String::from_utf16_lossy(&units[..units.len().min(60)]);
-        if units.len() > 60 {
+        description = yapi_types::js::slice(first, 0, 60);
+        if yapi_types::js::len(first) > 60 {
             description += "...";
         }
     }
@@ -539,7 +537,7 @@ fn template_at(
             .and_then(Value::as_str)
             .map(str::to_owned),
         content: body,
-        source: origin.info(&path),
+        source: found_at(origin, &path),
         file_path: path,
     })
 }
@@ -553,28 +551,19 @@ pub fn templates_from(sources: &[SourceInfo]) -> (Vec<PromptTemplate>, Vec<Diagn
     let mut diagnostics = Vec::new();
     for source in sources {
         let path = PathBuf::from(&source.path);
-        let origin = Origin::of(source);
         if path.is_dir() {
-            templates_in(&path, &origin, &mut templates, &mut diagnostics);
+            templates_in(&path, source, &mut templates, &mut diagnostics);
         } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            templates.extend(template_at(path, &origin, &mut diagnostics));
+            templates.extend(template_at(path, source, &mut diagnostics));
         }
     }
-    let mut unique: Vec<PromptTemplate> = Vec::new();
-    for template in templates {
-        match unique
-            .iter()
-            .find(|existing| existing.name == template.name)
-        {
-            Some(existing) => diagnostics.push(Diagnostic::Collision {
-                name: template.name.clone(),
-                winner: existing.source.clone(),
-                loser: template.file_path,
-            }),
-            None => unique.push(template),
-        }
-    }
-    (unique, diagnostics)
+    let (templates, collisions) = first_by_name(
+        templates,
+        |template| (&template.name, &template.source, &template.file_path),
+        |_| None,
+    );
+    diagnostics.extend(collisions);
+    (templates, diagnostics)
 }
 
 /// Splits arguments on whitespace, honoring single and double quotes.
@@ -601,104 +590,50 @@ pub fn parse_command_args(text: &str) -> Vec<String> {
     args
 }
 
-/// Replaces `$1`, `$@`, `$ARGUMENTS`, `${N:-default}` and `${@:start:length}`.
+/// pi's `substituteArgs`: replaces `$1`, `$@`, `$ARGUMENTS`, `${N:-default}`
+/// and `${@:start:length}`.
 pub fn substitute_args(content: &str, args: &[String]) -> String {
-    let all = args.join(" ");
-    let chars: Vec<char> = content.chars().collect();
-    let mut out = String::with_capacity(content.len());
-    let mut index = 0;
-    let digits = |from: usize| {
-        chars[from..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit())
-            .count()
+    static PLACEHOLDER: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(r"\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)")
+            .ok()
+    });
+    let Some(placeholder) = PLACEHOLDER.as_ref() else {
+        return content.to_owned();
     };
-    while index < chars.len() {
-        if chars[index] != '$' {
-            out.push(chars[index]);
-            index += 1;
-            continue;
-        }
-        let rest: String = chars[index + 1..].iter().collect();
-        if rest.starts_with('{')
-            && let Some(close) = rest.find('}')
-        {
-            let inner = &rest[1..close];
-            let consumed = 1 + close + 1;
-            if let Some((target, default)) = inner.split_once(":-") {
-                let valid = target == "@"
-                    || target == "ARGUMENTS"
-                    || (!target.is_empty() && target.chars().all(|c| c.is_ascii_digit()));
-                if valid && !default.contains('}') {
-                    let value = if target == "@" || target == "ARGUMENTS" {
-                        Some(all.clone())
-                    } else {
-                        target
-                            .parse::<usize>()
-                            .ok()
-                            .and_then(|n| n.checked_sub(1))
-                            .and_then(|i| args.get(i).cloned())
-                    };
-                    out.push_str(
-                        &value
-                            .filter(|v| !v.is_empty())
-                            .unwrap_or_else(|| default.to_owned()),
-                    );
-                    index += consumed;
-                    continue;
-                }
+    let all = args.join(" ");
+    // Digits too many for an index name no argument, as in JavaScript.
+    let number = |digits: &str| digits.parse::<usize>().unwrap_or(usize::MAX);
+    let arg = |digits: &str| {
+        number(digits)
+            .checked_sub(1)
+            .and_then(|index| args.get(index))
+            .map_or("", String::as_str)
+    };
+    let all_or_arg = |target: &str| match target {
+        "@" | "ARGUMENTS" => all.as_str(),
+        digits => arg(digits),
+    };
+    placeholder
+        .replace_all(content, |caps: &regex_lite::Captures<'_>| {
+            if let Some(target) = caps.get(1) {
+                let value = all_or_arg(target.as_str());
+                let default = caps.get(2).map_or("", |default| default.as_str());
+                return if value.is_empty() { default } else { value }.to_owned();
             }
-            if let Some(slice) = inner.strip_prefix("@:") {
-                let number = |text: &str| {
-                    (!text.is_empty() && text.chars().all(|c| c.is_ascii_digit()))
-                        .then(|| text.parse::<usize>().ok())
-                        .flatten()
-                };
-                let (start, length) = match slice.split_once(':') {
-                    Some((start, length)) => (number(start), Some(number(length))),
-                    None => (number(slice), None),
-                };
-                if let Some(start) = start
-                    && length.is_none_or(|length| length.is_some())
-                {
-                    let start = start.saturating_sub(1).min(args.len());
-                    let end = match length {
-                        Some(Some(length)) => (start + length).min(args.len()),
-                        _ => args.len(),
-                    };
-                    out.push_str(&args[start..end].join(" "));
-                    index += consumed;
-                    continue;
-                }
+            if let Some(start) = caps.get(3) {
+                let start = number(start.as_str()).saturating_sub(1).min(args.len());
+                let end = caps.get(4).map_or(args.len(), |length| {
+                    start
+                        .saturating_add(number(length.as_str()))
+                        .min(args.len())
+                });
+                return args[start..end].join(" ");
             }
-        }
-        if rest.starts_with("ARGUMENTS") {
-            out.push_str(&all);
-            index += 1 + "ARGUMENTS".len();
-            continue;
-        }
-        if rest.starts_with('@') {
-            out.push_str(&all);
-            index += 2;
-            continue;
-        }
-        let count = digits(index + 1);
-        if count > 0 {
-            let number: String = chars[index + 1..index + 1 + count].iter().collect();
-            let value = number
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| n.checked_sub(1))
-                .and_then(|i| args.get(i).cloned())
-                .unwrap_or_default();
-            out.push_str(&value);
-            index += 1 + count;
-            continue;
-        }
-        out.push('$');
-        index += 1;
-    }
-    out
+            caps.get(5)
+                .map_or("", |simple| all_or_arg(simple.as_str()))
+                .to_owned()
+        })
+        .into_owned()
 }
 
 /// Expands `/name args` when `name` is a template; other text is unchanged.
@@ -806,5 +741,53 @@ mod tests {
             "two three four one one two three four"
         );
         assert_eq!(substitute_args("cost $ and $x", &args), "cost $ and $x");
+    }
+
+    /// Expectations from pi's `substituteArgs` in Node.
+    #[test]
+    fn substitutes_edge_cases_like_pi() {
+        let args = |list: &[&str]| -> Vec<String> { list.iter().map(|&arg| arg.into()).collect() };
+        let ten = args(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]);
+        assert_eq!(substitute_args("$10|$1|$0|$11", &ten), "j|a||");
+        assert_eq!(
+            substitute_args(
+                "${0:-zero} ${1:-} ${2:-two} ${@:-none} ${ARGUMENTS:-none}",
+                &args(&["x"])
+            ),
+            "zero x two x x"
+        );
+        assert_eq!(
+            substitute_args("${@:-none}|${ARGUMENTS:-none}", &[]),
+            "none|none"
+        );
+        assert_eq!(
+            substitute_args(
+                "${@:0}|${@:2:1}|${@:5}|${@:2:0}|${@:1:99}",
+                &args(&["a", "b", "c"])
+            ),
+            "a b c|b|||a b c"
+        );
+        assert_eq!(
+            substitute_args(
+                "$ARGUMENTSX $@@ $$1 ${x} ${@:2:} ${1:-a}b}",
+                &args(&["one", "two"])
+            ),
+            "one twoX one two@ $one ${x} ${@:2:} oneb}"
+        );
+        assert_eq!(
+            substitute_args(
+                "$99999999999999999999|${@:99999999999999999999}|${99999999999999999999:-d}",
+                &args(&["a"])
+            ),
+            "||d"
+        );
+        assert_eq!(
+            substitute_args("${1:-multi\nline}|${2:-{nested}", &[]),
+            "multi\nline|{nested"
+        );
+        assert_eq!(
+            substitute_args("cost $ and $x and ${", &args(&["a"])),
+            "cost $ and $x and ${"
+        );
     }
 }

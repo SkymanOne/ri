@@ -13,6 +13,6 @@ pub mod stdio;
 pub mod tools;
 pub mod transport;
 
-pub use client::{ClientOptions, McpClient, RequestOptions, Root, Tool};
+pub use client::{ClientOptions, McpClient, RequestOptions, ResourceKind, Root, Tool};
 pub use jsonrpc::McpError;
 pub use transport::Transport;

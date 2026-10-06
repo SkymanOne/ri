@@ -13,7 +13,7 @@ use yapi_types::message::ToolDeclaration;
 use super::external::{ExternalTool, ensure_tool};
 use super::path::{relative, resolve_to_cwd};
 use super::truncate::DEFAULT_MAX_BYTES;
-use super::{ToolEnv, capped_output, js_number, plain_declaration, text_result};
+use super::{ToolEnv, capped_output, check_abort, js_number, plain_declaration, text_result};
 
 const DEFAULT_LIMIT: f64 = 1000.0;
 
@@ -57,9 +57,7 @@ impl Tool for Find {
         _updates: UpdateSink,
     ) -> BoxFuture<'_, Result<ToolResult, String>> {
         Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err("Operation aborted".into());
-            }
+            check_abort(&cancel)?;
             tokio::select! {
                 () = cancel.cancelled() => Err("Operation aborted".to_owned()),
                 result = self.find(args) => result,

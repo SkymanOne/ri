@@ -70,9 +70,7 @@ impl Tools {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, ToolRegistry> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        yapi_types::sync::lock(&self.0)
     }
 
     /// Runs `f` with the registry.

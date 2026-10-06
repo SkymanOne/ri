@@ -110,6 +110,11 @@ impl ClassifierModel {
 }
 
 impl Model {
+    /// Whether this is model `id` of `provider`.
+    pub fn is(&self, provider: &str, id: &str) -> bool {
+        self.provider == provider && self.id == id
+    }
+
     /// `provider/id`, the reference pi prints and accepts.
     pub fn reference(&self) -> String {
         format!("{}/{}", self.provider, self.id)

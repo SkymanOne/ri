@@ -18,7 +18,7 @@ use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{ContentBlock, ToolDeclaration, blocks_text};
 
-use super::client::RequestOptions;
+use super::client::{RequestOptions, ResourceKind};
 use super::connection::Connection;
 use super::content::{block_to_llm, to_llm_content};
 use crate::tools::truncate::{format_size, truncate_middle};
@@ -238,6 +238,21 @@ pub async fn model_content(
     content
 }
 
+/// [`limit_content`] with the details pi records: the server, the tool and,
+/// when the text was cut, the file with the full output.
+async fn limit_with_details(
+    content: Vec<ContentBlock>,
+    server: &str,
+    tool: &str,
+) -> (Vec<ContentBlock>, Value) {
+    let (content, path) = limit_content(content).await;
+    let mut details = json!({"server": server, "tool": tool});
+    if let Some(path) = path {
+        details["fullOutputPath"] = json!(path.display().to_string());
+    }
+    (content, details)
+}
+
 /// pi's `convertMcpResult`: `isError` results become error results.
 pub async fn convert_result(
     server: &str,
@@ -261,11 +276,7 @@ pub async fn convert_result(
             "MCP tool {server}/{tool} returned an error"
         )));
     }
-    let (content, path) = limit_content(converted).await;
-    let mut details = json!({"server": server, "tool": tool});
-    if let Some(path) = path {
-        details["fullOutputPath"] = json!(path.display().to_string());
-    }
+    let (content, details) = limit_with_details(converted, server, tool).await;
     let mut structured = result;
     if let Some(object) = structured.as_object_mut() {
         object.shift_remove("_meta");
@@ -419,8 +430,7 @@ impl Tool for McpTool {
 /// Which resource tool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ResourceTool {
-    List,
-    ListTemplates,
+    List(ResourceKind),
     Read,
 }
 
@@ -509,7 +519,7 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
                 "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
                 list_parameters.clone(),
             ),
-            kind: ResourceTool::List,
+            kind: ResourceTool::List(ResourceKind::Resources),
             servers: Arc::clone(&servers),
         },
         McpResourceTool {
@@ -518,7 +528,7 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
                 "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
                 list_parameters,
             ),
-            kind: ResourceTool::ListTemplates,
+            kind: ResourceTool::List(ResourceKind::Templates),
             servers: Arc::clone(&servers),
         },
         McpResourceTool {
@@ -550,12 +560,13 @@ impl McpResourceTool {
         })
     }
 
-    async fn list(&self, args: &Value, cancel: &CancellationToken) -> Result<Value, String> {
-        let key = if self.kind == ResourceTool::List {
-            "resources"
-        } else {
-            "resourceTemplates"
-        };
+    async fn list(
+        &self,
+        kind: ResourceKind,
+        args: &Value,
+        cancel: &CancellationToken,
+    ) -> Result<Value, String> {
+        let key = kind.key();
         let server_name = string_argument(args, "server")?;
         let cursor = string_argument(args, "cursor")?;
         let options = |server: &Connection| RequestOptions {
@@ -565,14 +576,10 @@ impl McpResourceTool {
         };
         if let Some(name) = server_name {
             let server = self.find(&name)?;
-            let (items, next) = if self.kind == ResourceTool::List {
-                server.resources_page(cursor, options(&server)).await
-            } else {
-                server
-                    .resource_templates_page(cursor, options(&server))
-                    .await
-            }
-            .map_err(|error| error.to_string())?;
+            let (items, next) = server
+                .resources_page(kind, cursor, options(&server))
+                .await
+                .map_err(|error| error.to_string())?;
             let items: Vec<Value> = items
                 .iter()
                 .filter(|item| !is_app_resource(item))
@@ -592,12 +599,7 @@ impl McpResourceTool {
         let mut items = Vec::new();
         let mut errors = Vec::new();
         for server in &servers {
-            let result = if self.kind == ResourceTool::List {
-                server.all_resources(options(server)).await
-            } else {
-                server.all_resource_templates(options(server)).await
-            };
-            match result {
+            match server.all_resources(kind, options(server)).await {
                 Ok(found) => items.extend(
                     found
                         .iter()
@@ -645,11 +647,8 @@ impl McpResourceTool {
         } else {
             converted
         };
-        let (content, path) = limit_content(converted).await;
-        let mut details = json!({"server": server.name(), "tool": READ_MCP_RESOURCE_TOOL});
-        if let Some(path) = path {
-            details["fullOutputPath"] = json!(path.display().to_string());
-        }
+        let (content, details) =
+            limit_with_details(converted, server.name(), READ_MCP_RESOURCE_TOOL).await;
         let contents: Vec<Value> = contents
             .into_iter()
             .map(|mut item| {
@@ -683,17 +682,19 @@ impl Tool for McpResourceTool {
         _updates: UpdateSink,
     ) -> BoxFuture<'_, Result<ToolResult, String>> {
         Box::pin(async move {
-            if self.kind == ResourceTool::Read {
-                return self.read(&args, &cancel).await;
-            }
-            let payload = self.list(&args, &cancel).await?;
+            let kind = match self.kind {
+                ResourceTool::Read => return self.read(&args, &cancel).await,
+                ResourceTool::List(kind) => kind,
+            };
+            let payload = self.list(kind, &args, &cancel).await?;
             let json = yapi_types::json::to_string(&payload).map_err(|error| error.to_string())?;
-            let (content, path) = limit_content(vec![ContentBlock::text(json)]).await;
             let server = string_argument(&args, "server")?.unwrap_or_default();
-            let mut details = json!({"server": server, "tool": self.declaration.name});
-            if let Some(path) = path {
-                details["fullOutputPath"] = json!(path.display().to_string());
-            }
+            let (content, details) = limit_with_details(
+                vec![ContentBlock::text(json)],
+                &server,
+                &self.declaration.name,
+            )
+            .await;
             Ok(ToolResult {
                 content,
                 details: Some(details),

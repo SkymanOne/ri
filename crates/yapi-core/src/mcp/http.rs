@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use futures_util::future::BoxFuture;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -21,9 +20,6 @@ const RECONNECT_INITIAL_DELAY_MS: u64 = 1_000;
 const RECONNECT_MAX_DELAY_MS: u64 = 30_000;
 const RECONNECT_MAX_RETRIES: u32 = 5;
 
-/// Supplies the bearer token for each request.
-pub type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Option<String>> + Send + Sync>;
-
 /// How to reach a streamable HTTP server.
 #[derive(Clone, Default)]
 pub struct HttpOptions {
@@ -31,8 +27,6 @@ pub struct HttpOptions {
     pub url: String,
     /// Headers sent with every request.
     pub headers: Vec<(String, String)>,
-    /// The bearer token, read before each request.
-    pub token: Option<TokenSource>,
 }
 
 /// A streamable HTTP connection. Cheap to clone; clones share it.
@@ -79,11 +73,10 @@ fn content_type(response: &reqwest::Response) -> Option<String> {
 
 fn describe_failure(status: u16, body: &str) -> String {
     let text = body.trim();
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let snippet = if units.len() > ERROR_MESSAGE_BODY_CHARS {
+    let snippet = if yapi_types::js::len(text) > ERROR_MESSAGE_BODY_CHARS {
         format!(
             "{}...",
-            String::from_utf16_lossy(&units[..ERROR_MESSAGE_BODY_CHARS - 3])
+            yapi_types::js::slice(text, 0, ERROR_MESSAGE_BODY_CHARS - 3)
         )
     } else {
         text.to_owned()
@@ -321,7 +314,7 @@ impl HttpTransport {
         }
         self.inner.cancel.cancel();
         if self.inner.started.load(Ordering::SeqCst) && self.session_id().is_some() {
-            let headers = self.headers(|_| {}).await.0;
+            let headers = self.headers(|_| {});
             let request = yapi_ai::http::client()
                 .delete(&self.inner.options.url)
                 .headers(headers)
@@ -331,7 +324,7 @@ impl HttpTransport {
         self.emit(Event::Closed);
     }
 
-    async fn headers(&self, extra: impl FnOnce(&mut HeaderMap)) -> (HeaderMap, Option<String>) {
+    fn headers(&self, extra: impl FnOnce(&mut HeaderMap)) -> HeaderMap {
         let mut headers = HeaderMap::new();
         for (name, value) in &self.inner.options.headers {
             if let (Ok(name), Ok(value)) = (
@@ -352,16 +345,7 @@ impl HttpTransport {
         {
             headers.insert("mcp-protocol-version", value);
         }
-        let token = match &self.inner.options.token {
-            Some(source) => source().await,
-            None => None,
-        };
-        if let Some(token) = &token
-            && let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}"))
-        {
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-        }
-        (headers, token)
+        headers
     }
 
     async fn authorized(
@@ -370,7 +354,7 @@ impl HttpTransport {
         body: Option<String>,
         extra: impl FnOnce(&mut HeaderMap),
     ) -> Result<reqwest::Response, McpError> {
-        let (headers, _) = self.headers(extra).await;
+        let headers = self.headers(extra);
         let mut request = yapi_ai::http::client()
             .request(method, &self.inner.options.url)
             .headers(headers);

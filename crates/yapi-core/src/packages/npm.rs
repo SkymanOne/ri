@@ -76,6 +76,17 @@ pub fn default_registry() -> String {
     }
 }
 
+/// `token` without the `v` node-semver allows before a version, as in
+/// `v1.2.3` or `^v1.2`.
+fn without_v(token: &str) -> String {
+    let version = token.trim_start_matches(['<', '>', '=', '~', '^']);
+    let operator = &token[..token.len() - version.len()];
+    match version.strip_prefix('v') {
+        Some(version) => format!("{operator}{version}"),
+        None => token.to_owned(),
+    }
+}
+
 /// npm range syntax as `semver` requirements: any alternative may match.
 fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
     range
@@ -83,11 +94,12 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
         .map(|alternative| {
             let alternative = alternative.trim();
             let text = if let Some((low, high)) = alternative.split_once(" - ") {
-                format!(">={}, <={}", low.trim(), high.trim())
+                format!(">={}, <={}", without_v(low.trim()), without_v(high.trim()))
             } else {
                 // npm separates comparators with spaces; `semver` with commas.
                 let mut parts: Vec<String> = Vec::new();
                 for token in alternative.split_whitespace() {
+                    let token = without_v(token);
                     match parts.last_mut() {
                         Some(last)
                             if matches!(
@@ -95,7 +107,7 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                                 ">" | ">=" | "<" | "<=" | "=" | "~" | "^"
                             ) =>
                         {
-                            last.push_str(token);
+                            last.push_str(&token);
                         }
                         // A bare version is exact in npm and a caret range in
                         // `semver`. Wildcards such as `1.x` mean the same in both.
@@ -104,7 +116,7 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                         {
                             parts.push(format!("={token}"));
                         }
-                        _ => parts.push(token.to_owned()),
+                        _ => parts.push(token),
                     }
                 }
                 if parts.is_empty() {
@@ -165,31 +177,29 @@ impl Npm {
         Ok(response)
     }
 
-    async fn packument(&mut self, name: &str) -> Result<Value, NpmError> {
-        if let Some(found) = self.packuments.get(name) {
-            return Ok(found.clone());
+    async fn packument(&mut self, name: &str) -> Result<&Value, NpmError> {
+        if !self.packuments.contains_key(name) {
+            let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
+            let body = self
+                .get(&url, PACKUMENT_ACCEPT)
+                .await?
+                .bytes()
+                .await
+                .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
+            let packument: Value = serde_json::from_slice(&body)
+                .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
+            self.packuments.insert(name.to_owned(), packument);
         }
-        let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
-        let body = self
-            .get(&url, PACKUMENT_ACCEPT)
-            .await?
-            .bytes()
-            .await
-            .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
-        let packument: Value = serde_json::from_slice(&body)
-            .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
-        self.packuments.insert(name.to_owned(), packument.clone());
-        Ok(packument)
+        // Present: found or inserted above.
+        Ok(&self.packuments[name])
     }
 
     /// The manifest of the version of `name` that `range` selects: a dist-tag,
     /// else the latest tag when it matches, else the highest match.
     async fn pick(&mut self, name: &str, range: &str) -> Result<Value, NpmError> {
         let packument = self.packument(name).await?;
-        let versions = packument["versions"]
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let no_versions = Map::new();
+        let versions = packument["versions"].as_object().unwrap_or(&no_versions);
         let range = if range.is_empty() { "latest" } else { range };
         let no_match = || NpmError::NoMatch {
             name: name.to_owned(),
@@ -238,18 +248,29 @@ fn text(value: &Value) -> String {
     value.as_str().unwrap_or_default().to_owned()
 }
 
-/// Checks `bytes` against the registry's `integrity` (sha512) or `shasum`.
+/// Checks `bytes` against the strongest algorithm of the registry's
+/// `integrity` that yapi knows (sha512, then sha1), as npm's ssri does, and
+/// against `shasum` when `integrity` has neither.
 fn verify(bytes: &[u8], dist: &Value) -> bool {
-    if let Some(integrity) = dist["integrity"].as_str() {
-        let digest = STANDARD.encode(sha2::Sha512::digest(bytes));
-        return integrity
+    let integrity = dist["integrity"].as_str().unwrap_or_default();
+    let hashes = |prefix: &str| -> Vec<&str> {
+        integrity
             .split_whitespace()
-            .any(|entry| entry.strip_prefix("sha512-") == Some(digest.as_str()));
+            .filter_map(|entry| entry.strip_prefix(prefix))
+            .collect()
+    };
+    let sha512 = hashes("sha512-");
+    if !sha512.is_empty() {
+        return sha512.contains(&STANDARD.encode(sha2::Sha512::digest(bytes)).as_str());
     }
-    if let Some(shasum) = dist["shasum"].as_str() {
-        return crate::time::hex(&sha1::Sha1::digest(bytes)).eq_ignore_ascii_case(shasum);
+    let sha1 = sha1::Sha1::digest(bytes);
+    let sha1_hashes = hashes("sha1-");
+    if !sha1_hashes.is_empty() {
+        return sha1_hashes.contains(&STANDARD.encode(sha1).as_str());
     }
-    false
+    dist["shasum"]
+        .as_str()
+        .is_some_and(|shasum| crate::time::hex(&sha1).eq_ignore_ascii_case(shasum))
 }
 
 /// Unpacks an npm tarball into `dir`, dropping each entry's first path
@@ -297,11 +318,15 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<(), NpmError> {
     Ok(())
 }
 
+/// The `package.json` of the package at `dir`, when it reads and parses. A
+/// byte order mark is ignored, as npm ignores it.
+fn read_manifest(dir: &Path) -> Option<Value> {
+    yapi_types::json::parse(&std::fs::read_to_string(dir.join("package.json")).ok()?).ok()
+}
+
 /// The version of the package installed at `dir`, if any.
 pub(crate) fn installed_version(dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(dir.join("package.json")).ok()?;
-    let manifest: Value = serde_json::from_str(&text).ok()?;
-    manifest["version"].as_str().map(str::to_owned)
+    read_manifest(dir)?["version"].as_str().map(str::to_owned)
 }
 
 /// Installs into `root/node_modules`, hoisting dependencies there when Node's
@@ -333,21 +358,18 @@ impl Installer<'_> {
     /// Installs the production and optional dependencies of the package in
     /// `dir`. Optional ones that fail or name a platform are skipped.
     async fn dependencies(&mut self, dir: &Path, manifest: &Value) -> Result<(), NpmError> {
-        let required = manifest["dependencies"]
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let none = Map::new();
+        let required = manifest["dependencies"].as_object().unwrap_or(&none);
         let optional = manifest["optionalDependencies"]
             .as_object()
-            .cloned()
-            .unwrap_or_default();
-        for (name, range) in &required {
+            .unwrap_or(&none);
+        for (name, range) in required {
             if optional.contains_key(name) {
                 continue;
             }
             self.place(dir, name, range.as_str().unwrap_or("*")).await?;
         }
-        for (name, range) in &optional {
+        for (name, range) in optional {
             let _ = self.place(dir, name, range.as_str().unwrap_or("*")).await;
         }
         Ok(())
@@ -404,10 +426,7 @@ fn root_manifest(root: &Path) -> Result<Map<String, Value>, NpmError> {
     if !ignore.exists() {
         std::fs::write(&ignore, "*\n!.gitignore\n").map_err(io(&ignore))?;
     }
-    let path = root.join("package.json");
-    let manifest = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    let manifest = read_manifest(root)
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_else(|| {
             let mut manifest = Map::new();
@@ -458,10 +477,9 @@ pub async fn install(
 /// Installs the dependencies of the package in `dir` (a git checkout) into
 /// its own `node_modules`.
 pub async fn install_dependencies(npm: &mut Npm, dir: &Path) -> Result<(), NpmError> {
-    let Ok(text) = std::fs::read_to_string(dir.join("package.json")) else {
+    let Some(manifest) = read_manifest(dir) else {
         return Ok(());
     };
-    let manifest: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     let mut installer = Installer {
         npm,
         root_modules: dir.join("node_modules"),
@@ -506,10 +524,7 @@ fn prune(modules: &Path, roots: &[String]) {
             continue;
         }
         reached.push(dir.clone());
-        let manifest: Value = std::fs::read_to_string(dir.join("package.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or(Value::Null);
+        let manifest = read_manifest(&dir).unwrap_or(Value::Null);
         for key in ["dependencies", "optionalDependencies"] {
             for name in manifest[key]
                 .as_object()
@@ -576,5 +591,47 @@ mod tests {
         assert!(!satisfies("1.2.4", "1.2.3 || 2"));
         assert!(satisfies("1.2.9", "1.2.x"));
         assert!(!satisfies("1.3.0", "1.2.x"));
+    }
+
+    #[test]
+    fn reads_manifests_with_a_byte_order_mark() {
+        let dir = std::env::temp_dir().join(format!("yapi-npm-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), "\u{feff}{\"version\": \"1.2.3\"}").unwrap();
+        assert_eq!(installed_version(&dir).as_deref(), Some("1.2.3"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn ranges_may_prefix_versions_with_v() {
+        assert!(satisfies("1.2.3", "v1.2.3"));
+        assert!(!satisfies("1.2.4", "v1.2.3"));
+        assert!(satisfies("1.4.0", "^v1.2.3"));
+        assert!(satisfies("1.2.9", "~v1.2.0"));
+        assert!(satisfies("1.5.0", ">=v1.2 <v2"));
+        assert!(satisfies("1.5.0", ">= v1.2 < v2"));
+        assert!(satisfies("1.3.0", "v1.2.0 - v1.4.0"));
+        assert!(satisfies("2.0.0", "v1 || v2.x"));
+    }
+
+    #[test]
+    fn verifies_the_strongest_known_integrity_then_shasum() {
+        let bytes = b"tarball";
+        let sha512 = format!("sha512-{}", STANDARD.encode(sha2::Sha512::digest(bytes)));
+        let sha1 = format!("sha1-{}", STANDARD.encode(sha1::Sha1::digest(bytes)));
+        let shasum = crate::time::hex(&sha1::Sha1::digest(bytes));
+        let wrong512 = format!("sha512-{}", STANDARD.encode(sha2::Sha512::digest(b"other")));
+        let check = |dist: Value| verify(bytes, &dist);
+        assert!(check(json!({"integrity": sha512})));
+        assert!(check(json!({"integrity": sha1})));
+        assert!(!check(json!({"integrity": "sha1-AAAA"})));
+        // sha512 decides when present, as the strongest algorithm.
+        assert!(!check(json!({"integrity": format!("{wrong512} {sha1}")})));
+        assert!(check(json!({"integrity": format!("{wrong512} {sha512}")})));
+        // An integrity without a known algorithm falls back to `shasum`.
+        assert!(check(json!({"integrity": "sha384-AAAA", "shasum": shasum})));
+        assert!(check(json!({"shasum": shasum.to_uppercase()})));
+        assert!(!check(json!({"integrity": "sha384-AAAA"})));
+        assert!(!check(json!({})));
     }
 }

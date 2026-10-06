@@ -4,7 +4,7 @@
 //! preamble names yapi, and the pi documentation section is omitted; see
 //! `docs/compat.md`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use indexmap::IndexMap;
 
@@ -200,11 +200,6 @@ pub fn render(sections: &IndexMap<String, String>) -> String {
         .cloned()
         .collect::<Vec<_>>()
         .join("\n\n")
-}
-
-/// Resolves the working directory as pi prints it.
-pub fn display_cwd(cwd: &Path) -> String {
-    cwd.to_string_lossy().replace('\\', "/")
 }
 
 #[cfg(test)]

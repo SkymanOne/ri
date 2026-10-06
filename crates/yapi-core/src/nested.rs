@@ -13,8 +13,6 @@ use std::time::Instant;
 use yapi_types::message::{NestedToolCall, NestedToolCallStatus, NestedToolCalls, ToolCall, Usage};
 use yapi_types::sync::lock;
 
-use crate::compaction::combine_usage;
-
 /// Calls beyond this count are dropped from the record.
 const MAX_CALLS: usize = 256;
 /// Arguments larger than this, in bytes of JSON, are omitted.
@@ -171,7 +169,7 @@ impl NestedCalls {
         recorder.finish(started.record, is_error, error);
         if let Some(usage) = usage {
             recorder.usage = Some(match &recorder.usage {
-                Some(total) => combine_usage(total, usage),
+                Some(total) => total.combine(usage),
                 None => usage.clone(),
             });
         }

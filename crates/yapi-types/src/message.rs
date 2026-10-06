@@ -417,6 +417,32 @@ impl Message {
     }
 }
 
+impl Usage {
+    /// The sum of two usages, as pi's `combineUsage`: the optional counts are
+    /// present when either side has them.
+    pub fn combine(&self, other: &Usage) -> Usage {
+        let optional = |a: Option<u64>, b: Option<u64>| {
+            (a.is_some() || b.is_some()).then(|| a.unwrap_or(0) + b.unwrap_or(0))
+        };
+        Usage {
+            input: self.input + other.input,
+            output: self.output + other.output,
+            cache_read: self.cache_read + other.cache_read,
+            cache_write: self.cache_write + other.cache_write,
+            cache_write_1h: optional(self.cache_write_1h, other.cache_write_1h),
+            reasoning: optional(self.reasoning, other.reasoning),
+            total_tokens: Some(self.total_tokens.unwrap_or(0) + other.total_tokens.unwrap_or(0)),
+            cost: Cost {
+                input: self.cost.input + other.cost.input,
+                output: self.cost.output + other.cost.output,
+                cache_read: self.cost.cache_read + other.cost.cache_read,
+                cache_write: self.cost.cache_write + other.cost.cache_write,
+                total: self.cost.total + other.cost.total,
+            },
+        }
+    }
+}
+
 impl Content {
     /// The text blocks joined by `separator`; images and other blocks are skipped.
     pub fn text(&self, separator: &str) -> String {

@@ -15,7 +15,7 @@ use yapi_types::message::ToolDeclaration;
 use super::external::{ExternalTool, ensure_tool};
 use super::path::{relative, resolve_to_cwd};
 use super::truncate::{DEFAULT_MAX_BYTES, GREP_MAX_LINE_LENGTH, truncate_line};
-use super::{ToolEnv, capped_output, js_number, plain_declaration, text_result};
+use super::{ToolEnv, capped_output, check_abort, js_number, plain_declaration, text_result};
 
 const DEFAULT_LIMIT: f64 = 100.0;
 
@@ -63,9 +63,7 @@ impl Tool for Grep {
         _updates: UpdateSink,
     ) -> BoxFuture<'_, Result<ToolResult, String>> {
         Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err("Operation aborted".into());
-            }
+            check_abort(&cancel)?;
             self.search(args, cancel).await
         })
     }
@@ -195,9 +193,7 @@ impl Grep {
         }
         let status = child.wait().await;
         let stderr = stderr_task.await.unwrap_or_default();
-        if cancel.is_cancelled() {
-            return Err("Operation aborted".into());
-        }
+        check_abort(&cancel)?;
         if !limit_reached {
             let code = status.ok().and_then(|status| status.code());
             if !matches!(code, Some(0 | 1)) {

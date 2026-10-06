@@ -62,9 +62,7 @@ impl TrustStore {
     fn read(&self) -> Map<String, Value> {
         std::fs::read_to_string(&self.path)
             .ok()
-            .and_then(|text| {
-                serde_json::from_str::<Value>(text.strip_prefix('\u{feff}').unwrap_or(&text)).ok()
-            })
+            .and_then(|text| yapi_types::json::parse::<Value>(&text).ok())
             .and_then(|value| value.as_object().cloned())
             .unwrap_or_default()
     }

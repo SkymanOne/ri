@@ -22,7 +22,7 @@ use yapi_types::session::FileEntry;
 use yapi_types::settings::Settings;
 
 use crate::messages::convert_to_llm;
-use crate::session::{ProjectedEntry, Projection, entry_context_messages};
+use crate::session::{ProjectedEntry, Projection, entry_messages};
 use crate::time::{now_ms, uuid_v7};
 
 /// When and how much to compact.
@@ -113,14 +113,6 @@ fn assistant_usage(message: &Message) -> Option<&Usage> {
         }
         _ => None,
     }
-}
-
-/// The usage of the last successful assistant message on a branch.
-pub fn last_assistant_usage(entries: &[&FileEntry]) -> Option<Usage> {
-    entries.iter().rev().find_map(|entry| match entry {
-        FileEntry::Message(entry) => assistant_usage(&entry.message).cloned(),
-        _ => None,
-    })
 }
 
 const ESTIMATED_IMAGE_CHARS: usize = 4800;
@@ -370,7 +362,7 @@ fn find_cut_point(
     let suffix = &entries[(cut + 1).min(end)..end];
     let intrinsically_visible = |entry: &ProjectedEntry<'_>| {
         !matches!(entry.source, FileEntry::ContextEdit(_))
-            && !entry_context_messages(entry.source).is_empty()
+            && !entry_messages(entry.source).is_empty()
     };
     let omitted =
         |entry: &ProjectedEntry<'_>| intrinsically_visible(entry) && entry.messages.is_empty();
@@ -446,6 +438,18 @@ impl FileOperations {
         set.insert(path.to_owned());
     }
 
+    /// Adds the `readFiles` and `modifiedFiles` lists of an earlier summary's
+    /// details.
+    fn add_details(&mut self, details: &Value) {
+        for (key, set) in [
+            ("readFiles", &mut self.read),
+            ("modifiedFiles", &mut self.edited),
+        ] {
+            let paths = details[key].as_array().into_iter().flatten();
+            set.extend(paths.filter_map(Value::as_str).map(str::to_owned));
+        }
+    }
+
     /// Records the file tools a message called.
     pub fn extract(&mut self, message: &Message) {
         match message {
@@ -502,14 +506,14 @@ pub fn format_file_operations(read: &[String], modified: &[String]) -> String {
 const TOOL_RESULT_MAX_CHARS: usize = 2000;
 
 fn truncate_for_summary(text: &str, max: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= max {
+    let length = yapi_types::js::len(text);
+    if length <= max {
         return text.to_owned();
     }
     format!(
         "{}\n\n[... {} more characters truncated]",
-        String::from_utf16_lossy(&units[..max]),
-        units.len() - max
+        yapi_types::js::slice(text, 0, max),
+        length - max
     )
 }
 
@@ -520,10 +524,7 @@ pub fn serialize_conversation(messages: &[Message]) -> String {
     for message in messages {
         match message {
             Message::User(user) => {
-                let text = match &user.content {
-                    Content::Text(text) => text.clone(),
-                    Content::Blocks(blocks) => yapi_types::message::blocks_text(blocks, ""),
-                };
+                let text = user.content.text("");
                 if !text.is_empty() {
                     parts.push(format!("[User]: {text}"));
                 }
@@ -674,16 +675,7 @@ pub fn prepare_compaction(
         && compaction.from_hook != Some(true)
         && let Some(details) = &compaction.details
     {
-        for path in details["readFiles"].as_array().into_iter().flatten() {
-            if let Some(path) = path.as_str() {
-                file_ops.read.insert(path.to_owned());
-            }
-        }
-        for path in details["modifiedFiles"].as_array().into_iter().flatten() {
-            if let Some(path) = path.as_str() {
-                file_ops.edited.insert(path.to_owned());
-            }
-        }
+        file_ops.add_details(details);
     }
     for message in messages_to_summarize.iter().chain(&turn_prefix_messages) {
         file_ops.extract(message);
@@ -701,24 +693,21 @@ pub fn prepare_compaction(
 }
 
 /// What summary requests need besides the messages.
-#[derive(Clone)]
 pub struct Summarizer<'a> {
     /// The model to summarize with.
     pub model: &'a Model,
     /// Wire APIs.
     pub apis: &'a Apis,
     /// Credentials for the model.
-    pub auth: &'a Auth,
+    pub auth: Auth,
     /// The session's thinking level; used when the model reasons.
     pub thinking_level: ThinkingLevel,
-    /// Routing session id; a fresh one when absent.
-    pub session_id: Option<String>,
     /// Retries for transient failures.
     pub retry: RetryPolicy,
     /// Cancels the requests.
     pub cancel: CancellationToken,
     /// Hears about retries.
-    pub on_retry: Option<&'a (dyn Fn(SummaryRetry) + Sync)>,
+    pub on_retry: Box<dyn Fn(SummaryRetry) + Send + Sync + 'a>,
 }
 
 /// What a summarizer reports while it retries; pi-ai's `RetryCallbacks`.
@@ -750,10 +739,11 @@ pub struct Summary {
     pub usage: Usage,
 }
 
-/// The error for a response that cannot become a checkpoint.
-pub fn summarization_failure(response: &AssistantMessage, label: &str) -> Option<String> {
+/// Why a summary response cannot become a checkpoint, if it cannot: it
+/// failed, hit the token cap or called a tool.
+fn check_summary(response: &AssistantMessage, label: &str) -> Result<(), String> {
     match response.stop_reason {
-        StopReason::Error => Some(format!(
+        StopReason::Error => Err(format!(
             "{label} failed: {}",
             response
                 .error_message
@@ -761,10 +751,17 @@ pub fn summarization_failure(response: &AssistantMessage, label: &str) -> Option
                 .filter(|m| !m.is_empty())
                 .unwrap_or("Unknown error")
         )),
-        StopReason::Length => Some(format!(
+        StopReason::Length => Err(format!(
             "{label} failed: generation hit the token cap and the summary is incomplete"
         )),
-        _ => None,
+        _ if response
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolCall(_))) =>
+        {
+            Err(format!("{label} attempted to call a tool"))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -823,17 +820,13 @@ impl Summarizer<'_> {
     /// One summary request with retries on transient failures, reported as
     /// pi-ai's `retryAssistantCall` reports them.
     async fn complete(&self, prompt: &str, max_tokens: u64) -> AssistantMessage {
-        let session_id = self.session_id.clone().unwrap_or_else(uuid_v7);
+        let session_id = uuid_v7();
         let max_attempts = if self.retry.enabled {
             self.retry.max_retries
         } else {
             0
         };
-        let notify = |retry: SummaryRetry| {
-            if let Some(on_retry) = self.on_retry {
-                on_retry(retry);
-            }
-        };
+        let notify = &self.on_retry;
         let mut attempt = 0;
         loop {
             let response = self.complete_once(prompt, max_tokens, &session_id).await;
@@ -891,16 +884,7 @@ impl Summarizer<'_> {
                 usage: response.usage,
             });
         }
-        if let Some(failure) = summarization_failure(&response, label) {
-            return Err(failure);
-        }
-        if response
-            .content
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolCall(_)))
-        {
-            return Err(format!("{label} attempted to call a tool"));
-        }
+        check_summary(&response, label)?;
         Ok(Summary {
             text: yapi_types::message::blocks_text(&response.content, "\n"),
             usage: response.usage,
@@ -996,7 +980,7 @@ impl Summarizer<'_> {
                     None => previous.unwrap_or("No prior history.").to_owned(),
                 };
                 let usage = match history {
-                    Some(history) => combine_usage(&history.usage, &prefix.usage),
+                    Some(history) => history.usage.combine(&prefix.usage),
                     None => prefix.usage,
                 };
                 (
@@ -1039,16 +1023,11 @@ const BRANCH_SUMMARY_PROMPT: &str = "Create a structured summary of this convers
 fn branch_entry_message(entry: &FileEntry) -> Option<Message> {
     match entry {
         FileEntry::Message(entry) if matches!(entry.message, Message::ToolResult(_)) => None,
-        FileEntry::Message(_) | FileEntry::CustomMessage(_) | FileEntry::BranchSummary(_) => {
-            entry_context_messages(entry).into_iter().next()
-        }
-        FileEntry::Compaction(compaction) => Some(Message::CompactionSummary(
-            yapi_types::message::CompactionSummaryMessage {
-                summary: compaction.summary.clone(),
-                tokens_before: compaction.tokens_before,
-                timestamp: crate::time::parse_iso(&compaction.meta.timestamp).unwrap_or_default(),
-            },
-        )),
+        // A compaction's summary comes after the system message it may carry.
+        FileEntry::Message(_)
+        | FileEntry::CustomMessage(_)
+        | FileEntry::BranchSummary(_)
+        | FileEntry::Compaction(_) => entry_messages(entry).pop(),
         _ => None,
     }
 }
@@ -1065,16 +1044,7 @@ pub fn prepare_branch_entries(
             && summary.from_hook != Some(true)
             && let Some(details) = &summary.details
         {
-            for path in details["readFiles"].as_array().into_iter().flatten() {
-                if let Some(path) = path.as_str() {
-                    file_ops.read.insert(path.to_owned());
-                }
-            }
-            for path in details["modifiedFiles"].as_array().into_iter().flatten() {
-                if let Some(path) = path.as_str() {
-                    file_ops.edited.insert(path.to_owned());
-                }
-            }
+            file_ops.add_details(details);
         }
     }
     let mut messages: Vec<Message> = Vec::new();
@@ -1161,16 +1131,7 @@ impl Summarizer<'_> {
         if response.stop_reason == StopReason::Aborted {
             return Ok(BranchSummary::Aborted);
         }
-        if let Some(failure) = summarization_failure(&response, "Branch summarization") {
-            return Err(failure);
-        }
-        if response
-            .content
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolCall(_)))
-        {
-            return Err("Branch summarization attempted to call a tool".into());
-        }
+        check_summary(&response, "Branch summarization")?;
         let (read_files, modified_files) = file_ops.lists();
         let summary = format!(
             "{BRANCH_SUMMARY_PREAMBLE}{}{}",
@@ -1221,27 +1182,10 @@ pub fn collect_branch_entries(
     (entries, common)
 }
 
-/// Sum of two usages, as pi's `combineUsage`.
+/// Sum of two usages, as pi's `combineUsage`; [`Usage::combine`], kept for
+/// the crates that still call it.
 pub fn combine_usage(first: &Usage, second: &Usage) -> Usage {
-    let optional = |a: Option<u64>, b: Option<u64>| {
-        (a.is_some() || b.is_some()).then(|| a.unwrap_or(0) + b.unwrap_or(0))
-    };
-    Usage {
-        input: first.input + second.input,
-        output: first.output + second.output,
-        cache_read: first.cache_read + second.cache_read,
-        cache_write: first.cache_write + second.cache_write,
-        cache_write_1h: optional(first.cache_write_1h, second.cache_write_1h),
-        reasoning: optional(first.reasoning, second.reasoning),
-        total_tokens: Some(first.total_tokens.unwrap_or(0) + second.total_tokens.unwrap_or(0)),
-        cost: yapi_types::message::Cost {
-            input: first.cost.input + second.cost.input,
-            output: first.cost.output + second.cost.output,
-            cache_read: first.cost.cache_read + second.cost.cache_read,
-            cache_write: first.cost.cache_write + second.cost.cache_write,
-            total: first.cost.total + second.cost.total,
-        },
-    }
+    first.combine(second)
 }
 
 #[cfg(test)]

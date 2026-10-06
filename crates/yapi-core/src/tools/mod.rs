@@ -75,7 +75,7 @@ pub struct ToolEnv {
 impl ToolEnv {
     /// A snapshot of the session state.
     pub fn runtime(&self) -> Runtime {
-        self.runtime.read().map(|r| r.clone()).unwrap_or_default()
+        yapi_types::sync::read(&self.runtime).clone()
     }
 }
 
@@ -273,6 +273,23 @@ fn plain_declaration(name: &str, description: String, parameters: Value) -> Tool
     }
 }
 
+/// pi's `Operation aborted` once `cancel` fired.
+fn check_abort(cancel: &CancellationToken) -> Result<(), String> {
+    if cancel.is_cancelled() {
+        Err("Operation aborted".to_owned())
+    } else {
+        Ok(())
+    }
+}
+
+/// Sleeps until `deadline`; without one, never wakes.
+pub(crate) async fn sleep_until_opt(deadline: Option<std::time::Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
 fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult {
     ToolResult {
         content: vec![ContentBlock::text(content)],
@@ -281,37 +298,13 @@ fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult
     }
 }
 
+pub use yapi_types::js::node_error;
+
 /// `Error code: ENOENT` style text for an I/O error, as Node reports it.
 pub(crate) fn error_code(err: &std::io::Error) -> String {
-    use std::io::ErrorKind;
-    let code = match err.kind() {
-        ErrorKind::NotFound => "ENOENT",
-        ErrorKind::PermissionDenied => "EACCES",
-        ErrorKind::AlreadyExists => "EEXIST",
-        ErrorKind::IsADirectory => "EISDIR",
-        ErrorKind::NotADirectory => "ENOTDIR",
-        _ => return err.to_string(),
-    };
-    format!("Error code: {code}")
-}
-
-/// The message Node gives a failed file system call, such as
-/// `ENOENT: no such file or directory, access '/a/b'`.
-pub fn node_error(err: &std::io::Error, syscall: &str, path: &std::path::Path) -> String {
-    use std::io::ErrorKind;
-    let path = path.display();
-    match err.kind() {
-        ErrorKind::NotFound => format!("ENOENT: no such file or directory, {syscall} '{path}'"),
-        ErrorKind::PermissionDenied => format!("EACCES: permission denied, {syscall} '{path}'"),
-        // Node names no path for a read, as `readFile` reports it.
-        ErrorKind::IsADirectory if syscall == "read" => {
-            "EISDIR: illegal operation on a directory, read".to_owned()
-        }
-        ErrorKind::IsADirectory => {
-            format!("EISDIR: illegal operation on a directory, {syscall} '{path}'")
-        }
-        ErrorKind::NotADirectory => format!("ENOTDIR: not a directory, {syscall} '{path}'"),
-        _ => format!("{err}, {syscall} '{path}'"),
+    match yapi_types::js::errno(err.kind()) {
+        Some((code, _)) => format!("Error code: {code}"),
+        None => err.to_string(),
     }
 }
 

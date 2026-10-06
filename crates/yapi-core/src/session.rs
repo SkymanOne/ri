@@ -434,12 +434,7 @@ impl SessionManager {
                 fs::create_dir_all(dir).map_err(io(dir))?;
             }
             let text: String = self.entries.iter().map(|entry| line(&entry.doc)).collect();
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&file)
-                .and_then(|mut handle| handle.write_all(text.as_bytes()))
-                .map_err(io(&file))?;
+            write_new(&file, &text)?;
             self.flushed = true;
         } else {
             OpenOptions::new()
@@ -792,28 +787,13 @@ impl SessionManager {
         tree
     }
 
-    /// The path from the root to `from` (default: the leaf).
-    pub fn branch_path(&self, from: Option<&str>) -> Vec<&FileEntry> {
-        let mut path = Vec::new();
+    /// Positions in `entries` of the path from the root to `from` (default:
+    /// the leaf).
+    fn branch_positions(&self, from: Option<&str>) -> Vec<usize> {
+        let mut positions = Vec::new();
         let mut current = from
             .or(self.leaf.as_deref())
             .and_then(|id| self.by_id.get(id));
-        while let Some(position) = current {
-            let entry = &self.entries[*position];
-            if let Some(view) = &entry.view {
-                path.push(view);
-            }
-            current = entry.parent_id().and_then(|parent| self.by_id.get(parent));
-        }
-        path.reverse();
-        path
-    }
-
-    /// pi's `serializeSessionBranch`: a fresh header and the current branch with
-    /// parent ids rechained, as JSONL.
-    pub fn serialize_branch(&self) -> String {
-        let mut positions = Vec::new();
-        let mut current = self.leaf.as_deref().and_then(|id| self.by_id.get(id));
         while let Some(&position) = current {
             positions.push(position);
             current = self.entries[position]
@@ -821,6 +801,21 @@ impl SessionManager {
                 .and_then(|parent| self.by_id.get(parent));
         }
         positions.reverse();
+        positions
+    }
+
+    /// The path from the root to `from` (default: the leaf).
+    pub fn branch_path(&self, from: Option<&str>) -> Vec<&FileEntry> {
+        self.branch_positions(from)
+            .into_iter()
+            .filter_map(|position| self.entries[position].view.as_ref())
+            .collect()
+    }
+
+    /// pi's `serializeSessionBranch`: a fresh header and the current branch with
+    /// parent ids rechained, as JSONL.
+    pub fn serialize_branch(&self) -> String {
+        let positions = self.branch_positions(None);
         let header = serde_json::json!({
             "type": "session",
             "version": CURRENT_VERSION,
@@ -1009,17 +1004,13 @@ impl SessionManager {
         for doc in docs.iter().filter(|doc| doc["type"] != "session") {
             text += &line(doc);
         }
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&file)
-            .and_then(|mut handle| handle.write_all(text.as_bytes()))
-            .map_err(io(&file))?;
+        write_new(&file, &text)?;
         SessionManager::open(&file, Some(dir), Some(cwd))
     }
 }
 
-fn entry_messages(entry: &FileEntry) -> Vec<Message> {
+/// The messages an entry contributes to the context before edits.
+pub(crate) fn entry_messages(entry: &FileEntry) -> Vec<Message> {
     match entry {
         FileEntry::Message(entry) => vec![entry.message.clone()],
         FileEntry::CustomMessage(entry) => vec![Message::Custom(CustomMessage {
@@ -1104,11 +1095,6 @@ pub struct Projection<'a> {
     pub thinking_level: String,
     /// The last model used or selected on the branch, as (provider, model id).
     pub model: Option<(String, String)>,
-}
-
-/// The messages an entry contributes to the context before edits.
-pub fn entry_context_messages(entry: &FileEntry) -> Vec<Message> {
-    entry_messages(entry)
 }
 
 /// Projects a branch path: from the last compaction on, entries kept by it, then
@@ -1226,17 +1212,24 @@ fn header(path: &Path) -> Option<Value> {
     let file = fs::File::open(path).ok()?;
     let mut line = String::new();
     std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut line).ok()?;
-    let header: Value = serde_json::from_str(line.trim_start_matches('\u{feff}')).ok()?;
+    let header: Value = yapi_types::json::parse(&line).ok()?;
     (header["type"] == "session").then_some(header)
 }
 
-fn cwd_matches(header: &Value, cwd: &Path) -> bool {
-    header["cwd"]
-        .as_str()
-        .filter(|recorded| !recorded.is_empty())
-        .is_some_and(|recorded| {
-            crate::tools::path::resolve_lexically(cwd, Path::new(recorded)) == cwd
-        })
+/// Whether a session recorded with working directory `recorded` belongs to
+/// `cwd`.
+fn cwd_matches(recorded: &str, cwd: &Path) -> bool {
+    !recorded.is_empty() && crate::tools::path::resolve_lexically(cwd, Path::new(recorded)) == cwd
+}
+
+/// Writes `text` to a new file at `path`, failing when one exists.
+fn write_new(path: &Path, text: &str) -> Result<()> {
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut handle| handle.write_all(text.as_bytes()))
+        .map_err(io(path))
 }
 
 fn session_paths(dir: &Path) -> Vec<PathBuf> {
@@ -1265,7 +1258,9 @@ pub fn find_most_recent(dir: &Path, cwd: Option<&Path>) -> Option<PathBuf> {
         .collect();
     files.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     files.into_iter().map(|(_, path)| path).find(|path| {
-        header(path).is_some_and(|header| cwd.is_none_or(|cwd| cwd_matches(&header, cwd)))
+        header(path).is_some_and(|header| {
+            cwd.is_none_or(|cwd| cwd_matches(header["cwd"].as_str().unwrap_or_default(), cwd))
+        })
     })
 }
 
@@ -1273,7 +1268,9 @@ pub fn find_most_recent(dir: &Path, cwd: Option<&Path>) -> Option<PathBuf> {
 pub fn find_by_id(dir: &Path, id: &str, cwd: Option<&Path>) -> Option<PathBuf> {
     session_paths(dir).into_iter().find(|path| {
         header(path).is_some_and(|header| {
-            header["id"] == id && cwd.is_none_or(|cwd| cwd_matches(&header, cwd))
+            header["id"] == id
+                && cwd
+                    .is_none_or(|cwd| cwd_matches(header["cwd"].as_str().unwrap_or_default(), cwd))
         })
     })
 }
@@ -1364,13 +1361,7 @@ pub fn list(dir: &Path, cwd: Option<&Path>) -> Vec<SessionSummary> {
         session_paths(dir)
             .iter()
             .filter_map(|path| summary(path))
-            .filter(|summary| {
-                cwd.is_none_or(|cwd| {
-                    !summary.cwd.is_empty()
-                        && crate::tools::path::resolve_lexically(cwd, Path::new(&summary.cwd))
-                            == cwd
-                })
-            })
+            .filter(|summary| cwd.is_none_or(|cwd| cwd_matches(&summary.cwd, cwd)))
             .collect(),
     )
 }

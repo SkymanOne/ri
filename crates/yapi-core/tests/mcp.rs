@@ -12,7 +12,9 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use yapi_core::mcp::http::{HttpOptions, HttpTransport};
 use yapi_core::mcp::stdio::{StdioOptions, StdioTransport};
-use yapi_core::mcp::{ClientOptions, McpClient, McpError, RequestOptions, Root, Transport};
+use yapi_core::mcp::{
+    ClientOptions, McpClient, McpError, RequestOptions, ResourceKind, Root, Transport,
+};
 
 fn server_script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/mcp/server.py")
@@ -85,7 +87,7 @@ async fn exercise(client: &McpClient) {
     assert_eq!(*updates.lock().unwrap(), vec![json!(1), json!(2)]);
 
     let resources = client
-        .list_resources(RequestOptions::default())
+        .list_resources(ResourceKind::Resources, RequestOptions::default())
         .await
         .unwrap();
     assert_eq!(resources[0]["uri"], "test://notes/readme");
@@ -95,7 +97,7 @@ async fn exercise(client: &McpClient) {
         .unwrap();
     assert_eq!(read["contents"][0]["text"], "Read me first.");
     let templates = client
-        .list_resource_templates(RequestOptions::default())
+        .list_resources(ResourceKind::Templates, RequestOptions::default())
         .await
         .unwrap_err();
     assert!(matches!(templates, McpError::Rpc { code: -32601, .. }));

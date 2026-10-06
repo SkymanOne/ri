@@ -43,7 +43,7 @@ pub enum SettingsError {
 }
 
 /// Both scopes and their merged view.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SettingsManager {
     global_path: PathBuf,
     project_path: PathBuf,
@@ -166,16 +166,7 @@ impl SettingsManager {
 
     /// Settings with no files behind them.
     pub fn in_memory() -> SettingsManager {
-        SettingsManager {
-            global_path: PathBuf::new(),
-            project_path: PathBuf::new(),
-            global: Map::new(),
-            project: Map::new(),
-            project_trusted: false,
-            merged: Settings::default(),
-            broken: [false; 2],
-            errors: Vec::new(),
-        }
+        SettingsManager::default()
     }
 
     /// Why settings files failed to load, as pi's warnings word them.
@@ -193,15 +184,14 @@ impl SettingsManager {
         }
         // Unknown or invalid fields are ignored, as in pi.
         self.merged = serde_json::from_value(Value::Object(merged.clone())).unwrap_or_else(|_| {
-            let mut lenient = Settings::default();
-            for (key, value) in merged {
-                let mut single = Map::new();
-                single.insert(key, value);
-                if let Ok(field) = serde_json::from_value::<Settings>(Value::Object(single)) {
-                    lenient = merge_settings(lenient, field);
-                }
-            }
-            lenient
+            let valid: Map<String, Value> = merged
+                .into_iter()
+                .filter(|(key, value)| {
+                    let single = Map::from_iter([(key.clone(), value.clone())]);
+                    serde_json::from_value::<Settings>(Value::Object(single)).is_ok()
+                })
+                .collect();
+            serde_json::from_value(Value::Object(valid)).unwrap_or_default()
         });
     }
 
@@ -321,18 +311,6 @@ impl SettingsManager {
     }
 }
 
-/// Fields of `over` that are set replace those of `base`.
-fn merge_settings(base: Settings, over: Settings) -> Settings {
-    let base = serde_json::to_value(base).unwrap_or(Value::Null);
-    let over = serde_json::to_value(over).unwrap_or(Value::Null);
-    match (base, over) {
-        (Value::Object(base), Value::Object(over)) => {
-            serde_json::from_value(Value::Object(deep_merge(&base, &over))).unwrap_or_default()
-        }
-        _ => Settings::default(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +333,23 @@ mod tests {
         assert_eq!(
             merge_default_tools(Some(&json!(["read"])), Some(&json!(["ls"]))),
             Some(json!(["ls"]))
+        );
+    }
+
+    #[test]
+    fn invalid_fields_leave_the_valid_ones() {
+        let mut manager = SettingsManager::in_memory();
+        manager.global = json!({"theme": "dark", "retry": "often", "steeringMode": "all"})
+            .as_object()
+            .unwrap()
+            .clone();
+        manager.remerge();
+        let settings = manager.settings();
+        assert_eq!(settings.theme.as_deref(), Some("dark"));
+        assert!(settings.retry.is_none());
+        assert_eq!(
+            settings.steering_mode,
+            Some(yapi_types::settings::QueueMode::All)
         );
     }
 }

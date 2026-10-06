@@ -119,8 +119,6 @@ struct Inner {
     state: Mutex<State>,
     next_id: AtomicU64,
     pending: Mutex<HashMap<String, Pending>>,
-    /// Progress token to request id.
-    progress: Mutex<HashMap<String, String>>,
     server: Mutex<Option<ServerInfo>>,
     listeners: Mutex<Vec<(String, Listener)>>,
     close_listeners: Mutex<Vec<Arc<dyn Fn() + Send + Sync>>>,
@@ -210,6 +208,47 @@ fn is_resource_template(template: &Map<String, Value>) -> bool {
         && template.get("name").is_none_or(Value::is_string)
 }
 
+/// What a resource listing lists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResourceKind {
+    /// Resources, from `resources/list`.
+    Resources,
+    /// Resource templates, from `resources/templates/list`.
+    Templates,
+}
+
+impl ResourceKind {
+    fn method(self) -> &'static str {
+        match self {
+            ResourceKind::Resources => "resources/list",
+            ResourceKind::Templates => "resources/templates/list",
+        }
+    }
+
+    /// The key of the items in a listing result.
+    pub fn key(self) -> &'static str {
+        match self {
+            ResourceKind::Resources => "resources",
+            ResourceKind::Templates => "resourceTemplates",
+        }
+    }
+
+    /// The field that locates an item; it names items without a name.
+    fn uri_field(self) -> &'static str {
+        match self {
+            ResourceKind::Resources => "uri",
+            ResourceKind::Templates => "uriTemplate",
+        }
+    }
+
+    fn valid(self) -> fn(&Map<String, Value>) -> bool {
+        match self {
+            ResourceKind::Resources => is_resource,
+            ResourceKind::Templates => is_resource_template,
+        }
+    }
+}
+
 /// Fills a missing `name` from `field`, as pi-mcp does.
 fn with_name(mut item: Value, field: &str) -> Value {
     if item.get("name").is_none()
@@ -254,7 +293,6 @@ impl McpClient {
                 state: Mutex::new(State::Connecting),
                 next_id: AtomicU64::new(1),
                 pending: Mutex::new(HashMap::new()),
-                progress: Mutex::new(HashMap::new()),
                 server: Mutex::new(None),
                 listeners: Mutex::new(Vec::new()),
                 close_listeners: Mutex::new(Vec::new()),
@@ -355,58 +393,30 @@ impl McpClient {
             .collect()
     }
 
-    /// Every resource, following pagination.
-    pub async fn list_resources(&self, options: RequestOptions) -> Result<Vec<Value>, McpError> {
-        let items = self
-            .list_all("resources/list", "resources", is_resource, options)
-            .await?;
-        Ok(named(items, "uri"))
-    }
-
-    /// One page of resources from `cursor`, and the next cursor.
-    pub async fn list_resources_page(
+    /// Every resource or resource template, following pagination.
+    pub async fn list_resources(
         &self,
-        cursor: Option<String>,
-        options: RequestOptions,
-    ) -> Result<(Vec<Value>, Option<String>), McpError> {
-        let (items, next) = self
-            .list_page("resources/list", "resources", is_resource, cursor, options)
-            .await?;
-        Ok((named(items, "uri"), next))
-    }
-
-    /// Every resource template, following pagination.
-    pub async fn list_resource_templates(
-        &self,
+        kind: ResourceKind,
         options: RequestOptions,
     ) -> Result<Vec<Value>, McpError> {
         let items = self
-            .list_all(
-                "resources/templates/list",
-                "resourceTemplates",
-                is_resource_template,
-                options,
-            )
+            .list_all(kind.method(), kind.key(), kind.valid(), options)
             .await?;
-        Ok(named(items, "uriTemplate"))
+        Ok(named(items, kind.uri_field()))
     }
 
-    /// One page of resource templates from `cursor`, and the next cursor.
-    pub async fn list_resource_templates_page(
+    /// One page of resources or resource templates from `cursor`, and the
+    /// next cursor.
+    pub async fn list_resources_page(
         &self,
+        kind: ResourceKind,
         cursor: Option<String>,
         options: RequestOptions,
     ) -> Result<(Vec<Value>, Option<String>), McpError> {
         let (items, next) = self
-            .list_page(
-                "resources/templates/list",
-                "resourceTemplates",
-                is_resource_template,
-                cursor,
-                options,
-            )
+            .list_page(kind.method(), kind.key(), kind.valid(), cursor, options)
             .await?;
-        Ok((named(items, "uriTemplate"), next))
+        Ok((named(items, kind.uri_field()), next))
     }
 
     /// Reads one resource.
@@ -567,9 +577,6 @@ impl McpClient {
                 touched: Arc::clone(&touched),
             },
         );
-        if options.on_progress.is_some() {
-            lock(&self.inner.progress).insert(key.clone(), key.clone());
-        }
         if let Err(error) = self.inner.transport.send(&message).await {
             self.remove_pending(&key);
             return Err(error);
@@ -638,7 +645,6 @@ impl McpClient {
     }
 
     fn remove_pending(&self, key: &str) -> Option<Pending> {
-        lock(&self.inner.progress).retain(|_, request| request != key);
         lock(&self.inner.pending).remove(key)
     }
 
@@ -646,7 +652,6 @@ impl McpClient {
     fn mark_closed(&self) {
         let was = std::mem::replace(&mut *lock(&self.inner.state), State::Closed);
         let pending: Vec<Pending> = lock(&self.inner.pending).drain().map(|(_, p)| p).collect();
-        lock(&self.inner.progress).clear();
         for entry in pending {
             let _ = entry.reply.send(Err(McpError::closed()));
         }
@@ -735,16 +740,16 @@ impl McpClient {
         if !params.get("progress").is_some_and(Value::is_number) {
             return;
         }
-        let Some(request) = lock(&self.inner.progress).get(&id_key(token)).cloned() else {
-            return;
-        };
-        let (touched, listener) = match lock(&self.inner.pending).get(&request) {
-            Some(entry) => (Arc::clone(&entry.touched), entry.progress.clone()),
-            None => return,
+        // The progress token is the id of a request that asked for progress.
+        let (touched, listener) = match lock(&self.inner.pending).get(&id_key(token)) {
+            Some(Pending {
+                touched,
+                progress: Some(listener),
+                ..
+            }) => (Arc::clone(touched), Arc::clone(listener)),
+            _ => return,
         };
         touched.notify_one();
-        if let Some(listener) = listener {
-            listener(params);
-        }
+        listener(params);
     }
 }
