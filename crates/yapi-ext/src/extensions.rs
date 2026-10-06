@@ -13,6 +13,10 @@ use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
+use yapi_ai::auth::{
+    AuthError, AuthEvent, AuthPrompt, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
+    SelectOption,
+};
 use yapi_ai::stream::{
     EventSender, EventStream, Provider, Request, StreamEvent, new_output, now_ms, send_error,
 };
@@ -22,6 +26,7 @@ use yapi_core::extensions::{
     Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
+use yapi_types::auth::OAuthCredential;
 use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
@@ -158,10 +163,22 @@ impl ExtensionHost {
             .iter()
             .flat_map(|extension| list(&extension["providers"]))
             .filter_map(|provider| {
+                let name = text(&provider["name"]);
                 let mut config = provider["config"].as_object()?.clone();
                 let streams = config.remove("hasStreamSimple") == Some(Value::Bool(true));
-                // Sign-in and image or classifier implementations are code.
-                for key in ["oauth", "images", "classifiers"] {
+                let oauth = config
+                    .remove("oauth")
+                    .filter(Value::is_object)
+                    .map(|oauth| {
+                        Arc::new(JsOAuth {
+                            host: Arc::downgrade(self),
+                            provider: name.clone(),
+                            name: text(&oauth["name"]),
+                            subscription: oauth["isSubscription"] == true,
+                        }) as Arc<dyn OAuthProvider>
+                    });
+                // Image and classifier implementations are code.
+                for key in ["images", "classifiers"] {
                     config.remove(key);
                 }
                 let stream = config
@@ -170,9 +187,10 @@ impl ExtensionHost {
                     .filter(|_| streams)
                     .map(|api| self.js_stream(api));
                 Some(RegisteredProvider {
-                    name: text(&provider["name"]),
+                    name,
                     config: Value::Object(config),
                     stream,
+                    oauth,
                 })
             })
             .collect()
@@ -314,6 +332,164 @@ pub struct RegisteredProvider {
     /// Its `streamSimple`, which streams the provider's models of the
     /// configuration's `api`.
     pub stream: Option<Arc<dyn Provider>>,
+    /// Its `oauth` sign-in.
+    pub oauth: Option<Arc<dyn OAuthProvider>>,
+}
+
+/// An extension provider's `oauth`: pi's legacy sign-in, whose login,
+/// refresh and API key run in the guest.
+struct JsOAuth {
+    host: Weak<ExtensionHost>,
+    provider: String,
+    name: String,
+    subscription: bool,
+}
+
+impl JsOAuth {
+    /// Runs guest call `kind` for this provider with `payload`, as operation
+    /// `id` that `cancel` aborts.
+    async fn call(
+        &self,
+        kind: &str,
+        mut payload: Value,
+        cancel: &CancellationToken,
+    ) -> Result<Value, AuthError> {
+        let host = self
+            .host
+            .upgrade()
+            .ok_or_else(|| AuthError::Failed(Error::Stopped.to_string()))?;
+        let id = host.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+        payload["provider"] = json!(self.provider);
+        payload["id"] = json!(id);
+        match cancel
+            .run_until_cancelled(host.instance.call(kind, &payload))
+            .await
+        {
+            Some(result) => result.map_err(|err| AuthError::Failed(err.to_string())),
+            None => {
+                let _ = host.instance.call("abort", &json!({"id": id})).await;
+                Err(AuthError::Cancelled)
+            }
+        }
+    }
+
+    async fn credential(
+        &self,
+        kind: &str,
+        payload: Value,
+        cancel: &CancellationToken,
+    ) -> Result<OAuthCredential, AuthError> {
+        let mut credential: OAuthCredential =
+            serde_json::from_value(self.call(kind, payload, cancel).await?)
+                .map_err(|err| AuthError::Failed(format!("Invalid OAuth credentials: {err}")))?;
+        credential.extra.remove("type");
+        Ok(credential)
+    }
+}
+
+impl OAuthProvider for JsOAuth {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_subscription(&self) -> bool {
+        self.subscription
+    }
+
+    fn login<'a>(
+        &'a self,
+        interaction: &'a Interaction,
+        _options: &'a LoginOptions,
+    ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let host = self
+                .host
+                .upgrade()
+                .ok_or_else(|| AuthError::Failed(Error::Stopped.to_string()))?;
+            let login = host.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+            lock(&host.bridge.logins).insert(login, interaction.clone());
+            let result = self
+                .credential("oauthLogin", json!({"login": login}), interaction.cancel())
+                .await;
+            lock(&host.bridge.logins).remove(&login);
+            result
+        })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+        cancel: &'a CancellationToken,
+    ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
+        Box::pin(self.credential("oauthRefresh", json!({"credential": credential}), cancel))
+    }
+
+    fn to_auth<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+    ) -> BoxFuture<'a, Result<OAuthAuth, AuthError>> {
+        Box::pin(async move {
+            let key = self
+                .call(
+                    "oauthApiKey",
+                    json!({"credential": credential}),
+                    &CancellationToken::new(),
+                )
+                .await?;
+            Ok(OAuthAuth {
+                api_key: key.as_str().map(str::to_owned),
+                ..OAuthAuth::default()
+            })
+        })
+    }
+}
+
+/// A sign-in notification from the guest, in pi's `AuthEvent` shape.
+fn auth_event(event: &Value) -> Option<AuthEvent> {
+    let optional = |key: &str| event[key].as_str().map(str::to_owned);
+    Some(match event["type"].as_str()? {
+        "auth_url" => AuthEvent::AuthUrl {
+            url: text(&event["url"]),
+            instructions: optional("instructions"),
+        },
+        "device_code" => AuthEvent::DeviceCode {
+            user_code: text(&event["userCode"]),
+            verification_uri: text(&event["verificationUri"]),
+            interval_seconds: event["intervalSeconds"].as_f64(),
+            expires_in_seconds: event["expiresInSeconds"].as_f64(),
+        },
+        "progress" => AuthEvent::Progress {
+            message: text(&event["message"]),
+        },
+        _ => return None,
+    })
+}
+
+/// A sign-in question from the guest, in pi's `AuthPrompt` shape.
+fn auth_prompt(prompt: &Value) -> AuthPrompt {
+    let message = text(&prompt["message"]);
+    let placeholder = prompt["placeholder"].as_str().map(str::to_owned);
+    match prompt["type"].as_str() {
+        Some("manual_code") => AuthPrompt::ManualCode {
+            message,
+            placeholder,
+        },
+        Some("secret") => AuthPrompt::Secret { message },
+        Some("select") => AuthPrompt::Select {
+            message,
+            options: list(&prompt["options"])
+                .iter()
+                .map(|option| SelectOption {
+                    id: text(&option["id"]),
+                    label: text(&option["label"]),
+                })
+                .collect(),
+        },
+        _ => AuthPrompt::Text {
+            message,
+            placeholder,
+        },
+    }
 }
 
 /// A wire API an extension implements, with a provider's `streamSimple` or
@@ -824,6 +1000,8 @@ struct SessionBridge {
     /// Where the output of `!` commands that bash operations run goes, by
     /// their operations' id.
     bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
+    /// Interactions of running extension sign-ins, by id.
+    logins: Mutex<HashMap<u64, Interaction>>,
     /// Running extension streams by id, with an empty message for failures
     /// until their final event.
     streams: Mutex<HashMap<u64, (EventSender, Option<AssistantMessage>)>>,
@@ -852,6 +1030,7 @@ impl SessionBridge {
             updates: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
+            logins: Mutex::default(),
             streams: Mutex::default(),
             next_id: AtomicU64::new(1),
             owner: OnceLock::new(),
@@ -1168,6 +1347,15 @@ impl Bridge for SessionBridge {
             }
             return Ok(Value::Null);
         }
+        if kind == "oauth.notify" {
+            let interaction = payload["login"]
+                .as_u64()
+                .and_then(|login| lock(&self.logins).get(&login).cloned());
+            if let (Some(interaction), Some(event)) = (interaction, auth_event(&payload["event"])) {
+                interaction.notify(event);
+            }
+            return Ok(Value::Null);
+        }
         if kind == "provider.event" {
             let mut streams = lock(&self.streams);
             let Some((sender, running)) = payload["stream"]
@@ -1352,6 +1540,19 @@ impl Bridge for SessionBridge {
     }
 
     fn start(&self, kind: &str, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
+        if kind == "oauth.prompt" {
+            let interaction = payload["login"]
+                .as_u64()
+                .and_then(|login| lock(&self.logins).get(&login).cloned());
+            return Box::pin(async move {
+                let interaction = interaction.ok_or_else(|| AuthError::Cancelled.to_string())?;
+                interaction
+                    .prompt(auth_prompt(&payload["prompt"]))
+                    .await
+                    .map(Value::String)
+                    .map_err(|err| err.to_string())
+            });
+        }
         let Some(session) = self.session() else {
             return Box::pin(async { Err(not_bound()) });
         };

@@ -1293,11 +1293,15 @@ impl ModelRegistry {
                 _ => return Ok(None),
             }
         }
-        Ok(Some(flow.to_auth(&credential)))
+        flow.to_auth(&credential)
+            .await
+            .map(Some)
+            .map_err(|err| format!("OAuth auth derivation failed for {provider}: {err}"))
     }
 
     /// The display name of a provider: its `models.json` or extension
-    /// `name`, else the built-in name, else its id.
+    /// `name`, else the built-in name, else the name of its registered
+    /// sign-in, else its id.
     pub fn provider_name(&self, provider: &str) -> String {
         if let Some(name) = self
             .config
@@ -1307,7 +1311,19 @@ impl ModelRegistry {
         {
             return name.clone();
         }
-        providers::info(provider).map_or_else(|| provider.to_owned(), |info| info.name.to_owned())
+        providers::info(provider)
+            .map(|info| info.name.to_owned())
+            .or_else(|| self.oauth.get(provider).map(|flow| flow.name().to_owned()))
+            .unwrap_or_else(|| provider.to_owned())
+    }
+
+    /// Whether `models.json` or an extension configures an `apiKey` for
+    /// `provider`, even an empty one.
+    pub fn configures_api_key(&self, provider: &str) -> bool {
+        self.config
+            .providers
+            .get(provider)
+            .is_some_and(|config| config.api_key.is_some())
     }
 
     /// Runs a sign-in and stores the credential. An API key login asks for the

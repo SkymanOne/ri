@@ -497,14 +497,18 @@ impl OAuthProvider for CopilotOAuth {
         })
     }
 
-    fn to_auth(&self, credential: &OAuthCredential) -> OAuthAuth {
-        OAuthAuth {
-            api_key: Some(credential.access.clone()),
-            base_url: Some(
-                self.base_url(&credential.access, enterprise_domain(credential).as_deref()),
-            ),
-            ..OAuthAuth::default()
-        }
+    fn to_auth<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+    ) -> BoxFuture<'a, Result<OAuthAuth, AuthError>> {
+        let base_url = self.base_url(&credential.access, enterprise_domain(credential).as_deref());
+        Box::pin(async move {
+            Ok(OAuthAuth {
+                api_key: Some(credential.access.clone()),
+                base_url: Some(base_url),
+                ..OAuthAuth::default()
+            })
+        })
     }
 }
 

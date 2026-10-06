@@ -1007,6 +1007,18 @@
 			}
 		}
 	}
+	/** Runs `run` with provider `payload.provider`'s `oauth` and an abort signal for `payload.id`. */
+	async function withOAuth(payload, run) {
+		const oauth = providerConfig(payload.provider)?.oauth;
+		if (!oauth) throw new Error(`Provider ${payload.provider} has no OAuth sign-in`);
+		const controller = new AbortController();
+		aborts.set(payload.id, controller);
+		try {
+			return plain(await run(oauth, controller.signal)) ?? null;
+		} finally {
+			aborts.delete(payload.id);
+		}
+	}
 	/** pi's `lazyStream` message for a stream that failed. */
 	function setupError(model, error) {
 		return {
@@ -1220,6 +1232,31 @@
 		abort(payload) {
 			aborts.get(payload.id)?.abort();
 			return null;
+		},
+		/**
+		 * Runs provider `provider`'s `oauth.login` with callbacks that reach
+		 * the host's sign-in `login`, as pi's provider composer adapts them.
+		 */
+		oauthLogin(payload) {
+			const notify = (event) => yapi.request("oauth.notify", { login: payload.login, event });
+			const prompt = (question) => yapi.op("oauth.prompt", { login: payload.login, prompt: question });
+			return withOAuth(payload, (oauth, signal) =>
+				oauth.login({
+					onAuth: (info) => notify({ type: "auth_url", ...info }),
+					onDeviceCode: (info) => notify({ type: "device_code", ...info }),
+					onPrompt: (question) => prompt({ type: "text", ...question }),
+					onProgress: (message) => notify({ type: "progress", message }),
+					onManualCodeInput: () => prompt({ type: "manual_code", message: "Paste the authorization code" }),
+					onSelect: (question) => prompt({ type: "select", ...question }),
+					signal,
+				}),
+			);
+		},
+		oauthRefresh(payload) {
+			return withOAuth(payload, (oauth, signal) => oauth.refreshToken(payload.credential, signal));
+		},
+		oauthApiKey(payload) {
+			return withOAuth(payload, (oauth) => oauth.getApiKey(payload.credential));
 		},
 		/**
 		 * Builds the component a tool's `renderCall`/`renderResult` or a

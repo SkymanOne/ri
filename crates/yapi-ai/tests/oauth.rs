@@ -610,7 +610,7 @@ async fn kimi_device_login_refresh_and_bearer_header() {
         (credential.access.as_str(), credential.refresh.as_str()),
         ("kimi-access", "kimi-refresh")
     );
-    let auth = oauth.to_auth(&credential);
+    let auth = oauth.to_auth(&credential).await.unwrap();
     assert_eq!(auth.api_key, None);
     assert_eq!(
         auth.headers.get("Authorization"),

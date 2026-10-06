@@ -275,11 +275,16 @@ pub trait OAuthProvider: Send + Sync {
     ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>>;
 
     /// Request credentials for a valid token.
-    fn to_auth(&self, credential: &OAuthCredential) -> OAuthAuth {
-        OAuthAuth {
-            api_key: Some(credential.access.clone()),
-            ..OAuthAuth::default()
-        }
+    fn to_auth<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+    ) -> BoxFuture<'a, Result<OAuthAuth, AuthError>> {
+        Box::pin(async move {
+            Ok(OAuthAuth {
+                api_key: Some(credential.access.clone()),
+                ..OAuthAuth::default()
+            })
+        })
     }
 }
 

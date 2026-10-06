@@ -464,8 +464,8 @@ fn build(
     if builtin_enabled(yapi_core::llama::NAME, args, &builtin_settings) {
         registry.enable_llama();
     }
-    // Providers extensions register, after `models.json` as in pi, and the
-    // wire APIs they implement.
+    // Providers extensions register, after `models.json` as in pi, with
+    // their sign-ins, and the wire APIs they implement.
     let mut apis = Apis::default();
     for host in &extensions.hosts {
         for provider in host.providers() {
@@ -479,6 +479,9 @@ fn build(
             }
             if let Some(stream) = provider.stream {
                 apis.register_for(&name, stream);
+            }
+            if let Some(oauth) = provider.oauth {
+                registry.register_oauth(&name, oauth);
             }
         }
         for api in host.apis() {

@@ -28,6 +28,8 @@ Run `/login` and choose "Sign in with an account" to use a Claude Pro or Max, Ch
 
 "Sign in with Radius" at the top of `/login` signs in to Pi's Radius gateway. Its models come from the gateway's own catalog, which yapi fetches after the sign-in.
 
+Providers that extensions register can add their own sign-ins to `/login`. See [Providers from extensions](extensions.md#providers-from-extensions).
+
 `/logout` removes a stored credential.
 
 ## Cloud providers
