@@ -23,7 +23,7 @@ use crate::extensions::{Context, Extension, ExtensionUi, Mode, ToolRenderers};
 use crate::messages::convert_to_llm;
 use crate::time::now_ms;
 
-use super::{AgentSession, InputSource, drain};
+use super::{AgentSession, InputSource, Replacement, drain};
 
 fn behavior_name(behavior: StreamingBehavior) -> &'static str {
     match behavior {
@@ -487,6 +487,58 @@ impl AgentSession {
         }
     }
 
+    /// Delivers a cancellable `session_before_*` event as pi's runner does:
+    /// the last result a handler gave, or the first that cancels, which
+    /// stops delivery.
+    pub(super) async fn emit_before(
+        &self,
+        event: &Value,
+        cancel: CancellationToken,
+    ) -> Option<Value> {
+        let kind = event["type"].as_str().unwrap_or_default();
+        let handlers = self.handlers_of(kind);
+        if handlers.is_empty() {
+            return None;
+        }
+        let ctx = self.extension_context(cancel);
+        let mut result = None;
+        for extension in handlers {
+            if let Some(next) = extension.handle(&ctx, event).await {
+                let cancelled = next["cancel"] == true;
+                result = Some(next);
+                if cancelled {
+                    break;
+                }
+            }
+        }
+        result
+    }
+
+    /// pi's `session_before_switch`: whether an extension cancels switching
+    /// to another session, a new one or `target` for [`Replacement::Resume`].
+    pub async fn before_switch(&self, reason: Replacement, target: Option<&str>) -> bool {
+        let mut event =
+            serde_json::json!({"type": "session_before_switch", "reason": reason.as_str()});
+        if let Some(target) = target {
+            event["targetSessionFile"] = target.into();
+        }
+        let result = self.emit_before(&event, CancellationToken::new()).await;
+        result.is_some_and(|result| result["cancel"] == true)
+    }
+
+    /// pi's `session_before_fork`: whether an extension cancels forking at
+    /// `entry_id`, keeping the entry (`at`, as `/clone` does) or ending the
+    /// fork before it.
+    pub async fn before_fork(&self, entry_id: &str, at: bool) -> bool {
+        let event = serde_json::json!({
+            "type": "session_before_fork",
+            "entryId": entry_id,
+            "position": if at { "at" } else { "before" },
+        });
+        let result = self.emit_before(&event, CancellationToken::new()).await;
+        result.is_some_and(|result| result["cancel"] == true)
+    }
+
     /// pi's `input` event: `None` when a handler handled the input,
     /// otherwise the possibly transformed text and images.
     pub(super) async fn input_handlers(
@@ -579,22 +631,53 @@ impl AgentSession {
         (messages, forced)
     }
 
+    /// Records that this session replaces another for `reason`, whose
+    /// session file was `previous`; `session_start` reports both.
+    pub fn set_start(&self, reason: Replacement, previous: Option<String>) {
+        *lock(&self.inner.start) = Some((reason, previous));
+    }
+
     /// Gives extensions their UI and mode and starts them: pi's
-    /// `bindExtensions`, which emits `session_start`.
+    /// `bindExtensions`, which emits `session_start` with the reason set by
+    /// [`AgentSession::set_start`], `startup` by default.
     pub async fn bind_extensions(&self, ui: Arc<dyn ExtensionUi>, mode: Mode) {
         *lock(&self.inner.binding) = (ui, mode);
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;
         }
-        let event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        let start = lock(&self.inner.start).clone();
+        let mut event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        if let Some((reason, previous)) = start {
+            event["reason"] = reason.as_str().into();
+            // pi reports no previous file on reload.
+            if let Some(previous) = previous.filter(|_| reason != Replacement::Reload) {
+                event["previousSessionFile"] = previous.into();
+            }
+        }
         self.emit_extension_event(&event, CancellationToken::new())
             .await;
     }
 
-    /// Stops extensions before the session ends or is replaced.
+    /// Stops extensions before the session ends: pi's `session_shutdown`
+    /// with the reason `quit`.
     pub async fn shutdown(&self) {
-        let event = serde_json::json!({"type": "session_shutdown"});
+        self.stop_extensions(serde_json::json!({"type": "session_shutdown", "reason": "quit"}))
+            .await;
+    }
+
+    /// Stops extensions before a session replaces this one for `reason`;
+    /// `target` is the replacement's session file, which pi does not report
+    /// on reload.
+    pub async fn shutdown_for(&self, reason: Replacement, target: Option<String>) {
+        let mut event = serde_json::json!({"type": "session_shutdown", "reason": reason.as_str()});
+        if let Some(target) = target.filter(|_| reason != Replacement::Reload) {
+            event["targetSessionFile"] = target.into();
+        }
+        self.stop_extensions(event).await;
+    }
+
+    async fn stop_extensions(&self, event: Value) {
         self.emit_extension_event(&event, CancellationToken::new())
             .await;
         let ctx = self.extension_context(CancellationToken::new());

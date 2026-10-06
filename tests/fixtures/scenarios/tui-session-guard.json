@@ -1,0 +1,25 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "[Extensions]",
+    "  guard.ts",
+    "",
+    " start: startup",
+    "",
+    " Warning: blocked new",
+    "",
+    " Warning: blocked fork at",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

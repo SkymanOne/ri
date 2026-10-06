@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use yapi_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
+use yapi_core::agent_session::{AgentSession, Replacement, TreeNavigation, TreeOutcome};
 use yapi_core::bash_executor::BashResult;
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
@@ -153,6 +153,8 @@ enum Event {
         Box<catalogs::Refresh>,
         yapi_core::agent_session::CatalogRefresh,
     ),
+    /// Work to finish on the loop for the session with this epoch.
+    Then(u64, Box<dyn FnOnce(&mut App) + Send>),
     /// A component an extension built for a transcript item, answering the
     /// request with this sequence number.
     Component(
@@ -420,8 +422,9 @@ struct App {
     /// The last selector catalog refresh id.
     next_refresh: u64,
     /// The current session's extensions wait to start, after the session
-    /// they replace (if any) shuts down.
-    binding: Option<Option<AgentSession>>,
+    /// they replace (if any) shuts down for a reason, with the replacement's
+    /// session file.
+    binding: Option<Option<(AgentSession, Replacement, Option<String>)>>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
     /// Images attached to the first of `initial`.
@@ -2822,16 +2825,25 @@ impl App {
     // Sessions
 
     /// Builds a session around `manager` and shows it in place of the current
-    /// one.
-    fn replace_session(&mut self, manager: SessionManager) -> Result<(), String> {
+    /// one, which it replaces for `reason`.
+    fn replace_session(
+        &mut self,
+        manager: SessionManager,
+        reason: Replacement,
+    ) -> Result<(), String> {
+        let target = crate::runtime::file_of(&manager);
+        let previous = self
+            .session
+            .with_session(|manager| crate::runtime::file_of(manager));
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
+        session.set_start(reason, previous);
         self.session.abort();
         self.session.abort_bash();
         self.epoch += 1;
         let old = std::mem::replace(&mut self.session, session);
         subscribe(&self.session, &self.tx, self.epoch);
         self.reset_extension_ui();
-        self.binding = Some(Some(old));
+        self.binding = Some(Some((old, reason, target)));
         self.cwd = self.session.cwd().to_path_buf();
         self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
         self.branch = footer::git_branch(&self.cwd);
@@ -2847,43 +2859,90 @@ impl App {
         Ok(())
     }
 
+    /// Runs `then` unless an extension cancels a session change: at once
+    /// when no extension handles `kind`, otherwise once `before`, pi's
+    /// cancellable `session_before_*` event, answers that none did.
+    pub(super) fn unless_cancelled(
+        &mut self,
+        kind: &str,
+        before: impl std::future::Future<Output = bool> + Send + 'static,
+        then: impl FnOnce(&mut App) + Send + 'static,
+    ) {
+        if !self.session.has_handlers(kind) {
+            then(self);
+            return;
+        }
+        let tx = self.tx.clone();
+        let epoch = self.epoch;
+        tokio::spawn(async move {
+            if !before.await {
+                let _ = tx.send(Event::Then(epoch, Box::new(then)));
+            }
+        });
+    }
+
     fn new_session(&mut self) {
         self.indicator = None;
-        let result = crate::runtime::new_session(&self.session, None)
-            .map_err(|error| error.to_string())
-            .and_then(|manager| self.replace_session(manager));
-        match result {
-            Ok(()) => {
-                let notice = lines::styled("✓ New session started", self.theme.fg("accent"));
-                self.text_item(vec![notice], true, (1, 1));
+        let session = self.session.clone();
+        let before = async move { session.before_switch(Replacement::New, None).await };
+        self.unless_cancelled("session_before_switch", before, |app| {
+            let result = crate::runtime::new_session(&app.session, None)
+                .map_err(|error| error.to_string())
+                .and_then(|manager| app.replace_session(manager, Replacement::New));
+            match result {
+                Ok(()) => {
+                    let notice = lines::styled("✓ New session started", app.theme.fg("accent"));
+                    app.text_item(vec![notice], true, (1, 1));
+                }
+                Err(error) => app.fatal("Failed to create session", &error),
             }
-            Err(error) => self.fatal("Failed to create session", &error),
-        }
+        });
     }
 
     /// pi's `runtimeHost.fork`: `at` keeps the entry (`/clone`), otherwise the
     /// branch ends before the user message (`/fork`).
     fn fork(&mut self, id: &str, at: bool) {
-        let result = crate::runtime::plan_fork(&self.session, id, at).and_then(|fork| {
-            let manager = fork.build(&self.session)?;
-            self.replace_session(manager)?;
-            Ok(fork.text)
-        });
-        match result {
-            Ok(text) => {
-                if at {
-                    self.set_editor_text("");
-                    self.status("Cloned to new session");
-                } else {
-                    self.set_editor_text(text.as_deref().unwrap_or_default());
-                    self.status("Forked to new session");
+        let session = self.session.clone();
+        let entry = id.to_owned();
+        let before = async move { session.before_fork(&entry, at).await };
+        let id = id.to_owned();
+        self.unless_cancelled("session_before_fork", before, move |app| {
+            let result = crate::runtime::plan_fork(&app.session, &id, at).and_then(|fork| {
+                let manager = fork.build(&app.session)?;
+                app.replace_session(manager, Replacement::Fork)?;
+                Ok(fork.text)
+            });
+            match result {
+                Ok(text) => {
+                    if at {
+                        app.set_editor_text("");
+                        app.status("Cloned to new session");
+                    } else {
+                        app.set_editor_text(text.as_deref().unwrap_or_default());
+                        app.status("Forked to new session");
+                    }
                 }
+                Err(error) => app.error(error),
             }
-            Err(error) => self.error(error),
-        }
+        });
     }
 
+    /// pi's `switchSession` to `path`, in `cwd_override` when given.
     fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
+        let session = self.session.clone();
+        let target = path.display().to_string();
+        let before = async move {
+            session
+                .before_switch(Replacement::Resume, Some(&target))
+                .await
+        };
+        let path = path.to_path_buf();
+        self.unless_cancelled("session_before_switch", before, move |app| {
+            app.open_resumed(&path, cwd_override);
+        });
+    }
+
+    fn open_resumed(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
         let fallback = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
         let manager = match crate::runtime::open_session(path, cwd_override.as_deref(), &fallback) {
             Ok(manager) => manager,
@@ -2908,7 +2967,7 @@ impl App {
                 return;
             }
         };
-        match self.replace_session(manager) {
+        match self.replace_session(manager, Replacement::Resume) {
             Ok(()) if cwd_override.is_some() => self.status("Resumed session in current cwd"),
             Ok(()) => self.status("Resumed session"),
             Err(error) => self.fatal("Failed to resume session", &error),
@@ -3632,8 +3691,8 @@ impl App {
         let session = self.session.clone();
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            if let Some(old) = old {
-                old.shutdown().await;
+            if let Some((old, reason, target)) = old {
+                old.shutdown_for(reason, target).await;
             }
             session.bind_extensions(Arc::new(ui), Mode::Tui).await;
             let _ = tx.send(Event::Bound);
@@ -3732,6 +3791,7 @@ impl App {
             Event::Component(epoch, slot, sequence, component) if epoch == self.epoch => {
                 self.on_component(*slot, sequence, component);
             }
+            Event::Then(epoch, then) if epoch == self.epoch => then(self),
             _ => {}
         }
     }

@@ -72,6 +72,32 @@ impl InputSource {
     }
 }
 
+/// Why a session takes over from another: pi's `session_start` and
+/// `session_shutdown` reasons other than `startup` and `quit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Replacement {
+    /// `/new` or `newSession`.
+    New,
+    /// `/resume` or `switchSession`.
+    Resume,
+    /// `/fork`, `/clone` or `fork`.
+    Fork,
+    /// `/reload` or `reload`.
+    Reload,
+}
+
+impl Replacement {
+    /// The reason as pi's events name it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Replacement::New => "new",
+            Replacement::Resume => "resume",
+            Replacement::Fork => "fork",
+            Replacement::Reload => "reload",
+        }
+    }
+}
+
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
 
@@ -154,6 +180,9 @@ struct Inner {
     extensions: Vec<Arc<dyn Extension>>,
     /// The UI and mode extensions see.
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
+    /// Why this session started and the session file it replaced; `None`
+    /// at startup.
+    start: Mutex<Option<(Replacement, Option<String>)>>,
     /// Extension sections of the current run's system prompt.
     run_sections: Mutex<IndexMap<String, String>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
@@ -349,6 +378,7 @@ impl AgentSession {
                 tools: tool_registry,
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
+                start: Mutex::new(None),
                 run_sections: Mutex::new(IndexMap::new()),
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),
