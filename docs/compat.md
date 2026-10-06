@@ -52,7 +52,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Area | Pi | yapi today | Issue |
 |---|---|---|---|
 | Extension session actions | `newSession`, `fork`, `navigateTree`, `switchSession`, `reload` and `setTheme` work | The session actions fail and `setTheme` reports failure. | [#22](https://github.com/SkymanOne/yapi/issues/22) |
-| Extension providers | `registerProvider` accepts a custom `streamSimple`, an OAuth sign-in and `refreshModels` | Only providers configured like `models.json` entries. A model whose API only an extension implements cannot be the session's model. | [#24](https://github.com/SkymanOne/yapi/issues/24) |
 | MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
 | Temporary packages | `-e npm:<name>` and `-e git:<url>` install a package for one run | Not supported. | [#29](https://github.com/SkymanOne/yapi/issues/29) |
 | Entry renderers and markdown transformers | `registerEntryRenderer` and `registerMarkdownTransformer` change how entries and markdown render | Recorded but unused. | [#30](https://github.com/SkymanOne/yapi/issues/30) |
@@ -66,3 +65,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Codemode | `codemode.mode: "only"` hides direct tools, scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | `only` acts as `on`, scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
 | OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |
 | Private npm registries | npm reads `.npmrc`, including registry credentials | `npm_config_registry` or the public registry, without credentials. | [#40](https://github.com/SkymanOne/yapi/issues/40) |
+| Streamed `fetch` responses | `fetch` streams the response body | `fetch` resolves once the whole response has arrived, so a provider extension that streams over `fetch` shows its events when the response ends. | [#53](https://github.com/SkymanOne/yapi/issues/53) |
+| Full extension providers | `registerProvider` also takes a complete pi-ai `Provider` object, image and classifier models with their implementations, and the legacy `oauth.modifyModels` | A provider configuration only. Those parts are ignored. | [#54](https://github.com/SkymanOne/yapi/issues/54) |
+| Extension providers in `--list-models` | `--list-models` lists the models extensions register | Lists built-in and `models.json` models only. | [#55](https://github.com/SkymanOne/yapi/issues/55) |
