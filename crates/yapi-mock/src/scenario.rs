@@ -982,18 +982,20 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
     }
     let mut out: Vec<String> = Vec::new();
     for row in &merged {
-        if row.contains("▀▀█") || row.contains("▀▄▄▀ v") || row.starts_with(" yapi v")
-        {
+        // Both logos' top rows contain `▀▀█`; Apple Terminal shows wordmarks.
+        if row.contains("▀▀█") || row.starts_with(" YaPi v") {
             continue;
         }
         // The expanded header shows the tip after the key help.
         if row.trim() == TIP {
             continue;
         }
+        // The logos' bottom rows precede the first key hint: yapi's first,
+        // since it ends with pi's.
         let mut row = normalizer
             .text(row.trim_end())
-            .replacen("█▀ █ ", "", 1)
-            .replacen("▄▀   ", "", 1);
+            .replacen(" █ █▄█▄ █▀ █ ", "", 1)
+            .replacen("█▀ █ ", "", 1);
         // yapi has no cache warming (docs/compat.md), so its status differs.
         if row.starts_with(" Status: Inactive (") {
             row = " Status: Inactive (<reason>)".to_owned();

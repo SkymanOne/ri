@@ -17,8 +17,52 @@ use yapi_types::rpc::SourceInfo;
 use super::keybindings::keys_text;
 use super::selectors::key_hint as hint;
 
-fn brand(r: f64, g: f64, b: f64, mode: ColorMode) -> Style {
-    Style::new().fg(Color::Rgb(r, g, b).to_terminal(mode))
+/// The logo's colors, as in `assets/logo.svg`: orange, red and tan.
+const ORANGE: (f64, f64, f64) = (247.0, 76.0, 0.0);
+const RED: (f64, f64, f64) = (206.0, 66.0, 43.0);
+const TAN: (f64, f64, f64) = (222.0, 165.0, 132.0);
+
+/// The "YaPi" logo in square pixels, `o` orange, `r` red, `t` tan.
+const LOGO: [&str; 4] = [
+    "o.o.....ooo.",
+    "ooo.tt..r.o.",
+    ".r.t.t..rr.t",
+    ".r.tttt.r..t",
+];
+
+fn terminal((r, g, b): (f64, f64, f64), mode: ColorMode) -> ratatui_core::style::Color {
+    Color::Rgb(r, g, b).to_terminal(mode)
+}
+
+fn brand(color: (f64, f64, f64), mode: ColorMode) -> Style {
+    Style::new().fg(terminal(color, mode))
+}
+
+/// The logo as two rows of half blocks, two pixels per cell as in pi's
+/// `piLogoLines`: a cell with two colors draws the top one over the bottom
+/// one's background. The colors stay fixed across themes.
+fn logo_rows(mode: ColorMode) -> [Vec<Span<'static>>; 2] {
+    let color = |pixel: u8| match pixel {
+        b'o' => Some(ORANGE),
+        b'r' => Some(RED),
+        b't' => Some(TAN),
+        _ => None,
+    };
+    let row = |top: &str, bottom: &str| {
+        top.bytes()
+            .zip(bottom.bytes())
+            .map(|(top, bottom)| match (color(top), color(bottom)) {
+                (None, None) => Span::raw(" "),
+                (Some(top), None) => Span::styled("▀", brand(top, mode)),
+                (None, Some(bottom)) => Span::styled("▄", brand(bottom, mode)),
+                (Some(top), Some(bottom)) if top == bottom => Span::styled("█", brand(top, mode)),
+                (Some(top), Some(bottom)) => {
+                    Span::styled("▀", brand(top, mode).bg(terminal(bottom, mode)))
+                }
+            })
+            .collect()
+    };
+    [row(LOGO[0], LOGO[1]), row(LOGO[2], LOGO[3])]
 }
 
 /// The header rows: a blank row, the wordmark with the version, key hints and
@@ -31,30 +75,24 @@ pub fn render(
     width: usize,
 ) -> Vec<StyledLine> {
     let mode = theme.mode();
-    let coral = brand(228.0, 138.0, 122.0, mode);
-    let yellow = brand(234.0, 182.0, 93.0, mode);
     let version = Span::styled(format!("v{}", env!("CARGO_PKG_VERSION")), theme.fg("dim"));
-    // pi's layout: a two-row, four-cell logo with the version beside its top
-    // row and the hints beside its bottom row; Apple Terminal, which draws
-    // half blocks with gaps, gets the wordmark above the hints instead. The
-    // logo is a "y" of four by four square pixels, as pi's is a "Pi":
-    //
-    //   coral  .      .      coral
-    //   .      coral  coral  .
-    //   .      yellow .      .
-    //   yellow .      .      .
+    // pi's layout: a two-row logo with the version beside its top row and the
+    // hints beside its bottom row; Apple Terminal, which draws half blocks
+    // with gaps, gets the wordmark above the hints instead.
     let logo = std::env::var("TERM_PROGRAM").ok().as_deref() != Some("Apple_Terminal");
+    let [logo_top, logo_bottom] = logo_rows(mode);
     let mut content: Vec<StyledLine> = vec![if logo {
-        Line::from(vec![Span::styled("▀▄▄▀", coral), Span::raw(" "), version])
+        let mut spans = logo_top;
+        spans.extend([Span::raw(" "), version]);
+        Line::from(spans)
     } else {
         Line::from(vec![
-            Span::styled("ya", coral),
-            Span::styled("pi", yellow),
+            Span::styled("Ya", brand(ORANGE, mode)),
+            Span::styled("Pi", brand(TAN, mode)),
             Span::raw(" "),
             version,
         ])
     }];
-    let logo_bottom = || vec![Span::styled("▄▀", yellow), Span::raw("   ")];
     let key = |action: &str| keys_text(keys, action);
     if expanded {
         let hints: Vec<(String, &str)> = vec![
@@ -120,7 +158,8 @@ pub fn render(
         ));
     }
     if logo && let Some(first) = content.get_mut(1) {
-        let mut spans = logo_bottom();
+        let mut spans = logo_bottom;
+        spans.push(Span::raw(" "));
         spans.append(&mut first.spans);
         *first = Line::from(spans);
     }
@@ -611,4 +650,26 @@ pub fn conflicts(
     let mut out = lines::text(&content, width, 0, 0, None);
     out.extend(lines::spacer(1));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logo_draws_yapi_in_two_rows_of_half_blocks() {
+        let text = |row: &[Span<'_>]| {
+            row.iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        };
+        let [top, bottom] = logo_rows(ColorMode::TrueColor);
+        assert_eq!(text(&top), "█▄█ ▄▄  ▀▀█ ");
+        assert_eq!(text(&bottom), " █ █▄█▄ █▀ █");
+        // The P's corner holds two colors: orange over red.
+        assert_eq!(
+            top[8].style,
+            brand(ORANGE, ColorMode::TrueColor).bg(terminal(RED, ColorMode::TrueColor))
+        );
+    }
 }
