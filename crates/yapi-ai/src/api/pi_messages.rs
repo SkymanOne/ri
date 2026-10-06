@@ -363,6 +363,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         }
         return send_error(&sender, output, &options.cancel, message);
     }
+    options.hooks.response(&response).await;
     let mut converter = Converter {
         partial: new_output(&model, now_ms()),
         tool_json: Vec::new(),
@@ -396,6 +397,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
                 Ok(event) => event,
                 Err(err) => return fail(err.to_string()),
             };
+            options.hooks.stream_event(&event).await;
             if let Some(update) = converter.apply(&event) {
                 let terminal = matches!(update, StreamEvent::Done(_) | StreamEvent::Error(_));
                 sender.send(update);

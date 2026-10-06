@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -19,7 +20,10 @@ use yapi_agent::{
 };
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
-use yapi_ai::stream::{RequestHooks, StreamOptions, ThinkingBudgets};
+use yapi_ai::stream::{
+    HeadersHook, PayloadHook, RequestHooks, ResponseHook, StreamEventHook, StreamOptions,
+    ThinkingBudgets,
+};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
@@ -235,7 +239,13 @@ struct Inner {
     announcing: tokio::sync::Mutex<()>,
     /// How the last turn ended, as pi's boundary events report it.
     outcome: Mutex<&'static str>,
+    /// Blocking extension dialogs open, and the kind and title of the
+    /// outermost.
+    ui_prompts: Mutex<(usize, Option<UiPrompt>)>,
 }
+
+/// A blocking extension dialog's kind and title.
+type UiPrompt = (String, Option<String>);
 
 /// Counts an operation in [`Inner::compacting`] while alive.
 struct Compacting<'a>(&'a AtomicUsize);
@@ -420,6 +430,7 @@ impl AgentSession {
                 announcements: Mutex::new(VecDeque::new()),
                 announcing: tokio::sync::Mutex::new(()),
                 outcome: Mutex::new("completed"),
+                ui_prompts: Mutex::new((0, None)),
                 nested: crate::nested::NestedCalls::default(),
             }),
         }
@@ -1263,7 +1274,12 @@ impl AgentSession {
         !lock(&self.inner.steering).is_empty() || !lock(&self.inner.follow_up).is_empty()
     }
 
-    fn stream_options(&self, session_id: String, cancel: &CancellationToken) -> StreamOptions {
+    fn stream_options(
+        &self,
+        model: &Model,
+        session_id: String,
+        cancel: &CancellationToken,
+    ) -> StreamOptions {
         let settings = lock(&self.inner.settings).settings().clone();
         let budgets = settings.thinking_budgets.as_ref();
         let provider = settings
@@ -1283,20 +1299,62 @@ impl AgentSession {
                 .and_then(|provider| provider.max_retries)
                 .unwrap_or(0),
             cancel: cancel.clone(),
-            hooks: self.request_hooks(cancel),
+            hooks: self.request_hooks(model, cancel),
             ..StreamOptions::default()
         }
     }
 
-    /// What extensions see of the run's provider requests.
-    fn request_hooks(&self, cancel: &CancellationToken) -> RequestHooks {
+    /// What extensions see of the run's provider requests to `model`.
+    fn request_hooks(&self, model: &Model, cancel: &CancellationToken) -> RequestHooks {
+        let wants = |kind: &str| self.has_handlers(kind);
         let (session, cancel) = (self.clone(), cancel.clone());
-        RequestHooks {
-            payload: Some(Arc::new(move |payload| {
+        let payload: Option<PayloadHook> = wants("before_provider_request").then(|| {
+            let (session, cancel) = (session.clone(), cancel.clone());
+            Arc::new(move |payload| {
                 let (session, cancel) = (session.clone(), cancel.clone());
                 Box::pin(async move { session.before_provider_request(payload, cancel).await })
-            })),
+                    as BoxFuture<'static, Value>
+            }) as PayloadHook
+        });
+        let response: Option<ResponseHook> = wants("after_provider_response").then(|| {
+            let (session, cancel) = (session.clone(), cancel.clone());
+            Arc::new(move |status, headers| {
+                let (session, cancel) = (session.clone(), cancel.clone());
+                Box::pin(async move {
+                    session
+                        .after_provider_response(status, headers, cancel)
+                        .await
+                }) as BoxFuture<'static, ()>
+            }) as ResponseHook
+        });
+        let stream_event: Option<StreamEventHook> = wants("provider_stream_event").then(|| {
+            let (session, cancel) = (session.clone(), cancel.clone());
+            let model = model.clone();
+            Arc::new(move |data| {
+                let (session, cancel, model) = (session.clone(), cancel.clone(), model.clone());
+                Box::pin(async move { session.provider_stream_event(&model, data, cancel).await })
+                    as BoxFuture<'static, ()>
+            }) as StreamEventHook
+        });
+        RequestHooks {
+            payload,
+            headers: self.headers_hook(&cancel),
+            response,
+            stream_event,
         }
+    }
+
+    /// pi's `before_provider_headers` for every provider request, compaction
+    /// and branch summaries included.
+    pub(super) fn headers_hook(&self, cancel: &CancellationToken) -> Option<HeadersHook> {
+        if !self.has_handlers("before_provider_headers") {
+            return None;
+        }
+        let (session, cancel) = (self.clone(), cancel.clone());
+        Some(Arc::new(move |headers| {
+            let (session, cancel) = (session.clone(), cancel.clone());
+            Box::pin(async move { session.before_provider_headers(headers, cancel).await })
+        }))
     }
 
     /// One agent run: with `prompts`, or continuing the transcript (or running
@@ -1326,10 +1384,10 @@ impl AgentSession {
         };
         let apis = self.inner.apis.clone();
         let config = LoopConfig {
+            options: self.stream_options(&model, session_id, cancel),
             model,
             thinking_level,
             stream: Arc::new(move |request| apis.stream(request)),
-            options: self.stream_options(session_id, cancel),
             tool_execution: ExecutionMode::Parallel,
         };
         let mut context = AgentContext {

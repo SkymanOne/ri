@@ -711,6 +711,8 @@ struct SessionBridge {
     session: Mutex<WeakSession>,
     /// Update sinks and cancellation of running extension tools, by call id.
     updates: Mutex<HashMap<String, (UpdateSink, CancellationToken)>>,
+    /// Custom components shown as blocking dialogs, by handle.
+    prompts: Mutex<std::collections::HashSet<u64>>,
     /// Where the output of `!` commands that bash operations run goes, by
     /// their operations' id.
     bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
@@ -736,6 +738,7 @@ impl SessionBridge {
             session: Mutex::default(),
             updates: Mutex::default(),
             bash: Mutex::default(),
+            prompts: Mutex::default(),
             owner: OnceLock::new(),
         })
     }
@@ -898,6 +901,8 @@ impl SessionBridge {
             "ui.getEditorText" => return Value::String(ui.editor_text()),
             "ui.custom" => {
                 if let Some(component) = self.component(&payload["handle"]) {
+                    session.ui_prompt_opened("custom", None);
+                    lock(&self.prompts).insert(payload["handle"].as_u64().unwrap_or_default());
                     let options = CustomOptions {
                         overlay: payload["overlay"] == true,
                         overlay_options: payload["overlayOptions"].clone(),
@@ -907,6 +912,9 @@ impl SessionBridge {
             }
             "ui.close" => {
                 if let Some(component) = self.component(&payload["handle"]) {
+                    if lock(&self.prompts).remove(&payload["handle"].as_u64().unwrap_or_default()) {
+                        session.ui_prompt_closed();
+                    }
                     ui.close(component);
                 }
             }
@@ -1330,44 +1338,30 @@ impl Bridge for SessionBridge {
                     .compact(payload["customInstructions"].as_str())
                     .await
                     .map(to_json),
-                "ui.select" => {
+                "ui.select" | "ui.confirm" | "ui.input" | "ui.editor" => {
                     let (ui, _) = session.extension_binding();
-                    let options = list(&payload["options"]).iter().map(text).collect();
-                    Ok(to_json(
-                        ui.select(&text(&payload["title"]), options, dialog(&payload))
-                            .await,
-                    ))
-                }
-                "ui.confirm" => {
-                    let (ui, _) = session.extension_binding();
-                    Ok(Value::Bool(
-                        ui.confirm(
-                            &text(&payload["title"]),
-                            &text(&payload["message"]),
-                            dialog(&payload),
-                        )
-                        .await,
-                    ))
-                }
-                "ui.input" => {
-                    let (ui, _) = session.extension_binding();
-                    let placeholder = payload["placeholder"].as_str().map(str::to_owned);
-                    Ok(to_json(
-                        ui.input(
-                            &text(&payload["title"]),
-                            placeholder.as_deref(),
-                            dialog(&payload),
-                        )
-                        .await,
-                    ))
-                }
-                "ui.editor" => {
-                    let (ui, _) = session.extension_binding();
-                    let prefill = payload["prefill"].as_str().map(str::to_owned);
-                    Ok(to_json(
-                        ui.editor(&text(&payload["title"]), prefill.as_deref())
-                            .await,
-                    ))
+                    let title = text(&payload["title"]);
+                    let dialog_kind = &kind["ui.".len()..];
+                    session.ui_prompt_opened(dialog_kind, Some(&title));
+                    let answer = match dialog_kind {
+                        "select" => {
+                            let options = list(&payload["options"]).iter().map(text).collect();
+                            to_json(ui.select(&title, options, dialog(&payload)).await)
+                        }
+                        "confirm" => Value::Bool(
+                            ui.confirm(&title, &text(&payload["message"]), dialog(&payload))
+                                .await,
+                        ),
+                        "input" => to_json(
+                            ui.input(&title, payload["placeholder"].as_str(), dialog(&payload))
+                                .await,
+                        ),
+                        _ => to_json(ui.editor(&title, payload["prefill"].as_str()).await),
+                    };
+                    session.ui_prompt_closed();
+                    // pi's handlers hear of it before the dialog's caller resumes.
+                    session.flush_announcements().await;
+                    Ok(answer)
                 }
                 other => Err(format!("{other} is not available in yapi extensions yet")),
             }

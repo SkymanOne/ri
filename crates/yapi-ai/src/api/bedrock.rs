@@ -1153,6 +1153,9 @@ async fn consume(
             match message.header(":message-type") {
                 Some("event") => {
                     let kind = message.header(":event-type").unwrap_or_default();
+                    let mut item = serde_json::Map::new();
+                    item.insert(kind.to_owned(), payload.clone());
+                    options.hooks.stream_event(&Value::Object(item)).await;
                     state.handle(kind, &payload, model, sender).map_err(plain)?;
                 }
                 Some("exception") => {
@@ -1213,6 +1216,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         Ok(response) => response,
         Err(failure) => return fail(output, failure, None),
     };
+    options.hooks.response(&response).await;
     let request_id = response
         .headers()
         .get("x-amzn-requestid")

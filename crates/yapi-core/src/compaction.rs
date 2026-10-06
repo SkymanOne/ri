@@ -704,6 +704,8 @@ pub struct Summarizer<'a> {
     pub cancel: CancellationToken,
     /// Hears about retries.
     pub on_retry: Box<dyn Fn(SummaryRetry) + Send + Sync + 'a>,
+    /// Observers of the requests.
+    pub hooks: yapi_ai::stream::RequestHooks,
 }
 
 /// What a summarizer reports while it retries; pi-ai's `RetryCallbacks`.
@@ -789,6 +791,7 @@ impl Summarizer<'_> {
             session_id: Some(session_id.to_owned()),
             cache_retention: Some(CacheRetention::None),
             cancel: self.cancel.clone(),
+            hooks: self.hooks.clone(),
             ..StreamOptions::default()
         };
         let mut request = Request {
@@ -797,7 +800,10 @@ impl Summarizer<'_> {
             options,
         };
         let stream = match self.auth.clone().apply(&mut request) {
-            Ok(()) => self.apis.stream(request),
+            Ok(()) => {
+                yapi_ai::stream::RequestHooks::prepare(&mut request).await;
+                self.apis.stream(request)
+            }
             Err(message) => {
                 yapi_ai::api::failed_stream(&request.model, &request.options.cancel, message)
             }

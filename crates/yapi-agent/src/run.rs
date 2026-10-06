@@ -303,7 +303,10 @@ async fn stream_response(
         },
     };
     let mut stream = match auth.apply(&mut request) {
-        Ok(()) => (config.stream)(request),
+        Ok(()) => {
+            yapi_ai::stream::RequestHooks::prepare(&mut request).await;
+            (config.stream)(request)
+        }
         Err(message) => {
             yapi_ai::api::failed_stream(&request.model, &request.options.cancel, message)
         }

@@ -715,6 +715,7 @@ async fn consume(
             let data = data.trim();
             let json: Value = serde_json::from_str(data)
                 .map_err(|err| format!("exception parsing stream chunk {data}. {err}"))?;
+            options.hooks.stream_event(&json).await;
             state.handle(&json, model, sender)?;
         }
     }

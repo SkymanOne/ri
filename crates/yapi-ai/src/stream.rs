@@ -84,12 +84,36 @@ pub type PayloadHook = std::sync::Arc<
     dyn Fn(serde_json::Value) -> BoxFuture<'static, serde_json::Value> + Send + Sync,
 >;
 
-/// What a session observes of its requests: pi-ai's `onPayload` option.
+/// Replaces a request's headers; `None` removes one.
+pub type HeadersHook = std::sync::Arc<
+    dyn Fn(IndexMap<String, Option<String>>) -> BoxFuture<'static, IndexMap<String, Option<String>>>
+        + Send
+        + Sync,
+>;
+
+/// Sees a response's status and headers before its body is read.
+pub type ResponseHook =
+    std::sync::Arc<dyn Fn(u16, IndexMap<String, String>) -> BoxFuture<'static, ()> + Send + Sync>;
+
+/// Sees each event a provider streams, as parsed, before it is normalized.
+pub type StreamEventHook =
+    std::sync::Arc<dyn Fn(serde_json::Value) -> BoxFuture<'static, ()> + Send + Sync>;
+
+/// What a session observes of its requests: pi-ai's `onPayload`,
+/// `onResponse` and `onProviderStreamEvent` options, and pi's
+/// `transformHeaders`.
 #[derive(Clone, Default)]
 pub struct RequestHooks {
     /// Sees each request body, as the wire API would send it, and returns
     /// the body to send.
     pub payload: Option<PayloadHook>,
+    /// Sees the headers of each request, credentials' included, and returns
+    /// the headers to send.
+    pub headers: Option<HeadersHook>,
+    /// Sees each successful response.
+    pub response: Option<ResponseHook>,
+    /// Sees each streamed event.
+    pub stream_event: Option<StreamEventHook>,
 }
 
 impl RequestHooks {
@@ -100,12 +124,44 @@ impl RequestHooks {
             None => payload,
         }
     }
+
+    /// Passes `request`'s headers through the headers hook. Call it once
+    /// credentials are applied.
+    pub async fn prepare(request: &mut Request) {
+        if let Some(hook) = request.options.hooks.headers.clone() {
+            request.options.headers = hook(std::mem::take(&mut request.options.headers)).await;
+        }
+    }
+
+    /// Reports a successful `response`.
+    pub async fn response(&self, response: &reqwest::Response) {
+        if let Some(hook) = &self.response {
+            let headers = response
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+                })
+                .collect();
+            hook(response.status().as_u16(), headers).await;
+        }
+    }
+
+    /// Reports a streamed event.
+    pub async fn stream_event(&self, data: &serde_json::Value) {
+        if let Some(hook) = &self.stream_event {
+            hook(data.clone()).await;
+        }
+    }
 }
 
 impl std::fmt::Debug for RequestHooks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHooks")
             .field("payload", &self.payload.is_some())
+            .field("headers", &self.headers.is_some())
+            .field("response", &self.response.is_some())
+            .field("stream_event", &self.stream_event.is_some())
             .finish()
     }
 }

@@ -835,6 +835,7 @@ pub(super) async fn run(request: Request, sender: EventSender, flavor: Flavor) {
         Ok(response) => response,
         Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
+    options.hooks.response(&response).await;
 
     sender.send(StreamEvent::Start(output.clone()));
     let mut state = State {
@@ -1453,6 +1454,7 @@ impl State {
                 Err(_) if options.cancel.is_cancelled() => break,
                 Err(message) => return Err(message),
             };
+            options.hooks.stream_event(&chunk).await;
             self.handle(&chunk, model, sender)?;
             // Codex ends its stream at the first terminal response.
             if self.flavor == Flavor::Codex && self.terminal {

@@ -982,6 +982,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         Ok(response) => response,
         Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
+    options.hooks.response(&response).await;
 
     sender.send(StreamEvent::Start(output.clone()));
     let mut state = State {
@@ -1198,6 +1199,7 @@ impl State {
         options: &StreamOptions,
     ) -> Result<(), String> {
         while let Some(chunk) = http::next_openai_chunk(&mut reader, &options.cancel).await? {
+            options.hooks.stream_event(&chunk).await;
             self.handle(&chunk, model, sender);
         }
         self.finish_blocks(sender);

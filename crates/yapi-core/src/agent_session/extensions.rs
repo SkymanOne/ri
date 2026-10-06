@@ -42,6 +42,11 @@ pub(super) struct Hooks {
     pub(super) turn_index: std::sync::atomic::AtomicU64,
 }
 
+fn ui_prompt_event(kind_of_event: &str, kind: &str, title: Option<String>) -> Value {
+    let event = serde_json::json!({"type": kind_of_event, "reason": "ui_prompt", "kind": kind, "title": title});
+    defined(event, &["title"])
+}
+
 /// `event` without the fields in `keys` that are null, which pi leaves
 /// undefined.
 pub(super) fn defined(mut event: Value, keys: &[&str]) -> Value {
@@ -236,20 +241,10 @@ impl AgentHooks for Hooks {
 
     fn transform_context(&self, messages: Vec<Message>) -> BoxFuture<'_, Vec<Message>> {
         Box::pin(async move {
-            let mut messages = messages;
             let session = &self.session;
-            let handlers = session.handlers_of("context");
-            if !handlers.is_empty() {
-                let ctx = session.extension_context(self.cancel.clone());
-                for extension in handlers {
-                    let event = serde_json::json!({"type": "context", "messages": messages});
-                    if let Some(result) = extension.handle(&ctx, &event).await
-                        && let Ok(next) = serde_json::from_value(result["messages"].clone())
-                    {
-                        messages = next;
-                    }
-                }
-            }
+            let mut messages = session
+                .context_handlers(messages, self.cancel.clone())
+                .await;
             let forced = lock(&session.inner.forced_prompt).clone();
             if let Some(forced) = forced {
                 // pi's forced prompt projection: one system message with the
@@ -587,6 +582,147 @@ impl AgentSession {
             }
         }
         payload
+    }
+
+    /// pi's `emitContext`: `context` handlers see the conversation without
+    /// system messages, which come back as the current prompt when they
+    /// change it; `context_with_system` handlers then see and return the
+    /// whole transcript.
+    async fn context_handlers(
+        &self,
+        messages: Vec<Message>,
+        cancel: CancellationToken,
+    ) -> Vec<Message> {
+        let mut messages = messages;
+        let ctx = self.extension_context(cancel);
+        for extension in self.handlers_of("context") {
+            let visible: Vec<Message> = messages
+                .iter()
+                .filter(|message| !matches!(message, Message::System(_)))
+                .cloned()
+                .collect();
+            let event = serde_json::json!({"type": "context", "messages": visible});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Ok(returned) =
+                    serde_json::from_value::<Vec<Message>>(result["messages"].clone())
+                && returned != visible
+            {
+                let head = yapi_ai::transcript::current_system_message(&messages);
+                messages = head
+                    .map(Message::System)
+                    .into_iter()
+                    .chain(returned)
+                    .collect();
+            }
+        }
+        for extension in self.handlers_of("context_with_system") {
+            let had_head = matches!(messages.first(), Some(Message::System(_)));
+            let event = serde_json::json!({"type": "context_with_system", "messages": messages});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Ok(returned) = serde_json::from_value(result["messages"].clone())
+            {
+                messages = returned;
+            }
+            if had_head && !matches!(messages.first(), Some(Message::System(_))) {
+                ctx.ui.extension_error(
+                    &extension.source().path,
+                    "context_with_system",
+                    "Handler removed the leading system message; the request has no prompt or initial tool declarations. Keep it at index 0 or replace a dropped prefix with getCurrentSystemMessage().",
+                    None,
+                );
+            }
+        }
+        messages
+    }
+
+    /// pi's `before_provider_headers`: the headers after handlers changed
+    /// them in place; a null value removes a header.
+    pub(super) async fn before_provider_headers(
+        &self,
+        headers: indexmap::IndexMap<String, Option<String>>,
+        cancel: CancellationToken,
+    ) -> indexmap::IndexMap<String, Option<String>> {
+        let handlers = self.handlers_of("before_provider_headers");
+        if handlers.is_empty() {
+            return headers;
+        }
+        let ctx = self.extension_context(cancel);
+        let mut headers = headers;
+        for extension in handlers {
+            let event = serde_json::json!({"type": "before_provider_headers", "headers": headers});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Some(next) = result["headers"].as_object()
+            {
+                headers = next
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_str().map(str::to_owned)))
+                    .collect();
+            }
+        }
+        headers
+    }
+
+    /// pi's `after_provider_response`: a provider answered with `status`
+    /// and `headers`.
+    pub(super) async fn after_provider_response(
+        &self,
+        status: u16,
+        headers: indexmap::IndexMap<String, String>,
+        cancel: CancellationToken,
+    ) {
+        let event = serde_json::json!({"type": "after_provider_response", "status": status, "headers": headers});
+        self.emit_extension_event(&event, cancel).await;
+    }
+
+    /// pi's `provider_stream_event`: `data`, an event `model`'s provider
+    /// streamed, as parsed.
+    pub(super) async fn provider_stream_event(
+        &self,
+        model: &Model,
+        data: Value,
+        cancel: CancellationToken,
+    ) {
+        let event = serde_json::json!({
+            "data": data,
+            "type": "provider_stream_event",
+            "provider": model.provider,
+            "api": model.api,
+            "model": model.id,
+        });
+        self.emit_extension_event(&event, cancel).await;
+    }
+
+    /// A blocking extension dialog of `kind` (`select`, `confirm`, `input`,
+    /// `editor` or `custom`) with `title` opens; extensions hear of the
+    /// outermost as pi's `ui_prompt_start`.
+    pub fn ui_prompt_opened(&self, kind: &str, title: Option<&str>) {
+        let title = title.filter(|title| !title.is_empty()).map(str::to_owned);
+        {
+            let mut prompts = lock(&self.inner.ui_prompts);
+            prompts.0 += 1;
+            if prompts.0 > 1 {
+                return;
+            }
+            prompts.1 = Some((kind.to_owned(), title.clone()));
+        }
+        self.announce(ui_prompt_event("ui_prompt_start", kind, title));
+    }
+
+    /// A blocking extension dialog closed; when it was the outermost,
+    /// extensions hear of it as pi's `ui_prompt_end`.
+    pub fn ui_prompt_closed(&self) {
+        let (kind, title) = {
+            let mut prompts = lock(&self.inner.ui_prompts);
+            prompts.0 = prompts.0.saturating_sub(1);
+            if prompts.0 > 0 {
+                return;
+            }
+            match prompts.1.take() {
+                Some(prompt) => prompt,
+                None => return,
+            }
+        };
+        self.announce(ui_prompt_event("ui_prompt_end", &kind, title));
     }
 
     /// Delivers `event` to extensions in the background, after the events

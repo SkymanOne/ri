@@ -772,6 +772,10 @@
 	/** Runs `extension`'s handlers for `event` as pi's runner does for each handler. */
 	async function emit(extension, event, ctx) {
 		const handlers = [...(extension.handlers.get(event.type) ?? [])];
+		// What JSON cannot carry: the abort signal and pi's file operation sets.
+		if (event.type === "session_before_compact" || event.type === "session_before_tree") event.signal = ctx.signal;
+		const fileOps = event.type === "session_before_compact" ? event.preparation?.fileOps : undefined;
+		if (fileOps) for (const key of ["read", "written", "edited"]) fileOps[key] = new Set(fileOps[key] ?? []);
 		const errors = [];
 		const guard = async (run) => {
 			try {
@@ -857,12 +861,26 @@
 			}
 			case "context":
 			case "context_with_system": {
+				// Handlers return a new list or edit `event.messages` in place.
 				let messages = event.messages;
+				let changed = false;
 				for (const handler of handlers) {
-					const handlerResult = await guard(() => handler({ ...event, messages }, ctx));
-					if (handlerResult?.messages) messages = handlerResult.messages;
+					const visible = messages;
+					const snapshot = visible.slice();
+					const handlerResult = await guard(() => handler({ ...event, messages: visible }, ctx));
+					const edited = visible.length !== snapshot.length || visible.some((message, index) => message !== snapshot[index]);
+					const returned = handlerResult?.messages ?? (edited ? visible : undefined);
+					if (!returned) continue;
+					messages = returned;
+					changed = true;
 				}
-				if (messages !== event.messages) result = { messages };
+				if (changed) result = { messages };
+				break;
+			}
+			case "before_provider_headers": {
+				// Handlers change `event.headers` in place.
+				for (const handler of handlers) await guard(() => handler(event, ctx));
+				result = { headers: event.headers };
 				break;
 			}
 			case "turn_end":
