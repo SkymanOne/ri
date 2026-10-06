@@ -43,6 +43,17 @@ License: MIT OR Apache-2.0. Vendored pi JS keeps its MIT notices.
 | CLI flags, slash commands, JSON and RPC protocols | Same names and payloads as pi. |
 | Extension API | `ExtensionAPI` as exported by `@earendil-works/pi-coding-agent` 1.0. |
 
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Golden | Output recorded from pi `v1.0.0` that a test compares with yapi's: pi's files in `tests/fixtures/pi`, and pi's normalized scenario results in `tests/fixtures/scenarios`. |
+| Cassette | An HTTP exchange with a provider, recorded or hand-written, that `yapi-mock` replays. Kept in `tests/fixtures/cassettes`. |
+| Scenario | One end-to-end run of a program against a cassette in a fresh directory, listed in `tests/fixtures/scenarios/scenarios.json`. |
+| Differential | Running pi and yapi live on the same scenario and comparing them directly, with `cargo xtask e2e --differential`. |
+| Codemode | pi's tool that runs a model-written script calling other tools, in an instance with no file, process or network access. |
+| Slice | The part of a milestone delivered and tested end to end. `dev/status.md` states each milestone's slice and what remains. |
+
 ## Architecture
 
 A Cargo workspace whose crates mirror pi's packages, so every behavior traces back to its pi source.
@@ -142,7 +153,7 @@ Module loading runs on the host, in `yapi-ext`:
   - each package with restricted grants gets its own;
   - codemode gets a fresh instance with no grants.
 - Default grants match pi: filesystem, process, network.
-- Users restrict a package in settings.
+- Users restrict a package in settings. Planned: v0.1 gives every package the default grants.
 - The host enforces grants: WASI preopens for files; grant checks for exec, fetch and environment.
 - Each instance runs under epoch interruption and a memory limit. A trapped instance is restarted and its extensions reloaded.
 
