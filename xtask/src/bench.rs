@@ -1,9 +1,8 @@
-//! `cargo xtask bench`: the measures behind the performance budgets of
-//! AGENTS.md for yapi, and optionally pi on the same machine: `--version`
-//! time, print mode's time to the first request byte, interactive first
-//! paint, keystroke-to-paint latency in a pseudo-terminal, memory when idle,
-//! with a large session open, after a session of turns with tool calls and
-//! with JS extensions loaded, and install size.
+//! `cargo xtask bench`: measures yapi, and optionally pi on the same machine:
+//! startup to the interactive first paint, startup in print mode to the
+//! first request byte, keystroke-to-paint latency in a pseudo-terminal,
+//! memory when idle, with a large session open, after a session of turns
+//! with tool calls and with JS extensions loaded, and install size.
 //!
 //! Startup measurements alternate between the programs run by run, so drift
 //! on the machine (thermal throttling, background work) affects both alike.
@@ -11,20 +10,21 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use serde_json::json;
 use yapi_mock::pty::Pty;
-use yapi_mock::{Cassette, MockServer};
+use yapi_mock::{Cassette, MockServer, scenario};
 
 /// Measure yapi (and pi with `--pi`).
 #[derive(clap::Args)]
 pub struct Args {
-    /// The yapi executable; build it with `cargo build --release -p yapi`.
-    #[arg(long, default_value = "target/release/yapi")]
-    yapi: PathBuf,
+    /// The yapi executable [default: the workspace's target/release/yapi];
+    /// build it with `cargo build --release -p yapi`.
+    #[arg(long)]
+    yapi: Option<PathBuf>,
     /// Also measure this pi executable.
     #[arg(long)]
     pi: Option<PathBuf>,
@@ -61,45 +61,50 @@ impl Program {
     fn pty(&self, args: &[String]) -> std::io::Result<Pty> {
         Pty::spawn(&self.path, args, &self.cwd, &self.env, (100, 40), true)
     }
+
+    /// Points the anthropic provider, the only one the bench uses, at `url`
+    /// with a `models.json` in the agent directory.
+    fn point_provider(&self, url: &str) -> std::io::Result<()> {
+        let models = json!({"providers": {"anthropic": {"baseUrl": url}}});
+        std::fs::write(self.agent.join("models.json"), models.to_string())
+    }
 }
 
-/// Samples of one measure.
-enum Samples {
-    Time(Vec<Duration>),
-    Bytes(Vec<u64>),
+/// Samples of one measure, sorted, in `unit`.
+struct Samples {
+    sorted: Vec<f64>,
+    unit: &'static str,
 }
 
 impl Samples {
-    /// The median, or the given percentile for times.
-    fn value(&self, percent: f64) -> f64 {
-        match self {
-            Samples::Time(samples) => {
-                let mut sorted: Vec<f64> = samples.iter().map(Duration::as_secs_f64).collect();
-                percentile(&mut sorted, percent) * 1000.0
-            }
-            Samples::Bytes(samples) => {
-                let mut sorted: Vec<f64> = samples.iter().map(|&bytes| bytes as f64).collect();
-                percentile(&mut sorted, percent) / 1e6
-            }
+    fn new(mut values: Vec<f64>, unit: &'static str) -> Samples {
+        values.sort_by(f64::total_cmp);
+        Samples {
+            sorted: values,
+            unit,
         }
     }
 
-    fn range(&self) -> (f64, f64) {
-        (self.value(0.0), self.value(100.0))
+    fn times(times: Vec<Duration>) -> Samples {
+        let millis = times.iter().map(|time| time.as_secs_f64() * 1000.0);
+        Samples::new(millis.collect(), "ms")
     }
 
-    fn unit(&self) -> &'static str {
-        match self {
-            Samples::Time(_) => "ms",
-            Samples::Bytes(_) => "MB",
-        }
+    fn sizes(bytes: Vec<u64>) -> Samples {
+        let megabytes = bytes.iter().map(|&bytes| bytes as f64 / 1e6);
+        Samples::new(megabytes.collect(), "MB")
     }
 
-    fn len(&self) -> usize {
-        match self {
-            Samples::Time(samples) => samples.len(),
-            Samples::Bytes(samples) => samples.len(),
-        }
+    /// The `percent` percentile, interpolated between the two nearest
+    /// samples: the median of an even count is the mean of the middle two.
+    fn percentile(&self, percent: f64) -> f64 {
+        let Some(last) = self.sorted.len().checked_sub(1) else {
+            return 0.0;
+        };
+        let position = last as f64 * percent / 100.0;
+        let low = self.sorted[position.floor() as usize];
+        let high = self.sorted[position.ceil() as usize];
+        low + (high - low) * position.fract()
     }
 }
 
@@ -125,15 +130,6 @@ impl Row {
     }
 }
 
-fn percentile(sorted: &mut [f64], percent: f64) -> f64 {
-    sorted.sort_by(f64::total_cmp);
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    let index = ((sorted.len() as f64 - 1.0) * percent / 100.0).round() as usize;
-    sorted[index.min(sorted.len() - 1)]
-}
-
 /// A session file whose transcript renders about `lines` lines.
 fn write_session(path: &Path, cwd: &Path, lines: usize) -> anyhow::Result<()> {
     let mut out = String::new();
@@ -152,7 +148,7 @@ fn write_session(path: &Path, cwd: &Path, lines: usize) -> anyhow::Result<()> {
         let assistant = json!({"type": "message", "id": format!("a{index:07}"), "parentId": format!("u{index:07}"),
             "timestamp": "2026-01-01T00:00:00.000Z",
             "message": {"role": "assistant", "content": [{"type": "text", "text": body}],
-                "api": "anthropic-messages", "provider": "anthropic", "model": "claude-sonnet-4-5",
+                "api": "anthropic-messages", "provider": "anthropic", "model": MODEL,
                 "usage": {"input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 2,
                     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}},
                 "stopReason": "stop", "timestamp": 0}});
@@ -231,6 +227,20 @@ fn version_of(executable: &Path) -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
+/// The commit measured: `GITHUB_SHA` in GitHub Actions, otherwise the
+/// checkout's `HEAD`.
+fn commit() -> String {
+    std::env::var("GITHUB_SHA").unwrap_or_else(|_| {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .unwrap_or_else(|| "unknown".to_owned())
+    })
+}
+
 /// An executable on `PATH`.
 fn on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -279,34 +289,46 @@ fn disk_size(path: &Path) -> std::io::Result<u64> {
     Ok(total)
 }
 
+/// The longest wait for print mode's request.
+const REQUEST_LIMIT: Duration = Duration::from_secs(20);
+
 /// Time from starting print mode to the first byte of its request, received
-/// by a listener standing in for the provider.
-fn first_request(program: &Program, listener: &std::net::TcpListener) -> anyhow::Result<Duration> {
-    use std::io::Read as _;
+/// by a listener standing in for the provider. Fails with the program's
+/// stderr when it exits first or sends nothing within [`REQUEST_LIMIT`].
+async fn first_request(
+    program: &Program,
+    listener: &tokio::net::TcpListener,
+) -> anyhow::Result<Duration> {
+    use tokio::io::AsyncReadExt as _;
     let started = Instant::now();
-    let mut child = std::process::Command::new(&program.path)
-        .args([
-            "-p",
-            "--no-session",
-            "--model",
-            "anthropic/claude-sonnet-4-5",
-            "hi",
-        ])
-        .current_dir(&program.cwd)
-        .env_clear()
-        .envs(program.env.iter().map(|(key, value)| (*key, value)))
+    let print = model_args(&["-p", "--no-session", "hi"]);
+    let mut child = scenario::command(&program.path, &print, &program.cwd, &program.env)
         // Print mode reads piped stdin into the prompt.
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
-    let (mut stream, _) = listener.accept()?;
-    let mut byte = [0u8; 1];
-    stream.read_exact(&mut byte)?;
-    let elapsed = started.elapsed();
-    drop(stream);
-    let _ = child.kill();
-    let _ = child.wait();
+    let request = async {
+        let (mut stream, _) = listener.accept().await?;
+        stream.read_exact(&mut [0u8; 1]).await?;
+        // Held open until the program is stopped, so it cannot retry.
+        anyhow::Ok((started.elapsed(), stream))
+    };
+    let received = tokio::select! {
+        received = tokio::time::timeout(REQUEST_LIMIT, request) => received
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("no request within {REQUEST_LIMIT:?}"))),
+        status = child.wait() => Err(anyhow::anyhow!("exited with {} before its request", status?)),
+    };
+    let _ = child.start_kill();
+    let output = child.wait_with_output().await?;
+    let (elapsed, _stream) = received.with_context(|| {
+        format!(
+            "{} in print mode, stderr:\n{}",
+            program.name,
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })?;
     Ok(elapsed)
 }
 
@@ -339,22 +361,28 @@ export default function (pi: ExtensionAPI) {{
     Ok(())
 }
 
-const MODEL: [&str; 3] = ["--model", "anthropic/claude-sonnet-4-5", "--no-session"];
+/// The model of every run, which the footer shows from the first paint.
+const MODEL: &str = "claude-sonnet-4-5";
 
-fn model_args() -> Vec<String> {
-    MODEL.iter().map(|arg| (*arg).to_owned()).collect()
+/// `--model` with [`MODEL`], then `rest`.
+fn model_args(rest: &[&str]) -> Vec<String> {
+    let mut args = vec!["--model".to_owned(), format!("anthropic/{MODEL}")];
+    args.extend(rest.iter().map(|arg| (*arg).to_owned()));
+    args
 }
 
 fn ready(rows: &[String]) -> bool {
-    rows.iter().any(|row| row.contains("claude-sonnet-4-5"))
+    rows.iter().any(|row| row.contains(MODEL))
 }
 
-/// Time from start to the interactive first paint.
+/// Time from starting the process to the interactive first paint, when the
+/// footer shows the model.
 fn first_paint(program: &Program) -> anyhow::Result<Duration> {
-    let pty = program.pty(&model_args())?;
-    let paint = pty
-        .wait_for(Duration::from_secs(20), ready)
+    let started = Instant::now();
+    let pty = program.pty(&model_args(&["--no-session"]))?;
+    pty.wait_for(Duration::from_secs(20), ready)
         .context("no first paint")?;
+    let paint = started.elapsed();
     pty.finish()?;
     Ok(paint)
 }
@@ -390,7 +418,7 @@ fn memory(
 
 /// The memory of an interactive run 2 s after first paint.
 fn idle_rss(program: &Program) -> anyhow::Result<u64> {
-    memory(program, &model_args(), |_| Ok(()))
+    memory(program, &model_args(&["--no-session"]), |_| Ok(()))
 }
 
 /// Arguments that open a fresh copy of a session of about `lines` transcript
@@ -398,10 +426,7 @@ fn idle_rss(program: &Program) -> anyhow::Result<u64> {
 fn large_session(program: &Program, root: &Path, lines: usize) -> anyhow::Result<Vec<String>> {
     let session = root.join(format!("{}-session.jsonl", program.name));
     write_session(&session, &program.cwd, lines)?;
-    let mut args = model_args();
-    args.truncate(2);
-    args.extend(["--session".to_owned(), session.display().to_string()]);
-    Ok(args)
+    Ok(model_args(&["--session", &session.display().to_string()]))
 }
 
 /// Turns in the active-session measure.
@@ -424,7 +449,7 @@ fn conversation() -> anyhow::Result<Cassette> {
     };
     let start = |id: String| {
         json!({"type": "message_start", "message": {"id": id, "type": "message", "role": "assistant",
-            "model": "claude-sonnet-4-5", "content": [], "stop_reason": null, "stop_sequence": null,
+            "model": MODEL, "content": [], "stop_reason": null, "stop_sequence": null,
             "usage": {"input_tokens": 1000, "output_tokens": 1}}})
     };
     let end = |reason: &str| {
@@ -514,15 +539,10 @@ fn active_rss(program: &Program, runtime: &tokio::runtime::Runtime) -> anyhow::R
         std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
         conversation()?,
     ))?;
-    let models = program.agent.join("models.json");
-    std::fs::write(
-        &models,
-        json!({"providers": {"anthropic": {"baseUrl": server.url()}}}).to_string(),
-    )?;
-    let mut args = model_args();
-    args.truncate(2);
-    let bytes = memory(program, &args, work);
-    std::fs::remove_file(&models)?;
+    program.point_provider(&server.url())?;
+    // Without `--no-session`: the turns are saved to a session file.
+    let bytes = memory(program, &model_args(&[]), work);
+    std::fs::remove_file(program.agent.join("models.json"))?;
     let bytes = bytes?;
     server
         .finish()
@@ -575,6 +595,23 @@ fn copy_examples(pi_install: &Path, dir: &Path) -> anyhow::Result<usize> {
     Ok(count)
 }
 
+/// The `x`s in the editor: the rows between the last two border rows, which
+/// start with `─`. The transcript and footer, such as a path in the
+/// temporary directory, may hold others.
+fn typed(rows: &[String]) -> usize {
+    let border = |row: &String| row.starts_with('─');
+    let Some(bottom) = rows.iter().rposition(border) else {
+        return 0;
+    };
+    let Some(top) = rows[..bottom].iter().rposition(border) else {
+        return 0;
+    };
+    rows[top + 1..bottom]
+        .iter()
+        .map(|row| row.matches('x').count())
+        .sum()
+}
+
 /// Keystroke-to-paint latencies in a session of about `lines` lines.
 fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec<Duration>> {
     let session_args = large_session(program, root, args.lines)?;
@@ -582,17 +619,11 @@ fn keystrokes(program: &Program, root: &Path, args: &Args) -> anyhow::Result<Vec
     pty.wait_for(Duration::from_secs(60), ready)
         .context("large session did not open")?;
     pty.settle();
-    let count = |rows: &[String]| {
-        rows.iter()
-            .map(|row| row.matches('x').count())
-            .sum::<usize>()
-    };
-    let base = count(&pty.rows());
     let mut keys = Vec::new();
-    for typed in 1..=args.keys {
+    for count in 1..=args.keys {
         pty.write("x")?;
         let latency = pty
-            .wait_for(Duration::from_secs(5), |rows| count(rows) >= base + typed)
+            .wait_for(Duration::from_secs(5), |rows| typed(rows) >= count)
             .context("keystroke not painted")?;
         keys.push(latency);
         std::thread::sleep(Duration::from_millis(20));
@@ -635,37 +666,51 @@ fn print_report(programs: &[Program], rows: &[Row]) {
     for row in rows {
         let mut line = format!("| {} |", row.measure);
         for samples in &row.samples {
-            let (low, high) = samples.range();
-            let value = samples.value(row.percent);
-            if samples.len() > 1 {
+            let value = format_value(samples.percentile(row.percent), samples.unit);
+            if samples.sorted.len() > 1 {
                 line.push_str(&format!(
-                    " {} ({:.1} to {:.1}) |",
-                    format_value(value, samples.unit()),
-                    low,
-                    high
+                    " {value} ({:.1} to {:.1}) |",
+                    samples.percentile(0.0),
+                    samples.percentile(100.0)
                 ));
             } else {
-                line.push_str(&format!(" {} |", format_value(value, samples.unit())));
+                line.push_str(&format!(" {value} |"));
             }
         }
         if let [first, second] = row.samples.as_slice() {
-            let base = first.value(row.percent);
+            let base = first.percentile(row.percent);
             if base > 0.0 {
-                line.push_str(&format!(" {:.1}x |", second.value(row.percent) / base));
+                line.push_str(&format!(" {:.1}x |", second.percentile(row.percent) / base));
             }
         }
         println!("{line}");
     }
 }
 
-pub fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let root = std::env::temp_dir().join(format!("yapi-bench-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+/// A directory removed with its contents when dropped, so a failed run
+/// leaves nothing behind.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub fn run(args: Args) -> anyhow::Result<()> {
+    let temp = TempDir(std::env::temp_dir().join(format!("yapi-bench-{}", std::process::id())));
+    let root = &temp.0;
+    let _ = std::fs::remove_dir_all(root);
     let cwd = root.join("project");
     std::fs::create_dir_all(&cwd)?;
+    let yapi = args
+        .yapi
+        .clone()
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/release/yapi"));
     let mut targets = vec![(
         "yapi",
-        std::fs::canonicalize(&args.yapi).context("yapi executable; build with --release")?,
+        std::fs::canonicalize(&yapi)
+            .with_context(|| format!("{}; build with --release", yapi.display()))?,
         "YAPI_CODING_AGENT_DIR",
     )];
     if let Some(pi) = &args.pi {
@@ -679,23 +724,16 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     for (name, path, dir_var) in targets {
         let agent = root.join(format!("{name}-agent"));
         std::fs::create_dir_all(&agent)?;
-        let env = vec![
-            ("PATH", std::env::var_os("PATH").unwrap_or_default()),
-            (dir_var, agent.clone().into_os_string()),
-            ("HOME", root.clone().into_os_string()),
-            ("PI_OFFLINE", "1".into()),
-            ("PI_SKIP_VERSION_CHECK", "1".into()),
-            ("ANTHROPIC_API_KEY", "mock".into()),
-        ];
         programs.push(Program {
             name,
             path,
-            env,
+            env: scenario::clean_env(dir_var, &agent, root),
             cwd: cwd.clone(),
             agent,
         });
     }
 
+    println!("- Commit: {}", commit());
     println!("- Machine: {}", machine());
     for program in &programs {
         println!(
@@ -730,7 +768,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         .collect::<anyhow::Result<Vec<_>>>()?;
     println!(
         "- Process start floor (`true`): {}",
-        format_value(Samples::Time(floor).value(50.0), "ms")
+        format_value(Samples::times(floor).percentile(50.0), "ms")
     );
     if args.pi.is_some()
         && let Some(node) = &node
@@ -740,46 +778,39 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             .collect::<anyhow::Result<Vec<_>>>()?;
         println!(
             "- Node.js start floor (`node -e \"\"`): {}",
-            format_value(Samples::Time(runs).value(50.0), "ms")
+            format_value(Samples::times(runs).percentile(50.0), "ms")
         );
     }
     println!();
 
-    let version = alternate(&programs, args.runs, |_, program| {
-        run_once(&program.path, &["--version"], &program.env)
-    })?;
-    rows.push(Row::median("`--version`", Samples::Time, version));
+    let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
+    rows.push(Row::median("Startup, interactive", Samples::times, paint));
 
-    let listeners = programs
-        .iter()
-        .map(|program| {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-            let url = format!("http://{}", listener.local_addr()?);
-            std::fs::write(
-                program.agent.join("models.json"),
-                json!({"providers": {"anthropic": {"baseUrl": url}}}).to_string(),
-            )?;
-            Ok(listener)
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()?;
+    let mut listeners = Vec::new();
+    for program in &programs {
+        let listener = runtime.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
+        program.point_provider(&format!("http://{}", listener.local_addr()?))?;
+        listeners.push(listener);
+    }
     let request = alternate(&programs, args.runs, |index, program| {
-        first_request(program, &listeners[index])
+        runtime.block_on(first_request(program, &listeners[index]))
     })?;
     for program in &programs {
         let _ = std::fs::remove_file(program.agent.join("models.json"));
     }
     rows.push(Row::median(
-        "Print mode, start to first request byte",
-        Samples::Time,
+        "Startup, print mode (to first request byte)",
+        Samples::times,
         request,
     ));
 
-    let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
-    rows.push(Row::median("Interactive first paint", Samples::Time, paint));
-
     let mut keys = Vec::new();
     for program in &programs {
-        keys.push(keystrokes(program, &root, &args)?);
+        keys.push(keystrokes(program, root, &args)?);
     }
     for percent in [50.0, 99.0] {
         rows.push(Row {
@@ -788,25 +819,25 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
                 args.lines
             ),
             percent,
-            samples: keys.iter().cloned().map(Samples::Time).collect(),
+            samples: keys.iter().cloned().map(Samples::times).collect(),
         });
     }
 
     let idle = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row::median(
         "Memory, idle after first paint",
-        Samples::Bytes,
+        Samples::sizes,
         idle,
     ));
 
     let opened = alternate(&programs, args.memory_runs, |_, program| {
-        memory(program, &large_session(program, &root, args.lines)?, |_| {
+        memory(program, &large_session(program, root, args.lines)?, |_| {
             Ok(())
         })
     })?;
     rows.push(Row::median(
         format!("Memory, {}-line session open", args.lines),
-        Samples::Bytes,
+        Samples::sizes,
         opened,
     ));
 
@@ -816,16 +847,12 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         })
         .collect();
     std::fs::write(cwd.join("sample.txt"), sample)?;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()?;
     let active = alternate(&programs, args.memory_runs, |_, program| {
         active_rss(program, &runtime)
     })?;
     rows.push(Row::median(
         format!("Memory after {TURNS} turns with tool calls"),
-        Samples::Bytes,
+        Samples::sizes,
         active,
     ));
 
@@ -837,7 +864,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let extended = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
     rows.push(Row::median(
         "Memory with 10 small JS extensions",
-        Samples::Bytes,
+        Samples::sizes,
         extended,
     ));
 
@@ -850,7 +877,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         let examples = alternate(&programs, args.memory_runs, |_, program| idle_rss(program))?;
         rows.push(Row::median(
             format!("Memory with {count} of pi's example extensions"),
-            Samples::Bytes,
+            Samples::sizes,
             examples,
         ));
     }
@@ -874,6 +901,77 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             format_value(runtime as f64 / 1e6, "MB"),
         );
     }
-    let _ = std::fs::remove_dir_all(&root);
-    Ok(ExitCode::SUCCESS)
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percentiles_interpolate_between_samples() {
+        let samples = Samples::new(vec![4.0, 1.0, 3.0, 2.0], "ms");
+        assert_eq!(samples.percentile(0.0), 1.0);
+        assert_eq!(samples.percentile(50.0), 2.5);
+        assert_eq!(samples.percentile(100.0), 4.0);
+        assert_eq!(Samples::new(vec![7.0], "ms").percentile(99.0), 7.0);
+        assert_eq!(Samples::new(Vec::new(), "ms").percentile(50.0), 0.0);
+    }
+
+    #[test]
+    fn typed_counts_only_the_editor() {
+        let rows: Vec<String> = [
+            "Line 1 of a box",
+            "",
+            "────────────────",
+            "xxx",
+            "xx",
+            "────────────────",
+            "/var/folders/xx/T/yapi-bench-1/project",
+            "0.0%/1.0M (auto)   (anthropic) claude-sonnet-4-5",
+        ]
+        .map(str::to_owned)
+        .into();
+        assert_eq!(typed(&rows), 5);
+        assert_eq!(typed(&rows[2..4]), 0);
+    }
+
+    #[test]
+    fn temp_dir_is_removed_when_dropped() {
+        let path = std::env::temp_dir().join(format!("yapi-bench-drop-{}", std::process::id()));
+        std::fs::create_dir_all(path.join("project")).unwrap();
+        drop(TempDir(path.clone()));
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn print_mode_that_exits_early_fails_with_its_stderr() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let temp =
+            TempDir(std::env::temp_dir().join(format!("yapi-bench-test-{}", std::process::id())));
+        let dir = temp.0.clone();
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("broken");
+        std::fs::write(&script, "#!/bin/sh\necho no provider >&2\nexit 3\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let program = Program {
+            name: "broken",
+            path: script,
+            env: Vec::new(),
+            cwd: dir.clone(),
+            agent: dir.clone(),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let error = runtime.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            first_request(&program, &listener).await.unwrap_err()
+        });
+        let error = format!("{error:#}");
+        assert!(error.contains("exited with"), "{error}");
+        assert!(error.contains("no provider"), "{error}");
+    }
 }

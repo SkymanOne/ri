@@ -10,7 +10,7 @@ use yapi_mock::scenario::{
     Program, first_difference, fixtures_dir, load_scenarios, normalize, run,
 };
 
-use crate::mock_sse::write_json;
+use crate::write_json;
 
 /// Run `tests/fixtures/scenarios` against yapi, pi, or both.
 ///

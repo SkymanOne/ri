@@ -25,6 +25,8 @@ use yapi_core::settings::SettingsManager;
 use yapi_ext::{Engine, ExtensionHost, Grants, Options};
 use yapi_types::rpc::SourceInfo;
 
+use crate::read_json;
+
 const FIXTURES: &str = "tests/fixtures/pi/packages";
 /// Packages the comparison counts.
 const COUNTED: usize = 500;
@@ -244,7 +246,7 @@ enum Outcome {
     /// model, which sandboxes pi's side, stops one of its extensions.
     PiFails,
     /// yapi's npm client fails where pi's install succeeds.
-    RiInstall,
+    YapiInstall,
     /// The registrations differ, or yapi fails to load an installed package.
     Differs,
 }
@@ -261,7 +263,7 @@ fn outcome(got: &Value, want: &Value) -> Outcome {
         return Outcome::PiFails;
     }
     if got.get("install").is_some() {
-        return Outcome::RiInstall;
+        return Outcome::YapiInstall;
     }
     let same = ["extensions", "errors"]
         .iter()
@@ -277,8 +279,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     use futures_util::StreamExt as _;
 
     let fixtures = Path::new(FIXTURES);
-    let top: Vec<Value> =
-        serde_json::from_str(&std::fs::read_to_string(fixtures.join("ranked.json"))?)?;
+    let top: Vec<Value> = read_json(&fixtures.join("ranked.json"))?;
     std::fs::create_dir_all("target/package-registrations")?;
     let scratch = Path::new("target/package-registrations").canonicalize()?;
     let selected: Vec<(usize, String, String)> = top
@@ -307,10 +308,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         println!("\n{MARKER}{}", yapi_types::json::to_string(&got)?);
         return Ok(ExitCode::SUCCESS);
     }
-    let previous: BTreeMap<String, Value> = std::fs::read_to_string(&saved)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default();
+    let previous: BTreeMap<String, Value> = read_json(&saved).unwrap_or_default();
     let results: Vec<(String, Value)> = if args.compare_only {
         anyhow::ensure!(!previous.is_empty(), "no saved run");
         previous
@@ -336,9 +334,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                 let (all, done, saved, verbose, exe) = (&all, &done, &saved, args.verbose, &exe);
                 async move {
                     let got = measure(exe, index, &version, verbose).await;
-                    let mut all = all
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let mut all = yapi_types::sync::lock(all);
                     all.insert(name.clone(), got.clone());
                     // Replaced whole, so a reader never sees half a file.
                     if let Ok(text) = yapi_types::json::to_string_pretty(&*all, "\t") {
@@ -357,11 +353,10 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             .await
     };
     // Read last, so pi's side can be regenerated while yapi's runs.
-    let expected: BTreeMap<String, Value> = serde_json::from_str(
-        &std::fs::read_to_string(fixtures.join("registrations.json")).context(
+    let expected: BTreeMap<String, Value> = read_json(&fixtures.join("registrations.json"))
+        .context(
             "run `node packages.mjs > ../packages/registrations.json` in the fixture generator",
-        )?,
-    )?;
+        )?;
     let mut outcomes: BTreeMap<Outcome, Vec<String>> = BTreeMap::new();
     let mut results: BTreeMap<String, Value> = results.into_iter().collect();
     let mut counted = 0;
@@ -385,7 +380,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             match result {
                 Outcome::Match => "ok      ",
                 Outcome::PiFails => "pi-fails",
-                Outcome::RiInstall => "install ",
+                Outcome::YapiInstall => "install ",
                 Outcome::Differs => "DIFFER  ",
             }
         );
@@ -403,7 +398,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         "{counted} packages: {} match pi, {} differ, {} fail to install in yapi. Skipped {} that fail in pi itself: {}",
         count(Outcome::Match),
         count(Outcome::Differs),
-        count(Outcome::RiInstall),
+        count(Outcome::YapiInstall),
         count(Outcome::PiFails),
         outcomes
             .get(&Outcome::PiFails)

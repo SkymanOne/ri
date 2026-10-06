@@ -1,26 +1,28 @@
 name: Bench
 
-# The performance budgets of AGENTS.md on both tier-1 platforms, next to pi on
-# the same runner. Runs on demand: by hand, or for a pushed commit whose
-# message contains [bench].
+# Measures yapi on both tier-1 platforms, next to pi on the same runner. Runs
+# on demand from the Actions tab.
 on:
-  push:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   bench:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[bench]')
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,7 +50,13 @@ jobs:
             ldd target/release/yapi
           fi
       - name: Measure
-        run: cargo xtask bench --pi pi-install/node_modules/.bin/pi --pi-install pi-install | tee bench.txt
+        # bash with pipefail, so a failed run fails the step despite tee.
+        shell: bash
+        run: cargo run --locked --package xtask -- bench --pi pi-install/node_modules/.bin/pi --pi-install pi-install | tee bench.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-${{ matrix.os }}
+          path: bench.txt
       - name: Summary
         shell: bash
         run: |

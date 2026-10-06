@@ -6,6 +6,7 @@
 //! providers at the mock server; credentials are dummy environment variables.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::LazyLock;
@@ -372,20 +373,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         None => (executable, scenario.args.clone()),
     };
     let executable = &executable;
-    // A clean environment: ambient credentials on the host must not change what
-    // either program sees.
-    let env: Vec<(&'static str, std::ffi::OsString)> = vec![
-        ("PATH", std::env::var_os("PATH").unwrap_or_default()),
-        (dir_var, agent_dir.clone().into_os_string()),
-        ("HOME", root.clone().into_os_string()),
-        ("PI_OFFLINE", "1".into()),
-        ("PI_SKIP_VERSION_CHECK", "1".into()),
-        ("ANTHROPIC_API_KEY", "mock".into()),
-        ("GROQ_API_KEY", "mock".into()),
-        ("OPENAI_API_KEY", "mock".into()),
-        ("GEMINI_API_KEY", "mock".into()),
-        ("OPENCODE_API_KEY", "mock".into()),
-    ];
+    let env = clean_env(dir_var, &agent_dir, &root);
     let mut progress = None;
     let (exit_code, stdout, stderr, screen) = match &scenario.tty {
         Some(tty) => {
@@ -407,12 +395,7 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
             (exit_code, stdout, stderr, None)
         }
         None => {
-            let mut command = tokio::process::Command::new(executable);
-            command
-                .args(&args)
-                .current_dir(&cwd)
-                .env_clear()
-                .envs(env.iter().map(|(key, value)| (key, value)));
+            let mut command = command(executable, &args, &cwd, &env);
             command
                 .stdin(if scenario.stdin.is_some() {
                     Stdio::piped()
@@ -470,6 +453,46 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
     Ok(run)
 }
 
+/// A clean environment for pi or yapi, whose agent directory variable
+/// `dir_var` names `agent_dir`, with `home` as `HOME`: offline, without
+/// update checks, and with dummy API keys for the providers the cassettes
+/// use. Ambient credentials on the host must not change what either program
+/// sees.
+pub fn clean_env(
+    dir_var: &'static str,
+    agent_dir: &Path,
+    home: &Path,
+) -> Vec<(&'static str, OsString)> {
+    vec![
+        ("PATH", std::env::var_os("PATH").unwrap_or_default()),
+        (dir_var, agent_dir.as_os_str().to_owned()),
+        ("HOME", home.as_os_str().to_owned()),
+        ("PI_OFFLINE", "1".into()),
+        ("PI_SKIP_VERSION_CHECK", "1".into()),
+        ("ANTHROPIC_API_KEY", "mock".into()),
+        ("GROQ_API_KEY", "mock".into()),
+        ("OPENAI_API_KEY", "mock".into()),
+        ("GEMINI_API_KEY", "mock".into()),
+        ("OPENCODE_API_KEY", "mock".into()),
+    ]
+}
+
+/// `executable` with `args` in `cwd`, with exactly `env`.
+pub fn command(
+    executable: &Path,
+    args: &[String],
+    cwd: &Path,
+    env: &[(&str, OsString)],
+) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env.iter().map(|(key, value)| (key, value)));
+    command
+}
+
 /// Replaces `{{<id>:<pointer>}}` strings in `value` from `responses`.
 fn substitute(value: &Value, responses: &HashMap<String, Value>) -> Value {
     match value {
@@ -502,16 +525,11 @@ async fn run_rpc(
     executable: &Path,
     args: &[String],
     cwd: &Path,
-    env: &[(&'static str, std::ffi::OsString)],
+    env: &[(&'static str, OsString)],
     steps: &[RpcStep],
 ) -> std::io::Result<(i32, String, String)> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-    let mut command = tokio::process::Command::new(executable);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .env_clear()
-        .envs(env.iter().map(|(key, value)| (key, value)));
+    let mut command = command(executable, args, cwd, env);
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -610,7 +628,7 @@ fn run_tty(
     executable: &Path,
     args: &[String],
     cwd: &Path,
-    env: &[(&'static str, std::ffi::OsString)],
+    env: &[(&'static str, OsString)],
     tty: &Tty,
 ) -> std::io::Result<(i32, Vec<String>, Option<Vec<String>>)> {
     let mut pty = crate::pty::Pty::spawn(executable, args, cwd, env, (tty.cols, tty.rows), false)?;
