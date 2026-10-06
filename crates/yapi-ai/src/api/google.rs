@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration, ToolResultMessage, Usage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolCall,
+    ToolDeclaration, ToolResultMessage, Usage,
 };
 use yapi_types::model::Model;
 
@@ -547,11 +547,7 @@ impl State {
         if self.open != Some(kind) {
             self.close(sender);
             let block = match kind {
-                Open::Thinking => ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
+                Open::Thinking => ContentBlock::thinking("", None),
                 Open::Text => ContentBlock::text(""),
             };
             sender.start(&mut self.output, block);

@@ -1038,14 +1038,7 @@ impl State {
     fn create_slot(&mut self, index: u64, item: &Value, sender: &EventSender) -> Option<Slot> {
         let position = self.output.content.len();
         let (slot, block) = match item["type"].as_str()? {
-            "reasoning" => (
-                Slot::Thinking(position),
-                ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
-            ),
+            "reasoning" => (Slot::Thinking(position), ContentBlock::thinking("", None)),
             "message" => {
                 self.apply_phase(item);
                 (Slot::Text(position), ContentBlock::text(""))

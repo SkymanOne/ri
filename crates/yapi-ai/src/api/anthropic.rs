@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration, ToolResultMessage,
+    ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::{AnthropicMessagesCompat, Model};
 
@@ -488,11 +488,7 @@ impl StreamState {
                         );
                     }
                     "text" => ContentBlock::text(text("text")),
-                    "thinking" => ContentBlock::Thinking(ThinkingContent {
-                        thinking: text("thinking"),
-                        thinking_signature: Some(text("signature")),
-                        redacted: None,
-                    }),
+                    "thinking" => ContentBlock::thinking(text("thinking"), Some(text("signature"))),
                     "redacted_thinking" => ContentBlock::Thinking(ThinkingContent {
                         thinking: "[Reasoning redacted]".into(),
                         thinking_signature: block["data"].as_str().map(str::to_owned),
@@ -500,17 +496,15 @@ impl StreamState {
                     }),
                     "tool_use" => {
                         let name = text("name");
-                        ContentBlock::ToolCall(ToolCall {
-                            id: text("id"),
-                            name: if self.oauth {
+                        ContentBlock::tool_call(
+                            text("id"),
+                            if self.oauth {
                                 from_claude_code_name(&name, &self.tools)
                             } else {
                                 name
                             },
-                            arguments: block["input"].as_object().cloned().unwrap_or_default(),
-                            thought_signature: None,
-                            namespace: None,
-                        })
+                            block["input"].as_object().cloned().unwrap_or_default(),
+                        )
                     }
                     _ => return Ok(()),
                 };

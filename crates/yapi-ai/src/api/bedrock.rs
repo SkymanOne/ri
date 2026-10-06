@@ -10,8 +10,8 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::Model;
 
@@ -1083,11 +1083,7 @@ impl State {
         } else if delta["reasoningContent"].is_object() {
             let reasoning = &delta["reasoningContent"];
             let position = position.unwrap_or_else(|| {
-                let block = ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: Some(String::new()),
-                    redacted: None,
-                });
+                let block = ContentBlock::thinking("", Some(String::new()));
                 self.push(block, index, sender)
             });
             let ContentBlock::Thinking(_) = self.output.content[position] else {

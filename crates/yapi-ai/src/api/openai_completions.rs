@@ -1127,11 +1127,7 @@ impl State {
         if let Some(position) = self.thinking {
             return position;
         }
-        let block = ContentBlock::Thinking(ThinkingContent {
-            thinking: String::new(),
-            thinking_signature: Some(signature.to_owned()),
-            redacted: None,
-        });
+        let block = ContentBlock::thinking("", Some(signature.to_owned()));
         let position = sender.start(&mut self.output, block);
         self.thinking = Some(position);
         position
@@ -1155,13 +1151,7 @@ impl State {
         let index = match existing {
             Some(index) => index,
             None => {
-                let block = ContentBlock::ToolCall(ToolCall {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                    arguments: Map::new(),
-                    thought_signature: None,
-                    namespace: None,
-                });
+                let block = ContentBlock::tool_call(id, name, Map::new());
                 let position = sender.start(&mut self.output, block);
                 self.calls.push(CallState {
                     position,

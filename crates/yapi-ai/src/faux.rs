@@ -25,7 +25,7 @@ impl Response {
     /// A text response.
     pub fn text(text: &str) -> Response {
         Response {
-            content: vec![text_block(text)],
+            content: vec![ContentBlock::text(text)],
             ..Response::default()
         }
     }
@@ -33,13 +33,11 @@ impl Response {
     /// A response with one tool call.
     pub fn tool_call(id: &str, name: &str, arguments: Value) -> Response {
         Response {
-            content: vec![ContentBlock::ToolCall(ToolCall {
-                id: id.to_owned(),
-                name: name.to_owned(),
-                arguments: arguments.as_object().cloned().unwrap_or_else(Map::new),
-                thought_signature: None,
-                namespace: None,
-            })],
+            content: vec![ContentBlock::tool_call(
+                id,
+                name,
+                arguments.as_object().cloned().unwrap_or_else(Map::new),
+            )],
             ..Response::default()
         }
     }
@@ -52,10 +50,6 @@ impl Response {
             ..Response::default()
         }
     }
-}
-
-fn text_block(text: &str) -> ContentBlock {
-    ContentBlock::text(text)
 }
 
 /// Replays responses in order and records the requests it receives. When the
@@ -106,7 +100,7 @@ impl Provider for Faux {
 
         for block in response.content {
             let (empty, delta) = match &block {
-                ContentBlock::Text(text) => (text_block(""), text.text.clone()),
+                ContentBlock::Text(text) => (ContentBlock::text(""), text.text.clone()),
                 ContentBlock::Thinking(thinking) => (
                     ContentBlock::Thinking(ThinkingContent {
                         thinking: String::new(),

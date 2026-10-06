@@ -12,8 +12,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
-    ToolCall, ToolDeclaration,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingLevel, ToolDeclaration,
 };
 use yapi_types::model::Model;
 
@@ -448,11 +447,7 @@ impl State {
             self.current = Some(kind);
             let block = match kind {
                 Current::Text => ContentBlock::text(""),
-                Current::Thinking => ContentBlock::Thinking(ThinkingContent {
-                    thinking: String::new(),
-                    thinking_signature: None,
-                    redacted: None,
-                }),
+                Current::Thinking => ContentBlock::thinking("", None),
             };
             sender.start(&mut self.output, block);
         }
@@ -478,13 +473,7 @@ impl State {
                     .as_str()
                     .unwrap_or_default()
                     .to_owned();
-                let block = ContentBlock::ToolCall(ToolCall {
-                    id,
-                    name,
-                    arguments: Map::new(),
-                    thought_signature: None,
-                    namespace: None,
-                });
+                let block = ContentBlock::tool_call(id, name, Map::new());
                 let position = sender.start(&mut self.output, block);
                 self.tools.insert(key, position);
                 self.partial_args.insert(position, String::new());

@@ -6,9 +6,7 @@
 
 use serde_json::{Map, Value, json};
 use yapi_types::event::AssistantMessageEvent;
-use yapi_types::message::{
-    AssistantMessage, ContentBlock, StopReason, ThinkingContent, ToolCall, Usage,
-};
+use yapi_types::message::{AssistantMessage, ContentBlock, StopReason, Usage};
 use yapi_types::model::Model;
 
 use crate::credentials::provider_env_value;
@@ -211,14 +209,7 @@ impl Converter {
                 }
             }
             "thinking_start" => {
-                self.block(
-                    index,
-                    ContentBlock::Thinking(ThinkingContent {
-                        thinking: String::new(),
-                        thinking_signature: None,
-                        redacted: None,
-                    }),
-                );
+                self.block(index, ContentBlock::thinking("", None));
                 AssistantMessageEvent::ThinkingStart {
                     content_index: index,
                 }
@@ -251,13 +242,7 @@ impl Converter {
                 let name = text("toolName");
                 self.block(
                     index,
-                    ContentBlock::ToolCall(ToolCall {
-                        id: id.clone(),
-                        name: name.clone(),
-                        arguments: Map::new(),
-                        thought_signature: None,
-                        namespace: None,
-                    }),
+                    ContentBlock::tool_call(id.clone(), name.clone(), Map::new()),
                 );
                 self.tool_json.retain(|(at, _)| *at != index);
                 self.tool_json.push((index, String::new()));
