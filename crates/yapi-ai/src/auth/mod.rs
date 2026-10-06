@@ -23,6 +23,7 @@ pub mod xai;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
+use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
@@ -47,7 +48,7 @@ impl AuthError {
 }
 
 /// One choice of a select prompt.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct SelectOption {
     /// Returned when chosen.
     pub id: String,
@@ -55,8 +56,13 @@ pub struct SelectOption {
     pub label: String,
 }
 
-/// A question a sign-in asks.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A question a sign-in asks; deserializes from pi's `AuthPrompt` JSON.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum AuthPrompt {
     /// Free text.
     Text {
@@ -104,22 +110,30 @@ impl AuthPrompt {
 }
 
 /// A labelled link in an info event.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Link {
     /// Shown.
+    #[serde(default)]
     pub label: String,
     /// Target.
     pub url: String,
 }
 
-/// Something a sign-in tells the user.
-#[derive(Clone, Debug, PartialEq)]
+/// Something a sign-in tells the user; deserializes from pi's `AuthEvent`
+/// JSON.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum AuthEvent {
     /// Information with optional links.
     Info {
         /// Text.
         message: String,
         /// Links.
+        #[serde(default)]
         links: Vec<Link>,
     },
     /// A URL to open in the browser.
@@ -440,6 +454,41 @@ pub(crate) fn network_message(err: &dyn std::error::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// pi's `AuthPrompt` and `AuthEvent` JSON, as extension sign-ins send it.
+    #[test]
+    fn reads_pi_prompts_and_events() {
+        let prompt = |value| serde_json::from_value::<AuthPrompt>(value).unwrap();
+        assert_eq!(
+            prompt(
+                serde_json::json!({"type": "select", "message": "Team", "options": [{"id": "a", "label": "A", "description": "x"}]})
+            ),
+            AuthPrompt::select("Team", &[("a", "A")])
+        );
+        assert_eq!(
+            prompt(serde_json::json!({"type": "manual_code", "message": "Code"})),
+            AuthPrompt::ManualCode {
+                message: "Code".into(),
+                placeholder: None
+            }
+        );
+        let event = serde_json::from_value::<AuthEvent>(serde_json::json!({
+            "type": "device_code", "userCode": "U", "verificationUri": "https://v", "intervalSeconds": 5,
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            AuthEvent::DeviceCode {
+                user_code: "U".into(),
+                verification_uri: "https://v".into(),
+                interval_seconds: Some(5.0),
+                expires_in_seconds: None,
+            }
+        );
+        assert!(
+            serde_json::from_value::<AuthEvent>(serde_json::json!({"type": "unknown"})).is_err()
+        );
+    }
 
     #[test]
     fn parses_pasted_input_like_pi() {

@@ -15,7 +15,6 @@ use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use yapi_ai::auth::{
     AuthError, AuthEvent, AuthPrompt, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
-    SelectOption,
 };
 use yapi_ai::model_catalog::RefreshOptions;
 use yapi_ai::registry::ModelRegistry;
@@ -472,52 +471,13 @@ impl OAuthProvider for JsOAuth {
     }
 }
 
-/// A sign-in notification from the guest, in pi's `AuthEvent` shape.
-fn auth_event(event: &Value) -> Option<AuthEvent> {
-    let optional = |key: &str| event[key].as_str().map(str::to_owned);
-    Some(match event["type"].as_str()? {
-        "auth_url" => AuthEvent::AuthUrl {
-            url: text(&event["url"]),
-            instructions: optional("instructions"),
-        },
-        "device_code" => AuthEvent::DeviceCode {
-            user_code: text(&event["userCode"]),
-            verification_uri: text(&event["verificationUri"]),
-            interval_seconds: event["intervalSeconds"].as_f64(),
-            expires_in_seconds: event["expiresInSeconds"].as_f64(),
-        },
-        "progress" => AuthEvent::Progress {
-            message: text(&event["message"]),
-        },
-        _ => return None,
-    })
-}
-
-/// A sign-in question from the guest, in pi's `AuthPrompt` shape.
+/// A sign-in question from the guest. pi asks a prompt of an unknown type
+/// as a text prompt.
 fn auth_prompt(prompt: &Value) -> AuthPrompt {
-    let message = text(&prompt["message"]);
-    let placeholder = prompt["placeholder"].as_str().map(str::to_owned);
-    match prompt["type"].as_str() {
-        Some("manual_code") => AuthPrompt::ManualCode {
-            message,
-            placeholder,
-        },
-        Some("secret") => AuthPrompt::Secret { message },
-        Some("select") => AuthPrompt::Select {
-            message,
-            options: list(&prompt["options"])
-                .iter()
-                .map(|option| SelectOption {
-                    id: text(&option["id"]),
-                    label: text(&option["label"]),
-                })
-                .collect(),
-        },
-        _ => AuthPrompt::Text {
-            message,
-            placeholder,
-        },
-    }
+    serde_json::from_value(prompt.clone()).unwrap_or_else(|_| AuthPrompt::Text {
+        message: text(&prompt["message"]),
+        placeholder: prompt["placeholder"].as_str().map(str::to_owned),
+    })
 }
 
 /// A wire API an extension implements, with a provider's `streamSimple` or
@@ -1450,7 +1410,9 @@ impl Bridge for SessionBridge {
             let interaction = payload["id"]
                 .as_u64()
                 .and_then(|id| lock(&self.logins).get(&id).cloned());
-            if let (Some(interaction), Some(event)) = (interaction, auth_event(&payload["event"])) {
+            // pi shows no notification of an unknown type.
+            let event = serde_json::from_value::<AuthEvent>(payload["event"].clone()).ok();
+            if let (Some(interaction), Some(event)) = (interaction, event) {
                 interaction.notify(event);
             }
             return Ok(Value::Null);
