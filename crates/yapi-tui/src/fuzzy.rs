@@ -3,6 +3,8 @@
 //! Port of `packages/tui/src/fuzzy.ts` in pi `v1.0.0`: characters must appear in
 //! order; lower scores are better.
 
+use crate::text::is_js_whitespace;
+
 /// Whether `query` matches `text`, and how well; lower scores are better.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FuzzyMatch {
@@ -31,7 +33,7 @@ fn match_units(query: &[u16], text: &[u16]) -> FuzzyMatch {
     }
     let boundary = |unit: u16| {
         char::from_u32(u32::from(unit))
-            .is_some_and(|c| c.is_whitespace() || matches!(c, '-' | '_' | '.' | '/' | ':'))
+            .is_some_and(|c| is_js_whitespace(c) || matches!(c, '-' | '_' | '.' | '/' | ':'))
     };
     let mut query_index = 0;
     let mut score = 0.0;
@@ -124,7 +126,7 @@ pub fn fuzzy_match(query: &str, text: &str) -> FuzzyMatch {
 /// `query`, best first. An empty query keeps every item in order.
 pub fn fuzzy_filter<T>(items: Vec<T>, query: &str, text: impl Fn(&T) -> String) -> Vec<T> {
     let tokens: Vec<&str> = query
-        .split(|c: char| c.is_whitespace() || c == '/')
+        .split(|c: char| is_js_whitespace(c) || c == '/')
         .filter(|token| !token.is_empty())
         .collect();
     if tokens.is_empty() {
@@ -181,6 +183,17 @@ mod tests {
                 found.score
             );
         }
+    }
+
+    #[test]
+    fn separates_on_javascript_whitespace() {
+        // JavaScript's `\s` has U+FEFF but not U+0085, unlike Rust's.
+        let filter =
+            |query: &str| fuzzy_filter(vec!["ab", "a\u{85}b"], query, |item| (*item).to_owned());
+        assert_eq!(filter("b\u{feff}a"), ["ab", "a\u{85}b"]);
+        assert_eq!(filter("a\u{85}b"), ["a\u{85}b"]);
+        assert_eq!(fuzzy_match("b", "a\u{feff}b").score, -9.8);
+        assert_eq!(fuzzy_match("b", "a\u{85}b").score, 0.2);
     }
 
     #[test]
