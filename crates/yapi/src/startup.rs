@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, bail};
-use base64::Engine as _;
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
 use yapi_core::agent_session::{AgentSession, Resources, SessionConfig};
@@ -80,11 +79,15 @@ fn file_arguments(files: &[String], cwd: &Path) -> anyhow::Result<(String, Vec<I
         let bytes = std::fs::read(&path)
             .with_context(|| format!("Error: Could not read file {}", path.display()))?;
         if let Some(mime_type) = yapi_core::tools::image_mime_type(&bytes) {
-            images.push(ImageContent {
-                data: base64::engine::general_purpose::STANDARD.encode(&bytes),
-                mime_type: mime_type.to_owned(),
-            });
-            text += &format!("<file name=\"{}\"></file>\n", path.display());
+            // The session resizes prompt images once the request's model is known.
+            let note = match yapi_core::images::process(&bytes, mime_type, false, None) {
+                Ok(processed) => {
+                    images.push(processed.image);
+                    processed.hints.join("\n")
+                }
+                Err(message) => message.to_owned(),
+            };
+            text += &format!("<file name=\"{}\">{note}</file>\n", path.display());
         } else {
             let content = String::from_utf8_lossy(&bytes);
             let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
