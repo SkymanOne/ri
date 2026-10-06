@@ -309,3 +309,26 @@ export default function (pi) {
         "abc/def/gh,abXYefgh00Z,abXY"
     );
 }
+
+/// `createEventBus` runs handlers as pi's does: as soon as an event is
+/// emitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn creates_event_buses_as_pi_does() {
+    let main = r#"
+import { createEventBus } from "@earendil-works/pi-coding-agent";
+export default function (pi) {
+	const bus = createEventBus();
+	const seen = [];
+	const off = bus.on("x", (data) => seen.push(data));
+	bus.emit("x", 1);
+	const immediate = seen.join();
+	off();
+	bus.emit("x", 2);
+	bus.on("x", (data) => seen.push(data));
+	bus.clear();
+	bus.emit("x", 3);
+	pi.registerCommand("probe", { description: [immediate, seen.join()].join("|"), handler: async () => {} });
+}
+"#;
+    assert_eq!(probe("event-bus", main).await, "1|1");
+}

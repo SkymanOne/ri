@@ -54,25 +54,7 @@ export const isGrepToolResult = resultOf("grep");
 export const isFindToolResult = resultOf("find");
 export const isLsToolResult = resultOf("ls");
 
-export function createEventBus() {
-	const handlers = new Map();
-	return {
-		emit(channel, data) {
-			for (const handler of [...(handlers.get(channel) ?? [])]) {
-				Promise.resolve()
-					.then(() => handler(data))
-					.catch((error) => console.error(`Event handler error (${channel}):`, error));
-			}
-		},
-		on(channel, handler) {
-			handlers.set(channel, [...(handlers.get(channel) ?? []), handler]);
-			return () => handlers.set(channel, (handlers.get(channel) ?? []).filter((item) => item !== handler));
-		},
-		clear() {
-			handlers.clear();
-		},
-	};
-}
+export const createEventBus = yapi.createEventBus;
 
 // ----- built-in tools, run by yapi ----------------------------------------------------
 function builtinTool(name, cwd, options) {

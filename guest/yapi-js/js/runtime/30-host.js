@@ -11,7 +11,6 @@
 
 	const extensions = new Map();
 	const flagValues = new Map();
-	const busEmitter = new EventEmitter();
 	let bound = false;
 
 	const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
@@ -19,23 +18,32 @@
 	const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 	const orUndefined = (value) => value ?? undefined;
 
-	// ----- the shared event bus ------------------------------------------------
-	const eventBus = {
-		emit: (channel, data) => {
-			busEmitter.emit(channel, data);
-		},
-		on: (channel, handler) => {
-			const safe = async (data) => {
-				try {
-					await handler(data);
-				} catch (error) {
-					console.error(`Event handler error (${channel}):`, error);
-				}
-			};
-			busEmitter.on(channel, safe);
-			return () => busEmitter.off(channel, safe);
-		},
+	// ----- event buses --------------------------------------------------------
+	/** pi's `createEventBus`. */
+	yapi.createEventBus = () => {
+		const emitter = new EventEmitter();
+		return {
+			emit: (channel, data) => {
+				emitter.emit(channel, data);
+			},
+			on: (channel, handler) => {
+				const safe = async (data) => {
+					try {
+						await handler(data);
+					} catch (error) {
+						console.error(`Event handler error (${channel}):`, error);
+					}
+				};
+				emitter.on(channel, safe);
+				return () => emitter.off(channel, safe);
+			},
+			clear: () => {
+				emitter.removeAllListeners();
+			},
+		};
 	};
+	// `pi.events`, which every extension shares.
+	const eventBus = yapi.createEventBus();
 
 	// ----- runtime actions -----------------------------------------------------------
 	const notInitialized = () => {
