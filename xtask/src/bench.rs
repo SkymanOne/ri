@@ -230,6 +230,20 @@ fn version_of(executable: &Path) -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
+/// The commit measured: `GITHUB_SHA` in GitHub Actions, otherwise the
+/// checkout's `HEAD`.
+fn commit() -> String {
+    std::env::var("GITHUB_SHA").unwrap_or_else(|_| {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .unwrap_or_else(|| "unknown".to_owned())
+    })
+}
+
 /// An executable on `PATH`.
 fn on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -697,6 +711,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         });
     }
 
+    println!("- Commit: {}", commit());
     println!("- Machine: {}", machine());
     for program in &programs {
         println!(
