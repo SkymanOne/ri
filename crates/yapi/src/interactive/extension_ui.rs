@@ -65,6 +65,11 @@ pub(super) enum Request {
     Shortcut(String),
     /// A runtime's input listeners started or stopped listening.
     TerminalInput(u64, Option<Arc<dyn ComponentHost>>),
+    /// A runtime composed autocomplete providers, with their trigger
+    /// characters.
+    Autocomplete(u64, Arc<dyn ComponentHost>, Vec<String>),
+    /// A runtime's providers ask for the suggestions below theirs.
+    Suggest(u64, Value, oneshot::Sender<Value>),
     Render,
     ToolsExpanded(bool),
     Shutdown,
@@ -258,6 +263,25 @@ impl ExtensionUi for InteractiveUi {
 
     fn set_terminal_input(&self, runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
         self.send(Request::TerminalInput(runtime, listeners));
+    }
+
+    fn set_autocomplete(
+        &self,
+        runtime: u64,
+        providers: Arc<dyn ComponentHost>,
+        triggers: Vec<String>,
+    ) {
+        self.send(Request::Autocomplete(runtime, providers, triggers));
+    }
+
+    fn suggestions(&self, runtime: u64, request: Value) -> BoxFuture<'static, Value> {
+        let (reply, answer) = oneshot::channel();
+        self.send(Request::Suggest(runtime, request, reply));
+        Box::pin(async move { answer.await.unwrap_or(Value::Null) })
+    }
+
+    fn apply_completion(&self, request: &Value) -> Value {
+        super::completions::apply(request)
     }
 
     fn editor_shortcut(&self, data: &str) -> bool {
@@ -531,6 +555,9 @@ pub(super) struct ExtensionState {
     pub editor: Option<CustomEditor>,
     /// Runtimes with `onTerminalInput` listeners, in the order they started.
     pub listeners: Vec<(u64, Arc<dyn ComponentHost>)>,
+    /// Runtimes with autocomplete providers and their trigger characters, in
+    /// the order they added the first.
+    pub completions: Vec<(u64, Arc<dyn ComponentHost>, Vec<String>)>,
     pub working_message: Option<String>,
     pub working_hidden: bool,
     pub working_indicator: Option<WorkingIndicator>,
@@ -547,6 +574,7 @@ impl ExtensionState {
         self.header = None;
         self.editor = None;
         self.listeners.clear();
+        self.completions.clear();
         self.working_message = None;
         self.working_hidden = false;
         self.working_indicator = None;
@@ -768,6 +796,19 @@ impl super::App {
                     .listeners
                     .extend(listeners.map(|host| (runtime, host)));
             }
+            Request::Autocomplete(runtime, providers, triggers) => {
+                match self
+                    .ext
+                    .completions
+                    .iter_mut()
+                    .find(|(id, ..)| *id == runtime)
+                {
+                    Some(entry) => entry.2 = triggers,
+                    None => self.ext.completions.push((runtime, providers, triggers)),
+                }
+                self.install_completions();
+            }
+            Request::Suggest(runtime, request, reply) => self.suggest(runtime, request, reply),
             Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);
                 // An overlay over an open overlay stacks on it.

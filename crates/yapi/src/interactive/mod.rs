@@ -9,6 +9,7 @@ mod catalogs;
 mod chat;
 mod clipboard;
 mod commands;
+mod completions;
 pub mod config_selector;
 mod extension_ui;
 mod footer;
@@ -39,6 +40,7 @@ use yapi_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
 use yapi_core::bash_executor::BashResult;
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
+use yapi_tui::autocomplete::AutocompleteProvider;
 use yapi_tui::color::ColorMode;
 use yapi_tui::editor::{Editor, EditorEvent, EditorTheme};
 use yapi_tui::input::{Input, InputBuffer, escape_timeout};
@@ -443,6 +445,10 @@ struct App {
     /// the listeners are running.
     input_queue: Vec<String>,
     listening: bool,
+    /// The built-in completion provider, for extensions' requests, and the
+    /// request waiting for its answer.
+    builtin_completions: Option<yapi_tui::autocomplete::CombinedProvider>,
+    waiting_suggestions: Option<(Value, tokio::sync::oneshot::Sender<Value>)>,
     /// pi's `[Extension issues]`: the extension each concerns, and what.
     extension_issues: Vec<(yapi_types::rpc::SourceInfo, String)>,
 }
@@ -704,13 +710,101 @@ impl App {
     }
 
     fn install_autocomplete(&mut self) {
-        let (tx, epoch) = (self.tx.clone(), self.epoch);
-        let provider = commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
-            .notify_with(std::sync::Arc::new(move || {
-                let _ = tx.send(Event::RefreshCompletions(epoch));
-            }));
-        self.editor.set_autocomplete(Box::new(provider));
+        self.install_completions();
         self.install_shortcuts();
+    }
+
+    /// The editor's completion: the built-in provider, or the one the
+    /// extensions' providers compose over it, as pi's
+    /// `setupAutocompleteProvider` installs it. The built-in provider also
+    /// answers the extensions' requests.
+    fn install_completions(&mut self) {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = tx.send(Event::RefreshCompletions(epoch));
+        });
+        let builtin = || {
+            commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
+                .notify_with(notify.clone())
+        };
+        let provider: Box<dyn AutocompleteProvider> = match self.ext.completions.last() {
+            Some((_, providers, _)) => {
+                let mut triggers: Vec<char> = Vec::new();
+                for trigger in self
+                    .ext
+                    .completions
+                    .iter()
+                    .flat_map(|(_, _, triggers)| triggers)
+                {
+                    let mut chars = trigger.chars();
+                    if let (Some(c), None) = (chars.next(), chars.next())
+                        && !triggers.contains(&c)
+                    {
+                        triggers.push(c);
+                    }
+                }
+                Box::new(completions::ExtensionCompletions::new(
+                    providers.clone(),
+                    triggers,
+                    notify.clone(),
+                ))
+            }
+            None => Box::new(builtin()),
+        };
+        self.builtin_completions = Some(builtin());
+        self.editor.set_autocomplete(provider);
+        self.answer_suggestions();
+    }
+
+    /// Answers an extension's request for the suggestions below its
+    /// providers: the providers of the runtime that added theirs before, else
+    /// the built-in provider, whose `@` search may answer later.
+    fn suggest(
+        &mut self,
+        runtime: u64,
+        request: Value,
+        reply: tokio::sync::oneshot::Sender<Value>,
+    ) {
+        let below = self
+            .ext
+            .completions
+            .iter()
+            .position(|(id, ..)| *id == runtime)
+            .unwrap_or(self.ext.completions.len());
+        if let Some((_, providers, _)) = below
+            .checked_sub(1)
+            .and_then(|index| self.ext.completions.get(index))
+        {
+            let providers = providers.clone();
+            tokio::spawn(async move {
+                let _ = reply.send(providers.suggestions(request).await);
+            });
+            return;
+        }
+        // As pi aborts a superseded request, only the latest one waits.
+        if let Some((_, previous)) = self.waiting_suggestions.replace((request, reply)) {
+            let _ = previous.send(Value::Null);
+        }
+        self.answer_suggestions();
+    }
+
+    /// Answers the waiting request once the built-in provider has its answer.
+    fn answer_suggestions(&mut self) {
+        let (Some(builtin), Some((request, _))) =
+            (&self.builtin_completions, &self.waiting_suggestions)
+        else {
+            return;
+        };
+        let (lines, line, col, force) = completions::request(request);
+        let suggestions = builtin.suggestions(&lines, line, col, force);
+        if builtin.pending() {
+            return;
+        }
+        if let Some((_, reply)) = self.waiting_suggestions.take() {
+            let _ = reply.send(suggestions.map_or(Value::Null, |suggestions| {
+                completions::suggestions_json(&suggestions)
+            }));
+        }
     }
 
     /// The extensions' shortcuts against the current key bindings, and pi's
@@ -3566,6 +3660,8 @@ impl App {
             shutdown_requested: false,
             input_queue: Vec::new(),
             listening: false,
+            builtin_completions: None,
+            waiting_suggestions: None,
             extension_issues: Vec::new(),
         };
         app.style_alt_screen();
@@ -3670,6 +3766,7 @@ impl App {
             },
             Event::RefreshCompletions(epoch) if epoch == self.epoch => {
                 self.editor.refresh_autocomplete();
+                self.answer_suggestions();
             }
             Event::ExtensionError(epoch, message, stack) if epoch == self.epoch => {
                 self.extension_error(message, stack.as_deref());

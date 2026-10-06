@@ -337,6 +337,13 @@ pub trait Extension: Send + Sync {
         None
     }
 
+    /// Whether completions for the argument of `command` are still being
+    /// computed after [`Extension::complete`] offered none; the UI's
+    /// `refresh_completions` follows once they are ready.
+    fn completing(&self, _command: &str, _prefix: &str) -> bool {
+        false
+    }
+
     /// The keys it binds.
     fn shortcuts(&self) -> Vec<Shortcut> {
         Vec::new()

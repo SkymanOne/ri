@@ -364,7 +364,8 @@ impl Extension for JsExtension {
 
     /// pi awaits `getArgumentCompletions`; the editor asks synchronously, so
     /// a request the guest has not answered yet starts it in the background,
-    /// offers nothing, and has the editor ask again once it is answered.
+    /// offers nothing while [`Extension::completing`], and has the editor ask
+    /// again once it is answered.
     fn complete(&self, command: &str, prefix: &str) -> Option<Vec<Completion>> {
         let completes = list(&self.description["commands"])
             .iter()
@@ -410,13 +411,19 @@ impl Extension for JsExtension {
                     })
                 })
                 .filter(|items| !items.is_empty());
-            let found = items.is_some();
             lock(&cache).insert(key, Fetched::Ready(std::time::Instant::now(), items));
-            if found && let Some(session) = host.bridge.session() {
+            if let Some(session) = host.bridge.session() {
                 session.extension_binding().0.refresh_completions();
             }
         });
         None
+    }
+
+    fn completing(&self, command: &str, prefix: &str) -> bool {
+        matches!(
+            lock(&self.completions).get(&(command.to_owned(), prefix.to_owned())),
+            Some(Fetched::Pending)
+        )
     }
 
     fn commands(&self) -> Vec<Command> {
@@ -778,6 +785,20 @@ impl ComponentHost for Components {
         })
     }
 
+    fn suggestions(&self, request: Value) -> BoxFuture<'static, Value> {
+        let host = self.0.upgrade();
+        Box::pin(async move {
+            match host {
+                Some(host) => host
+                    .instance
+                    .call("autocomplete", &request)
+                    .await
+                    .unwrap_or(Value::Null),
+                None => Value::Null,
+            }
+        })
+    }
+
     fn editor_op(&self, handle: u32, op: &Value) {
         if let Some(host) = self.0.upgrade() {
             let mut payload = op.clone();
@@ -880,6 +901,16 @@ impl SessionBridge {
                 self.runtime_id,
                 self.components().filter(|_| payload["listening"] == true),
             ),
+            "ui.setAutocomplete" => {
+                if let Some(providers) = self.components() {
+                    let triggers = list(&payload["triggerCharacters"])
+                        .iter()
+                        .map(text)
+                        .collect();
+                    ui.set_autocomplete(self.runtime_id, providers, triggers);
+                }
+            }
+            "ui.applyCompletion" => return ui.apply_completion(payload),
             "ui.editorShortcut" => return Value::Bool(ui.editor_shortcut(&text(&payload["data"]))),
             "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),
@@ -1141,8 +1172,13 @@ impl Bridge for SessionBridge {
             .unwrap_or_else(|| (Arc::new(|_| {}), CancellationToken::new()));
         let codemode = self.codemode.clone();
         let kind = kind.to_owned();
+        let runtime = self.runtime_id;
         Box::pin(async move {
             match kind.as_str() {
+                "ui.suggestions" => {
+                    let (ui, _) = session.extension_binding();
+                    Ok(ui.suggestions(runtime, payload).await)
+                }
                 "codemode.execute" => codemode
                     .execute(
                         Some(session),

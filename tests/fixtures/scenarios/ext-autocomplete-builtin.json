@@ -1,0 +1,15 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────",
+    "/mod",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "→ model          <provider/model> — Select model (opens selector UI)",
+    "  scoped-models  Enable/disable models for Ctrl+P cycling",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

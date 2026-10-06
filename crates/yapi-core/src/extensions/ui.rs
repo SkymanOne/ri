@@ -92,6 +92,12 @@ pub trait ComponentHost: Send + Sync {
     /// in order. Answers the keys left to handle, as the listeners
     /// transformed them, without those they consumed or emptied.
     fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>>;
+
+    /// The suggestions of the runtime's autocomplete providers for pi's
+    /// provider arguments `request`, as for [`ExtensionUi::suggestions`],
+    /// with what applying each item gives: `{"prefix", "items", "applied":
+    /// [{"lines", "cursorLine", "cursorCol"}]}`, or `Null`.
+    fn suggestions(&self, request: Value) -> BoxFuture<'static, Value>;
 }
 
 /// A pi-tui component that lives in an extension runtime.
@@ -275,6 +281,33 @@ pub trait ExtensionUi: Send + Sync {
     /// Starts passing raw input through the `onTerminalInput` listeners of
     /// runtime `runtime`, which `listeners` runs, or stops with `None`.
     fn set_terminal_input(&self, _runtime: u64, _listeners: Option<Arc<dyn ComponentHost>>) {}
+
+    /// Completes through the autocomplete providers runtime `runtime`
+    /// composed with `addAutocompleteProvider`, which `providers` runs;
+    /// `triggers` open completion too.
+    fn set_autocomplete(
+        &self,
+        _runtime: u64,
+        _providers: Arc<dyn ComponentHost>,
+        _triggers: Vec<String>,
+    ) {
+    }
+
+    /// What the provider below runtime `runtime`'s providers suggests for
+    /// pi's provider arguments `request`, `{"lines", "cursorLine",
+    /// "cursorCol", "force"}` with UTF-16 columns: the providers of the
+    /// runtime that composed them before, else the built-in one. pi's
+    /// `AutocompleteSuggestions`, or `Null`.
+    fn suggestions(&self, _runtime: u64, _request: Value) -> BoxFuture<'static, Value> {
+        Box::pin(async { Value::Null })
+    }
+
+    /// The built-in provider's `applyCompletion` for `{"lines",
+    /// "cursorLine", "cursorCol", "item", "prefix"}`: `{"lines",
+    /// "cursorLine", "cursorCol"}`.
+    fn apply_completion(&self, _request: &Value) -> Value {
+        Value::Null
+    }
 
     /// Whether raw input `data` is an extension shortcut, which then runs.
     fn editor_shortcut(&self, _data: &str) -> bool {

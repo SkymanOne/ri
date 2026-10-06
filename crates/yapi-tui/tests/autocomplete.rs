@@ -72,6 +72,7 @@ fn completes_like_pi() {
                         let filtered = fuzzy_filter(levels.clone(), prefix, Clone::clone);
                         (!filtered.is_empty())
                             .then(|| filtered.into_iter().map(SelectItem::new).collect())
+                            .into()
                     }) as yapi_tui::autocomplete::ArgumentCompleter
                 }),
             }

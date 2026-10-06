@@ -70,8 +70,22 @@ pub trait AutocompleteProvider {
     }
 }
 
-/// Completes a command's argument text; `None` or empty shows no list.
-pub type ArgumentCompleter = Box<dyn Fn(&str) -> Option<Vec<SelectItem>>>;
+/// Completes a command's argument text.
+pub type ArgumentCompleter = Box<dyn Fn(&str) -> Arguments>;
+
+/// What an [`ArgumentCompleter`] offers.
+pub enum Arguments {
+    /// Completions; `None` or empty shows no list.
+    Ready(Option<Vec<SelectItem>>),
+    /// Still being computed; the host asks again once they are ready.
+    Pending,
+}
+
+impl From<Option<Vec<SelectItem>>> for Arguments {
+    fn from(items: Option<Vec<SelectItem>>) -> Arguments {
+        Arguments::Ready(items)
+    }
+}
 
 /// A command offered after `/`.
 pub struct SlashCommand {
@@ -760,7 +774,11 @@ impl AutocompleteProvider for CombinedProvider {
                 .find(|command| command.name == name)?
                 .complete
                 .as_ref()?;
-            let items = complete(argument).filter(|items| !items.is_empty())?;
+            let Arguments::Ready(items) = complete(argument) else {
+                self.pending.store(true, Ordering::Relaxed);
+                return None;
+            };
+            let items = items.filter(|items| !items.is_empty())?;
             return Some(Suggestions {
                 items,
                 prefix: argument.to_owned(),
@@ -786,58 +804,85 @@ impl AutocompleteProvider for CombinedProvider {
         item: &SelectItem,
         prefix: &str,
     ) -> Completion {
-        let current = lines.get(line).map_or("", String::as_str);
-        let col = col.min(current.len());
-        let before_prefix = &current[..col.saturating_sub(prefix.len())];
-        let after_cursor = &current[col..];
-        let quoted_prefix = prefix.starts_with('"') || prefix.starts_with("@\"");
-        let after = if quoted_prefix && item.value.ends_with('"') && after_cursor.starts_with('"') {
-            &after_cursor[1..]
-        } else {
-            after_cursor
-        };
-        let with_line = |text: String| {
-            let mut out = lines.to_vec();
-            if line < out.len() {
-                out[line] = text;
-            } else {
-                out.push(text);
-            }
-            out
-        };
-        let directory = item.label.ends_with('/');
-        let trailing_quote = item.value.ends_with('"');
-        let offset = if directory && trailing_quote {
-            item.value.len() - 1
-        } else {
-            item.value.len()
-        };
-        if prefix.starts_with('/') && before_prefix.trim().is_empty() && !prefix[1..].contains('/')
-        {
-            return Completion {
-                lines: with_line(format!("{before_prefix}/{} {after}", item.value)),
-                cursor_line: line,
-                cursor_col: before_prefix.len() + item.value.len() + 2,
-            };
-        }
-        if prefix.starts_with('@') {
-            let suffix = if directory { "" } else { " " };
-            return Completion {
-                lines: with_line(format!("{before_prefix}{}{suffix}{after}", item.value)),
-                cursor_line: line,
-                cursor_col: before_prefix.len() + offset + suffix.len(),
-            };
-        }
-        Completion {
-            lines: with_line(format!("{before_prefix}{}{after}", item.value)),
-            cursor_line: line,
-            cursor_col: before_prefix.len() + offset,
-        }
+        apply_completion(lines, line, col, item, prefix)
     }
 
     fn should_trigger_file_completion(&self, lines: &[String], line: usize, col: usize) -> bool {
-        let current = lines.get(line).map_or("", String::as_str);
-        let before = current[..col.min(current.len())].trim();
-        !(before.starts_with('/') && !before.contains(' '))
+        should_trigger_file_completion(lines, line, col)
     }
+}
+
+/// The largest char boundary of `text` at or before `index`.
+fn floor_boundary(text: &str, index: usize) -> usize {
+    let mut index = index.min(text.len());
+    while !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// [`CombinedProvider`]'s completion: `item` replacing `prefix` before the
+/// cursor at byte column `col`. A prefix longer than the text before the
+/// cursor replaces all of it.
+pub fn apply_completion(
+    lines: &[String],
+    line: usize,
+    col: usize,
+    item: &SelectItem,
+    prefix: &str,
+) -> Completion {
+    let current = lines.get(line).map_or("", String::as_str);
+    let col = floor_boundary(current, col);
+    let before_prefix = &current[..floor_boundary(current, col.saturating_sub(prefix.len()))];
+    let after_cursor = &current[col..];
+    let quoted_prefix = prefix.starts_with('"') || prefix.starts_with("@\"");
+    let after = if quoted_prefix && item.value.ends_with('"') && after_cursor.starts_with('"') {
+        &after_cursor[1..]
+    } else {
+        after_cursor
+    };
+    let with_line = |text: String| {
+        let mut out = lines.to_vec();
+        if line < out.len() {
+            out[line] = text;
+        } else {
+            out.push(text);
+        }
+        out
+    };
+    let directory = item.label.ends_with('/');
+    let trailing_quote = item.value.ends_with('"');
+    let offset = if directory && trailing_quote {
+        item.value.len() - 1
+    } else {
+        item.value.len()
+    };
+    if prefix.starts_with('/') && before_prefix.trim().is_empty() && !prefix[1..].contains('/') {
+        return Completion {
+            lines: with_line(format!("{before_prefix}/{} {after}", item.value)),
+            cursor_line: line,
+            cursor_col: before_prefix.len() + item.value.len() + 2,
+        };
+    }
+    if prefix.starts_with('@') {
+        let suffix = if directory { "" } else { " " };
+        return Completion {
+            lines: with_line(format!("{before_prefix}{}{suffix}{after}", item.value)),
+            cursor_line: line,
+            cursor_col: before_prefix.len() + offset + suffix.len(),
+        };
+    }
+    Completion {
+        lines: with_line(format!("{before_prefix}{}{after}", item.value)),
+        cursor_line: line,
+        cursor_col: before_prefix.len() + offset,
+    }
+}
+
+/// [`CombinedProvider`]'s check: Tab offers files except in a slash
+/// command's name.
+pub fn should_trigger_file_completion(lines: &[String], line: usize, col: usize) -> bool {
+    let current = lines.get(line).map_or("", String::as_str);
+    let before = current[..floor_boundary(current, col)].trim();
+    !(before.starts_with('/') && !before.contains(' '))
 }

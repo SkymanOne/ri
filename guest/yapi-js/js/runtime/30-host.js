@@ -457,6 +457,28 @@
 	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
 	// needs load when the session binds, so the factory runs at once.
 	const editorSlot = { factory: undefined, handle: undefined };
+	// `addAutocompleteProvider` factories and the provider they compose over
+	// the host's, as pi's `setupAutocompleteProvider` does.
+	const completionWrappers = [];
+	const hostCompletions = {
+		getSuggestions: (lines, cursorLine, cursorCol, options) =>
+			yapi.op("ui.suggestions", { lines, cursorLine, cursorCol, force: !!options?.force }).then((suggestions) => suggestions ?? null),
+		applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => yapi.request("ui.applyCompletion", { lines, cursorLine, cursorCol, item: plain(item), prefix }),
+	};
+	let completions = hostCompletions;
+	function addCompletions(factory) {
+		completionWrappers.push(factory);
+		let provider = hostCompletions;
+		const triggers = [];
+		for (const wrap of completionWrappers) {
+			provider = wrap(provider);
+			triggers.push(...(provider.triggerCharacters ?? []));
+		}
+		if (triggers.length > 0) provider.triggerCharacters = [...new Set(triggers)];
+		completions = provider;
+		components.get(editorSlot.handle)?.setAutocompleteProvider?.(provider);
+		yapi.request("ui.setAutocomplete", { triggerCharacters: provider.triggerCharacters ?? [] });
+	}
 	// pi-tui's input listeners: `onTerminalInput` handlers, which see raw
 	// input before the editor and may consume or transform it.
 	const terminalListeners = new Set();
@@ -475,6 +497,7 @@
 		editor.onSubmit = (value) => request("editorSubmit", { text: value });
 		editor.onChange = () => request("editorChange", { text: editor.getExpandedText?.() ?? editor.getText() });
 		editor.setText(text);
+		editor.setAutocompleteProvider?.(completions);
 		// An editor extending `CustomEditor` triggers the app's actions, as the built-in editor does.
 		if (editor.actionHandlers instanceof Map) {
 			const action = (id) => () => request("editorAction", { action: id });
@@ -598,7 +621,9 @@
 			pasteToEditor: (text) => request("pasteToEditor", { text }),
 			setEditorText: (text) => request("setEditorText", { text }),
 			getEditorText: () => request("getEditorText", {}) ?? "",
-			addAutocompleteProvider() {},
+			addAutocompleteProvider(factory) {
+				if (shown) addCompletions(factory);
+			},
 			setEditorComponent(factory) {
 				if (shown) setEditor(factory);
 			},
@@ -910,6 +935,8 @@
 			slots.footer = slots.header = undefined;
 			editorSlot.factory = editorSlot.handle = undefined;
 			terminalListeners.clear();
+			completionWrappers.length = 0;
+			completions = hostCompletions;
 			const results = [];
 			for (const [id, extension] of [...extensions]) {
 				extensions.delete(id);
@@ -948,6 +975,25 @@
 			const command = extensionOf(payload.extension).commands.get(payload.name);
 			if (typeof command?.getArgumentCompletions !== "function") return null;
 			return plain(await command.getArgumentCompletions(payload.prefix ?? "")) ?? null;
+		},
+		/**
+		 * The composed providers' suggestions for the host's editor, with what
+		 * applying each item gives, since the editor applies one at once.
+		 */
+		async autocomplete(payload) {
+			const { lines, cursorLine, cursorCol, force } = payload;
+			const provider = completions;
+			const suggestions = await provider.getSuggestions(lines, cursorLine, cursorCol, { signal: new AbortController().signal, force });
+			if (!Array.isArray(suggestions?.items) || suggestions.items.length === 0) return null;
+			const applied = suggestions.items.map((item) => {
+				try {
+					return plain(provider.applyCompletion(lines, cursorLine, cursorCol, item, suggestions.prefix)) ?? null;
+				} catch (error) {
+					console.error("Autocomplete error:", error);
+					return null;
+				}
+			});
+			return { prefix: suggestions.prefix ?? "", items: plain(suggestions.items), applied };
 		},
 		/** Runs the input listeners over each key as pi-tui does; `null` for a consumed key. */
 		terminalInput(payload) {

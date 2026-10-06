@@ -11,7 +11,7 @@ use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use yapi_core::agent_session::AgentSession;
 use yapi_core::session::SessionManager;
-use yapi_tui::autocomplete::{CombinedProvider, SlashCommand};
+use yapi_tui::autocomplete::{Arguments, CombinedProvider, SlashCommand};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::keys::Keys;
@@ -157,19 +157,21 @@ pub fn autocomplete(
                 command.complete = Some(Box::new(move |prefix: &str| {
                     let models = session.models_in_scope();
                     if models.is_empty() {
-                        return None;
+                        return Arguments::Ready(None);
                     }
                     let filtered = fuzzy_filter(models, prefix, super::scoped_models::search_text);
-                    (!filtered.is_empty()).then(|| {
-                        filtered
-                            .into_iter()
-                            .map(|model| SelectItem {
-                                value: model.reference(),
-                                label: model.id,
-                                description: Some(model.provider),
-                            })
-                            .collect()
-                    })
+                    (!filtered.is_empty())
+                        .then(|| {
+                            filtered
+                                .into_iter()
+                                .map(|model| SelectItem {
+                                    value: model.reference(),
+                                    label: model.id,
+                                    description: Some(model.provider),
+                                })
+                                .collect()
+                        })
+                        .into()
                 }));
             }
             "thinking" => {
@@ -179,12 +181,14 @@ pub fn autocomplete(
                         fuzzy_filter(session.available_thinking_levels(), prefix, |level| {
                             level.as_str().to_owned()
                         });
-                    (!levels.is_empty()).then(|| {
-                        levels
-                            .into_iter()
-                            .map(|level| SelectItem::new(level.as_str()))
-                            .collect()
-                    })
+                    (!levels.is_empty())
+                        .then(|| {
+                            levels
+                                .into_iter()
+                                .map(|level| SelectItem::new(level.as_str()))
+                                .collect()
+                        })
+                        .into()
                 }));
             }
             "login" => {
@@ -196,16 +200,18 @@ pub fn autocomplete(
                         prefix,
                         super::login::CompletionOption::search_text,
                     );
-                    (!providers.is_empty()).then(|| {
-                        providers
-                            .into_iter()
-                            .map(|provider| SelectItem {
-                                description: Some(provider.description()),
-                                value: provider.id.clone(),
-                                label: provider.id,
-                            })
-                            .collect()
-                    })
+                    (!providers.is_empty())
+                        .then(|| {
+                            providers
+                                .into_iter()
+                                .map(|provider| SelectItem {
+                                    description: Some(provider.description()),
+                                    value: provider.id.clone(),
+                                    label: provider.id,
+                                })
+                                .collect()
+                        })
+                        .into()
                 }));
             }
             _ => {}
@@ -245,16 +251,20 @@ pub fn autocomplete(
                 description: Some(description),
                 argument_hint: None,
                 complete: Some(Box::new(move |prefix: &str| {
-                    owner.complete(&name, prefix).map(|items| {
-                        items
-                            .into_iter()
-                            .map(|item| SelectItem {
-                                value: item.value,
-                                label: item.label,
-                                description: item.description,
-                            })
-                            .collect()
-                    })
+                    match owner.complete(&name, prefix) {
+                        Some(items) => Arguments::Ready(Some(
+                            items
+                                .into_iter()
+                                .map(|item| SelectItem {
+                                    value: item.value,
+                                    label: item.label,
+                                    description: item.description,
+                                })
+                                .collect(),
+                        )),
+                        None if owner.completing(&name, prefix) => Arguments::Pending,
+                        None => Arguments::Ready(None),
+                    }
                 })),
             });
         }
