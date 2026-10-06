@@ -172,7 +172,10 @@
 			registerProvider(nameOrProvider, config) {
 				if (typeof nameOrProvider === "string") {
 					if (!config) throw new Error("Provider config is required when registering by name");
-					extension.providers.push({ name: nameOrProvider, config: describeProvider(config) });
+					const provider = { name: nameOrProvider, config: describeProvider(config) };
+					// The code stays here; the host gets the description.
+					Object.defineProperty(provider, "implementation", { value: config });
+					extension.providers.push(provider);
 				} else extension.providers.push({ name: nameOrProvider.id, native: true });
 			},
 			unregisterProvider(name) {
@@ -253,6 +256,16 @@
 		out.hasStreamSimple = typeof config.streamSimple === "function";
 		return out;
 	}
+	/** The configuration of provider `name` as last registered, with its code. */
+	function providerConfig(name) {
+		let found;
+		for (const extension of extensions.values()) {
+			for (const provider of extension.providers) if (provider.name === name && provider.implementation) found = provider.implementation;
+		}
+		return found;
+	}
+	/** Wire APIs registered with pi-ai's `registerApiProvider`. */
+	const registeredApis = () => [...(yapi.apiProviders?.keys() ?? [])];
 	function describe(extension) {
 		return {
 			id: extension.id,
@@ -968,6 +981,47 @@
 		return { result: plain(result), errors };
 	}
 
+	// ----- provider streams --------------------------------------------------------------------
+	/** Aborts of running streams and sign-ins, by the host's id. */
+	const aborts = new Map();
+	/**
+	 * An event for the host: `start` with its message, `done` and `error` with
+	 * the final one, the others without the live message but with its usage.
+	 */
+	function wireEvent(event) {
+		switch (event.type) {
+			case "start":
+				return { type: "start", message: plain(event.partial) };
+			case "done":
+				return { type: "done", message: plain(event.message) };
+			case "error":
+				return { type: "error", message: plain(event.error) };
+			default: {
+				const { partial, ...rest } = event;
+				if (event.type === "toolcall_start") {
+					const block = partial?.content?.[event.contentIndex];
+					rest.id = block?.id;
+					rest.toolName = block?.name;
+				}
+				return { type: "update", event: plain(rest), usage: plain(partial?.usage) };
+			}
+		}
+	}
+	/** pi's `lazyStream` message for a stream that failed. */
+	function setupError(model, error) {
+		return {
+			role: "assistant",
+			content: [],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			stopReason: "error",
+			errorMessage: errorMessage(error),
+			timestamp: Date.now(),
+		};
+	}
+
 	// ----- dispatch -------------------------------------------------------------------------------
 	const extensionOf = (id) => {
 		const extension = extensions.get(id);
@@ -980,7 +1034,7 @@
 			for (const [name, value] of Object.entries(payload.flags ?? {})) flagValues.set(name, value);
 			const results = [];
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
-			return { extensions: results };
+			return { extensions: results, apis: registeredApis() };
 		},
 		async bind() {
 			bound = true;
@@ -1019,7 +1073,7 @@
 				extensions.delete(id);
 				results.push(await instantiate(id, extension.path, extension.factory));
 			}
-			return { extensions: results };
+			return { extensions: results, apis: registeredApis() };
 		},
 		flags(payload) {
 			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);
@@ -1127,6 +1181,44 @@
 			const shortcut = extensionOf(payload.extension).shortcuts.get(payload.shortcut);
 			if (!shortcut) throw new Error(`Shortcut ${payload.shortcut} is not registered`);
 			await shortcut.handler(createContext(payload.ctx));
+			return null;
+		},
+		/**
+		 * Streams a response for a model whose API an extension implements:
+		 * its provider's `streamSimple` when the API matches, else the API's
+		 * `registerApiProvider` stream, as pi's provider composer picks. Each
+		 * event goes to the host as it arrives. A stream that throws ends
+		 * with pi's setup error.
+		 */
+		async stream(payload) {
+			const { stream: id, model, context } = payload;
+			const controller = new AbortController();
+			aborts.set(id, controller);
+			const send = (event) => yapi.request("provider.event", { stream: id, ...event });
+			try {
+				const config = providerConfig(model.provider);
+				const options = { ...payload.options, signal: controller.signal };
+				let events;
+				if (typeof config?.streamSimple === "function" && config.api === model.api) events = config.streamSimple(model, context, options);
+				else {
+					const api = yapi.apiProviders?.get(model.api)?.provider;
+					if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
+					events = api.streamSimple(model, context, options);
+				}
+				for await (const event of events) {
+					send(wireEvent(event));
+					if (event.type === "done" || event.type === "error") break;
+				}
+			} catch (error) {
+				send({ type: "error", message: setupError(model, error) });
+			} finally {
+				aborts.delete(id);
+			}
+			return null;
+		},
+		/** Aborts stream or sign-in `id`. */
+		abort(payload) {
+			aborts.get(payload.id)?.abort();
 			return null;
 		},
 		/**

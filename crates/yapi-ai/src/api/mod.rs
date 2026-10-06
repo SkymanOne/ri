@@ -176,12 +176,21 @@ pub(crate) fn copilot_headers(messages: &[Message]) -> Vec<(&'static str, String
 #[derive(Clone, Default)]
 pub struct Apis {
     registered: IndexMap<String, Arc<dyn Provider>>,
+    /// Streams of extension providers for their own models, by provider id.
+    providers: IndexMap<String, Arc<dyn Provider>>,
 }
 
 impl Apis {
     /// Registers or replaces an implementation.
     pub fn register(&mut self, provider: Arc<dyn Provider>) {
         self.registered.insert(provider.api().to_owned(), provider);
+    }
+
+    /// Streams the models of `provider` whose API is `implementation`'s with
+    /// `implementation`, ahead of every other implementation of that API;
+    /// pi's `streamSimple` in an extension's provider configuration.
+    pub fn register_for(&mut self, provider: &str, implementation: Arc<dyn Provider>) {
+        self.providers.insert(provider.to_owned(), implementation);
     }
 
     /// The implementation for an API id.
@@ -214,7 +223,12 @@ impl Apis {
                 request.options.env.as_ref(),
             );
         }
-        match self.get(&request.model.api) {
+        let own = self
+            .providers
+            .get(&request.model.provider)
+            .filter(|own| own.api() == request.model.api)
+            .cloned();
+        match own.or_else(|| self.get(&request.model.api)) {
             Some(provider) => provider.stream(request),
             None => {
                 let message = format!("No API provider registered for api: {}", request.model.api);
@@ -227,6 +241,34 @@ impl Apis {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A provider's own stream serves only its models of that API.
+    #[tokio::test]
+    async fn provider_streams_serve_their_own_models() {
+        let mut apis = Apis::default();
+        apis.register_for(
+            "echo",
+            Arc::new(crate::faux::Faux::new([crate::faux::Response::text("hi")])),
+        );
+        let request = |provider: &str| Request {
+            model: serde_json::from_value(serde_json::json!({
+                "id": "m", "name": "M", "api": "faux", "provider": provider, "baseUrl": "",
+                "reasoning": false, "input": ["text"],
+                "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+                "contextWindow": 1000, "maxTokens": 100,
+            }))
+            .unwrap(),
+            messages: Vec::new(),
+            options: crate::stream::StreamOptions::default(),
+        };
+        let own = apis.stream(request("echo")).result().await.unwrap();
+        assert_eq!(own.error_message, None);
+        let other = apis.stream(request("other")).result().await.unwrap();
+        assert_eq!(
+            other.error_message.as_deref(),
+            Some("No API provider registered for api: faux")
+        );
+    }
 
     #[test]
     fn normalizes_tool_call_ids_in_utf16_units() {

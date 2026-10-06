@@ -13,6 +13,10 @@ use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
+use yapi_ai::stream::{
+    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
+    ThinkingBudgets, new_output, now_ms, send_error,
+};
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
     Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
@@ -22,7 +26,8 @@ use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
 use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
-    Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
+    AssistantMessage, Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel,
+    ToolDeclaration,
 };
 use yapi_types::rpc::{SourceInfo, StreamingBehavior};
 use yapi_types::sync::lock;
@@ -60,6 +65,9 @@ pub struct ExtensionHost {
     sources: Vec<SourceInfo>,
     /// Descriptions of the loaded extensions, as the guest last reported them.
     loaded: Mutex<Vec<Value>>,
+    /// Wire APIs registered with pi-ai's `registerApiProvider`, as the guest
+    /// last reported them.
+    apis: Mutex<Vec<String>>,
     errors: Vec<LoadError>,
     /// Sessions handed extensions so far.
     sessions: AtomicU64,
@@ -124,6 +132,7 @@ impl ExtensionHost {
             bridge,
             sources: sources.to_vec(),
             loaded: Mutex::new(loaded),
+            apis: Mutex::new(api_ids(&result)),
             errors,
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
@@ -144,25 +153,78 @@ impl ExtensionHost {
     }
 
     /// The providers the loaded extensions registered with
-    /// `pi.registerProvider(name, config)`, as names and configurations in
-    /// `models.json`'s shape. Providers with their own `streamSimple` are
-    /// left out: yapi cannot stream through them.
-    pub fn providers(&self) -> Vec<(String, Value)> {
+    /// `pi.registerProvider(name, config)`, in registration order.
+    pub fn providers(self: &Arc<Self>) -> Vec<RegisteredProvider> {
         lock(&self.loaded)
             .iter()
             .flat_map(|extension| list(&extension["providers"]))
             .filter_map(|provider| {
                 let mut config = provider["config"].as_object()?.clone();
-                if config.remove("hasStreamSimple") == Some(Value::Bool(true)) {
-                    return None;
-                }
+                let streams = config.remove("hasStreamSimple") == Some(Value::Bool(true));
                 // Sign-in and image or classifier implementations are code.
                 for key in ["oauth", "images", "classifiers"] {
                     config.remove(key);
                 }
-                Some((text(&provider["name"]), Value::Object(config)))
+                let stream = config
+                    .get("api")
+                    .and_then(Value::as_str)
+                    .filter(|_| streams)
+                    .map(|api| self.js_stream(api));
+                Some(RegisteredProvider {
+                    name: text(&provider["name"]),
+                    config: Value::Object(config),
+                    stream,
+                })
             })
             .collect()
+    }
+
+    /// The wire APIs extensions implement with pi-ai's `registerApiProvider`
+    /// that yapi has no provider for, to stream the session's models of
+    /// those APIs.
+    pub fn apis(self: &Arc<Self>) -> Vec<Arc<dyn Provider>> {
+        lock(&self.apis)
+            .iter()
+            .filter(|api| yapi_ai::api::builtin(api).is_none())
+            .map(|api| self.js_stream(api))
+            .collect()
+    }
+
+    fn js_stream(self: &Arc<Self>, api: &str) -> Arc<dyn Provider> {
+        Arc::new(JsStream {
+            host: Arc::downgrade(self),
+            api: api.to_owned(),
+        })
+    }
+
+    /// Streams `request` through the extension that implements its API, as
+    /// the guest emits the events, and aborts the guest's stream when the
+    /// request is cancelled.
+    async fn stream(&self, request: Request, sender: EventSender) {
+        let id = self.bridge.next_id.fetch_add(1, Ordering::Relaxed);
+        let cancel = request.options.cancel.clone();
+        let output = new_output(&request.model, now_ms());
+        lock(&self.bridge.streams).insert(id, (sender.clone(), Some(output)));
+        let payload = json!({
+            "stream": id,
+            "model": request.model,
+            "context": {"messages": request.messages},
+            "options": stream_options(&request.options),
+        });
+        let mut call = std::pin::pin!(self.instance.call("stream", &payload));
+        let result = match cancel.run_until_cancelled(&mut call).await {
+            Some(result) => result,
+            None => {
+                let _ = self.instance.call("abort", &json!({"id": id})).await;
+                call.await
+            }
+        };
+        let running = lock(&self.bridge.streams)
+            .remove(&id)
+            .and_then(|(_, output)| output);
+        if let (Err(err), Some(output)) = (result, running) {
+            send_error(&sender, output, &cancel, err.to_string());
+        }
     }
 
     /// The flags the loaded extensions registered.
@@ -225,7 +287,10 @@ impl ExtensionHost {
         *lock(&self.bridge.session) = ctx.session.clone();
         if generation > 0 {
             match self.instance.call("reload", &Value::Null).await {
-                Ok(result) => *lock(&self.loaded) = split(&result).0,
+                Ok(result) => {
+                    *lock(&self.loaded) = split(&result).0;
+                    *lock(&self.apis) = api_ids(&result);
+                }
                 Err(err) => {
                     ctx.ui
                         .extension_error("yapi-js", "session_start", &err.to_string(), None)
@@ -239,6 +304,114 @@ impl ExtensionHost {
         *bound = generation + 1;
         true
     }
+}
+
+/// A provider an extension registered with `pi.registerProvider(name, config)`.
+pub struct RegisteredProvider {
+    /// The provider id.
+    pub name: String,
+    /// Its configuration in `models.json`'s shape.
+    pub config: Value,
+    /// Its `streamSimple`, which streams the provider's models of the
+    /// configuration's `api`.
+    pub stream: Option<Arc<dyn Provider>>,
+}
+
+/// A wire API an extension implements, with a provider's `streamSimple` or
+/// pi-ai's `registerApiProvider`.
+struct JsStream {
+    host: Weak<ExtensionHost>,
+    api: String,
+}
+
+impl Provider for JsStream {
+    fn api(&self) -> &str {
+        &self.api
+    }
+
+    fn stream(&self, request: Request) -> EventStream {
+        let (sender, stream) = EventStream::channel();
+        match self.host.upgrade() {
+            Some(host) => {
+                tokio::spawn(async move { host.stream(request, sender).await });
+            }
+            None => send_error(
+                &sender,
+                new_output(&request.model, now_ms()),
+                &request.options.cancel,
+                Error::Stopped.to_string(),
+            ),
+        }
+        stream
+    }
+}
+
+/// pi's `SimpleStreamOptions` for a request: the options the agent passes.
+fn stream_options(options: &StreamOptions) -> Value {
+    let mut out = serde_json::Map::new();
+    let mut set = |key: &str, value: Value| {
+        if !value.is_null() {
+            out.insert(key.to_owned(), value);
+        }
+    };
+    set("apiKey", json!(options.api_key));
+    if !options.headers.is_empty() {
+        set("headers", json!(options.headers));
+    }
+    set(
+        "reasoning",
+        json!(
+            options
+                .reasoning
+                .filter(|level| *level != ThinkingLevel::Off)
+                .map(ThinkingLevel::as_str)
+        ),
+    );
+    set("maxTokens", json!(options.max_tokens));
+    set("temperature", json!(options.temperature));
+    set("sessionId", json!(options.session_id));
+    set(
+        "cacheRetention",
+        json!(options.cache_retention.map(|retention| match retention {
+            CacheRetention::None => "none",
+            CacheRetention::Short => "short",
+            CacheRetention::Long => "long",
+        })),
+    );
+    let budgets = &options.thinking_budgets;
+    if *budgets != ThinkingBudgets::default() {
+        set(
+            "thinkingBudgets",
+            json!({"minimal": budgets.minimal, "low": budgets.low, "medium": budgets.medium, "high": budgets.high}),
+        );
+    }
+    set("maxRetryDelayMs", json!(options.max_retry_delay_ms));
+    set("env", json!(options.env));
+    Value::Object(out)
+}
+
+/// A stream event the guest sent, as `{type, ...}`: `start` with its
+/// message, `update` with the event and the usage so far, `done` and `error`
+/// with the final message.
+fn stream_event(payload: &Value) -> Result<StreamEvent, String> {
+    let message = || {
+        serde_json::from_value(payload["message"].clone())
+            .map_err(|err| format!("Invalid assistant message from extension stream: {err}"))
+    };
+    Ok(match payload["type"].as_str() {
+        Some("start") => StreamEvent::Start(message()?),
+        Some("done") => StreamEvent::Done(message()?),
+        Some("error") => StreamEvent::Error(message()?),
+        _ => StreamEvent::Update {
+            event: serde_json::from_value(payload["event"].clone())
+                .map_err(|err| format!("Invalid stream event from extension: {err}"))?,
+            usage: serde_json::from_value(payload["usage"].clone()).unwrap_or_default(),
+        },
+    })
+}
+
+fn api_ids(result: &Value) -> Vec<String> {
+    list(&result["apis"]).iter().map(text).collect()
 }
 
 fn split(result: &Value) -> (Vec<Value>, Vec<LoadError>) {
@@ -716,6 +889,11 @@ struct SessionBridge {
     /// Where the output of `!` commands that bash operations run goes, by
     /// their operations' id.
     bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
+    /// Running extension streams by id, with an empty message for failures
+    /// until their final event.
+    streams: Mutex<HashMap<u64, (EventSender, Option<AssistantMessage>)>>,
+    /// The next id of a stream.
+    next_id: AtomicU64,
     owner: OnceLock<Weak<ExtensionHost>>,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
     codemode: Arc<crate::codemode::Runner>,
@@ -739,6 +917,8 @@ impl SessionBridge {
             updates: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
+            streams: Mutex::default(),
+            next_id: AtomicU64::new(1),
             owner: OnceLock::new(),
         })
     }
@@ -1050,6 +1230,35 @@ impl Bridge for SessionBridge {
                 .map(|(sink, _)| sink.clone());
             if let (Some(sink), Ok(partial)) = (sink, tool_result(payload["partial"].clone())) {
                 sink(partial);
+            }
+            return Ok(Value::Null);
+        }
+        if kind == "provider.event" {
+            let mut streams = lock(&self.streams);
+            let Some((sender, running)) = payload["stream"]
+                .as_u64()
+                .and_then(|id| streams.get_mut(&id))
+            else {
+                return Ok(Value::Null);
+            };
+            // Events after the final one are dropped, as pi's streams drop them.
+            let Some(output) = running else {
+                return Ok(Value::Null);
+            };
+            match stream_event(payload) {
+                Ok(event) => {
+                    if matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_)) {
+                        *running = None;
+                    }
+                    sender.send(event);
+                }
+                Err(message) => {
+                    let mut output = output.clone();
+                    output.stop_reason = yapi_types::message::StopReason::Error;
+                    output.error_message = Some(message);
+                    *running = None;
+                    sender.send(StreamEvent::Error(output));
+                }
             }
             return Ok(Value::Null);
         }

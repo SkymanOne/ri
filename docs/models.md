@@ -73,7 +73,7 @@ Inside yapi, `/model` or Ctrl+L opens the model selector, Ctrl+P cycles through 
 
 ## Custom providers and models
 
-Add providers, models and overrides to `~/.yapi/agent/models.json`. The format is Pi's, described in Pi's [models](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/models.md) and [custom provider](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/custom-provider.md) documentation.
+Add providers, models and overrides to `~/.yapi/agent/models.json`. The format is Pi's, described in Pi's [models](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/models.md) and [custom provider](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/custom-provider.md) documentation. Extensions can register providers too, including ones that implement their own wire API. See [Providers from extensions](extensions.md#providers-from-extensions).
 
 ## Credentials for other tools
 

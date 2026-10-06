@@ -131,9 +131,8 @@ const hostApi = { stream: hostStream, streamSimple: hostStream };
 
 // ----- API providers -----------------------------------------------------------------------------
 // pi-ai's registry. A stream an extension registers for an API serves its
-// own calls to `stream` and `streamSimple`. yapi's agent runs a session's model
-// on yapi's providers, so a model whose API only an extension implements cannot
-// be the session's model.
+// own calls to `stream` and `streamSimple`, and the session's models of that
+// API when yapi has no provider for it.
 const BUILTIN_APIS = [
 	"anthropic-messages",
 	"openai-completions",
@@ -146,6 +145,8 @@ const BUILTIN_APIS = [
 	"bedrock-converse-stream",
 ];
 const apiProviders = new Map();
+// The extension host streams session models through these.
+yapi.apiProviders = apiProviders;
 const forApi = (api, fn) => (model, context, options) => {
 	if (model.api !== api) throw new Error(`Mismatched api: ${model.api} expected ${api}`);
 	return fn(model, context, options);
@@ -257,6 +258,88 @@ export const repairJson = (json) => yapi.request("json.repair", { text: json });
 export const parseJsonWithRepair = (json) => yapi.request("json.parseWithRepair", { text: json });
 export const parseStreamingJson = (partial) => yapi.request("json.partial", { text: partial ?? "" });
 
+// ----- transcripts ---------------------------------------------------------------------------------
+const isSystemMessage = (message) => message.role === "system";
+
+export function getSystemMessageText(message) {
+	const parts = [contentText(message.content)];
+	for (const text of Object.values(message.sections ?? {})) {
+		if (text !== null) parts.push(text);
+	}
+	return parts.filter((part) => part.length > 0).join("\n\n");
+}
+
+export function createInitialSystemMessage(systemPrompt, tools) {
+	const hasSystemPrompt = systemPrompt !== undefined && systemPrompt.length > 0;
+	const hasTools = tools !== undefined && tools.length > 0;
+	if (!hasSystemPrompt && !hasTools) return undefined;
+	return { role: "system", content: systemPrompt ?? "", ...(hasTools ? { toolsAdded: tools } : {}), timestamp: 0 };
+}
+
+export function normalizeContext(context) {
+	const initialMessage = createInitialSystemMessage(context.systemPrompt, context.tools);
+	return { messages: initialMessage ? [initialMessage, ...context.messages] : context.messages };
+}
+
+export function getInitialSystemMessage(messages) {
+	const first = messages[0];
+	return first && isSystemMessage(first) ? first : undefined;
+}
+
+export function withoutInitialSystemMessage(messages) {
+	return getInitialSystemMessage(messages) ? messages.slice(1) : messages;
+}
+
+export function getCurrentTools(messages) {
+	const tools = new Map();
+	for (const message of messages) {
+		if (!isSystemMessage(message)) continue;
+		for (const tool of message.toolsRemoved ?? []) tools.delete(tool.name);
+		for (const tool of message.toolsAdded ?? []) tools.set(tool.name, tool);
+	}
+	return [...tools.values()];
+}
+
+export function getCurrentSystemMessage(messages) {
+	const content = [];
+	const sections = new Map();
+	let timestamp;
+	for (const message of messages) {
+		if (!isSystemMessage(message)) continue;
+		timestamp ??= message.timestamp;
+		const text = contentText(message.content);
+		if (text.length > 0) content.push(text);
+		for (const [name, value] of Object.entries(message.sections ?? {})) {
+			if (value === null) sections.delete(name);
+			else sections.set(name, value);
+		}
+	}
+	const tools = getCurrentTools(messages);
+	if (timestamp === undefined && tools.length === 0) return undefined;
+	return {
+		role: "system",
+		content: content.join("\n\n"),
+		...(sections.size > 0 ? { sections: Object.fromEntries(sections) } : {}),
+		...(tools.length > 0 ? { toolsAdded: tools } : {}),
+		timestamp: timestamp ?? 0,
+	};
+}
+
+export function getCurrentSystemPrompt(messages) {
+	const message = getCurrentSystemMessage(messages);
+	return message ? getSystemMessageText(message) : "";
+}
+
+export function collapseSystemMessages(context) {
+	const head = getCurrentSystemMessage(context.messages);
+	const messages = context.messages.filter((message) => message.role !== "system");
+	return { messages: head ? [head, ...messages] : messages };
+}
+
+export function resolveTranscript(context, supportsMidConvoSystemMessages) {
+	return supportsMidConvoSystemMessages ? context : collapseSystemMessages(context);
+}
+
 // ----- tool validation ------------------------------------------------------------------------------
 export function validateToolArguments(tool, toolCall) {
 	const args = structuredClone(toolCall.arguments ?? {});
@@ -275,14 +358,12 @@ export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
 
 // ----- not available in yapi ---------------------------------------------------------------------------
 export const { AssistantMessageFrameEncoder, InMemoryCredentialStore, InMemoryModelsStore, appendAssistantMessageDiagnostic, cleanupSessionResources,
-	collapseSystemMessages, createAssistantMessageDiagnostic, createFauxCore, createInitialSystemMessage, createModels, declarationsEqual,
-	defaultProviderAuthContext, extractDiagnosticError, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, findEnvKeys,
-	generateImages, generateImagesOpenRouter, getCurrentSystemMessage, getCurrentSystemPrompt, getCurrentTools, getDeclaredTools, getImageModel,
-	getImageModels, getImageProviders, getImagesApiProvider, getInitialSystemMessage, getOverflowPatterns, getSystemMessageText, getToolStateChanges,
-	hasNonAdditiveToolChanges, hasToolRedefinitions, isContextOverflow, isRecoverableLength, isRetryableAssistantError, normalizeContext,
-	reduceAssistantMessageFrames, registerBuiltInImagesApiProviders, registerFauxProvider, registerImagesApiProvider, registerSessionResourceCleanup,
-	renderSystemMessageUpdate, resolveTranscript, resolveTranscriptTools, retryAssistantCall, retryDelayMs, setBedrockProviderModule, toToolDeclaration,
-	withoutInitialSystemMessage } = yapi.stubs("@earendil-works/pi-ai");
+	createAssistantMessageDiagnostic, createFauxCore, createModels, declarationsEqual, defaultProviderAuthContext, extractDiagnosticError,
+	fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, findEnvKeys, generateImages, generateImagesOpenRouter, getDeclaredTools,
+	getImageModel, getImageModels, getImageProviders, getImagesApiProvider, getOverflowPatterns, getToolStateChanges, hasNonAdditiveToolChanges,
+	hasToolRedefinitions, isContextOverflow, isRecoverableLength, isRetryableAssistantError, reduceAssistantMessageFrames,
+	registerBuiltInImagesApiProviders, registerFauxProvider, registerImagesApiProvider, registerSessionResourceCleanup, renderSystemMessageUpdate,
+	resolveTranscriptTools, retryAssistantCall, retryDelayMs, setBedrockProviderModule, toToolDeclaration } = yapi.stubs("@earendil-works/pi-ai");
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
 export const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
 export const ANTHROPIC_FEDERATION_RULE_ID_ENV = "ANTHROPIC_FEDERATION_RULE_ID";

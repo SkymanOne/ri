@@ -15,7 +15,7 @@ mod ops;
 mod requests;
 
 pub use engine::Engine;
-pub use extensions::{ExtensionHost, Flag, LoadError};
+pub use extensions::{ExtensionHost, Flag, LoadError, RegisteredProvider};
 pub use instance::{Bridge, Grants, Instance, NoBridge, Options, join_stopped};
 
 /// Why the extension runtime failed.

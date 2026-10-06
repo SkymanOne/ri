@@ -464,16 +464,25 @@ fn build(
     if builtin_enabled(yapi_core::llama::NAME, args, &builtin_settings) {
         registry.enable_llama();
     }
-    // Providers extensions register, after `models.json` as in pi.
+    // Providers extensions register, after `models.json` as in pi, and the
+    // wire APIs they implement.
+    let mut apis = Apis::default();
     for host in &extensions.hosts {
-        for (name, config) in host.providers() {
-            match serde_json::from_value(config) {
+        for provider in host.providers() {
+            let name = provider.name;
+            match serde_json::from_value(provider.config) {
                 Ok(config) => registry.register_config(&name, config),
                 Err(error) if warn => {
                     eprintln!("Warning: provider \"{name}\" from an extension is invalid: {error}");
                 }
                 Err(_) => {}
             }
+            if let Some(stream) = provider.stream {
+                apis.register_for(&name, stream);
+            }
+        }
+        for api in host.apis() {
+            apis.register(api);
         }
     }
 
@@ -721,7 +730,7 @@ fn build(
         agent_dir,
         settings,
         registry,
-        apis: Apis::default(),
+        apis,
         session,
         model,
         thinking_level,
