@@ -2,7 +2,7 @@
 
 Progress against the milestones in [AGENTS.md](../AGENTS.md). v0.1 is the completion of M7. Each milestone is delivered as a slice: its exit criterion is met on the subset stated here.
 
-Intentional differences from pi, and the pi features not ported yet, are in [compat.md](../docs/compat.md). The deferred work below lists only what compat.md does not.
+Intentional differences from pi are in [compat.md](../docs/compat.md), and the pi features not ported yet are [issues labelled `pi-compat`](https://github.com/SkymanOne/yapi/issues?q=is%3Aissue+label%3Api-compat). The deferred work below lists only what compat.md does not.
 
 ## M0: workspace, types, mock server
 
