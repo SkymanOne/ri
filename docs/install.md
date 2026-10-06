@@ -16,6 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh
 
 `YAPI_VERSION` and `YAPI_INSTALL_DIR` set the same as `--version` and `--to`.
 
+The script also installs the release's documentation for the model, which yapi reads to explain its own features. It holds this site's pages and Pi's docs and examples, checked against their SHA-256 checksum like the binary, and goes to `~/.yapi/agent/docs`, or `docs` in `YAPI_CODING_AGENT_DIR`. A new install replaces the previous copy. `--no-docs` or `YAPI_NO_DOCS=1` skips it.
+
 ## cargo-binstall
 
 [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) installs the same release binary through Cargo, into `~/.cargo/bin`:

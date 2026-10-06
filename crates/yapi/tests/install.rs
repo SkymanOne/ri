@@ -1,6 +1,6 @@
 //! `install.sh` against releases packaged by `scripts/package-release.sh`,
 //! served the way GitHub serves them. The installed "binary" is a script that
-//! prints its version.
+//! prints its version, and the docs archive holds `.version` and `index.md`.
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -14,6 +14,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use sha2::Digest as _;
+
 const TARGETS: [&str; 4] = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
@@ -26,7 +28,8 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 /// Packages a fake `yapi` that prints `version` for every target, with fake
-/// third-party notices, under `<site>/releases/download/v<version>/`.
+/// third-party notices, and a docs archive naming `version`, under
+/// `<site>/releases/download/v<version>/`.
 fn release(site: &Path, version: &str) {
     std::fs::create_dir_all(site).unwrap();
     let binary = site.join(format!("yapi-{version}"));
@@ -45,6 +48,27 @@ fn release(site: &Path, version: &str) {
             .unwrap();
         assert!(output.status.success(), "{output:?}");
     }
+    let docs = site.join(format!("docs-{version}"));
+    std::fs::create_dir_all(&docs).unwrap();
+    std::fs::write(docs.join(".version"), format!("{version}\n")).unwrap();
+    std::fs::write(docs.join("index.md"), format!("# yapi {version}\n")).unwrap();
+    let archive = out.join("yapi-docs.tar.gz");
+    let output = Command::new("tar")
+        .arg("-czf")
+        .arg(&archive)
+        .arg("-C")
+        .arg(&docs)
+        .args([".version", "index.md"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let digest = sha2::Sha256::digest(std::fs::read(&archive).unwrap());
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    std::fs::write(
+        out.join("yapi-docs.tar.gz.sha256"),
+        format!("{hex}  yapi-docs.tar.gz\n"),
+    )
+    .unwrap();
 }
 
 /// Serves `site` over HTTP until the process exits, redirecting the latest
@@ -91,8 +115,15 @@ fn install(releases: &str, home: &Path, args: &[&str]) -> Output {
         .env("HOME", home)
         .env_remove("YAPI_VERSION")
         .env_remove("YAPI_INSTALL_DIR")
+        .env_remove("YAPI_NO_DOCS")
+        .env_remove("YAPI_CODING_AGENT_DIR")
         .output()
         .unwrap()
+}
+
+/// The `index.md` of the docs installed in `agent`, if any.
+fn docs_index(agent: &Path) -> Option<String> {
+    std::fs::read_to_string(agent.join("docs/index.md")).ok()
 }
 
 fn installed_version(binary: &Path) -> String {
@@ -112,6 +143,79 @@ fn installs_the_latest_release_into_local_bin() {
     assert_eq!(installed_version(&binary), "9.9.9");
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(&format!("Installed yapi 9.9.9 to {}", binary.display())));
+    // The release's docs for the model, in the default agent directory.
+    let agent = dir.join(".yapi/agent");
+    assert_eq!(docs_index(&agent).as_deref(), Some("# yapi 9.9.9\n"));
+    assert!(stdout.contains(&format!(
+        "Installed the docs for the model to {}",
+        agent.join("docs").display()
+    )));
+}
+
+#[test]
+fn replaces_the_docs_unless_asked_not_to() {
+    let dir = scratch("docs");
+    let site = dir.join("site");
+    release(&site, "9.9.9");
+    let releases = serve(site, Some("9.9.9"));
+    let agent = dir.join("agent");
+    std::fs::create_dir_all(agent.join("docs")).unwrap();
+    std::fs::write(agent.join("docs/stale.md"), "old").unwrap();
+    let with_agent = |args: &[&str], no_docs: Option<&str>| {
+        let mut command = Command::new("sh");
+        command
+            .arg(common::repo().join("install.sh"))
+            .args(args)
+            .env("YAPI_RELEASES_URL", &releases)
+            .env("HOME", &dir)
+            .env("YAPI_CODING_AGENT_DIR", &agent)
+            .env_remove("YAPI_VERSION")
+            .env_remove("YAPI_INSTALL_DIR")
+            .env_remove("YAPI_NO_DOCS");
+        if let Some(value) = no_docs {
+            command.env("YAPI_NO_DOCS", value);
+        }
+        command.output().unwrap()
+    };
+    let output = with_agent(&[], None);
+    assert!(output.status.success(), "{output:?}");
+    // The new copy replaces the old one whole, and nothing is left beside it.
+    assert_eq!(docs_index(&agent).as_deref(), Some("# yapi 9.9.9\n"));
+    assert!(!agent.join("docs/stale.md").exists());
+    let names: Vec<_> = std::fs::read_dir(&agent)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["docs"]);
+
+    // `--no-docs` and `YAPI_NO_DOCS` keep the docs as they are.
+    std::fs::write(agent.join("docs/index.md"), "edited").unwrap();
+    for (args, no_docs) in [(&["--no-docs"][..], None), (&[][..], Some("1"))] {
+        let output = with_agent(args, no_docs);
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(docs_index(&agent).as_deref(), Some("edited"));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(!stdout.contains("Installed the docs"), "{stdout}");
+    }
+}
+
+#[test]
+fn installs_yapi_without_docs_that_fail_their_checksum() {
+    let dir = scratch("docs-checksum");
+    let site = dir.join("site");
+    release(&site, "9.9.9");
+    let sums = site.join("releases/download/v9.9.9/yapi-docs.tar.gz.sha256");
+    let text = std::fs::read_to_string(&sums).unwrap();
+    std::fs::write(&sums, format!("{}{}", "0".repeat(64), &text[64..])).unwrap();
+    let output = install(&serve(site, Some("9.9.9")), &dir, &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(installed_version(&dir.join(".local/bin/yapi")), "9.9.9");
+    assert_eq!(docs_index(&dir.join(".yapi/agent")), None);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("skipped the docs for the model: yapi-docs.tar.gz does not match its SHA-256 checksum. yapi downloads them when it first runs."),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -137,6 +241,7 @@ fn installs_a_chosen_version_where_asked() {
         .env("YAPI_VERSION", "v9.9.9")
         .env("YAPI_INSTALL_DIR", &to)
         .env("HOME", &dir)
+        .env_remove("YAPI_CODING_AGENT_DIR")
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");

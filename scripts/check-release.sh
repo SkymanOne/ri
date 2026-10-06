@@ -3,7 +3,7 @@
 # binary and that yapi-docs.tar.gz holds yapi's and pi's docs, then installs
 # this system's release archive as users would: with install.sh, as the
 # latest release and as release <tag>, and with cargo-binstall when it is on
-# PATH. Each must install yapi and nothing else.
+# PATH. Each must install yapi and nothing else, and install.sh the docs.
 # The archives are served over HTTPS from 127.0.0.1 in the layout of GitHub's
 # release downloads, with a throwaway certificate authority.
 #
@@ -140,12 +140,23 @@ check() {
     echo "ok: $2 installed yapi $found"
 }
 
-CURL_CA_BUNDLE="$work/ca.pem" YAPI_RELEASES_URL="$repo/releases" \
+# The docs install.sh unpacked into agent directory $1.
+check_docs() {
+    if [ "$(cat "$1/docs/.version" 2>/dev/null)" != "$version" ] || [ ! -f "$1/docs/pi/docs/extensions.md" ]; then
+        echo "$2 did not install the docs for $version into $1/docs" >&2
+        exit 1
+    fi
+    echo "ok: $2 installed the docs"
+}
+
+CURL_CA_BUNDLE="$work/ca.pem" YAPI_RELEASES_URL="$repo/releases" YAPI_CODING_AGENT_DIR="$work/latest/agent" \
     sh "$root/install.sh" --to "$work/latest/bin"
 check "$work/latest/bin/yapi" "install.sh, latest release,"
-CURL_CA_BUNDLE="$work/ca.pem" YAPI_RELEASES_URL="$repo/releases" \
+check_docs "$work/latest/agent" "install.sh, latest release,"
+CURL_CA_BUNDLE="$work/ca.pem" YAPI_RELEASES_URL="$repo/releases" YAPI_CODING_AGENT_DIR="$work/tagged/agent" \
     sh "$root/install.sh" --version "$tag" --to "$work/tagged/bin"
 check "$work/tagged/bin/yapi" "install.sh, release $tag,"
+check_docs "$work/tagged/agent" "install.sh, release $tag,"
 
 if command -v cargo-binstall >/dev/null 2>&1; then
     # The repository's manifests, pointing at this server instead of GitHub.

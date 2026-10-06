@@ -1,7 +1,8 @@
 #!/bin/sh
 # Installs yapi from a GitHub release: downloads the binary for this system,
 # checks it against its published SHA-256 and copies it into a directory on
-# PATH.
+# PATH. Then it installs the release's docs for the model the same way into
+# yapi's agent directory, replacing the previous copy.
 #
 #   curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh -s -- --version v0.1.0 --to /usr/local/bin
@@ -9,12 +10,19 @@
 # Options, or the environment variables that set them:
 #   --version <tag>   YAPI_VERSION       release to install (default: the latest)
 #   --to <dir>        YAPI_INSTALL_DIR   where to put yapi (default: ~/.local/bin)
+#   --no-docs         YAPI_NO_DOCS=1     skip the docs for the model
+#   YAPI_CODING_AGENT_DIR                where the docs go, under docs/
+#                                        (default: ~/.yapi/agent)
 #   YAPI_RELEASES_URL                    the releases page (default: GitHub's)
 set -eu
 
 releases="${YAPI_RELEASES_URL:-https://github.com/SkymanOne/yapi/releases}"
 version="${YAPI_VERSION:-latest}"
 dir="${YAPI_INSTALL_DIR:-}"
+case "${YAPI_NO_DOCS:-}" in
+    1 | true | TRUE | True | yes | YES | Yes) docs= ;;
+    *) docs=yes ;;
+esac
 from_source="cargo install --locked --git https://github.com/SkymanOne/yapi yapi"
 
 fail() {
@@ -34,14 +42,20 @@ while [ $# -gt 0 ]; do
             dir=$2
             shift 2
             ;;
+        --no-docs)
+            docs=
+            shift
+            ;;
         -h | --help)
             cat <<EOF
-Usage: install.sh [--version <tag>] [--to <dir>]
+Usage: install.sh [--version <tag>] [--to <dir>] [--no-docs]
 
-Installs yapi from a GitHub release, checked against its SHA-256.
+Installs yapi from a GitHub release, checked against its SHA-256, and the
+release's docs for the model into ~/.yapi/agent/docs, or YAPI_CODING_AGENT_DIR.
 
   --version <tag>   release to install (default: the latest), or YAPI_VERSION
   --to <dir>        where to put yapi (default: ~/.local/bin), or YAPI_INSTALL_DIR
+  --no-docs         skip the docs, or YAPI_NO_DOCS=1
 EOF
             exit 0
             ;;
@@ -126,6 +140,39 @@ cp "$work/unpacked/yapi" "$dir/.yapi.$$"
 chmod 755 "$dir/.yapi.$$"
 mv -f "$dir/.yapi.$$" "$dir/yapi"
 echo "Installed yapi $installed to $dir/yapi"
+
+# The docs the model reads about yapi and pi, unpacked next to the old copy
+# and swapped in. yapi downloads them on its first run when this step fails.
+if [ -n "$docs" ]; then
+    agent="${YAPI_CODING_AGENT_DIR:-}"
+    case "$agent" in
+        "~/"*) agent="${HOME:-}/${agent#\~/}" ;;
+    esac
+    [ -n "$agent" ] || agent="${HOME:+$HOME/.yapi/agent}"
+    docs_name=yapi-docs.tar.gz
+    if [ -z "$agent" ]; then
+        problem="HOME and YAPI_CODING_AGENT_DIR are not set"
+    elif ! curl -fsSL -o "$work/$docs_name" "$download/$docs_name" ||
+        ! curl -fsSL -o "$work/$docs_name.sha256" "$download/$docs_name.sha256"; then
+        problem="found no $docs_name in $release"
+    elif [ "$(cut -d ' ' -f 1 <"$work/$docs_name.sha256")" != "$(sha256 "$work/$docs_name")" ]; then
+        problem="$docs_name does not match its SHA-256 checksum"
+    elif ! mkdir -p "$agent/.docs.$$" || ! tar -xzf "$work/$docs_name" -C "$agent/.docs.$$"; then
+        rm -rf "$agent/.docs.$$"
+        problem="could not unpack $docs_name into $agent"
+    else
+        problem=
+        if [ -e "$agent/docs" ]; then
+            mv "$agent/docs" "$agent/.docs-old.$$"
+        fi
+        mv "$agent/.docs.$$" "$agent/docs"
+        rm -rf "$agent/.docs-old.$$"
+        echo "Installed the docs for the model to $agent/docs"
+    fi
+    if [ -n "$problem" ]; then
+        echo "install.sh: skipped the docs for the model: $problem. yapi downloads them when it first runs." >&2
+    fi
+fi
 
 case ":${PATH:-}:" in
     *":$dir:"*) ;;
