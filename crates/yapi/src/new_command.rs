@@ -25,13 +25,13 @@ const FILES: [(&str, &str); 7] = template![
     "src/lib.rs",
 ];
 
-/// Whether `name` can name a Cargo package: ASCII letters, digits, `-` and
-/// `_`, starting with a letter or `_`.
+/// Whether `name` can name both a Cargo package and an npm package: lowercase
+/// ASCII letters, digits, `-` and `_`, starting with a letter.
 fn valid_name(name: &str) -> bool {
-    name.starts_with(|first: char| first.is_ascii_alphabetic() || first == '_')
+    name.starts_with(|first: char| first.is_ascii_lowercase())
         && name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 /// Writes the template into `dir` for the package `name`.
@@ -51,7 +51,7 @@ fn create(dir: &Path, name: &str) -> std::io::Result<()> {
 }
 
 /// Create a Cargo project for a native extension package in PATH, which must
-/// not exist or be empty.
+/// be missing or empty.
 #[derive(clap::Parser)]
 struct NewArgs {
     /// Where to create the project.
@@ -83,7 +83,7 @@ pub fn run(args: &[String]) -> u8 {
     };
     if !valid_name(&name) {
         err(&format!(
-            "Error: \"{name}\" is not a valid package name. Use ASCII letters, digits, - and _, starting with a letter."
+            "Error: \"{name}\" is not a valid package name. Use lowercase ASCII letters, digits, - and _, starting with a letter."
         ));
         return 1;
     }

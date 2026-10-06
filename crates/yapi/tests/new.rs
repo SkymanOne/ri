@@ -118,9 +118,16 @@ fn refuses_existing_files_and_invalid_names() {
     );
     assert_eq!(files(&dir.join("taken")), ["notes.txt"]);
 
-    for name in ["1st", "-dash", "has space", "ünï"] {
+    // npm rejects capitals and a leading `_`.
+    for name in ["1st", "-dash", "_under", "Upper", "has space", "ünï"] {
         let output = yapi_new(&dir, &["fresh", "--name", name]);
         assert_eq!(output.status.code(), Some(1), "{name}");
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            format!(
+                "Error: \"{name}\" is not a valid package name. Use lowercase ASCII letters, digits, - and _, starting with a letter.\n"
+            )
+        );
         assert!(!dir.join("fresh").exists(), "{name}");
     }
     let output = yapi_new(&dir, &[]);

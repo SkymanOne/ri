@@ -30,7 +30,7 @@ shout/
 └── src/lib.rs           the hello example, to replace with your own
 ```
 
-The package takes the directory's name, and `--name` sets another. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
+The package takes the directory's name, and `--name` sets another. The name has lowercase ASCII letters, digits, `-` and `_` and starts with a letter, so both Cargo and npm accept it. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
 
 ```sh
 cargo generate --git https://github.com/SkymanOne/yapi --tag v0.1.0 crates/yapi/templates/extension
