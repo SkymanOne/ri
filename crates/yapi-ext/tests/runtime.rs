@@ -5,25 +5,14 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::Path;
 use std::sync::Arc;
 
+use common::{engine, scratch};
 use serde_json::{Value, json};
-use yapi_ext::{Engine, Instance, NoBridge, Options};
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("runtime-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn engine() -> Engine {
-    Engine::new(Some(
-        &Path::new(env!("CARGO_TARGET_TMPDIR")).join("wasm-cache"),
-    ))
-    .unwrap()
-}
+use yapi_ext::{Instance, NoBridge, Options};
 
 async fn load(dir: &Path, files: &[(&str, &str)]) -> (Instance, Value) {
     for (name, text) in files {
