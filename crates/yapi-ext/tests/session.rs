@@ -249,6 +249,7 @@ export default function (pi: ExtensionAPI) {
 			pi.appendEntry("children", {
 				ofFirst: manager.getChildren(first.id).map((entry) => entry.customType),
 				roots: manager.getChildren(null).map((entry) => entry.type),
+				label: manager.getLabel(first.id) === undefined,
 			});
 		},
 	});
@@ -280,6 +281,6 @@ async fn session_manager_reads_children() {
     }
     assert_eq!(
         custom_entries(&session, "children"),
-        [json!({"ofFirst": ["second"], "roots": ["model_change"]})]
+        [json!({"ofFirst": ["second"], "roots": ["model_change"], "label": true})]
     );
 }

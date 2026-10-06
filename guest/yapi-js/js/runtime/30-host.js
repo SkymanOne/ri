@@ -669,7 +669,13 @@
 	];
 	function createSessionManager() {
 		const manager = {};
-		for (const method of sessionMethods) manager[method] = (...args) => yapi.request("session.read", { method, args: plain(args) });
+		for (const method of sessionMethods) {
+			manager[method] = (...args) => {
+				const value = yapi.request("session.read", { method, args: plain(args) });
+				// pi answers a missing value with undefined, except a missing leaf or header.
+				return value === null && method !== "getLeafId" && method !== "getHeader" ? undefined : value;
+			};
+		}
 		return manager;
 	}
 	function createModelRegistry() {
