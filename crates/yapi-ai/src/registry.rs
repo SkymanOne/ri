@@ -1078,25 +1078,18 @@ impl ModelRegistry {
     /// Models with credentials. A GitHub Copilot sign-in limits its models to
     /// those the account enables.
     pub fn available(&self) -> Vec<&Model> {
-        let mut configured: HashMap<&str, bool> = HashMap::new();
         let copilot_ids = match self.credential("github-copilot") {
             Some(Credential::OAuth(credential)) => copilot::available_model_ids(&credential),
             _ => None,
         };
-        self.models
-            .iter()
-            .filter(|model| {
-                *configured
-                    .entry(model.provider.as_str())
-                    .or_insert_with(|| self.has_auth(&model.provider))
-            })
-            .filter(|model| {
-                model.provider != "github-copilot"
-                    || copilot_ids
-                        .as_ref()
-                        .is_none_or(|ids| ids.contains(&model.id))
-            })
-            .collect()
+        let mut models = self.configured(&self.models, |model| &model.provider);
+        models.retain(|model| {
+            model.provider != "github-copilot"
+                || copilot_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&model.id))
+        });
+        models
     }
 
     /// The API key a request to `provider` would use, when it is known
