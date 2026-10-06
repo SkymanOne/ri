@@ -457,6 +457,9 @@
 	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
 	// needs load when the session binds, so the factory runs at once.
 	const editorSlot = { factory: undefined, handle: undefined };
+	// pi-tui's input listeners: `onTerminalInput` handlers, which see raw
+	// input before the editor and may consume or transform it.
+	const terminalListeners = new Set();
 	let editorActions = [];
 	function setEditor(factory) {
 		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
@@ -524,7 +527,14 @@
 			input: (title, placeholder, opts) => (data.hasUI ? yapi.op("ui.input", { title, placeholder, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
 			editor: (title, prefill) => (data.hasUI ? yapi.op("ui.editor", { title, prefill }).then(orUndefined) : Promise.resolve(undefined)),
 			notify: (message, type) => request("notify", type === undefined ? { message } : { message, type }),
-			onTerminalInput: () => () => {},
+			onTerminalInput(handler) {
+				if (!shown) return () => {};
+				if (terminalListeners.size === 0) request("setTerminalInput", { listening: true });
+				terminalListeners.add(handler);
+				return () => {
+					if (terminalListeners.delete(handler) && terminalListeners.size === 0) request("setTerminalInput", { listening: false });
+				};
+			},
 			setStatus: (key, text) => request("setStatus", { key, text }),
 			setWorkingMessage: (message) => request("setWorkingMessage", { message }),
 			setWorkingVisible: (visible) => request("setWorkingVisible", { visible }),
@@ -899,6 +909,7 @@
 			transcriptViews.clear();
 			slots.footer = slots.header = undefined;
 			editorSlot.factory = editorSlot.handle = undefined;
+			terminalListeners.clear();
 			const results = [];
 			for (const [id, extension] of [...extensions]) {
 				extensions.delete(id);
@@ -937,6 +948,24 @@
 			const command = extensionOf(payload.extension).commands.get(payload.name);
 			if (typeof command?.getArgumentCompletions !== "function") return null;
 			return plain(await command.getArgumentCompletions(payload.prefix ?? "")) ?? null;
+		},
+		/** Runs the input listeners over each key as pi-tui does; `null` for a consumed key. */
+		terminalInput(payload) {
+			return (payload.keys ?? []).map((data) => {
+				let current = data;
+				for (const listener of terminalListeners) {
+					let result;
+					try {
+						result = listener(current);
+					} catch (error) {
+						console.error("Terminal input listener error:", error);
+						continue;
+					}
+					if (result?.consume) return null;
+					if (result?.data !== undefined) current = result.data;
+				}
+				return current;
+			});
 		},
 		/** An operation the host sends its editor; see `ComponentHost::editor_op`. */
 		editor(payload) {

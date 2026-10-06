@@ -753,6 +753,31 @@ impl ComponentHost for Components {
         }
     }
 
+    fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>> {
+        let host = self.0.upgrade();
+        Box::pin(async move {
+            let Some(host) = host else {
+                return keys;
+            };
+            match host
+                .instance
+                .call("terminalInput", &json!({"keys": keys}))
+                .await
+            {
+                Ok(Value::Array(results)) => results
+                    .into_iter()
+                    .filter_map(|key| {
+                        key.as_str()
+                            .filter(|key| !key.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .collect(),
+                // A runtime that cannot run its listeners lets the input through.
+                _ => keys,
+            }
+        })
+    }
+
     fn editor_op(&self, handle: u32, op: &Value) {
         if let Some(host) = self.0.upgrade() {
             let mut payload = op.clone();
@@ -763,13 +788,17 @@ impl ComponentHost for Components {
 }
 
 impl SessionBridge {
+    /// What renders and runs this runtime's UI parts.
+    fn components(&self) -> Option<Arc<dyn ComponentHost>> {
+        Some(Arc::new(Components(self.owner.get()?.clone())))
+    }
+
     fn component(&self, handle: &Value) -> Option<RemoteComponent> {
         let handle = u32::try_from(handle.as_u64()?).ok()?;
-        let owner = self.owner.get()?.clone();
         Some(RemoteComponent::new(
             self.runtime_id,
             handle,
-            Arc::new(Components(owner)),
+            self.components()?,
         ))
     }
 
@@ -847,6 +876,10 @@ impl SessionBridge {
             "ui.editorChange" => ui.editor_changed(&text(&payload["text"])),
             "ui.editorSubmit" => ui.editor_submit(&text(&payload["text"])),
             "ui.editorAction" => ui.editor_action(&text(&payload["action"])),
+            "ui.setTerminalInput" => ui.set_terminal_input(
+                self.runtime_id,
+                self.components().filter(|_| payload["listening"] == true),
+            ),
             "ui.editorShortcut" => return Value::Bool(ui.editor_shortcut(&text(&payload["data"]))),
             "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),

@@ -34,6 +34,7 @@ yapi does not need Node.js. TypeScript and JavaScript extensions run in `yapi-js
 - Shims provide Node's `fs` with file descriptors and file streams, `path`, `os`, `child_process`, `events`, `stream`, `util`, `crypto` hashes, `buffer`, timers, `fetch`, `dns.lookup` and `Intl`.
 - Custom TUI components render inside the runtime. yapi paints their last frame, so a slow extension never blocks the interface.
 - An editor installed with `ctx.ui.setEditorComponent` replaces yapi's editor in the same way. It receives every key, and an editor that extends `CustomEditor` triggers yapi's key bindings, submits prompts and runs extension shortcuts as Pi's does.
+- Listeners added with `ctx.ui.onTerminalInput` see raw input before yapi handles it and may consume or replace it. They run in the runtime too, so keys wait behind them while yapi keeps drawing.
 - Components match keys against the user's `keybindings.json`.
 
 Some Node features have no counterpart in the runtime. Native addons, `net` and `tls` servers and `worker_threads` fail when used, and the rest of the extension keeps working. [Differences from Pi](compat.md) lists the details.

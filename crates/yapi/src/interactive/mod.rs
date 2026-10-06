@@ -140,6 +140,8 @@ enum Event {
     Ui(u64, Box<extension_ui::Request>),
     /// An app action an extension's editor asks for, by key binding id.
     EditorAction(u64, String),
+    /// Keys that passed the extensions' `onTerminalInput` listeners.
+    TerminalInput(Vec<String>),
     /// Lines of the extension component with this key, rendered at a width.
     Rendered(u64, (u64, u32), usize, Vec<String>),
     /// The first session's extensions started.
@@ -437,6 +439,10 @@ struct App {
     shortcuts: Vec<yapi_core::extensions::ShortcutBinding>,
     /// An extension asked to exit once the agent settles.
     shutdown_requested: bool,
+    /// Keys waiting for extensions' `onTerminalInput` listeners, and whether
+    /// the listeners are running.
+    input_queue: Vec<String>,
+    listening: bool,
     /// pi's `[Extension issues]`: the extension each concerns, and what.
     extension_issues: Vec<(yapi_types::rpc::SourceInfo, String)>,
 }
@@ -2110,6 +2116,63 @@ impl App {
         }
     }
 
+    /// Keys of one read, as decoded: through the extensions'
+    /// `onTerminalInput` listeners first while there are any, as pi-tui's
+    /// input listeners see input before everything else. The listeners run
+    /// beside the loop; later keys wait behind them, in order.
+    fn on_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
+        if self.ext.listeners.is_empty() && self.input_queue.is_empty() && !self.listening {
+            self.handle_keys(keys, terminal);
+            return;
+        }
+        self.input_queue.extend(keys);
+        self.pump_input(terminal);
+    }
+
+    /// Hands the waiting keys to the listeners, or handles them once no
+    /// extension listens any more.
+    fn pump_input(&mut self, terminal: &mut Terminal) {
+        if self.listening || self.input_queue.is_empty() {
+            return;
+        }
+        let mut keys = std::mem::take(&mut self.input_queue);
+        if self.ext.listeners.is_empty() {
+            self.handle_keys(keys, terminal);
+            return;
+        }
+        self.listening = true;
+        let listeners: Vec<_> = self
+            .ext
+            .listeners
+            .iter()
+            .map(|(_, host)| host.clone())
+            .collect();
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            for listener in listeners {
+                if keys.is_empty() {
+                    break;
+                }
+                keys = listener.terminal_input(keys).await;
+            }
+            let _ = tx.send(Event::TerminalInput(keys));
+        });
+    }
+
+    /// Handles the keys of one read, as one editor input batch.
+    fn handle_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
+        self.editor.begin_input_batch();
+        for key in keys {
+            // Pastes are never key releases.
+            if !yapi_tui::keys::is_key_release(&key) {
+                self.handle_key(&key, terminal);
+            }
+        }
+        self.editor.end_input_batch();
+        // Listeners of the next keys read the text these left.
+        self.ext.mirror_editor_text(self.editor.expanded_text());
+    }
+
     fn handle_key(&mut self, data: &str, terminal: &mut Terminal) {
         if self.dispatch_key(data, terminal) {
             self.footer_cache = None;
@@ -3219,11 +3282,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     for event in early_events {
         app.on_event(event);
     }
-    app.editor.begin_input_batch();
-    for key in early {
-        app.handle_key(&key, &mut terminal);
-    }
-    app.editor.end_input_batch();
+    app.handle_keys(early, &mut terminal);
     app.warn_anthropic_subscription(None);
     app.ext.set_tools_expanded(app.expanded);
     app.binding = Some(None);
@@ -3271,14 +3330,8 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
                 let Some(event) = event else { break };
                 match event {
                     Event::Input(bytes) => {
-                        app.editor.begin_input_batch();
-                        for key in decode_input(&mut buffer, &mut terminal.protocol, &bytes) {
-                            // Pastes are never key releases.
-                            if !yapi_tui::keys::is_key_release(&key) {
-                                app.handle_key(&key, &mut terminal);
-                            }
-                        }
-                        app.editor.end_input_batch();
+                        let keys = decode_input(&mut buffer, &mut terminal.protocol, &bytes);
+                        app.on_keys(keys, &mut terminal);
                         if app.kitty != terminal.protocol.kitty {
                             app.keys.set_kitty(terminal.protocol.kitty);
                             app.kitty = terminal.protocol.kitty;
@@ -3288,19 +3341,26 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
                     Event::EditorAction(epoch, action) if epoch == app.epoch => {
                         app.run_action(&action, &mut terminal);
                     }
+                    Event::TerminalInput(keys) => {
+                        app.listening = false;
+                        app.handle_keys(keys, &mut terminal);
+                        app.pump_input(&mut terminal);
+                    }
                     event => app.on_event(event),
                 }
                 dirty = true;
             }
             _ = tokio::time::sleep(input_wait) => {
-                for input in buffer.flush() {
-                    if let Input::Key(key) = input {
-                        app.handle_key(&key, &mut terminal);
-                    }
-                }
-                if let Some(pending) = terminal.protocol.flush() {
-                    app.handle_key(&pending, &mut terminal);
-                }
+                let mut keys: Vec<String> = buffer
+                    .flush()
+                    .into_iter()
+                    .filter_map(|input| match input {
+                        Input::Key(key) => Some(key),
+                        _ => None,
+                    })
+                    .collect();
+                keys.extend(terminal.protocol.flush());
+                app.on_keys(keys, &mut terminal);
                 dirty = true;
             }
             _ = tokio::time::sleep(tick) => dirty = true,
@@ -3504,6 +3564,8 @@ impl App {
             theme_override,
             shortcuts: Vec::new(),
             shutdown_requested: false,
+            input_queue: Vec::new(),
+            listening: false,
             extension_issues: Vec::new(),
         };
         app.style_alt_screen();

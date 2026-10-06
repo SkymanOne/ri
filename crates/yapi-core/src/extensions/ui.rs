@@ -87,6 +87,11 @@ pub trait ComponentHost: Send + Sync {
     /// "autocompleteMaxVisible", "focused", "rows"}`, where `border` is a
     /// thinking level or `bashMode`.
     fn editor_op(&self, handle: u32, op: &Value);
+
+    /// Runs the runtime's `onTerminalInput` listeners over raw input `keys`,
+    /// in order. Answers the keys left to handle, as the listeners
+    /// transformed them, without those they consumed or emptied.
+    fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>>;
 }
 
 /// A pi-tui component that lives in an extension runtime.
@@ -266,6 +271,10 @@ pub trait ExtensionUi: Send + Sync {
     /// The extension's editor asks for app action `action`, a key binding id
     /// such as `app.interrupt`.
     fn editor_action(&self, _action: &str) {}
+
+    /// Starts passing raw input through the `onTerminalInput` listeners of
+    /// runtime `runtime`, which `listeners` runs, or stops with `None`.
+    fn set_terminal_input(&self, _runtime: u64, _listeners: Option<Arc<dyn ComponentHost>>) {}
 
     /// Whether raw input `data` is an extension shortcut, which then runs.
     fn editor_shortcut(&self, _data: &str) -> bool {

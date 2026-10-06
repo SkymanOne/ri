@@ -11,8 +11,8 @@ use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use yapi_core::extensions::{
-    CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement, RemoteComponent, Widget,
-    WorkingIndicator,
+    ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement,
+    RemoteComponent, Widget, WorkingIndicator,
 };
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
@@ -63,6 +63,8 @@ pub(super) enum Request {
     EditorSubmit(String),
     /// Raw input that matched an extension shortcut.
     Shortcut(String),
+    /// A runtime's input listeners started or stopped listening.
+    TerminalInput(u64, Option<Arc<dyn ComponentHost>>),
     Render,
     ToolsExpanded(bool),
     Shutdown,
@@ -252,6 +254,10 @@ impl ExtensionUi for InteractiveUi {
         let _ = self
             .tx
             .send(Event::EditorAction(self.epoch, action.to_owned()));
+    }
+
+    fn set_terminal_input(&self, runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
+        self.send(Request::TerminalInput(runtime, listeners));
     }
 
     fn editor_shortcut(&self, data: &str) -> bool {
@@ -523,6 +529,8 @@ pub(super) struct ExtensionState {
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
     pub editor: Option<CustomEditor>,
+    /// Runtimes with `onTerminalInput` listeners, in the order they started.
+    pub listeners: Vec<(u64, Arc<dyn ComponentHost>)>,
     pub working_message: Option<String>,
     pub working_hidden: bool,
     pub working_indicator: Option<WorkingIndicator>,
@@ -538,6 +546,7 @@ impl ExtensionState {
         self.footer = None;
         self.header = None;
         self.editor = None;
+        self.listeners.clear();
         self.working_message = None;
         self.working_hidden = false;
         self.working_indicator = None;
@@ -601,13 +610,18 @@ impl ExtensionState {
             .chain(self.editor.iter_mut().map(|editor| &mut editor.view))
     }
 
-    /// Mirrors what extensions read back. An extension's editor reports
-    /// its own text.
-    pub fn mirror(&self, editor_text: String, branch: Option<&str>, providers: usize) {
-        let mut shared = lock(&self.shared);
+    /// Mirrors the built-in editor's text. An extension's editor reports
+    /// its own.
+    pub fn mirror_editor_text(&self, text: String) {
         if self.editor.is_none() {
-            shared.editor_text = editor_text;
+            lock(&self.shared).editor_text = text;
         }
+    }
+
+    /// Mirrors what extensions read back.
+    pub fn mirror(&self, editor_text: String, branch: Option<&str>, providers: usize) {
+        self.mirror_editor_text(editor_text);
+        let mut shared = lock(&self.shared);
         shared.footer = json!({
             "gitBranch": branch,
             "statuses": self.statuses,
@@ -747,6 +761,12 @@ impl super::App {
             Request::EditorSubmit(text) => self.on_submit(text),
             Request::Shortcut(data) => {
                 self.run_shortcut(&data);
+            }
+            Request::TerminalInput(runtime, listeners) => {
+                self.ext.listeners.retain(|(id, _)| *id != runtime);
+                self.ext
+                    .listeners
+                    .extend(listeners.map(|host| (runtime, host)));
             }
             Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);

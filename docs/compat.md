@@ -16,6 +16,7 @@ Pi extensions run unchanged, but not in Pi's Node.js process. yapi runs them in 
 | Pi internals | Extensions can import all of `pi-coding-agent`, `pi-ai` and `pi-agent-core` | The extension API and the helpers extensions use. Other exports import but throw when called, and built-in tool factories reject custom `operations`. |
 | `Intl` | ICU in every locale | Number and plural formatting in `en-US` only, and `Intl.DateTimeFormat` ignores its options. |
 | Extension UI | Components detect hyperlink and image support and see theme changes at once | Links and images in components fall back to pi-tui's text forms, and theme changes reach extensions when their session next starts. |
+| Terminal input listeners | `onTerminalInput` handlers run on each key, and Pi handles the key before the next one reaches them | Handlers run in the extension's runtime while yapi keeps drawing, so the interface never waits on an extension. Keys that arrive together, or while handlers run, pass through the handlers together before yapi handles the first of them. |
 | Console output | Written to stdout and stderr | Written to stderr, because stdout carries print, JSON and RPC output. |
 | Project trust | Extensions loaded before trust can answer the `project_trust` event | yapi asks before loading any extension, so no extension runs in a project you have not trusted. |
 | Synchronous process timeouts | `execSync` and `spawnSync` send SIGTERM and wait for the process to exit | SIGTERM, then SIGKILL after 5 seconds, as Pi's `exec` does. |
