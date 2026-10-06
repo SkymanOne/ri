@@ -34,6 +34,7 @@ yapi follows Pi `v1.0.0`. This page lists every known difference: first the inte
 | Keybindings | Components match keys against the user's `keybindings.json` | Components match pi-tui's default bindings | The keybindings manager inside the runtime has no user configuration. |
 | Error stacks | Every frame of Node's stack, Pi's own frames included | Only the frames in the extension's files, as QuickJS reports them | yapi's runtime frames say nothing about the extension, and QuickJS formats frames differently from V8. |
 | Console output | Written to Pi's stdout and stderr | Written to stderr | Stdout belongs to print, JSON and RPC output. |
+| Synchronous process timeouts | When `execSync` or `spawnSync` times out, Node sends SIGTERM and waits for the process to exit, however long that takes | yapi sends SIGTERM, then SIGKILL after 5 seconds, as Pi's `exec` does | A process that ignores SIGTERM cannot stall the extension runtime. |
 | Project trust | Extensions loaded before trust can answer a `project_trust` event before Pi asks | yapi asks before loading any extension | Extensions never run in a project the user has not trusted. |
 
 ## Interface
