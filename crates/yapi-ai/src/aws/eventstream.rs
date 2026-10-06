@@ -37,11 +37,6 @@ impl Decoder {
         self.buffer.extend_from_slice(bytes);
     }
 
-    /// Whether bytes of an unfinished message remain.
-    pub fn has_partial(&self) -> bool {
-        !self.buffer.is_empty()
-    }
-
     /// The next complete message, if one has arrived.
     pub fn next_message(&mut self) -> Result<Option<Message>, String> {
         if self.buffer.len() < 12 {
@@ -168,7 +163,7 @@ mod tests {
                 .header(":message-type"),
             Some("exception")
         );
-        assert!(!decoder.has_partial());
+        assert!(decoder.buffer.is_empty());
         let mut corrupt = first;
         let last = corrupt.len() - 5;
         corrupt[last] ^= 1;

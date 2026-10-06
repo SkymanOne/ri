@@ -248,22 +248,4 @@ impl FileEntry {
             FileEntry::SessionInfo(entry) => &entry.meta,
         })
     }
-
-    /// Mutable access to [`FileEntry::meta`].
-    pub fn meta_mut(&mut self) -> Option<&mut EntryMeta> {
-        Some(match self {
-            FileEntry::Session(_) => return None,
-            FileEntry::Message(entry) => &mut entry.meta,
-            FileEntry::ThinkingLevelChange(entry) => &mut entry.meta,
-            FileEntry::ModelChange(entry) => &mut entry.meta,
-            FileEntry::Usage(entry) => &mut entry.meta,
-            FileEntry::Compaction(entry) => &mut entry.meta,
-            FileEntry::BranchSummary(entry) => &mut entry.meta,
-            FileEntry::Custom(entry) => &mut entry.meta,
-            FileEntry::CustomMessage(entry) => &mut entry.meta,
-            FileEntry::ContextEdit(entry) => &mut entry.meta,
-            FileEntry::Label(entry) => &mut entry.meta,
-            FileEntry::SessionInfo(entry) => &mut entry.meta,
-        })
-    }
 }
