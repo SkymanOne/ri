@@ -877,9 +877,8 @@ async fn send(
     loop {
         let headers = signed_headers(target, body, options).map_err(Failure::plain)?;
         let request = headers.apply(http::client().post(&target.url).body(body.to_owned()));
-        let result = tokio::select! {
-            () = options.cancel.cancelled() => return Err(aborted()),
-            result = request.send() => result,
+        let Some(result) = options.cancel.run_until_cancelled(request.send()).await else {
+            return Err(aborted());
         };
         let failure = match result {
             Ok(response) if response.status().is_success() => return Ok(response),
@@ -905,10 +904,11 @@ async fn send(
                 .code
                 .as_deref()
                 .is_some_and(|code| THROTTLING_CODES.contains(&code));
-        tokio::select! {
-            () = options.cancel.cancelled() => return Err(aborted()),
-            () = tokio::time::sleep(retry_delay(attempt, throttled)) => {}
-        }
+        options
+            .cancel
+            .run_until_cancelled(tokio::time::sleep(retry_delay(attempt, throttled)))
+            .await
+            .ok_or_else(aborted)?;
         attempt += 1;
     }
 }

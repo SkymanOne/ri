@@ -249,9 +249,8 @@ async fn get(
         for (name, value) in headers {
             request = request.header(*name, value.as_str());
         }
-        let result = tokio::select! {
-            () = cancel.cancelled() => return Err(crate::http::ABORTED_BEFORE_RESPONSE.into()),
-            result = request.send() => result,
+        let Some(result) = cancel.run_until_cancelled(request.send()).await else {
+            return Err(crate::http::ABORTED_BEFORE_RESPONSE.into());
         };
         match result {
             Ok(response) if RETRYABLE.contains(&response.status().as_u16()) && attempt < 2 => {}

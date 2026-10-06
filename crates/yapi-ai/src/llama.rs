@@ -159,16 +159,16 @@ impl Client {
         if let Some(key) = &self.api_key {
             request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let response = tokio::select! {
-            () = cancel.cancelled() => return Err("This operation was aborted".into()),
-            response = request.send() => response.map_err(|err| {
-                if err.is_timeout() {
-                    "The operation was aborted due to timeout".to_owned()
-                } else {
-                    "fetch failed".to_owned()
-                }
-            })?,
+        let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+            return Err("This operation was aborted".into());
         };
+        let response = response.map_err(|err| {
+            if err.is_timeout() {
+                "The operation was aborted due to timeout".to_owned()
+            } else {
+                "fetch failed".to_owned()
+            }
+        })?;
         let status = response.status();
         let payload: Value = response
             .bytes()
@@ -339,10 +339,10 @@ impl Client {
 }
 
 async fn sleep(duration: Duration, cancel: &CancellationToken) -> Result<(), String> {
-    tokio::select! {
-        () = cancel.cancelled() => Err("Cancelled".into()),
-        () = tokio::time::sleep(duration) => Ok(()),
-    }
+    cancel
+        .run_until_cancelled(tokio::time::sleep(duration))
+        .await
+        .ok_or_else(|| "Cancelled".into())
 }
 
 /// What a long operation reports.
@@ -662,10 +662,10 @@ pub mod huggingface {
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
             }
-            let response = tokio::select! {
-                () = cancel.cancelled() => return Err("This operation was aborted".into()),
-                response = request.send() => response.map_err(|_| "fetch failed".to_owned())?,
+            let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+                return Err("This operation was aborted".into());
             };
+            let response = response.map_err(|_| "fetch failed".to_owned())?;
             let status = response.status().as_u16();
             let header = |name: &str| {
                 response

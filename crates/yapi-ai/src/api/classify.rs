@@ -129,10 +129,10 @@ pub(crate) async fn post_json(
         Err(Failure::Aborted) => return Err(http::ABORTED_BEFORE_RESPONSE.into()),
         Err(Failure::RetryDelay(message)) => return Err(message),
     };
-    let bytes = tokio::select! {
-        () = options.cancel.cancelled() => return Err(http::ABORTED_READ.into()),
-        bytes = response.bytes() => bytes.map_err(|_| "fetch failed".to_owned())?,
+    let Some(bytes) = options.cancel.run_until_cancelled(response.bytes()).await else {
+        return Err(http::ABORTED_READ.into());
     };
+    let bytes = bytes.map_err(|_| "fetch failed".to_owned())?;
     serde_json::from_slice(&bytes).map_err(|err| err.to_string())
 }
 

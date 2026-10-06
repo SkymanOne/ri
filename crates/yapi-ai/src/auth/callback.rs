@@ -108,9 +108,11 @@ impl<T: Send + 'static> Server<T> {
 
     /// The outcome of the first conclusive request.
     pub(crate) async fn wait(&mut self) -> Result<T, AuthError> {
-        tokio::select! {
-            outcome = &mut self.outcome => outcome.unwrap_or_else(|_| Err(AuthError::failed("OAuth callback server closed"))),
-            () = self.cancel.cancelled() => Err(AuthError::Cancelled),
+        match self.cancel.run_until_cancelled(&mut self.outcome).await {
+            Some(outcome) => {
+                outcome.unwrap_or_else(|_| Err(AuthError::failed("OAuth callback server closed")))
+            }
+            None => Err(AuthError::Cancelled),
         }
     }
 }

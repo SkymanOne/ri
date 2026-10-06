@@ -63,10 +63,10 @@ impl FileLock {
                 Duration::from_millis(10u64.saturating_mul(1 << retry.min(10))).min(MAX_DELAY / 2);
             retry += 1;
             let delay = (base + base.mul_f64(jitter())).min(remaining);
-            tokio::select! {
-                () = tokio::time::sleep(delay) => {}
-                () = cancel.cancelled() => return Err(LockError::Cancelled),
-            }
+            cancel
+                .run_until_cancelled(tokio::time::sleep(delay))
+                .await
+                .ok_or(LockError::Cancelled)?;
         }
     }
 }

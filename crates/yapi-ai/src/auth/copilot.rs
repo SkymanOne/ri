@@ -192,10 +192,10 @@ async fn send_with_rate_limit_retry(
             return Ok(response);
         }
         retry += 1;
-        tokio::select! {
-            () = tokio::time::sleep(delay) => {}
-            () = cancel.cancelled() => return Err(AuthError::Cancelled),
-        }
+        cancel
+            .run_until_cancelled(tokio::time::sleep(delay))
+            .await
+            .ok_or(AuthError::Cancelled)?;
     }
 }
 

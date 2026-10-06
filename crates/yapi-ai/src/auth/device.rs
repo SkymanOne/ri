@@ -60,10 +60,10 @@ fn seconds(value: f64) -> Duration {
 }
 
 async fn sleep(duration: Duration, cancel: &CancellationToken) -> Result<(), AuthError> {
-    tokio::select! {
-        () = tokio::time::sleep(duration) => Ok(()),
-        () = cancel.cancelled() => Err(AuthError::Cancelled),
-    }
+    cancel
+        .run_until_cancelled(tokio::time::sleep(duration))
+        .await
+        .ok_or(AuthError::Cancelled)
 }
 
 /// Polls until `poll` completes, fails, the code expires or `cancel` fires.

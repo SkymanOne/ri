@@ -596,12 +596,13 @@ fn start_timeout(token: &CancellationToken) -> Arc<AtomicBool> {
     let fired = Arc::new(AtomicBool::new(false));
     let (token, flag) = (token.clone(), Arc::clone(&fired));
     tokio::spawn(async move {
-        tokio::select! {
-            () = tokio::time::sleep(TIMEOUT) => {
-                flag.store(true, Ordering::SeqCst);
-                token.cancel();
-            }
-            () = token.cancelled() => {}
+        if token
+            .run_until_cancelled(tokio::time::sleep(TIMEOUT))
+            .await
+            .is_some()
+        {
+            flag.store(true, Ordering::SeqCst);
+            token.cancel();
         }
     });
     fired
@@ -673,18 +674,18 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             model.base_url.trim_end_matches('/')
         );
         let request = headers.apply(http::client().post(&url).body(payload));
-        let response = tokio::select! {
-            () = cancel.cancelled() => return Err(aborted()),
-            response = request.send() => response.map_err(|_| "fetch failed".to_owned())?,
+        let Some(response) = cancel.run_until_cancelled(request.send()).await else {
+            return Err(aborted());
         };
+        let response = response.map_err(|_| "fetch failed".to_owned())?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
         }
-        let body = tokio::select! {
-            () = cancel.cancelled() => return Err(aborted()),
-            body = response.text() => body.unwrap_or_default(),
+        let Some(body) = cancel.run_until_cancelled(response.text()).await else {
+            return Err(aborted());
         };
+        let body = body.unwrap_or_default();
         let body = body.trim();
         let text = if body.is_empty() {
             status.canonical_reason().map_or_else(

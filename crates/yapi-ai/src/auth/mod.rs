@@ -209,9 +209,9 @@ impl Interaction {
                 cancel: cancel.clone(),
             })
             .map_err(|_| AuthError::Cancelled)?;
-        tokio::select! {
-            answer = answer => answer.map_err(|_| AuthError::Cancelled),
-            () = cancel.cancelled() => Err(AuthError::Cancelled),
+        match cancel.run_until_cancelled(answer).await {
+            Some(Ok(answer)) => Ok(answer),
+            _ => Err(AuthError::Cancelled),
         }
     }
 
@@ -382,10 +382,11 @@ pub(crate) async fn send(
     request: reqwest::RequestBuilder,
     cancel: &CancellationToken,
 ) -> Result<reqwest::Response, AuthError> {
-    tokio::select! {
-        response = request.send() => response.map_err(|err| AuthError::Failed(network_message(&err))),
-        () = cancel.cancelled() => Err(AuthError::Cancelled),
-    }
+    cancel
+        .run_until_cancelled(request.send())
+        .await
+        .ok_or(AuthError::Cancelled)?
+        .map_err(|err| AuthError::Failed(network_message(&err)))
 }
 
 /// A network error with its causes, like Node's `fetch failed` chain.

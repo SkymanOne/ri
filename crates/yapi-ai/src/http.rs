@@ -199,10 +199,11 @@ pub async fn send(
 ) -> Result<reqwest::Response, Failure> {
     let mut retry = 0;
     loop {
-        let result = tokio::select! {
-            () = options.cancel.cancelled() => Err(Box::new((Failure::Aborted, HeaderMap::new()))),
-            result = attempt(build()) => result,
-        };
+        let result = options
+            .cancel
+            .run_until_cancelled(attempt(build()))
+            .await
+            .unwrap_or_else(|| Err(Box::new((Failure::Aborted, HeaderMap::new()))));
         let (failure, headers) = match result {
             Ok(response) => return Ok(response),
             Err(failure) => *failure,
@@ -215,10 +216,11 @@ pub async fn send(
         }
         let delay = retry_delay(&headers, retry, options.max_retry_delay_ms)?;
         retry += 1;
-        tokio::select! {
-            () = options.cancel.cancelled() => return Err(Failure::Aborted),
-            () = tokio::time::sleep(delay) => {}
-        }
+        options
+            .cancel
+            .run_until_cancelled(tokio::time::sleep(delay))
+            .await
+            .ok_or(Failure::Aborted)?;
     }
 }
 
@@ -410,9 +412,11 @@ pub async fn read_chunk(
     }
     // A body that goes quiet for longer than the idle timeout fails as
     // undici's body timeout does.
-    let chunk = tokio::select! {
-        () = cancel.cancelled() => return Err(interrupted.to_owned()),
-        chunk = within_idle_timeout(response.chunk()) => chunk,
+    let Some(chunk) = cancel
+        .run_until_cancelled(within_idle_timeout(response.chunk()))
+        .await
+    else {
+        return Err(interrupted.to_owned());
     };
     chunk
         .and_then(Result::ok)

@@ -172,10 +172,10 @@ impl KimiOAuth {
         for attempt in 0..=REFRESH_MAX_RETRIES {
             if attempt > 0 {
                 let delay = Duration::from_millis(1000 << (attempt - 1));
-                tokio::select! {
-                    () = tokio::time::sleep(delay) => {}
-                    () = cancel.cancelled() => return Err(AuthError::Cancelled),
-                }
+                cancel
+                    .run_until_cancelled(tokio::time::sleep(delay))
+                    .await
+                    .ok_or(AuthError::Cancelled)?;
             }
             if cancel.is_cancelled() {
                 return Err(AuthError::failed("Kimi Code token refresh aborted"));

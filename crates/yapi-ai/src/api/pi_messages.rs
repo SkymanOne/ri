@@ -343,9 +343,12 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             builder = builder.header(name.as_str(), value.as_str());
         }
     }
-    let response = tokio::select! {
-        () = options.cancel.cancelled() => return fail(http::ABORTED_READ.into()),
-        response = builder.body(body).send() => response,
+    let Some(response) = options
+        .cancel
+        .run_until_cancelled(builder.body(body).send())
+        .await
+    else {
+        return fail(http::ABORTED_READ.into());
     };
     let Ok(mut response) = response else {
         return fail("fetch failed".into());

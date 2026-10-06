@@ -155,10 +155,10 @@ async fn openrouter(
         }
         Err(other) => return Err(other.plain_message().unwrap_or_default()),
     };
-    let bytes = tokio::select! {
-        () = options.cancel.cancelled() => return Err(http::ABORTED_DURING_STREAM.into()),
-        bytes = response.bytes() => bytes.map_err(|_| "Connection error.".to_owned())?,
+    let Some(bytes) = options.cancel.run_until_cancelled(response.bytes()).await else {
+        return Err(http::ABORTED_DURING_STREAM.into());
     };
+    let bytes = bytes.map_err(|_| "Connection error.".to_owned())?;
     let response: Value = serde_json::from_slice(&bytes).map_err(|err| err.to_string())?;
     output.response_id = response["id"].as_str().map(str::to_owned);
     if response["usage"].is_object() {
