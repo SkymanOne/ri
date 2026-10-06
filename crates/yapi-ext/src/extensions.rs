@@ -172,7 +172,7 @@ impl ExtensionHost {
             .flat_map(|extension| {
                 let path = text(&extension["path"]);
                 list(&extension["flags"])
-                    .into_iter()
+                    .iter()
                     .map(move |flag| (path.clone(), flag))
             })
             .map(|(extension_path, flag)| Flag {
@@ -250,14 +250,14 @@ fn split(result: &Value) -> (Vec<Value>, Vec<LoadError>) {
                 path: PathBuf::from(text(&extension["path"])),
                 error: error.to_owned(),
             }),
-            None => loaded.push(extension),
+            None => loaded.push(extension.clone()),
         }
     }
     (loaded, errors)
 }
 
-fn list(value: &Value) -> Vec<Value> {
-    value.as_array().cloned().unwrap_or_default()
+fn list(value: &Value) -> &[Value] {
+    value.as_array().map_or(&[], Vec::as_slice)
 }
 
 fn text(value: &Value) -> String {
@@ -358,7 +358,7 @@ impl Extension for JsExtension {
 
     fn load(&self, tools: &Tools) {
         for tool in list(&self.description["tools"]) {
-            tools.register(js_tool(&self.shared, self.id, &tool));
+            tools.register(js_tool(&self.shared, self.id, tool));
         }
     }
 
@@ -672,10 +672,10 @@ fn tool_result(mut value: Value) -> Result<ToolResult, String> {
     serde_json::from_value(value).map_err(|err| format!("Invalid tool result: {err}"))
 }
 
-/// Answers the guest's requests from the bound session.
 /// Numbers the runtimes of a process, so their component handles stay apart.
 static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 
+/// Answers the guest's requests from the bound session.
 struct SessionBridge {
     /// This runtime's number.
     runtime_id: u64,
@@ -897,7 +897,10 @@ fn session_read(session: &AgentSession, method: &str, args: &Value) -> Result<Va
                 let parent = arg(0);
                 to_json(
                     file.entries()
-                        .filter(|entry| to_json(entry)["parentId"].as_str() == parent.as_deref())
+                        .filter(|entry| {
+                            entry.meta().and_then(|meta| meta.parent_id.as_deref())
+                                == parent.as_deref()
+                        })
                         .collect::<Vec<_>>(),
                 )
             }
@@ -993,7 +996,7 @@ impl Bridge for SessionBridge {
                 let owner = self.owner.get().and_then(Weak::upgrade).ok_or_else(not_bound)?;
                 let extension = payload["extension"].as_u64().unwrap_or_default();
                 for tool in list(&payload["tools"]) {
-                    session.tools().register(js_tool(&owner, extension, &tool));
+                    session.tools().register(js_tool(&owner, extension, tool));
                 }
                 Ok(Value::Null)
             }

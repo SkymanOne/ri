@@ -228,3 +228,48 @@ async fn model_registry_reads_typed_models() {
         })]
     );
 }
+
+const TREE_EXTENSION: &str = r#"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	pi.registerCommand("children", {
+		description: "Reads the session tree",
+		handler: async (_args, ctx) => {
+			const manager = ctx.sessionManager;
+			const first = manager.getEntries().find((entry) => entry.customType === "first");
+			pi.appendEntry("children", {
+				ofFirst: manager.getChildren(first.id).map((entry) => entry.customType),
+				roots: manager.getChildren(null).map((entry) => entry.type),
+			});
+		},
+	});
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_manager_reads_children() {
+    let dir = scratch("children");
+    let path = dir.join("tree.ts");
+    std::fs::write(&path, TREE_EXTENSION).unwrap();
+    let js = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    assert!(js.errors().is_empty(), "{:?}", js.errors());
+    let session = session(&Faux::new([]), &dir, js.for_session());
+    session.bind_extensions(Arc::new(NoUi), Mode::Print).await;
+    session.append_custom_entry("first", None).unwrap();
+    session.append_custom_entry("second", None).unwrap();
+    session.prompt("/children", Vec::new()).await.unwrap();
+    // The command runs on the runtime; wait for its entry.
+    for _ in 0..200 {
+        if !custom_entries(&session, "children").is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        custom_entries(&session, "children"),
+        [json!({"ofFirst": ["second"], "roots": ["model_change"]})]
+    );
+}
