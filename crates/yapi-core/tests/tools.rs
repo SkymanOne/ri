@@ -99,6 +99,64 @@ async fn read_pages_through_files() {
 }
 
 #[tokio::test]
+async fn read_converts_and_resizes_images() {
+    use image::{DynamicImage, ImageOutputFormat, RgbaImage};
+    let dir = Scratch::new("read-images");
+    let write = |name: &str, width: u32, format: ImageOutputFormat| {
+        let image = DynamicImage::ImageRgba8(RgbaImage::new(width, 4));
+        image
+            .write_to(
+                &mut std::fs::File::create(dir.0.join(name)).unwrap(),
+                format,
+            )
+            .unwrap();
+    };
+    write("small.bmp", 3, ImageOutputFormat::Bmp);
+    write("wide.png", 2100, ImageOutputFormat::Png);
+    let bmp = std::fs::read(dir.0.join("small.bmp")).unwrap();
+    std::fs::write(dir.0.join("broken.bmp"), &bmp[..bmp.len() - 8]).unwrap();
+
+    let read = |path: &'static str| {
+        let dir = dir.0.clone();
+        async move {
+            let result = call(&dir, "read", json!({ "path": path })).await.unwrap();
+            let images: Vec<String> = result
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    yapi_types::message::ContentBlock::Image(image) => {
+                        Some(image.mime_type.clone())
+                    }
+                    _ => None,
+                })
+                .collect();
+            (text(&result), images)
+        }
+    };
+    assert_eq!(
+        read("small.bmp").await,
+        (
+            "Read image file [image/png]\n[Image converted from image/bmp to image/png.]".into(),
+            vec!["image/png".into()]
+        )
+    );
+    assert_eq!(
+        read("wide.png").await,
+        (
+            "Read image file [image/png]\n[Image: original 2100x4, displayed at 2000x4. Multiply coordinates by 1.05 to map to original image.]".into(),
+            vec!["image/png".into()]
+        )
+    );
+    assert_eq!(
+        read("broken.bmp").await,
+        (
+            "Read image file [image/bmp]\n[Image omitted: could not be converted to a supported inline image format.]".into(),
+            vec![]
+        )
+    );
+}
+
+#[tokio::test]
 async fn write_and_edit_preserve_bom_and_crlf() {
     let dir = Scratch::new("edit");
     let result = call(

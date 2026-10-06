@@ -436,6 +436,21 @@ impl AgentSession {
         lock(&self.inner.settings).settings().clone()
     }
 
+    /// The `images.autoResize` setting and the current model's resize
+    /// profile, for images entering the conversation.
+    fn image_options(&self) -> (bool, Option<yapi_types::models::ImageResize>) {
+        let auto_resize = self
+            .settings()
+            .images
+            .and_then(|images| images.auto_resize)
+            .unwrap_or(true);
+        let limits = lock(&self.inner.state)
+            .model
+            .as_ref()
+            .and_then(|model| model.image_resize().cloned());
+        (auto_resize, limits)
+    }
+
     /// pi's `getHttpIdleTimeoutMs` for these settings.
     pub fn http_idle_timeout_ms(&self) -> u64 {
         lock(&self.inner.settings).http_idle_timeout_ms()
@@ -1046,6 +1061,22 @@ impl AgentSession {
             (Vec::new(), None)
         };
         *lock(&self.inner.forced_prompt) = forced;
+        // After the handlers, so a model they select sets the resize profile.
+        let (images, hints) = if images.is_empty() {
+            (images, Vec::new())
+        } else {
+            let (auto_resize, limits) = self.image_options();
+            tokio::task::spawn_blocking(move || {
+                crate::images::normalize_prompt(images, auto_resize, limits.as_ref())
+            })
+            .await
+            .map_err(|err| err.to_string())?
+        };
+        let expanded = if hints.is_empty() {
+            expanded
+        } else {
+            format!("{expanded}\n\n{}", hints.join("\n"))
+        };
         let messages = self.messages();
         let mut prompts = Vec::new();
         if let Some(update) = self.system_update(&messages, &active)? {
@@ -1141,13 +1172,17 @@ impl AgentSession {
         let Some(model) = model else {
             return;
         };
+        let settings = lock(&self.inner.settings).settings().clone();
         *write(&self.inner.runtime) = Runtime {
             model: Some(model.clone()),
             thinking_level: Some(thinking_level),
             session_id: Some(session_id.clone()),
             session_file,
+            auto_resize_images: settings
+                .images
+                .as_ref()
+                .and_then(|images| images.auto_resize),
         };
-        let settings = lock(&self.inner.settings).settings().clone();
         let apis = self.inner.apis.clone();
         let config = LoopConfig {
             model,

@@ -41,6 +41,7 @@ Pi extensions run unchanged, but not in Pi's Node.js process. yapi runs them in 
 | Word motions in Chinese, Japanese and Thai | Move by dictionary words | Move one character at a time, because ICU's word dictionaries would add megabytes to the binary. |
 | Tree label times | Local time | UTC, because yapi carries no time zone database. |
 | Codex transport | WebSocket first, then SSE with a compressed body | SSE with an uncompressed body. Requests and events are the same as Pi's fallback. |
+| Image formats | Images from RPC clients, extensions and tools in any format Pi's image library reads, such as TIFF, are converted to PNG for the model | BMP is the only format converted. Prompt images in other formats are left out with a note, and tool results pass them on unchanged. |
 
 ## Open Gaps
 

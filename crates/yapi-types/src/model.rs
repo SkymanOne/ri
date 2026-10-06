@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::message::ThinkingLevel;
-use crate::models::{CostTier, InputKind, InputLimits, PromptCache};
+use crate::models::{CostTier, ImageResize, InputKind, InputLimits, PromptCache};
 
 /// A chat model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -132,6 +132,12 @@ impl Model {
     /// Whether the model accepts image input.
     pub fn accepts_images(&self) -> bool {
         self.input.contains(&InputKind::Image)
+    }
+
+    /// The resize profile for images that enter the conversation, from
+    /// `inputLimits.images.resize`.
+    pub fn image_resize(&self) -> Option<&ImageResize> {
+        self.input_limits.as_ref()?.images.as_ref()?.resize.as_ref()
     }
 
     /// The provider value for a thinking level: `Some(None)` when the map marks it

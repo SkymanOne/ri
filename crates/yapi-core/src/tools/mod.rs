@@ -57,6 +57,8 @@ pub struct Runtime {
     pub session_id: Option<String>,
     /// The session file, when persisted.
     pub session_file: Option<PathBuf>,
+    /// The `images.autoResize` setting; unset means on.
+    pub auto_resize_images: Option<bool>,
 }
 
 /// What built-in tools share: the working directory, the session state and
