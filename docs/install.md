@@ -2,8 +2,6 @@
 
 yapi is one executable. Releases have it for Linux and macOS on x86_64 and arm64, and every platform with a recent Rust toolchain can build it from source.
 
-The first release is not tagged yet. Until it is, the install script and cargo-binstall report that no release exists, and [building from source](#from-source) works.
-
 ## Install script
 
 ```sh
