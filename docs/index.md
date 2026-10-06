@@ -1,6 +1,8 @@
 # yapi
 
-yapi (Yet Another Pi) is a minimal, extensible AI agent for the terminal, written in Rust. Give it a goal and a working folder, and it can inspect files, run commands, edit content and work through multi-step tasks.
+**Yet Another Pi (in Rust) - Fast, Portable, Compatible**
+
+yapi is a minimal, extensible AI agent for the terminal, written in Rust. Give it a goal and a working folder, and it can inspect files, run commands, edit content and work through multi-step tasks.
 
 yapi is a reimplementation of [Pi](https://pi.dev) `v1.0.0`. It uses Pi's commands, settings, session files, packages and extension API, so a Pi setup works in yapi as it is. Adapt it to your workflow with extensions, skills, prompt templates and themes, or install a Pi package. It ships as one native binary and needs no Node.js.
 
@@ -29,7 +31,7 @@ Use [print, JSON and RPC modes](automation.md) for scripts, editors and other pr
 | | Pi | yapi |
 |---|---|---|
 | Runtime | Node.js 22.19 or newer | One native binary |
-| Extensions | Run in Pi's process with the user's permissions | Run in WebAssembly sandboxes with memory and compute limits. Pi extensions run unchanged, and native extensions are written in Rust. |
+| Extensions | Run in Pi's process with the user's permissions | Run in WebAssembly instances with memory and compute limits. In v0.1 they keep Pi's default file, process, network and environment access, as the [security model](configuration.md#security-model) explains. Pi extensions run unchanged, and native extensions are written in Rust. |
 | Startup and memory | 411 ms to first paint, 113 MB idle and 198 MB after 20 turns, 245 MB installed with Node.js | 12 ms to first paint, 19 MB idle and 38 MB after 20 turns, a 32 MB executable, on the same machine. See [Performance](performance.md). |
 
 [Differences from Pi](compat.md) lists every known difference, including the Pi features not ported yet.
@@ -40,9 +42,9 @@ yapi is tested against Pi itself. Every check below runs both programs on the sa
 
 | Check | Result |
 |---|---|
-| End-to-end scenarios | 245 of 245 match Pi: 97 terminal screens, 51 JSON event streams, 77 CLI and print mode runs, 19 RPC sessions and Pi's own RPC client |
+| End-to-end scenarios | Every scenario matches Pi's recorded output: terminal screens, JSON event streams, CLI and print mode runs, RPC sessions and Pi's own RPC client |
 | Settings, credentials and session files | Read and written back byte for byte |
-| Pi's example extensions | 79 of 79 register the same tools, commands, flags and shortcuts as in Pi |
+| Pi's example extensions | 79 of 79 register the same tools, commands, flags, shortcuts and event handlers as in Pi |
 | The 500 most-downloaded Pi packages on npm | 418 of 500 work without errors. [Extensions](extensions.md#compatibility-with-pi-extensions) has the breakdown. |
 
-yapi is pre-release software. Report problems in the [issue tracker](https://github.com/SkymanOne/yapi/issues).
+Report problems in the [issue tracker](https://github.com/SkymanOne/yapi/issues). [Reporting a problem](troubleshooting.md#reporting-a-problem) lists what to include.

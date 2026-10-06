@@ -23,11 +23,27 @@ yapi reads `AGENTS.md` (or `CLAUDE.md`) from the working folder and each parent 
 
 ## Skills and prompt templates
 
-Skills follow the [Agent Skills specification](https://agentskills.io/specification). Each skill is a folder with a `SKILL.md` file. yapi lists every skill's name and description in the system prompt, and the model reads the full instructions when a task calls for them. `/skill:name` loads one directly. Prompt templates are Markdown files that become slash commands.
+Skills follow the [Agent Skills specification](https://agentskills.io/specification). Each skill is a folder with a `SKILL.md` file. yapi lists every skill's name and description in the system prompt, and the model reads the full instructions when a task calls for them. `/skill:name` loads one directly.
+
+Prompt templates are Markdown files that become slash commands. Save this as `~/.yapi/agent/prompts/review.md`:
+
+```markdown
+---
+description: Review staged git changes
+argument-hint: "[focus]"
+---
+Review the staged changes. Focus on ${1:-correctness and error handling}.
+```
+
+`/review` then sends the prompt, and `/review concurrency` fills in the focus. Pi's [prompt template documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/prompt-templates.md) lists every argument form.
 
 ## Themes
 
-Pick a theme in `/settings` or with `"theme"` in settings. `--use-theme <name>` applies one for a single run. Theme files use Pi's JSON format.
+Pick a theme in `/settings` or with `"theme"` in settings. `--use-theme <name>` applies one for a single run. Theme files use Pi's JSON format, described in Pi's [theme documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/themes.md).
+
+## Key bindings
+
+`~/.yapi/agent/keybindings.json` changes the keys. The format and every action are in Pi's [key binding documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/keybindings.md), and `/hotkeys` shows the bindings in effect.
 
 ## Project trust
 
@@ -38,3 +54,15 @@ Files in a project's `.yapi` folder can change how yapi behaves and can run code
 - `"defaultProjectTrust": "always"` in global settings skips the question.
 
 `AGENTS.md` and `CLAUDE.md` load whether or not the project is trusted.
+
+## Security model
+
+yapi reads and edits files and runs commands as your user, so give it the same trust as any program you run in your shell.
+
+- Extensions run in WebAssembly instances with memory and compute limits. In v0.1 every package gets Pi's default grants, which allow file, process, network and environment access, so an extension can do what it could do in Pi. Restricting a package's grants is planned.
+- MCP servers started over stdio run as normal processes with your permissions.
+- Codemode scripts run in a fresh instance with no file, process or network access. They act only through the tools they call.
+- Project trust gates project-local resources. yapi loads nothing from a project's `.yapi` folder or `.agents/skills` until you trust the project.
+- Files and tool output that the model reads can steer it. Work in repositories you trust, or run yapi in a container or virtual machine.
+
+Report vulnerabilities privately, as [SECURITY.md](https://github.com/SkymanOne/yapi/blob/main/SECURITY.md) describes.

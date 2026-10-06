@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in yapi does not work as expected.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: yapi version
+      description: The output of `yapi --version`.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and terminal
+      placeholder: macOS 15.5, Ghostty 1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Interactive
+        - Print (-p)
+        - JSON (--mode json)
+        - RPC (--mode rpc)
+        - A subcommand, such as yapi install
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands, prompts and keys, and the provider and model if they matter.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Error messages and screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug log
+      description: In interactive mode, `/debug` writes `~/.yapi/agent/yapi-debug.log`. Attach it, after removing anything private.
+  - type: dropdown
+    id: pi
+    attributes:
+      label: Does Pi v1.0.0 do the same?
+      options:
+        - Not checked
+        - "Yes, Pi behaves the same"
+        - "No, Pi behaves as expected"
+    validations:
+      required: true

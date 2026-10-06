@@ -1,7 +1,7 @@
 # The documentation site, published to GitHub Pages by .github/workflows/docs.yml.
 [book]
 title = "yapi"
-description = "Yet Another Pi: a minimal, extensible agent harness for the terminal, written in Rust."
+description = "Yet Another Pi (in Rust) - Fast, Portable, Compatible"
 authors = ["The yapi contributors"]
 language = "en"
 src = "docs"
@@ -11,6 +11,7 @@ build-dir = "target/book"
 create-missing = false
 
 [output.html]
+theme = "docs/theme"
 site-url = "/yapi/"
 git-repository-url = "https://github.com/SkymanOne/yapi"
 edit-url-template = "https://github.com/SkymanOne/yapi/edit/main/{path}"

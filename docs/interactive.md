@@ -39,10 +39,14 @@ Type `/` to list commands. The most used ones:
 | `/name`, `/session` | Name the session or show its file, tokens and cost |
 | `/copy`, `/export` | Copy the last answer or export the session to HTML |
 | `/login`, `/logout` | Manage provider credentials |
+| `/import` | Copy a session file into the session folder and resume it |
+| `/llama` | Load, unload and download models on a llama.cpp server |
 | `/mcp` | Show MCP server status |
 | `/trust` | Change whether the project's `.yapi` folder is trusted |
 | `/reload` | Reload settings, keybindings, extensions, skills and themes |
 | `/hotkeys` | Show every key binding |
+| `/debug` | Write the rendered screen and the session's messages to `~/.yapi/agent/yapi-debug.log` |
+| `/quit` | Quit yapi |
 
 Prompt templates, skills (`/skill:name`) and extension commands appear in the same list.
 

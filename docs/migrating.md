@@ -6,7 +6,7 @@ yapi reads Pi's formats but keeps its own folders, so the two tools never write 
 yapi import pi
 ```
 
-The command copies settings, credentials, models, key bindings, MCP servers, trust decisions, sessions, prompt templates, skills, themes, extensions and packages from `~/.pi/agent`, and the current project's `.pi` folder, into yapi's folders. Files that yapi already has are kept.
+The command copies settings, credentials, models, key bindings, MCP servers, trust decisions, the global `AGENTS.md` or `CLAUDE.md`, `SYSTEM.md` and `APPEND_SYSTEM.md`, sessions, prompt templates, skills, themes, extensions and packages from Pi's agent folder into yapi's. That folder is `~/.pi/agent`, or `PI_CODING_AGENT_DIR` when it is set. The command also copies the current project's `.pi` folder into `.yapi`. Files that yapi already has are kept.
 
 After that, yapi and Pi work side by side. Session files written by either one open in the other.
 
@@ -20,7 +20,7 @@ After that, yapi and Pi work side by side. Session files written by either one o
 | `PI_CODING_AGENT_SESSION_DIR` | `YAPI_CODING_AGENT_SESSION_DIR` |
 | `pi install`, `pi config`, `pi mcp`, `pi auth` | `yapi install`, `yapi config`, `yapi mcp`, `yapi auth` |
 
-Provider keys and `PI_OFFLINE` keep their names. Command-line flags, slash commands and the JSON and RPC protocols are the same as Pi's.
+Only the two directory variables are renamed. Provider keys and every other `PI_*` variable that yapi reads, such as `PI_OFFLINE` and `PI_CACHE_RETENTION`, keep their names. Command-line flags, slash commands and the JSON and RPC protocols are the same as Pi's.
 
 ## What differs
 

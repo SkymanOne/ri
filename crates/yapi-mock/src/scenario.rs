@@ -206,6 +206,8 @@ fn pattern(text: &str) -> Regex {
     Regex::new(text).expect("the normalizer's patterns are valid")
 }
 
+/// yapi's sign-in help, `yapi_core::auth_guidance::PROVIDER_DOCS`.
+const SIGN_IN_DOCS: &str = "https://skymanone.github.io/yapi/models.html";
 /// pi's sign-in help: a providers.md line followed by a models.md path.
 static PROVIDERS_DOC: LazyLock<Regex> = LazyLock::new(|| {
     pattern(
@@ -722,11 +724,8 @@ impl Normalizer<'_> {
             .replace(".yapi/settings.json", ".pi/settings.json")
             .replace("~/.yapi/agent", "~/.pi/agent")
             .replace("start yapi in the project", "start pi in the project")
-            // The sign-in help points at yapi's README; pi's into its install.
-            .replace(
-                "  https://github.com/SkymanOne/yapi#models-and-sign-in",
-                "  <sign-in help>",
-            );
+            // The sign-in help points at yapi's docs site; pi's into its install.
+            .replace(SIGN_IN_DOCS, "<sign-in help>");
         text = PROVIDERS_DOC
             .replace_all(&text, "  <sign-in help>")
             .into_owned();
@@ -960,7 +959,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             .count(),
     };
     // pi's sign-in help lists two documents in its install, one per row; yapi
-    // links its README in one row. Both become `<sign-in help>`.
+    // links its docs site in one row. Both become `<sign-in help>`.
     let mut merged: Vec<String> = Vec::new();
     let mut rest = rows[start..].iter().peekable();
     while let Some(row) = rest.next() {
@@ -973,9 +972,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
         {
             rest.next();
             let indent = &row[..row.len() - row.trim_start().len()];
-            merged.push(format!(
-                "{indent}https://github.com/SkymanOne/yapi#models-and-sign-in"
-            ));
+            merged.push(format!("{indent}{SIGN_IN_DOCS}"));
         } else {
             merged.push(row.clone());
         }

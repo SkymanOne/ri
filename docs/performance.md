@@ -8,9 +8,8 @@ Linux, measured on an x86_64 virtual machine (Intel Xeon at 2.1 GHz, 4 hardware 
 
 | Measure | yapi | Pi | Pi / yapi |
 |---|---|---|---|
-| `--version` | 2.6 ms (2.3 to 3.9) | 307.7 ms (271.6 to 362.2) | 120× |
-| Print mode, start to first request byte | 17.2 ms (14.8 to 23.1) | 451.1 ms (392.2 to 521.0) | 26× |
-| Interactive first paint | 12.0 ms (10.1 to 16.2) | 410.9 ms (362.6 to 473.7) | 34× |
+| Startup, interactive | 12.0 ms (10.1 to 16.2) | 410.9 ms (362.6 to 473.7) | 34× |
+| Startup, print mode (to first request byte) | 17.2 ms (14.8 to 23.1) | 451.1 ms (392.2 to 521.0) | 26× |
 | Keystroke to paint, p50, 10,000-line session | 1.5 ms | 4.5 ms | 2.9× |
 | Keystroke to paint, p99, 10,000-line session | 4.7 ms | 11.7 ms | 2.5× |
 | Memory, idle | 18.9 MB (18.8 to 19.0) | 112.5 MB (111.8 to 112.8) | 6.0× |
@@ -20,8 +19,6 @@ Linux, measured on an x86_64 virtual machine (Intel Xeon at 2.1 GHz, 4 hardware 
 | Memory with 57 of Pi's example extensions | 38.3 MB (38.1 to 38.5) | 116.7 MB (116.2 to 117.6) | 3.1× |
 | Install size | 32.3 MB | 245.2 MB | 7.6× |
 
-On the same machine, starting the system's `true` takes 1.2 ms and starting Node.js with an empty script takes 29.5 ms. Those are the floors for each program's startup.
-
 ## GitHub's hosted runners
 
 The Bench workflow runs the same benchmark on GitHub's hosted runners, which are shared virtual machines.
@@ -30,9 +27,8 @@ Linux, on `ubuntu-latest` (AMD EPYC 7763, 4 hardware threads), against Pi `1.0.0
 
 | Measure | yapi | Pi | Pi / yapi |
 |---|---|---|---|
-| `--version` | 1.5 ms (1.4 to 1.6) | 230.9 ms (226.3 to 240.7) | 156× |
-| Print mode, start to first request byte | 13.6 ms (13.4 to 14.6) | 344.3 ms (332.8 to 349.5) | 25× |
-| Interactive first paint | 8.8 ms (8.5 to 9.2) | 319.7 ms (308.9 to 346.4) | 36× |
+| Startup, interactive | 8.8 ms (8.5 to 9.2) | 319.7 ms (308.9 to 346.4) | 36× |
+| Startup, print mode (to first request byte) | 13.6 ms (13.4 to 14.6) | 344.3 ms (332.8 to 349.5) | 25× |
 | Keystroke to paint, p50, 10,000-line session | 1.0 ms | 2.0 ms | 2.1× |
 | Keystroke to paint, p99, 10,000-line session | 1.5 ms | 3.5 ms | 2.3× |
 | Memory, idle | 17.4 MB (17.2 to 17.5) | 118.0 MB (116.0 to 118.5) | 6.8× |
@@ -46,9 +42,8 @@ macOS, on `macos-latest` (Apple M1 virtual machine, 3 hardware threads), against
 
 | Measure | yapi | Pi | Pi / yapi |
 |---|---|---|---|
-| `--version` | 9.9 ms (6.9 to 23.7) | 251.8 ms (196.2 to 461.0) | 26× |
-| Print mode, start to first request byte | 15.0 ms (12.3 to 81.5) | 332.3 ms (278.8 to 406.2) | 22× |
-| Interactive first paint | 21.7 ms (14.9 to 38.0) | 355.4 ms (288.3 to 458.6) | 16× |
+| Startup, interactive | 21.7 ms (14.9 to 38.0) | 355.4 ms (288.3 to 458.6) | 16× |
+| Startup, print mode (to first request byte) | 15.0 ms (12.3 to 81.5) | 332.3 ms (278.8 to 406.2) | 22× |
 | Keystroke to paint, p50, 10,000-line session | 2.4 ms | 4.9 ms | 2.1× |
 | Keystroke to paint, p99, 10,000-line session | 6.5 ms | 10.5 ms | 1.6× |
 | Memory, idle | 16.3 MB (16.3 to 16.4) | 126.1 MB (123.5 to 127.8) | 7.7× |
@@ -58,17 +53,12 @@ macOS, on `macos-latest` (Apple M1 virtual machine, 3 hardware threads), against
 | Memory with 57 of Pi's example extensions | 34.0 MB (34.0 to 34.1) | 130.3 MB (130.1 to 131.9) | 3.8× |
 | Install size | 26.4 MB | 233.9 MB | 8.9× |
 
-The start floors were 0.5 ms for `true` and 21.5 ms for Node.js on Linux, and 2.0 ms and 44.3 ms on macOS.
-
-On macOS, `--version` takes 7.9 ms more than `true`, where Linux takes 1.0 ms more. An earlier run on the same runner type measured 6.7 ms, 5.0 ms above `true`, so the runners vary from run to run. Part of the gap is the system loading the Security and CoreFoundation frameworks before yapi's code runs. yapi links them to check certificates against the system's trust store, and a probe on the same runner type measured 2.1 ms for loading them. The rest has not been traced yet.
-
-Single samples on the macOS runner reach 82 ms in print mode for yapi and 461 ms for Pi's `--version`, which is why the tables report medians.
+Single samples on the macOS runner reach 82 ms for yapi's print mode startup and 459 ms for Pi's interactive startup, which is why the tables report medians.
 
 ## What each measure means
 
-- **`--version`**: wall time of `--version` until the process exits.
-- **Print mode**: wall time from starting `-p "hi"` until a local listener standing in for the provider receives the first byte of the request. It covers loading settings, credentials, the model catalog and the session, and building the request.
-- **Interactive first paint**: time from starting the interactive mode in a 100×40 pseudo-terminal until the footer shows the model.
+- **Startup, interactive**: time from starting the interactive mode in a 100×40 pseudo-terminal until the footer shows the model.
+- **Startup, print mode (to first request byte)**: wall time from starting `-p "hi"` until a local listener standing in for the provider receives the first byte of the request. It covers loading settings, credentials, the model catalog and the session, and building the request.
 - **Keystroke to paint**: time from writing a key into the pseudo-terminal until the character appears on screen, over 200 keystrokes 20 ms apart, in a session whose transcript renders about 10,000 lines.
 - **Memory**: resident set size (RSS) of the program and its child processes, as `ps` reports it, 2 s after the first paint or, for the session of turns, 2 s after the last answer.
 - **Memory, idle**: an interactive start with no session history and no extensions.
@@ -97,4 +87,6 @@ npm install --prefix pi-install --ignore-scripts @earendil-works/pi-coding-agent
 cargo xtask bench --pi pi-install/node_modules/.bin/pi --pi-install pi-install
 ```
 
-The report is Markdown. Leave out `--pi` to measure yapi alone, and `--pi-install` to skip the install size and the example extensions. The Bench workflow runs the same steps on GitHub's hosted Linux and macOS runners, by hand or for a pushed commit whose message contains `[bench]`.
+The report is Markdown, and its header shows the commit measured. Leave out `--pi` to measure yapi alone, and `--pi-install` to skip the install size and the example extensions.
+
+The Bench workflow runs the same steps on GitHub's hosted Linux and macOS runners. Start it by hand from the repository's Actions tab. Each run uploads its report as an artifact.
