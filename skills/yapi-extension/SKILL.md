@@ -44,7 +44,7 @@ Choose a Pi extension unless the user asks for Rust or a sandboxed, self-contain
 ## Native extension
 
 1. Install the target once: `rustup target add wasm32-wasip2`.
-2. Run `yapi new <name>`. It creates a Cargo project laid out as a package: a `cdylib` crate that depends on `yapi-extension-api` from the yapi repository and registers a flag, a tool, a command and two event handlers, a `package.json` naming `extensions/<crate>.wasm`, and `.cargo/config.toml` making `wasm32-wasip2` the default target. `cargo generate --git https://github.com/SkymanOne/yapi crates/yapi/templates/extension` makes the same project.
+2. Run `yapi new <name>`. It creates a Cargo project laid out as a package: a `cdylib` crate that depends on `yapi-extension-api` at the yapi repository's `v0.1.0` tag and registers a flag, a tool, a command and two event handlers, a `package.json` naming `extensions/<crate>.wasm`, and `.cargo/config.toml` making `wasm32-wasip2` the default target. `cargo generate --git https://github.com/SkymanOne/yapi --tag v0.1.0 crates/yapi/templates/extension` makes the same project.
 3. Register everything in the init function and export it with `yapi_extension_api::extension!(init)`:
 
    | Item | Purpose |

@@ -23,7 +23,7 @@ yapi new shout
 ```text
 shout/
 ├── .cargo/config.toml   makes wasm32-wasip2 the default target
-├── Cargo.toml           a cdylib crate that depends on yapi-extension-api
+├── Cargo.toml           a cdylib crate that depends on yapi-extension-api at tag v0.1.0
 ├── README.md
 ├── extensions/          where the built extension goes
 ├── package.json         names extensions/shout.wasm for yapi
@@ -33,14 +33,14 @@ shout/
 The package takes the directory's name, and `--name` sets another. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
 
 ```sh
-cargo generate --git https://github.com/SkymanOne/yapi crates/yapi/templates/extension
+cargo generate --git https://github.com/SkymanOne/yapi --tag v0.1.0 crates/yapi/templates/extension
 ```
 
-To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK from the yapi repository:
+To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK at the yapi release you target:
 
 ```toml
 [dependencies]
-yapi-extension-api = { git = "https://github.com/SkymanOne/yapi" }
+yapi-extension-api = { git = "https://github.com/SkymanOne/yapi", tag = "v0.1.0" }
 ```
 
 An extension registers what it offers in an init function and exports it with `extension!`:

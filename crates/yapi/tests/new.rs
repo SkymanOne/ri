@@ -65,7 +65,13 @@ fn creates_a_package_from_the_template() {
             "{path} keeps a placeholder"
         );
     }
-    assert!(read(project.join("Cargo.toml")).contains("name = \"my-ext\""));
+    let cargo = read(project.join("Cargo.toml"));
+    assert!(cargo.contains("name = \"my-ext\""));
+    // The SDK at this release's tag, so a version bump needs a template bump.
+    assert!(
+        cargo.contains(concat!("tag = \"v", env!("CARGO_PKG_VERSION"), "\"")),
+        "{cargo}"
+    );
     let manifest: serde_json::Value =
         serde_json::from_str(&read(project.join("package.json"))).unwrap();
     assert_eq!(manifest["name"], "my-ext");
