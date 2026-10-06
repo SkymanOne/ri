@@ -9,8 +9,11 @@ on:
     paths:
       - .github/workflows/release.yml
       - install.sh
+      - about.toml
+      - about.hbs
       - scripts/package-release.sh
       - scripts/check-release.sh
+      - scripts/third-party-notices.sh
   workflow_dispatch:
 
 permissions:
@@ -20,6 +23,10 @@ env:
   CARGO_TERM_COLOR: always
   # The cargo-binstall release that the install job checks the archives with.
   BINSTALL_VERSION: v1.25.1
+  # The cargo-about release that lists the crates' licenses, and the SHA-256 of
+  # its x86_64-unknown-linux-musl archive.
+  ABOUT_VERSION: 0.9.2
+  ABOUT_SHA256: 9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af
 
 jobs:
   version:
@@ -40,7 +47,32 @@ jobs:
           fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
+  # THIRD-PARTY-NOTICES, which every archive carries next to the binary.
+  notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Update stable Rust and install rust-toolchain.toml
+        run: rustup update --no-self-update stable && rustup toolchain install
+      - name: Install cargo-about
+        run: |
+          name="cargo-about-$ABOUT_VERSION-x86_64-unknown-linux-musl"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/EmbarkStudios/cargo-about/releases/download/$ABOUT_VERSION/$name.tar.gz"
+          echo "$ABOUT_SHA256  $name.tar.gz" | sha256sum -c -
+          tar -xzf "$name.tar.gz"
+          echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
+      - name: Write the notices
+        run: scripts/third-party-notices.sh THIRD-PARTY-NOTICES
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: third-party-notices
+          path: THIRD-PARTY-NOTICES
+
   build:
+    needs: notices
     strategy:
       fail-fast: false
       matrix:
@@ -70,8 +102,12 @@ jobs:
       - name: Report the newest glibc the binary needs
         if: runner.os == 'Linux'
         run: objdump -T target/${{ matrix.target }}/release/yapi | grep -o 'GLIBC_[0-9.]*' | sort -u -V | tail -n 1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: third-party-notices
+          path: notices
       - name: Package
-        run: scripts/package-release.sh target/${{ matrix.target }}/release/yapi ${{ matrix.target }} dist
+        run: scripts/package-release.sh target/${{ matrix.target }}/release/yapi ${{ matrix.target }} dist notices/THIRD-PARTY-NOTICES
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: yapi-${{ matrix.target }}
@@ -99,6 +135,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
+          pattern: yapi-*
           merge-multiple: true
       - name: Install cargo-binstall
         run: |
@@ -122,6 +159,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          pattern: yapi-*
           merge-multiple: true
       - name: Create the release
         env:

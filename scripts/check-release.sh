@@ -1,9 +1,10 @@
 #!/bin/sh
-# Installs this system's release archive from <dist-dir> as users would: with
+# Checks that every archive in <dist-dir> carries the licenses next to the
+# binary, then installs this system's release archive as users would: with
 # install.sh, as the latest release and as release <tag>, and with
-# cargo-binstall when it is on PATH. The archives are served over HTTPS from
-# 127.0.0.1 in the layout of GitHub's release downloads, with a throwaway
-# certificate authority.
+# cargo-binstall when it is on PATH. Each must install yapi and nothing else.
+# The archives are served over HTTPS from 127.0.0.1 in the layout of GitHub's
+# release downloads, with a throwaway certificate authority.
 #
 # Usage: scripts/check-release.sh <dist-dir> <tag>
 # Needs curl, openssl and python3.
@@ -23,6 +24,15 @@ cleanup() {
     rm -rf "$work"
 }
 trap cleanup EXIT
+
+for archive in "$dist"/yapi-*.tar.gz; do
+    files=$(tar -tzf "$archive" | LC_ALL=C sort | tr '\n' ' ')
+    if [ "$files" != "LICENSE-APACHE LICENSE-MIT THIRD-PARTY-NOTICES yapi " ]; then
+        echo "$archive holds $files" >&2
+        exit 1
+    fi
+done
+echo "ok: every archive holds yapi and its licenses"
 
 # GitHub serves the latest release's files under latest/download as well.
 for path in "download/$tag" latest/download; do
@@ -93,6 +103,11 @@ check() {
     found=$("$1" --version)
     if [ "$found" != "$version" ]; then
         echo "$1 --version printed '$found', not '$version'" >&2
+        exit 1
+    fi
+    installed=$(ls -A "$(dirname "$1")")
+    if [ "$installed" != yapi ]; then
+        echo "$2 installed $installed" >&2
         exit 1
     fi
     echo "ok: $2 installed yapi $found"
