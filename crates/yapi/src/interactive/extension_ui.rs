@@ -57,6 +57,12 @@ pub(super) enum Request {
     Paste(String),
     Custom(RemoteComponent, CustomOptions),
     Close(RemoteComponent),
+    /// An extension's editor, and whether it embeds the working status.
+    SetEditor(Option<RemoteComponent>, bool),
+    EditorChanged(String),
+    EditorSubmit(String),
+    /// Raw input that matched an extension shortcut.
+    Shortcut(String),
     Render,
     ToolsExpanded(bool),
     Shutdown,
@@ -69,6 +75,11 @@ pub(super) struct Shared {
     pub tools_expanded: bool,
     pub theme: Value,
     pub footer: Value,
+    /// See [`ExtensionUi::keybindings`].
+    pub keybindings: Value,
+    /// The keys of extension shortcuts, and the decoder they match with.
+    pub shortcuts: Vec<String>,
+    pub keys: yapi_tui::keys::Keys,
 }
 
 /// The extension UI of one session.
@@ -224,6 +235,41 @@ impl ExtensionUi for InteractiveUi {
         true
     }
 
+    fn set_editor(&self, editor: Option<RemoteComponent>, embeds_status: bool) {
+        self.send(Request::SetEditor(editor, embeds_status));
+    }
+
+    fn editor_changed(&self, text: &str) {
+        lock(&self.shared).editor_text = text.to_owned();
+        self.send(Request::EditorChanged(text.to_owned()));
+    }
+
+    fn editor_submit(&self, text: &str) {
+        self.send(Request::EditorSubmit(text.to_owned()));
+    }
+
+    fn editor_action(&self, action: &str) {
+        let _ = self
+            .tx
+            .send(Event::EditorAction(self.epoch, action.to_owned()));
+    }
+
+    fn editor_shortcut(&self, data: &str) -> bool {
+        let shared = lock(&self.shared);
+        let found = shared
+            .shortcuts
+            .iter()
+            .any(|key| shared.keys.matches(data, key));
+        if found {
+            self.send(Request::Shortcut(data.to_owned()));
+        }
+        found
+    }
+
+    fn keybindings(&self) -> Value {
+        lock(&self.shared).keybindings.clone()
+    }
+
     fn custom(&self, component: RemoteComponent, options: CustomOptions) {
         self.send(Request::Custom(component, options));
     }
@@ -333,6 +379,13 @@ impl RemoteView {
         self.invalidate();
     }
 
+    /// Sends an operation to the editor it shows; see
+    /// [`RemoteComponent::editor_op`].
+    pub fn editor_op(&self, op: &Value) {
+        self.component.editor_op(op);
+        self.invalidate();
+    }
+
     /// The rows of the last render at `width`, and the cursor among them.
     pub fn render(&self, width: usize) -> (Vec<StyledLine>, Option<(usize, usize)>) {
         let mut state = self.state.borrow_mut();
@@ -373,6 +426,47 @@ impl RemoteView {
         state.cursor = cursor;
         state.rendered = Some(width);
         changed
+    }
+}
+
+/// An extension's editor in the built-in one's place, as pi's
+/// `setEditorComponent` installs it. It receives the keys and the built-in
+/// editor mirrors its text.
+pub(super) struct CustomEditor {
+    pub view: RemoteView,
+    /// It draws the working status in its top border.
+    pub embeds_status: bool,
+    /// The settings last sent; see [`CustomEditor::configure`].
+    configured: Value,
+}
+
+impl CustomEditor {
+    pub fn new(view: RemoteView, embeds_status: bool) -> CustomEditor {
+        CustomEditor {
+            view,
+            embeds_status,
+            configured: Value::Null,
+        }
+    }
+
+    /// Gives the editor the border, padding, list height, focus and terminal
+    /// height the built-in one has, when they changed.
+    pub fn configure(&mut self, config: Value) {
+        if config != self.configured {
+            let mut op = config.clone();
+            op["op"] = json!("configure");
+            self.view.editor_op(&op);
+            self.configured = config;
+        }
+    }
+
+    pub fn set_text(&self, text: &str) {
+        self.view.editor_op(&json!({"op": "setText", "text": text}));
+    }
+
+    pub fn add_to_history(&self, text: &str) {
+        self.view
+            .editor_op(&json!({"op": "addToHistory", "text": text}));
     }
 }
 
@@ -428,6 +522,7 @@ pub(super) struct ExtensionState {
     pub below: Vec<(String, WidgetView)>,
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
+    pub editor: Option<CustomEditor>,
     pub working_message: Option<String>,
     pub working_hidden: bool,
     pub working_indicator: Option<WorkingIndicator>,
@@ -442,6 +537,7 @@ impl ExtensionState {
         self.below.clear();
         self.footer = None;
         self.header = None;
+        self.editor = None;
         self.working_message = None;
         self.working_hidden = false;
         self.working_indicator = None;
@@ -502,12 +598,16 @@ impl ExtensionState {
             })
             .chain(self.footer.iter_mut())
             .chain(self.header.iter_mut())
+            .chain(self.editor.iter_mut().map(|editor| &mut editor.view))
     }
 
-    /// Mirrors what extensions read back.
+    /// Mirrors what extensions read back. An extension's editor reports
+    /// its own text.
     pub fn mirror(&self, editor_text: String, branch: Option<&str>, providers: usize) {
         let mut shared = lock(&self.shared);
-        shared.editor_text = editor_text;
+        if self.editor.is_none() {
+            shared.editor_text = editor_text;
+        }
         shared.footer = json!({
             "gitBranch": branch,
             "statuses": self.statuses,
@@ -621,10 +721,32 @@ impl super::App {
                 self.ext.thinking_label = label;
                 self.invalidate_all();
             }
-            Request::EditorText(text) => self.editor.set_text(&text),
+            Request::EditorText(text) => self.set_editor_text(&text),
             Request::Paste(text) => {
-                self.editor
-                    .handle_input(&format!("\x1b[200~{text}\x1b[201~"), &self.keys);
+                let paste = format!("\x1b[200~{text}\x1b[201~");
+                match &self.ext.editor {
+                    Some(editor) => editor.view.input(&paste),
+                    None => {
+                        self.editor.handle_input(&paste, &self.keys);
+                    }
+                }
+            }
+            // pi's `setCustomEditorComponent`; the built-in editor already
+            // holds the text an extension's editor had.
+            Request::SetEditor(component, embeds_status) => {
+                self.ext.editor = component.map(|component| {
+                    let view = RemoteView::new(component, self.tx.clone(), self.epoch);
+                    CustomEditor::new(view, embeds_status)
+                });
+            }
+            Request::EditorChanged(text) => {
+                if self.ext.editor.is_some() {
+                    self.editor.set_text(&text);
+                }
+            }
+            Request::EditorSubmit(text) => self.on_submit(text),
+            Request::Shortcut(data) => {
+                self.run_shortcut(&data);
             }
             Request::Custom(component, options) => {
                 let view = RemoteView::new(component, self.tx.clone(), self.epoch);

@@ -448,10 +448,42 @@
 		};
 	}
 	let tuiModule;
+	let facade;
 	const keybindings = async () => {
 		tuiModule ??= await import("@earendil-works/pi-tui");
 		return tuiModule.getKeybindings();
 	};
+	// The extension editor in the built-in one's place, and the app actions
+	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
+	// needs load when the session binds, so the factory runs at once.
+	const editorSlot = { factory: undefined, handle: undefined };
+	let editorActions = [];
+	function setEditor(factory) {
+		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
+		const text = request("getEditorText", {}) ?? "";
+		const editor = typeof factory === "function" ? factory(tui, facade.getEditorTheme(), tuiModule.getKeybindings()) : undefined;
+		editorSlot.factory = editor ? factory : undefined;
+		if (editorSlot.handle !== undefined) unmount(editorSlot.handle);
+		editorSlot.handle = undefined;
+		if (!editor) {
+			request("setEditor", {});
+			return;
+		}
+		editor.onSubmit = (value) => request("editorSubmit", { text: value });
+		editor.onChange = () => request("editorChange", { text: editor.getExpandedText?.() ?? editor.getText() });
+		editor.setText(text);
+		// An editor extending `CustomEditor` triggers the app's actions, as the built-in editor does.
+		if (editor.actionHandlers instanceof Map) {
+			const action = (id) => () => request("editorAction", { action: id });
+			editor.onEscape ??= action("app.interrupt");
+			editor.onCtrlD ??= action("app.exit");
+			editor.onPasteImage ??= action("app.clipboard.pasteImage");
+			editor.onExtensionShortcut ??= (data) => !!request("editorShortcut", { data });
+			for (const id of editorActions) editor.actionHandlers.set(id, action(id));
+		}
+		editorSlot.handle = mount(editor);
+		request("setEditor", { handle: editorSlot.handle, embedsStatus: editor.embedWorkingStatus === true });
+	}
 	yapi.render = (handle, width) => {
 		const component = components.get(handle);
 		if (!component) return [];
@@ -557,8 +589,10 @@
 			setEditorText: (text) => request("setEditorText", { text }),
 			getEditorText: () => request("getEditorText", {}) ?? "",
 			addAutocompleteProvider() {},
-			setEditorComponent() {},
-			getEditorComponent: () => undefined,
+			setEditorComponent(factory) {
+				if (shown) setEditor(factory);
+			},
+			getEditorComponent: () => (shown ? editorSlot.factory : undefined),
 			theme,
 			getAllThemes: () => request("getAllThemes", {}) ?? [],
 			getTheme: () => undefined,
@@ -836,15 +870,26 @@
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
 			return { extensions: results };
 		},
-		bind() {
+		async bind() {
 			bound = true;
 			let spec = null;
+			let keys = null;
 			try {
 				spec = yapi.request("ui.theme", {}) ?? null;
+				keys = yapi.request("ui.keybindings", {}) ?? null;
 			} catch {
 				// Hosts without a UI leave text plain.
 			}
 			theme.load(spec);
+			// Components match keys as the host's bindings do.
+			if (keys) {
+				tuiModule ??= await import("@earendil-works/pi-tui");
+				facade ??= await import("@earendil-works/pi-coding-agent");
+				tuiModule.setKittyProtocolActive(!!keys.kitty);
+				const definitions = Object.fromEntries(Object.entries(keys.bindings ?? {}).map(([id, defaultKeys]) => [id, { defaultKeys }]));
+				tuiModule.setKeybindings(new tuiModule.KeybindingsManager(definitions));
+				editorActions = keys.actions ?? [];
+			}
 			return null;
 		},
 		async reload() {
@@ -853,6 +898,7 @@
 			widgetHandles.clear();
 			transcriptViews.clear();
 			slots.footer = slots.header = undefined;
+			editorSlot.factory = editorSlot.handle = undefined;
 			const results = [];
 			for (const [id, extension] of [...extensions]) {
 				extensions.delete(id);
@@ -891,6 +937,20 @@
 			const command = extensionOf(payload.extension).commands.get(payload.name);
 			if (typeof command?.getArgumentCompletions !== "function") return null;
 			return plain(await command.getArgumentCompletions(payload.prefix ?? "")) ?? null;
+		},
+		/** An operation the host sends its editor; see `ComponentHost::editor_op`. */
+		editor(payload) {
+			const editor = components.get(payload.handle);
+			if (payload.op === "setText") editor?.setText?.(payload.text ?? "");
+			else if (payload.op === "addToHistory") editor?.addToHistory?.(payload.text ?? "");
+			else if (payload.op === "configure" && editor) {
+				editor.borderColor = payload.border === "bashMode" ? theme.getBashModeBorderColor() : theme.getThinkingBorderColor(payload.border);
+				editor.setPaddingX?.(payload.paddingX);
+				editor.setAutocompleteMaxVisible?.(payload.autocompleteMaxVisible);
+				if ("focused" in editor) editor.focused = !!payload.focused;
+				tui.terminal.rows = payload.rows;
+			}
+			return null;
 		},
 		async shortcut(payload) {
 			const shortcut = extensionOf(payload.extension).shortcuts.get(payload.shortcut);

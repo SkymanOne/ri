@@ -286,6 +286,20 @@ impl Instance {
         result.await.map_err(|_| Error::Stopped)?
     }
 
+    /// Runs dispatch `kind` with `payload` without waiting for its result,
+    /// after the calls and input sent before it.
+    pub fn post(&self, kind: &str, payload: &Value) {
+        let Ok(payload) = yapi_types::json::to_string(payload) else {
+            return;
+        };
+        let (reply, _) = oneshot::channel();
+        let _ = self.commands.send(Command::Call {
+            kind: kind.to_owned(),
+            payload,
+            reply,
+        });
+    }
+
     /// The lines of component `handle` at `width` columns; empty when the
     /// component or the instance is gone.
     pub async fn render(&self, handle: u32, width: u32) -> Vec<String> {

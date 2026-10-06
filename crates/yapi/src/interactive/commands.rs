@@ -593,7 +593,7 @@ impl super::App {
             .unwrap_or_default()
             .trim()
             .to_owned();
-        self.editor.set_text("");
+        self.set_editor_text("");
         match command {
             // pi built-ins that belong to pi's services and brand.
             "/share" | "/bug" | "/arminsayshi" | "/dementedelves" => {

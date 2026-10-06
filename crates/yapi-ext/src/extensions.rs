@@ -752,6 +752,14 @@ impl ComponentHost for Components {
             host.instance.input(handle, data);
         }
     }
+
+    fn editor_op(&self, handle: u32, op: &Value) {
+        if let Some(host) = self.0.upgrade() {
+            let mut payload = op.clone();
+            payload["handle"] = json!(handle);
+            host.instance.post("editor", &payload);
+        }
+    }
 }
 
 impl SessionBridge {
@@ -832,6 +840,15 @@ impl SessionBridge {
                     ui.close(component);
                 }
             }
+            "ui.setEditor" => ui.set_editor(
+                self.component(&payload["handle"]),
+                payload["embedsStatus"] == true,
+            ),
+            "ui.editorChange" => ui.editor_changed(&text(&payload["text"])),
+            "ui.editorSubmit" => ui.editor_submit(&text(&payload["text"])),
+            "ui.editorAction" => ui.editor_action(&text(&payload["action"])),
+            "ui.editorShortcut" => return Value::Bool(ui.editor_shortcut(&text(&payload["data"]))),
+            "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),
             "ui.getToolsExpanded" => return Value::Bool(ui.tools_expanded()),
             "ui.setToolsExpanded" => ui.set_tools_expanded(payload["expanded"] == true),

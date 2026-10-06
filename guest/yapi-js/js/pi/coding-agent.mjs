@@ -281,14 +281,55 @@ export class BorderedLoader extends Container {
 	handleInput() {}
 	dispose() {}
 }
+/**
+ * pi's `CustomEditor`: the editor with the app's key bindings. The handlers
+ * are set when the editor replaces the built-in one; the host then draws
+ * the working status in its top border when `embedWorkingStatus` is set.
+ */
 export class CustomEditor extends Editor {
 	constructor(tui, theme, keybindings, options) {
 		super(tui, theme, options);
 		this.keybindings = keybindings;
+		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 		this.actionHandlers = new Map();
 	}
+	setWorkingStatusIndicator() {}
 	onAction(action, handler) {
 		this.actionHandlers.set(action, handler);
+	}
+	handleInput(data) {
+		if (this.onExtensionShortcut?.(data)) return;
+		if (this.keybindings.matches(data, "app.clipboard.pasteImage")) {
+			this.onPasteImage?.();
+			return;
+		}
+		if (this.keybindings.matches(data, "app.interrupt")) {
+			if (!this.isShowingAutocomplete()) {
+				const handler = this.onEscape ?? this.actionHandlers.get("app.interrupt");
+				if (handler) {
+					handler();
+					return;
+				}
+			}
+			super.handleInput(data);
+			return;
+		}
+		if (this.keybindings.matches(data, "app.exit") && this.getText().length === 0) {
+			const handler = this.onCtrlD ?? this.actionHandlers.get("app.exit");
+			if (handler) handler();
+			return;
+		}
+		if (this.keybindings.matches(data, "tui.editor.historyPrevious") || this.keybindings.matches(data, "tui.editor.historyNext")) {
+			super.handleInput(data);
+			return;
+		}
+		for (const [action, handler] of this.actionHandlers) {
+			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+				handler();
+				return;
+			}
+		}
+		super.handleInput(data);
 	}
 }
 

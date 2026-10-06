@@ -80,6 +80,13 @@ pub trait ComponentHost: Send + Sync {
 
     /// Delivers raw terminal input to component `handle`.
     fn input(&self, handle: u32, data: &str);
+
+    /// Sends `op` to editor component `handle`, after the input delivered
+    /// before it: `{"op": "setText", "text"}`, `{"op": "addToHistory",
+    /// "text"}`, or `{"op": "configure", "border", "paddingX",
+    /// "autocompleteMaxVisible", "focused", "rows"}`, where `border` is a
+    /// thinking level or `bashMode`.
+    fn editor_op(&self, handle: u32, op: &Value);
 }
 
 /// A pi-tui component that lives in an extension runtime.
@@ -123,6 +130,11 @@ impl RemoteComponent {
     /// Delivers raw terminal input.
     pub fn input(&self, data: &str) {
         self.host.input(self.handle, data);
+    }
+
+    /// Sends an operation to the editor it is; see [`ComponentHost::editor_op`].
+    pub fn editor_op(&self, op: &Value) {
+        self.host.editor_op(self.handle, op);
     }
 }
 
@@ -238,6 +250,34 @@ pub trait ExtensionUi: Send + Sync {
     /// Whether [`ExtensionUi::custom`] and component widgets are shown.
     fn shows_components(&self) -> bool {
         false
+    }
+
+    /// Replaces the editor with `editor`, or restores the built-in one.
+    /// `embeds_status` when the editor shows the working status in its top
+    /// border.
+    fn set_editor(&self, _editor: Option<RemoteComponent>, _embeds_status: bool) {}
+
+    /// The extension's editor now holds `text`, paste markers expanded.
+    fn editor_changed(&self, _text: &str) {}
+
+    /// The extension's editor submitted `text`.
+    fn editor_submit(&self, _text: &str) {}
+
+    /// The extension's editor asks for app action `action`, a key binding id
+    /// such as `app.interrupt`.
+    fn editor_action(&self, _action: &str) {}
+
+    /// Whether raw input `data` is an extension shortcut, which then runs.
+    fn editor_shortcut(&self, _data: &str) -> bool {
+        false
+    }
+
+    /// The key bindings components match keys against: `{"kitty",
+    /// "bindings": {id: [key]}, "actions": [id]}`, where `actions` are the
+    /// app actions an extension's editor can ask for. `Null` keeps pi-tui's
+    /// defaults.
+    fn keybindings(&self) -> Value {
+        Value::Null
     }
 
     /// Shows `component` with keyboard focus until [`ExtensionUi::close`].

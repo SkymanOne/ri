@@ -356,6 +356,11 @@ impl Editor {
         self.padding_x = padding;
     }
 
+    /// The horizontal padding.
+    pub fn padding_x(&self) -> usize {
+        self.padding_x
+    }
+
     /// Replaces the styles, as a theme change does.
     pub fn set_theme(&mut self, theme: EditorTheme) {
         self.border = theme.border;
@@ -365,6 +370,11 @@ impl Editor {
     /// Sets how many autocomplete rows show at once (3 to 20).
     pub fn set_autocomplete_max_visible(&mut self, rows: usize) {
         self.autocomplete_max_visible = rows.clamp(3, 20);
+    }
+
+    /// How many autocomplete rows show at once.
+    pub fn autocomplete_max_visible(&self) -> usize {
+        self.autocomplete_max_visible
     }
 
     /// Installs the autocomplete provider and its extra trigger characters.
