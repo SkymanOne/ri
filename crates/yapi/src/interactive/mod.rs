@@ -643,6 +643,20 @@ impl App {
         self.tool_items.clear();
     }
 
+    /// Removes the item at `index`; the indices of later items shift down.
+    fn remove_item(&mut self, index: usize) {
+        self.chat.remove(index);
+        self.cache.remove(index);
+        self.tool_items.retain(|_, item| *item != index);
+        let shift = |item: usize| if item > index { item - 1 } else { item };
+        for item in self.tool_items.values_mut() {
+            *item = shift(*item);
+        }
+        self.streaming = self.streaming.filter(|item| *item != index).map(shift);
+        // The flattened rows still hold the removed item.
+        self.flat_key = None;
+    }
+
     fn ui(&self) -> Ui<'_> {
         Ui {
             theme: &self.theme,
@@ -1615,9 +1629,7 @@ impl App {
                     self.indicator = None;
                 }
                 if let Some(index) = self.streaming.take() {
-                    self.chat.remove(index);
-                    self.cache.remove(index);
-                    self.tool_items.retain(|_, item| *item != index);
+                    self.remove_item(index);
                 }
             }
             AgentEvent::QueueUpdate {
@@ -1736,23 +1748,10 @@ impl App {
             .iter()
             .position(|item| matches!(item, Item::Compaction { .. }))
         {
-            self.chat.remove(position);
-            self.cache.remove(position);
-            let shift: Vec<(String, usize)> = self
-                .tool_items
-                .iter()
-                .map(|(id, index)| {
-                    (
-                        id.clone(),
-                        if *index > position { index - 1 } else { *index },
-                    )
-                })
-                .collect();
-            self.tool_items = shift.into_iter().collect();
+            self.remove_item(position);
         }
         if let Some(Item::Status(_)) = self.chat.last() {
-            self.chat.pop();
-            self.cache.pop();
+            self.remove_item(self.chat.len() - 1);
         }
     }
 
@@ -2998,7 +2997,7 @@ fn quote(value: &str) -> String {
 }
 
 /// Runs interactive mode until the user quits. Returns the exit code.
-pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) -> u8 {
+pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options) -> u8 {
     #[cfg(unix)]
     let raw = match yapi_tui::terminal::RawMode::enable() {
         Ok(raw) => raw,
@@ -3054,121 +3053,16 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         }
     }
 
-    let mode = color_mode();
-    let theme_files = themes::ThemeFiles::load(&session.resources().themes);
-    let theme_override = options.use_theme.clone();
-    let model_fallback = options.model_fallback;
-    let (theme, theme_error) = load_theme(
-        theme_override
-            .as_deref()
-            .or(session.settings().theme.as_deref()),
-        &theme_files,
-        &agent_dir,
-        &query.colors(),
-        mode,
+    let model_fallback = options.model_fallback.take();
+    let (mut app, theme_error) = App::new(
+        session,
+        agent_dir.clone(),
+        options,
+        tx.clone(),
+        query.colors(),
+        terminal.protocol.kitty,
     );
-    let mut keys = keybindings::load(&agent_dir, Keys::detect(terminal.protocol.kitty));
-    keys.set_kitty(terminal.protocol.kitty);
-    let settings = session.settings();
-    let fullscreen = options.tui_mode.or(settings.tui_mode) != Some(TuiMode::Regular);
-    let quiet = settings.quiet_startup.as_ref();
-    let show_details = options.verbose
-        || !matches!(
-            quiet,
-            Some(yapi_types::settings::BoolOr::Bool(true))
-                | Some(yapi_types::settings::BoolOr::Other(_))
-        );
-    // `quietStartup: true` hides the header too; `"header"` only the details.
-    let show_header =
-        options.verbose || !matches!(quiet, Some(yapi_types::settings::BoolOr::Bool(true)));
-    let mut editor = Editor::new(
-        editor_theme(&theme),
-        usize::from(settings.editor_padding_x.unwrap_or(0).min(3)),
-        usize::from(settings.autocomplete_max_visible.unwrap_or(5)),
-    );
-    editor.focused = true;
-    let cwd = session.cwd().to_path_buf();
-    let expand_key = keybindings::keys_text(&keys, "app.tools.expand");
-    let cancel_key = keybindings::keys_text(&keys, "tui.select.cancel");
-    let mut app = App {
-        markdown: markdown_theme(&theme),
-        theme,
-        keys,
-        editor,
-        selector: None,
-        dialog: None,
-        chat: Vec::new(),
-        cache: Vec::new(),
-        flat: Vec::new(),
-        flat_header: Vec::new(),
-        flat_key: None,
-        flat_offsets: Vec::new(),
-        footer_cache: None,
-        generation: 0,
-        streaming: None,
-        tool_items: HashMap::new(),
-        pending: (Vec::new(), Vec::new()),
-        pending_bash: Vec::new(),
-        next_bash: 0,
-        compaction_queue: Vec::new(),
-        manual_compaction: false,
-        progress: None,
-        indicator: None,
-        expanded: options.verbose,
-        hide_thinking: settings.hide_thinking_block.unwrap_or(false),
-        output_pad: usize::from(settings.output_pad.unwrap_or(1).min(1)),
-        show_details,
-        fullscreen,
-        alt: AltScreen::new(),
-        main: MainScreen::new(),
-        size: yapi_tui::terminal::size(),
-        last_clear: None,
-        last_escape: None,
-        running: false,
-        quit: false,
-        exit_code: 0,
-        branch: footer::git_branch(&cwd),
-        cwd,
-        home: home_dir(),
-        expand_key,
-        cancel_key,
-        fd: None,
-        colors: query.colors(),
-        color_mode: mode,
-        kitty: terminal.protocol.kitty,
-        tx: tx.clone(),
-        session: session.clone(),
-        factory: options.factory,
-        agent_dir: agent_dir.clone(),
-        epoch: 0,
-        login: None,
-        next_login: 0,
-        anthropic_warning_shown: false,
-        ext: extension_ui::ExtensionState::default(),
-        initial: options.initial,
-        initial_images: options.initial_images,
-        provider_count: 0,
-        model_network: options.model_network,
-        next_refresh: 0,
-        binding: None,
-        overlay: None,
-        overlays_below: Vec::new(),
-        show_header,
-        theme_files,
-        theme_override,
-        shortcuts: Vec::new(),
-        shutdown_requested: false,
-        extension_issues: Vec::new(),
-    };
-    app.style_alt_screen();
-    app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
-    app.main.show_hardware_cursor = settings.show_hardware_cursor.unwrap_or(false);
-    app.alt.show_hardware_cursor = app.main.show_hardware_cursor;
-    app.main.clear_on_shrink = settings
-        .terminal
-        .as_ref()
-        .and_then(|terminal| terminal.clear_on_shrink)
-        .unwrap_or(false);
+    let (show_details, fullscreen) = (app.show_details, app.fullscreen);
     let scoped = app.session.scoped_models();
     if !scoped.is_empty() && show_details {
         let list: Vec<String> = scoped
@@ -3382,6 +3276,133 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
 }
 
 impl App {
+    /// The app for `session` before anything is drawn, with the error from
+    /// loading the configured theme.
+    fn new(
+        session: AgentSession,
+        agent_dir: PathBuf,
+        options: Options,
+        tx: UnboundedSender<Event>,
+        colors: yapi_tui::terminal::TerminalColors,
+        kitty: bool,
+    ) -> (App, Option<String>) {
+        let mode = color_mode();
+        let theme_files = themes::ThemeFiles::load(&session.resources().themes);
+        let theme_override = options.use_theme.clone();
+        let (theme, theme_error) = load_theme(
+            theme_override
+                .as_deref()
+                .or(session.settings().theme.as_deref()),
+            &theme_files,
+            &agent_dir,
+            &colors,
+            mode,
+        );
+        let mut keys = keybindings::load(&agent_dir, Keys::detect(kitty));
+        keys.set_kitty(kitty);
+        let settings = session.settings();
+        let fullscreen = options.tui_mode.or(settings.tui_mode) != Some(TuiMode::Regular);
+        let quiet = settings.quiet_startup.as_ref();
+        let show_details = options.verbose
+            || !matches!(
+                quiet,
+                Some(yapi_types::settings::BoolOr::Bool(true))
+                    | Some(yapi_types::settings::BoolOr::Other(_))
+            );
+        // `quietStartup: true` hides the header too; `"header"` only the details.
+        let show_header =
+            options.verbose || !matches!(quiet, Some(yapi_types::settings::BoolOr::Bool(true)));
+        let mut editor = Editor::new(
+            editor_theme(&theme),
+            usize::from(settings.editor_padding_x.unwrap_or(0).min(3)),
+            usize::from(settings.autocomplete_max_visible.unwrap_or(5)),
+        );
+        editor.focused = true;
+        let cwd = session.cwd().to_path_buf();
+        let expand_key = keybindings::keys_text(&keys, "app.tools.expand");
+        let cancel_key = keybindings::keys_text(&keys, "tui.select.cancel");
+        let mut app = App {
+            markdown: markdown_theme(&theme),
+            theme,
+            keys,
+            editor,
+            selector: None,
+            dialog: None,
+            chat: Vec::new(),
+            cache: Vec::new(),
+            flat: Vec::new(),
+            flat_header: Vec::new(),
+            flat_key: None,
+            flat_offsets: Vec::new(),
+            footer_cache: None,
+            generation: 0,
+            streaming: None,
+            tool_items: HashMap::new(),
+            pending: (Vec::new(), Vec::new()),
+            pending_bash: Vec::new(),
+            next_bash: 0,
+            compaction_queue: Vec::new(),
+            manual_compaction: false,
+            progress: None,
+            indicator: None,
+            expanded: options.verbose,
+            hide_thinking: settings.hide_thinking_block.unwrap_or(false),
+            output_pad: usize::from(settings.output_pad.unwrap_or(1).min(1)),
+            show_details,
+            fullscreen,
+            alt: AltScreen::new(),
+            main: MainScreen::new(),
+            size: yapi_tui::terminal::size(),
+            last_clear: None,
+            last_escape: None,
+            running: false,
+            quit: false,
+            exit_code: 0,
+            branch: footer::git_branch(&cwd),
+            cwd,
+            home: home_dir(),
+            expand_key,
+            cancel_key,
+            fd: None,
+            colors,
+            color_mode: mode,
+            kitty,
+            tx,
+            session,
+            factory: options.factory,
+            agent_dir,
+            epoch: 0,
+            login: None,
+            next_login: 0,
+            anthropic_warning_shown: false,
+            ext: extension_ui::ExtensionState::default(),
+            initial: options.initial,
+            initial_images: options.initial_images,
+            provider_count: 0,
+            model_network: options.model_network,
+            next_refresh: 0,
+            binding: None,
+            overlay: None,
+            overlays_below: Vec::new(),
+            show_header,
+            theme_files,
+            theme_override,
+            shortcuts: Vec::new(),
+            shutdown_requested: false,
+            extension_issues: Vec::new(),
+        };
+        app.style_alt_screen();
+        app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
+        app.main.show_hardware_cursor = settings.show_hardware_cursor.unwrap_or(false);
+        app.alt.show_hardware_cursor = app.main.show_hardware_cursor;
+        app.main.clear_on_shrink = settings
+            .terminal
+            .as_ref()
+            .and_then(|terminal| terminal.clear_on_shrink)
+            .unwrap_or(false);
+        (app, theme_error)
+    }
+
     /// Starts the current session's extensions once the event that replaced
     /// the session is handled, so they see the app's state (the theme) as it
     /// ends. Handlers may wait for dialogs, so they run beside the loop.
@@ -3505,6 +3526,61 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An app around an in-memory session without a model, as `run` builds
+    /// it, and the receiver of its events.
+    pub(super) fn app() -> (App, UnboundedReceiver<Event>) {
+        let cwd = Path::new("/work");
+        let session = AgentSession::new(yapi_core::agent_session::SessionConfig {
+            cwd: cwd.to_path_buf(),
+            agent_dir: PathBuf::from("/agent"),
+            settings: yapi_core::settings::SettingsManager::in_memory(),
+            registry: yapi_ai::registry::ModelRegistry::builtin(),
+            apis: yapi_ai::api::Apis::default(),
+            session: SessionManager::in_memory(cwd),
+            model: None,
+            thinking_level: yapi_types::message::ThinkingLevel::Off,
+            tools: Vec::new(),
+            extensions: Vec::new(),
+            include_extension_tools: false,
+            allowed_tools: None,
+            excluded_tools: Vec::new(),
+            resources: yapi_core::agent_session::Resources::default(),
+        });
+        let options = Options {
+            tui_mode: None,
+            verbose: false,
+            initial: Vec::new(),
+            initial_images: Vec::new(),
+            factory: Box::new(|_| anyhow::bail!("no sessions in tests")),
+            use_theme: None,
+            model_fallback: None,
+            model_network: false,
+        };
+        let (tx, rx) = unbounded_channel();
+        let colors = yapi_tui::terminal::TerminalColors::default();
+        let (app, _) = App::new(session, PathBuf::from("/agent"), options, tx, colors, false);
+        (app, rx)
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_message_leaves_later_items_in_place() {
+        let (mut app, _events) = app();
+        let streaming = app.push(Item::Status("streaming".into()));
+        app.streaming = Some(streaming);
+        let tool = app.push(Item::Tool(Box::new(ToolView::new("read", Value::Null))));
+        app.tool_items.insert("call".into(), tool);
+        app.refresh_transcript(40);
+        app.on_agent_event(AgentEvent::AgentEnd {
+            messages: Vec::new(),
+            will_retry: false,
+        });
+        app.error("after");
+        assert!(matches!(app.chat[app.tool_items["call"]], Item::Tool(_)));
+        let rows = app.transcript(40);
+        app.flat_key = None;
+        assert_eq!(rows, app.transcript(40));
+    }
 
     fn text(line: &StyledLine) -> String {
         line.spans
