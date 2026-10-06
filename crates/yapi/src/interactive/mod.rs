@@ -57,7 +57,7 @@ use yapi_tui::theme::{
 };
 use yapi_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, ImageContent, Message, StopReason, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, ImageContent, Message, StopReason, ToolCall,
 };
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::{DoubleEscapeAction, TuiMode};
@@ -1443,15 +1443,9 @@ impl App {
                         block.text = text;
                     }
                 }
-                AssistantMessageEvent::ThinkingStart { content_index } => ensure(
-                    content,
-                    content_index,
-                    ContentBlock::Thinking(ThinkingContent {
-                        thinking: String::new(),
-                        thinking_signature: None,
-                        redacted: None,
-                    }),
-                ),
+                AssistantMessageEvent::ThinkingStart { content_index } => {
+                    ensure(content, content_index, ContentBlock::thinking("", None))
+                }
                 AssistantMessageEvent::ThinkingDelta {
                     content_index,
                     delta,
@@ -1476,13 +1470,7 @@ impl App {
                     ensure(
                         content,
                         content_index,
-                        ContentBlock::ToolCall(ToolCall {
-                            id: id.clone(),
-                            name: tool_name.clone(),
-                            arguments: Map::new(),
-                            thought_signature: None,
-                            namespace: None,
-                        }),
+                        ContentBlock::tool_call(id.clone(), tool_name.clone(), Map::new()),
                     );
                     new_tool = Some((id, tool_name));
                 }
