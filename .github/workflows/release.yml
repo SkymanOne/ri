@@ -117,7 +117,8 @@ jobs:
           path: dist/yapi-*
 
   # Installs each runner's archive with install.sh and cargo-binstall. There
-  # is no Intel macOS runner, so the x86_64-apple-darwin archive is not run.
+  # is no Intel macOS runner, so the x86_64-apple-darwin archive runs under
+  # Rosetta on the arm64 one, when the image has Rosetta.
   install:
     needs: [version, build]
     strategy:
@@ -152,6 +153,23 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Install the release as users do
         run: scripts/check-release.sh dist "${{ needs.version.outputs.tag }}"
+      - name: Run the x86_64 macOS archive under Rosetta
+        if: runner.os == 'macOS'
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "skipped: Rosetta is not installed"
+            exit 0
+          fi
+          mkdir "$RUNNER_TEMP/x86_64"
+          tar -xzf dist/yapi-x86_64-apple-darwin.tar.gz -C "$RUNNER_TEMP/x86_64" yapi
+          found=$(arch -x86_64 "$RUNNER_TEMP/x86_64/yapi" --version)
+          if [ "$found" != "${TAG#v}" ]; then
+            echo "::error::yapi --version printed '$found', not '${TAG#v}'"
+            exit 1
+          fi
+          echo "ok: the x86_64-apple-darwin build runs under Rosetta"
 
   publish:
     if: github.ref_type == 'tag'
