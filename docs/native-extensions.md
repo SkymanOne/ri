@@ -4,6 +4,8 @@ Native extensions are WebAssembly components written in Rust with the `yapi-exte
 
 A native extension needs no JavaScript runtime and runs in a WebAssembly instance of its own. A built extension is one `.wasm` file of a few hundred kilobytes.
 
+Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Rust SDK and the host requests they use may change in any release before then, and extensions may need to be rebuilt. Pi extensions from npm use Pi's extension API and are not affected.
+
 ## Create an extension
 
 Add the `wasm32-wasip2` target to your toolchain once:
@@ -23,24 +25,24 @@ yapi new shout
 ```text
 shout/
 ├── .cargo/config.toml   makes wasm32-wasip2 the default target
-├── Cargo.toml           a cdylib crate that depends on yapi-extension-api
+├── Cargo.toml           a cdylib crate that depends on yapi-extension-api at tag v0.1.0
 ├── README.md
 ├── extensions/          where the built extension goes
 ├── package.json         names extensions/shout.wasm for yapi
 └── src/lib.rs           the hello example, to replace with your own
 ```
 
-The package takes the directory's name, and `--name` sets another. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
+The package takes the directory's name, and `--name` sets another. The name has lowercase ASCII letters, digits, `-` and `_` and starts with a letter, so both Cargo and npm accept it. The same template works with [cargo-generate](https://github.com/cargo-generate/cargo-generate), which also asks for the name:
 
 ```sh
-cargo generate --git https://github.com/SkymanOne/yapi crates/yapi/templates/extension
+cargo generate --git https://github.com/SkymanOne/yapi --tag v0.1.0 crates/yapi/templates/extension
 ```
 
-To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK from the yapi repository:
+To start without the template, create a library crate with `crate-type = ["cdylib"]` and depend on the SDK at the yapi release you target:
 
 ```toml
 [dependencies]
-yapi-extension-api = { git = "https://github.com/SkymanOne/yapi" }
+yapi-extension-api = { git = "https://github.com/SkymanOne/yapi", tag = "v0.1.0" }
 ```
 
 An extension registers what it offers in an init function and exports it with `extension!`:
@@ -91,6 +93,12 @@ yapi -e .
 ```
 
 `-e` also takes the `.wasm` file itself.
+
+To check that the package loads without a model or the network, run [`check-extension.py`](https://github.com/SkymanOne/yapi/blob/main/skills/yapi-extension/scripts/check-extension.py) from the [agent skills](agent-skills.md). It prints the commands the extensions registered and every load error, and exits with 1 on an error:
+
+```sh
+python3 check-extension.py .
+```
 
 ## Install it
 

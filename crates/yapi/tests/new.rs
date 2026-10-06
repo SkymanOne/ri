@@ -53,10 +53,15 @@ fn creates_a_package_from_the_template() {
     assert!(output.status.success(), "{output:?}");
     let project = dir.join("my-ext");
     let template = common::repo().join("crates/yapi/templates/extension");
-    // The template's files, without the one only `cargo generate` reads.
+    // Cargo reads every manifest in a git dependency's repository, and fails
+    // on a placeholder in a package name.
+    assert!(!template.join("Cargo.toml").exists());
+    // The template's files, without the one only `cargo generate` reads, and
+    // without cargo-generate's `.liquid` suffix.
     let expected: Vec<String> = files(&template)
         .into_iter()
         .filter(|path| path != "cargo-generate.toml")
+        .map(|path| path.strip_suffix(".liquid").unwrap_or(&path).to_owned())
         .collect();
     assert_eq!(files(&project), expected);
     for path in &expected {
@@ -65,7 +70,13 @@ fn creates_a_package_from_the_template() {
             "{path} keeps a placeholder"
         );
     }
-    assert!(read(project.join("Cargo.toml")).contains("name = \"my-ext\""));
+    let cargo = read(project.join("Cargo.toml"));
+    assert!(cargo.contains("name = \"my-ext\""));
+    // The SDK at this release's tag, so a version bump needs a template bump.
+    assert!(
+        cargo.contains(concat!("tag = \"v", env!("CARGO_PKG_VERSION"), "\"")),
+        "{cargo}"
+    );
     let manifest: serde_json::Value =
         serde_json::from_str(&read(project.join("package.json"))).unwrap();
     assert_eq!(manifest["name"], "my-ext");
@@ -107,9 +118,16 @@ fn refuses_existing_files_and_invalid_names() {
     );
     assert_eq!(files(&dir.join("taken")), ["notes.txt"]);
 
-    for name in ["1st", "-dash", "has space", "ünï"] {
+    // npm rejects capitals and a leading `_`.
+    for name in ["1st", "-dash", "_under", "Upper", "has space", "ünï"] {
         let output = yapi_new(&dir, &["fresh", "--name", name]);
         assert_eq!(output.status.code(), Some(1), "{name}");
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            format!(
+                "Error: \"{name}\" is not a valid package name. Use lowercase ASCII letters, digits, - and _, starting with a letter.\n"
+            )
+        );
         assert!(!dir.join("fresh").exists(), "{name}");
     }
     let output = yapi_new(&dir, &[]);

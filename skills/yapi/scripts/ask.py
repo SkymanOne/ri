@@ -12,6 +12,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 
 
 def main() -> int:
@@ -32,11 +33,14 @@ def main() -> int:
         command.append("--no-session")
     if args.model:
         command += ["--model", args.model]
+    # stderr goes to a file: a pipe nobody reads fills up with extension logs
+    # and stops yapi.
+    log = tempfile.TemporaryFile()
     proc = subprocess.Popen(
         command + extra,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=log,
         text=True,
     )
 
@@ -46,8 +50,9 @@ def main() -> int:
 
     def fail(message: str) -> int:
         proc.stdin.close()
-        stderr = proc.stderr.read()
         proc.wait()
+        log.seek(0)
+        stderr = log.read().decode(errors="replace")
         print(message or stderr.strip() or "yapi stopped", file=sys.stderr)
         return 1
 
@@ -76,6 +81,8 @@ def main() -> int:
         if event.get("type") == "response" and event.get("id") == "answer":
             print(event.get("data", {}).get("text", ""))
             break
+    else:
+        return fail("")
     proc.stdin.close()
     proc.wait()
     return 0

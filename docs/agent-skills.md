@@ -9,10 +9,10 @@ The repository ships two [Agent Skills](https://agentskills.io/specification) th
 
 ## Install them
 
-In yapi or Pi, install the repository as a package. Its `skills` folder becomes available in every project:
+In yapi or Pi, install the repository at a release tag as a package. Its `skills` folder becomes available in every project:
 
 ```sh
-yapi install git:github.com/SkymanOne/yapi
+yapi install git:github.com/SkymanOne/yapi@v0.1.0
 ```
 
 To use one skill without the rest of the repository, copy its folder into a skills directory, such as `~/.yapi/agent/skills/`, `~/.agents/skills/` or, for Claude Code, `~/.claude/skills/`:

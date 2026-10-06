@@ -4,6 +4,8 @@ A native extension for [yapi](https://github.com/SkymanOne/yapi), written in Rus
 
 The project is a yapi package. `package.json` names the built extension, `extensions/{{crate_name}}.wasm`.
 
+Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Rust SDK and the host requests they use may change in any release before then, and extensions may need to be rebuilt. Pi extensions from npm use Pi's extension API and are not affected.
+
 ## Build
 
 ```sh
@@ -41,4 +43,10 @@ yapi install git:github.com/<you>/{{project-name}}
 
 To publish on npm, run `npm publish`, and others install it with `yapi install npm:{{project-name}}`.
 
-The [native extension guide](https://skymanone.github.io/yapi/native-extensions.html) documents the API.
+## Documentation
+
+The [native extension guide](https://skymanone.github.io/yapi/native-extensions.html) documents the API. The SDK is not on docs.rs, so build its reference locally:
+
+```sh
+cargo doc --open -p yapi-extension-api
+```
