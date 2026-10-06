@@ -40,7 +40,7 @@ Review the staged changes. Focus on ${1:-correctness and error handling}.
 
 ## Documentation for the model
 
-yapi can explain its own features and look up its docs. When you ask about yapi, the system prompt sends the model to its documentation in `~/.yapi/agent/docs`: these pages, with Pi's documentation and examples in `pi/`. Pi's pages describe the extension API, themes, skills and the other features yapi shares with Pi, under Pi's names. [Coming from Pi](migrating.md) lists the names that change. Without a local copy, the prompt points to this site and to Pi's documentation on GitHub. [Install](install.md#documentation-for-the-model) shows how each way of installing yapi gets the local copy.
+yapi can explain its own features and look up its docs. When you ask about yapi, the system prompt sends the model to its documentation in `~/.yapi/agent/docs`: these pages, with Pi's documentation and examples in `pi/`. Pi's pages describe the extension API, themes, skills and the other features yapi shares with Pi, under Pi's names. [Coming from Pi](migrating.md) lists the names that change. Without a local copy, the prompt points to this site and to Pi's documentation on GitHub. [Install](install.md#documentation-for-the-model) shows how each way of installing yapi gets the local copy. The install script's `--no-docs` skips the copy, and `YAPI_NO_DOCS=1` keeps the install script and yapi from downloading it.
 
 yapi replaces these files when it is upgraded, so keep your own notes elsewhere.
 
