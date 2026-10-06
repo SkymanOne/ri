@@ -137,6 +137,28 @@ impl Ui<'_> {
     pub fn border(&self, width: usize) -> StyledLine {
         lines::border(width, self.theme.fg("border"))
     }
+
+    /// The top of pi's dialog frame: a border and a blank row.
+    fn frame_top(&self, width: usize) -> Vec<StyledLine> {
+        let mut out = vec![self.border(width)];
+        out.extend(lines::spacer(1));
+        out
+    }
+
+    /// The bottom of pi's dialog frame: a blank row, the key hints, a blank
+    /// row and a border.
+    fn frame_bottom(&self, width: usize, hints: &[Vec<Span<'static>>]) -> Vec<StyledLine> {
+        let mut out = lines::spacer(1);
+        out.extend(lines::text_row(Line::from(join_hints(hints)), width, 1));
+        out.extend(lines::spacer(1));
+        out.push(self.border(width));
+        out
+    }
+}
+
+/// Key hints two spaces apart, as pi joins them.
+pub fn join_hints(hints: &[Vec<Span<'static>>]) -> Vec<Span<'static>> {
+    hints.join(&Span::raw("  "))
 }
 
 /// A selector in the editor's place.
@@ -851,14 +873,16 @@ impl ForkSelector {
 #[derive(Clone, Copy, Debug)]
 pub struct Countdown(pub std::time::Instant);
 
-impl Countdown {
-    /// `title` with the seconds left.
-    fn title(self, title: &str) -> String {
-        let left = self
-            .0
-            .saturating_duration_since(std::time::Instant::now())
-            .as_millis();
-        format!("{title} ({}s)", left.div_ceil(1000))
+/// `title` with the seconds left of `countdown`, if any.
+fn countdown_title(title: &str, countdown: Option<Countdown>) -> String {
+    match countdown {
+        Some(Countdown(until)) => {
+            let left = until
+                .saturating_duration_since(std::time::Instant::now())
+                .as_millis();
+            format!("{title} ({}s)", left.div_ceil(1000))
+        }
+        None => title.to_owned(),
     }
 }
 
@@ -906,8 +930,7 @@ impl TrustSelector {
     fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         let theme = ui.theme;
         let muted = |text: String| lines::text_row(styled(text, theme.fg("muted")), width, 1);
-        let mut out = vec![ui.border(width)];
-        out.extend(lines::spacer(1));
+        let mut out = ui.frame_top(width);
         out.extend(lines::text_row(
             styled(
                 "Project trust",
@@ -957,16 +980,14 @@ impl TrustSelector {
             ));
             out.extend(lines::text_row(Line::from(spans), width, 1));
         }
-        out.extend(lines::spacer(1));
-        let hint = [
-            key_hint(theme, "↑↓", "navigate"),
-            ui.key_hint("tui.select.confirm", "save"),
-            ui.key_hint("tui.select.cancel", "cancel"),
-        ]
-        .join(&Span::raw("  "));
-        out.extend(lines::text_row(Line::from(hint), width, 1));
-        out.extend(lines::spacer(1));
-        out.push(ui.border(width));
+        out.extend(ui.frame_bottom(
+            width,
+            &[
+                key_hint(theme, "↑↓", "navigate"),
+                ui.key_hint("tui.select.confirm", "save"),
+                ui.key_hint("tui.select.cancel", "cancel"),
+            ],
+        ));
         out
     }
 
@@ -1058,13 +1079,8 @@ impl ChoiceDialog {
 
     fn render(&self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         let theme = ui.theme;
-        let mut out = vec![ui.border(width)];
-        out.extend(lines::spacer(1));
-        let title = match self.countdown {
-            Some(countdown) => countdown.title(&self.title),
-            None => self.title.clone(),
-        };
-        let title: Vec<StyledLine> = title
+        let mut out = ui.frame_top(width);
+        let title: Vec<StyledLine> = countdown_title(&self.title, self.countdown)
             .split('\n')
             .map(|line| styled(line, theme.fg("accent").add_modifier(Modifier::BOLD)))
             .collect();
@@ -1099,16 +1115,14 @@ impl ChoiceDialog {
             }
             out.extend(lines::text_row(Line::from(spans), width, 1));
         }
-        out.extend(lines::spacer(1));
-        let hint = [
-            key_hint(theme, "↑↓", "navigate"),
-            ui.key_hint("tui.select.confirm", "select"),
-            ui.key_hint("tui.select.cancel", "cancel"),
-        ]
-        .join(&Span::raw("  "));
-        out.extend(lines::text_row(Line::from(hint), width, 1));
-        out.extend(lines::spacer(1));
-        out.push(ui.border(width));
+        out.extend(ui.frame_bottom(
+            width,
+            &[
+                key_hint(theme, "↑↓", "navigate"),
+                ui.key_hint("tui.select.confirm", "select"),
+                ui.key_hint("tui.select.cancel", "cancel"),
+            ],
+        ));
         out
     }
 
@@ -1155,11 +1169,9 @@ impl TextDialog {
     }
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> (Vec<StyledLine>, Option<(usize, usize)>) {
-        let theme = ui.theme;
-        let mut out = vec![ui.border(width)];
-        out.extend(lines::spacer(1));
+        let mut out = ui.frame_top(width);
         out.extend(lines::text_row(
-            styled(self.title.clone(), theme.fg("accent")),
+            styled(self.title.clone(), ui.theme.fg("accent")),
             width,
             1,
         ));
@@ -1170,17 +1182,15 @@ impl TextDialog {
             .cursor_position()
             .map(|(row, col)| (out.len() + row, col));
         out.extend(editor);
-        out.extend(lines::spacer(1));
-        let hint = [
-            ui.key_hint("tui.select.confirm", "submit"),
-            ui.key_hint("tui.input.newLine", "newline"),
-            ui.key_hint("tui.select.cancel", "cancel"),
-            ui.key_hint("app.editor.external", "external editor"),
-        ]
-        .join(&Span::raw("  "));
-        out.extend(lines::text_row(Line::from(hint), width, 1));
-        out.extend(lines::spacer(1));
-        out.push(ui.border(width));
+        out.extend(ui.frame_bottom(
+            width,
+            &[
+                ui.key_hint("tui.select.confirm", "submit"),
+                ui.key_hint("tui.input.newLine", "newline"),
+                ui.key_hint("tui.select.cancel", "cancel"),
+                ui.key_hint("app.editor.external", "external editor"),
+            ],
+        ));
         (out, cursor)
     }
 
@@ -1216,27 +1226,24 @@ impl InputDialog {
     }
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> (Vec<StyledLine>, Option<(usize, usize)>) {
-        let theme = ui.theme;
-        let mut out = vec![ui.border(width)];
-        out.extend(lines::spacer(1));
-        let title = match self.countdown {
-            Some(countdown) => countdown.title(&self.title),
-            None => self.title.clone(),
-        };
-        out.extend(lines::text_row(styled(title, theme.fg("accent")), width, 1));
+        let mut out = ui.frame_top(width);
+        let title = countdown_title(&self.title, self.countdown);
+        out.extend(lines::text_row(
+            styled(title, ui.theme.fg("accent")),
+            width,
+            1,
+        ));
         out.extend(lines::spacer(1));
         let row = out.len();
         out.push(self.input.render(width));
         let cursor = self.input.cursor_column().map(|column| (row, column));
-        out.extend(lines::spacer(1));
-        let hint = [
-            ui.key_hint("tui.select.confirm", "submit"),
-            ui.key_hint("tui.select.cancel", "cancel"),
-        ]
-        .join(&Span::raw("  "));
-        out.extend(lines::text_row(Line::from(hint), width, 1));
-        out.extend(lines::spacer(1));
-        out.push(ui.border(width));
+        out.extend(ui.frame_bottom(
+            width,
+            &[
+                ui.key_hint("tui.select.confirm", "submit"),
+                ui.key_hint("tui.select.cancel", "cancel"),
+            ],
+        ));
         (out, cursor)
     }
 

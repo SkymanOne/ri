@@ -1195,13 +1195,10 @@ impl TreeSelector {
                 row.spans.insert(0, Span::raw(indent));
                 out.push(lines::truncate(&row, width, "..."));
                 let mut hint = vec![Span::raw(indent)];
-                hint.extend(
-                    [
-                        ui.key_hint("tui.select.confirm", "save"),
-                        ui.key_hint("tui.select.cancel", "cancel"),
-                    ]
-                    .join(&Span::raw("  ")),
-                );
+                hint.extend(super::selectors::join_hints(&[
+                    ui.key_hint("tui.select.confirm", "save"),
+                    ui.key_hint("tui.select.cancel", "cancel"),
+                ]));
                 out.push(lines::truncate(&Line::from(hint), width, "..."));
             }
             None => out.extend(self.list(width, ui)),
