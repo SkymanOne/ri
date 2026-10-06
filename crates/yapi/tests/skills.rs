@@ -211,6 +211,32 @@ fn check_extension_survives_a_flood_of_logs() {
     assert!(output.stderr.len() > 200_000);
 }
 
+/// A stand-in for yapi that floods stderr, ends the run, and exits without
+/// answering `get_last_assistant_text`.
+#[cfg(unix)]
+#[test]
+fn ask_fails_when_yapi_stops_before_the_answer() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = scratch("ask-stops");
+    let fake = dir.join("fake-yapi");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nread prompt\nhead -c 200000 /dev/zero | tr '\\0' x >&2\necho 'yapi crashed' >&2\necho '{\"type\":\"agent_end\"}'\nread answer\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let output = python("yapi/scripts/ask.py", &fake, &["Say hello"], &[]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.ends_with("yapi crashed\n"),
+        "{}",
+        &stderr[stderr.len().saturating_sub(200)..]
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_prints_the_answer() {
     let cassette = Cassette::load(
