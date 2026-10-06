@@ -39,11 +39,7 @@ pub(crate) fn options_json(options: &StreamOptions) -> Value {
     set("sessionId", json!(options.session_id));
     set(
         "cacheRetention",
-        json!(options.cache_retention.map(|retention| match retention {
-            CacheRetention::None => "none",
-            CacheRetention::Short => "short",
-            CacheRetention::Long => "long",
-        })),
+        json!(options.cache_retention.map(CacheRetention::as_str)),
     );
     let budgets = &options.thinking_budgets;
     if *budgets != ThinkingBudgets::default() {
@@ -71,12 +67,9 @@ pub(crate) fn options_from_json(value: &Value, cancel: CancellationToken) -> Str
         max_tokens: parse(value, "maxTokens"),
         temperature: parse(value, "temperature"),
         session_id: parse(value, "sessionId"),
-        cache_retention: match value["cacheRetention"].as_str() {
-            Some("none") => Some(CacheRetention::None),
-            Some("short") => Some(CacheRetention::Short),
-            Some("long") => Some(CacheRetention::Long),
-            _ => None,
-        },
+        cache_retention: value["cacheRetention"]
+            .as_str()
+            .and_then(CacheRetention::parse),
         thinking_budgets: ThinkingBudgets {
             minimal: budgets["minimal"].as_u64(),
             low: budgets["low"].as_u64(),
