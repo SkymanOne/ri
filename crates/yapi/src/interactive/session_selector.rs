@@ -12,7 +12,7 @@ use ratatui_core::text::{Line, Span};
 use yapi_core::session::{SessionManager, SessionSummary};
 use yapi_tui::fuzzy::fuzzy_match;
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::select_list::visible_range;
+use yapi_tui::select_list::{nudge, visible_range};
 use yapi_tui::text::{truncate_to_width, visible_width};
 use yapi_tui::text_input::{InputEvent, TextInput};
 
@@ -918,9 +918,9 @@ impl SessionSelector {
         self.touched = true;
         let count = self.rows.len();
         if kb.matches(data, "tui.select.up") {
-            self.selected = self.selected.saturating_sub(1);
+            self.selected = nudge(self.selected, count, false);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = (self.selected + 1).min(count.saturating_sub(1));
+            self.selected = nudge(self.selected, count, true);
         } else if kb.matches(data, "tui.select.pageUp") {
             self.selected = self.selected.saturating_sub(MAX_VISIBLE);
         } else if kb.matches(data, "tui.select.pageDown") {

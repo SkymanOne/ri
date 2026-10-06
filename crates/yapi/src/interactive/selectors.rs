@@ -17,7 +17,8 @@ use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::lines::{self, StyledLine, styled};
 use yapi_tui::select_list::{
-    SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme, step, visible_range,
+    SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme, nudge, step,
+    visible_range,
 };
 use yapi_tui::text::truncate_to_width;
 use yapi_tui::text_input::{InputEvent, TextInput};
@@ -972,9 +973,9 @@ impl TrustSelector {
     fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         let kb = ui.keys;
         if kb.matches(data, "tui.select.up") || data == "k" {
-            self.selected = self.selected.saturating_sub(1);
+            self.selected = nudge(self.selected, self.options.len(), false);
         } else if kb.matches(data, "tui.select.down") || data == "j" {
-            self.selected = (self.selected + 1).min(self.options.len().saturating_sub(1));
+            self.selected = nudge(self.selected, self.options.len(), true);
         } else if kb.matches(data, "tui.select.confirm") || data == "\n" {
             if let Some(option) = self.options.get(self.selected) {
                 return Outcome::Done(Action::Trust(Box::new(option.clone())));
@@ -1117,9 +1118,9 @@ impl ChoiceDialog {
             return Outcome::Side(Action::ToggleTools);
         }
         if kb.matches(data, "tui.select.up") || data == "k" {
-            self.selected = self.selected.saturating_sub(1);
+            self.selected = nudge(self.selected, self.options.len(), false);
         } else if kb.matches(data, "tui.select.down") || data == "j" {
-            self.selected = (self.selected + 1).min(self.options.len().saturating_sub(1));
+            self.selected = nudge(self.selected, self.options.len(), true);
         } else if kb.matches(data, "tui.select.confirm") || data == "\n" {
             if self.selected < self.options.len() {
                 return Outcome::Done(Action::Choice(self.selected));

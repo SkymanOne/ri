@@ -99,6 +99,16 @@ pub fn step(selected: usize, count: usize, forward: bool) -> usize {
     }
 }
 
+/// The row after `selected`, or before it unless `forward`, stopping at the
+/// first and last of `count` rows instead of wrapping.
+pub fn nudge(selected: usize, count: usize, forward: bool) -> usize {
+    if forward {
+        (selected + 1).min(count.saturating_sub(1))
+    } else {
+        selected.saturating_sub(1)
+    }
+}
+
 fn single_line(text: &str) -> String {
     text.split(['\r', '\n'])
         .filter(|part| !part.is_empty())

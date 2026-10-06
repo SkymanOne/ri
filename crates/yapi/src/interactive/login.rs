@@ -13,7 +13,7 @@ use yapi_ai::providers;
 use yapi_ai::registry::{LoginKind, ModelRegistry};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::select_list::visible_range;
+use yapi_tui::select_list::{nudge, visible_range};
 use yapi_tui::text_input::{InputEvent, TextInput};
 use yapi_types::collate::locale_compare;
 
@@ -417,9 +417,9 @@ impl ProviderSelector {
     pub fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         let kb = ui.keys;
         if kb.matches(data, "tui.select.up") {
-            self.selected = self.selected.saturating_sub(1);
+            self.selected = nudge(self.selected, self.filtered.len(), false);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = (self.selected + 1).min(self.filtered.len().saturating_sub(1));
+            self.selected = nudge(self.selected, self.filtered.len(), true);
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(option) = self.filtered.get(self.selected) {
                 return Outcome::Done(Action::Provider(Box::new(option.clone())));
