@@ -3541,6 +3541,7 @@ mod tests {
             allowed_tools: None,
             excluded_tools: Vec::new(),
             resources: yapi_core::agent_session::Resources::default(),
+            docs: yapi_core::docs::Locations::default(),
         });
         let options = Options {
             tui_mode: None,

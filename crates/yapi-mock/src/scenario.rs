@@ -206,20 +206,13 @@ fn pattern(text: &str) -> Regex {
     Regex::new(text).expect("the normalizer's patterns are valid")
 }
 
-/// yapi's sign-in help, `yapi_core::auth_guidance::PROVIDER_DOCS`.
-const SIGN_IN_DOCS: &str = "https://skymanone.github.io/yapi/models.html";
-/// pi's sign-in help: a providers.md line followed by a models.md path.
-static PROVIDERS_DOC: LazyLock<Regex> = LazyLock::new(|| {
-    pattern(
-        r"(?m)^[^\n]*/pi-coding-agent/docs/providers\.md\n[^\n]*/pi-coding-agent/docs/models\.md",
-    )
-});
-/// pi's `<docs>` section of the system prompt.
+/// The `<docs>` section of the system prompt.
 static DOCS_SECTION: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"\n\n<docs>\n(?s:(?:.*?\n)?)</docs>"));
-/// A path to pi's codemode reference.
-static CODEMODE_DOC: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r#"[^\s"]*/pi-coding-agent/docs/codemode\.md"#));
+/// A page of pi's docs that messages name: in pi's install, in the local
+/// docs yapi installs, or on GitHub.
+static PI_DOC: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r#"[^\s"]*/docs/(providers|models|codemode)\.md"#));
 /// Codemode's wall time line.
 static WALL_TIME: LazyLock<Regex> = LazyLock::new(|| pattern(r"\nWall time [0-9.]* seconds\n"));
 /// A new session file name: a timestamp and the session id.
@@ -723,20 +716,13 @@ impl Normalizer<'_> {
             .replace(".yapi/mcp.json", ".pi/mcp.json")
             .replace(".yapi/settings.json", ".pi/settings.json")
             .replace("~/.yapi/agent", "~/.pi/agent")
-            .replace("start yapi in the project", "start pi in the project")
-            // The sign-in help points at yapi's docs site; pi's into its install.
-            .replace(SIGN_IN_DOCS, "<sign-in help>");
-        text = PROVIDERS_DOC
-            .replace_all(&text, "  <sign-in help>")
-            .into_owned();
+            .replace("start yapi in the project", "start pi in the project");
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }
-        // pi's documentation section points into pi's install; yapi has none.
+        // The documentation section names each program and its docs.
         let text = DOCS_SECTION.replace_all(&text, "");
-        // Codemode's reference: in pi's install, and in yapi's agent directory.
-        let text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
-        let text = CODEMODE_DOC.replace_all(&text, "<codemode docs>");
+        let text = PI_DOC.replace_all(&text, "<pi docs>/$1.md");
         // Codemode results report the script's wall time.
         let text = WALL_TIME.replace_all(&text, "\nWall time <seconds> seconds\n");
         self.unsaved_session_files(&text)
@@ -925,15 +911,19 @@ pub fn normalize(run: &Run) -> Value {
     out
 }
 
-/// Screen rows without the product-specific startup header (pi's logo, its
-/// docs tip, yapi's wordmark), with paths and session ids masked, trailing space
-/// trimmed and blank runs collapsed, so the rest compares across programs.
+/// Screen rows without the product-specific startup header (each program's
+/// logo and docs tip, yapi's wordmark), with paths and session ids masked,
+/// trailing space trimmed and blank runs collapsed, so the rest compares
+/// across programs.
 fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<String> {
     // The compact header ends with the "Press ... to show full startup help"
-    // row; pi follows it with a docs tip that yapi lacks. Rows up to the tip's
-    // end, or the part of the tip at the top of the screen, are dropped.
-    const TIP: &str =
-        "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.";
+    // row, then a docs tip naming the program. Rows up to the tip's end, or
+    // the part of the tip at the top of the screen, are dropped.
+    const TIPS: [&str; 2] = [
+        "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.",
+        "yapi can explain its own features and look up its docs. Ask it how to use or extend yapi.",
+    ];
+    let in_tip = |row: &str| !row.is_empty() && TIPS.iter().any(|tip| tip.contains(row));
     let start = match rows
         .iter()
         .position(|row| row.contains("to show full startup help"))
@@ -945,7 +935,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             }
             if rows
                 .get(next)
-                .is_some_and(|row| row.contains("Pi can explain"))
+                .is_some_and(|row| row.contains(" can explain its own features"))
             {
                 while next < rows.len() && !rows[next].trim().is_empty() {
                     next += 1;
@@ -953,38 +943,16 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             }
             next
         }
-        None => rows
-            .iter()
-            .take_while(|row| !row.trim().is_empty() && TIP.contains(row.trim()))
-            .count(),
+        None => rows.iter().take_while(|row| in_tip(row.trim())).count(),
     };
-    // pi's sign-in help lists two documents in its install, one per row; yapi
-    // links its docs site in one row. Both become `<sign-in help>`.
-    let mut merged: Vec<String> = Vec::new();
-    let mut rest = rows[start..].iter().peekable();
-    while let Some(row) = rest.next() {
-        if row
-            .trim_end()
-            .ends_with("/pi-coding-agent/docs/providers.md")
-            && rest
-                .peek()
-                .is_some_and(|next| next.trim_end().ends_with("/pi-coding-agent/docs/models.md"))
-        {
-            rest.next();
-            let indent = &row[..row.len() - row.trim_start().len()];
-            merged.push(format!("{indent}{SIGN_IN_DOCS}"));
-        } else {
-            merged.push(row.clone());
-        }
-    }
     let mut out: Vec<String> = Vec::new();
-    for row in &merged {
+    for row in &rows[start..] {
         // Both logos' top rows contain `▀▀█`; Apple Terminal shows wordmarks.
         if row.contains("▀▀█") || row.starts_with(" YaPi v") {
             continue;
         }
         // The expanded header shows the tip after the key help.
-        if row.trim() == TIP {
+        if TIPS.contains(&row.trim()) {
             continue;
         }
         // The logos' bottom rows precede the first key hint: yapi's first,

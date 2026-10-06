@@ -16,6 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/SkymanOne/yapi/main/install.sh | sh
 
 `YAPI_VERSION` and `YAPI_INSTALL_DIR` set the same as `--version` and `--to`.
 
+The script also installs the release's documentation for the model, which yapi reads to explain its own features. It holds this site's pages and Pi's docs and examples, checked against their SHA-256 checksum like the binary, and goes to `~/.yapi/agent/docs`, or `docs` in `YAPI_CODING_AGENT_DIR`. A new install replaces the previous copy. `--no-docs` or `YAPI_NO_DOCS=1` skips it.
+
 ## cargo-binstall
 
 [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) installs the same release binary through Cargo, into `~/.cargo/bin`:
@@ -72,6 +74,25 @@ cargo install --locked --path crates/yapi
 
 Inside the clone, `rust-toolchain.toml` selects the stable toolchain with Clippy and rustfmt. rustup installs it on the first build if needed, but does not update an older one, so run `rustup update` if Cargo reports that rustc is too old.
 
+## Documentation for the model
+
+yapi reads its documentation to explain its own features: the pages of this site, and Pi's docs and examples, which describe the extension API that yapi implements. Each release publishes them as `yapi-docs.tar.gz`, which goes to `~/.yapi/agent/docs`, or `docs` in `YAPI_CODING_AGENT_DIR`.
+
+| Installed with | Documentation |
+|---|---|
+| Install script | Installed with the binary |
+| cargo-binstall, Cargo or a release archive | Downloaded by yapi in the background when it first starts |
+
+yapi downloads the documentation when the folder is missing or documents another version, checks it against its SHA-256 checksum, and replaces the old copy. It never downloads with `YAPI_NO_DOCS=1`, when offline (`--offline` or `PI_OFFLINE=1`), or in a development build. Until a copy is in place, the model reads the same pages online.
+
+To install the documentation by hand, for example on a machine that runs yapi offline:
+
+```sh
+mkdir -p ~/.yapi/agent/docs && curl -fsSL https://github.com/SkymanOne/yapi/releases/latest/download/yapi-docs.tar.gz | tar xzf - -C ~/.yapi/agent/docs
+```
+
+For another release, replace `latest/download` with `download/<tag>`.
+
 ## Check the installation
 
 ```sh
@@ -89,7 +110,7 @@ yapi does not update itself. `yapi update` updates packages and model catalogs o
 | Release archive | Unpack the new archive over the old binary. |
 | Cargo, from source | Run `cargo install` again with the new release's tag. |
 
-Settings, credentials, sessions and packages are kept.
+Settings, credentials, sessions and packages are kept. The documentation for the model is replaced with the new release's.
 
 ## Uninstall
 

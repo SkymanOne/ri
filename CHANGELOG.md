@@ -19,6 +19,7 @@ The first release of yapi, a Rust reimplementation of the [Pi](https://github.co
 - Context files, skills, prompt templates and project trust.
 - MCP servers over stdio and streamable HTTP, and codemode.
 - `yapi import pi`, which copies Pi's settings, credentials, sessions and packages into yapi's directories.
+- Documentation for the model. yapi's pages and Pi's docs and examples install with yapi, or download on its first start, so the model can explain yapi and the extension API it implements.
 
 ### Known issues
 

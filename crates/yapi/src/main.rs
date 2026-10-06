@@ -143,8 +143,9 @@ fn main() -> ExitCode {
 /// terminal is restored.
 static PANIC_MESSAGE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-/// Whether model catalogs may be fetched: pi's model runtime fetches only
-/// while `PI_OFFLINE` is unset, which `--offline` sets.
+/// Whether model catalogs and the docs for the model may be fetched: pi's
+/// model runtime fetches only while `PI_OFFLINE` is unset, which `--offline`
+/// sets.
 fn model_network(args: &args::Args) -> bool {
     !args.offline && std::env::var_os("PI_OFFLINE").is_none()
 }
@@ -231,6 +232,18 @@ async fn run(parsed: &mut args::Args) -> u8 {
     // Once print or a mode owns stdout, pi sends help and the model list to
     // stderr.
     let metadata_to_stderr = parsed.print || parsed.mode.is_some();
+    // install.sh puts the docs for the model in place. Other installs fetch
+    // them here, in the background. Debug builds name no released version.
+    if !cfg!(debug_assertions)
+        && model_network(parsed)
+        && !yapi_core::config::env_flag("YAPI_NO_DOCS")
+    {
+        let agent_dir = yapi_core::config::agent_dir();
+        tokio::spawn(async move {
+            // The model reads the published docs until a later start succeeds.
+            let _ = yapi_core::docs::download(yapi_core::docs::RELEASES_URL, &agent_dir).await;
+        });
+    }
     if let Some(pattern) = &parsed.list_models {
         return list_models::run(pattern.as_deref(), metadata_to_stderr);
     }

@@ -129,6 +129,8 @@ pub struct SessionConfig {
     pub excluded_tools: Vec<String>,
     /// Prompt resources.
     pub resources: Resources,
+    /// Where the model and the sign-in help find the docs.
+    pub docs: crate::docs::Locations,
 }
 
 struct State {
@@ -173,6 +175,9 @@ struct Inner {
     bash: Mutex<Vec<(u64, CancellationToken)>>,
     pending_bash: Mutex<Vec<Message>>,
     agent_dir: PathBuf,
+    /// Where the prompt points the model to the docs, fixed for the session
+    /// so a first-run download does not change it mid-session.
+    docs: crate::docs::Locations,
     /// Woken when a run ends.
     idle: tokio::sync::Notify,
     /// Compactions and branch summaries in progress.
@@ -275,6 +280,7 @@ impl AgentSession {
             allowed_tools,
             excluded_tools,
             resources,
+            docs,
         } = config;
         let runtime = Arc::new(RwLock::new(Runtime::default()));
         let env = ToolEnv {
@@ -357,6 +363,7 @@ impl AgentSession {
                 recovery: Mutex::new(Recovery::default()),
                 bash: Mutex::new(Vec::new()),
                 pending_bash: Mutex::new(Vec::new()),
+                docs,
                 agent_dir,
                 idle: tokio::sync::Notify::new(),
                 compacting: AtomicUsize::new(0),
@@ -365,6 +372,11 @@ impl AgentSession {
                 nested: crate::nested::NestedCalls::default(),
             }),
         }
+    }
+
+    /// Where the model and the sign-in help find the docs.
+    pub fn docs(&self) -> &crate::docs::Locations {
+        &self.inner.docs
     }
 
     /// Adds a listener for every event.
@@ -888,6 +900,7 @@ impl AgentSession {
             selected_tools: active.to_vec(),
             append: self.inner.resources.append_prompt.clone(),
             cwd: self.inner.cwd.clone(),
+            docs: self.inner.docs.clone(),
             context_files: self.inner.resources.context_files.clone(),
             skills: self.inner.resources.skills.clone(),
             sections: lock(&self.inner.run_sections).clone(),
@@ -1024,7 +1037,7 @@ impl AgentSession {
         let model = lock(&self.inner.state)
             .model
             .clone()
-            .ok_or_else(|| crate::auth_guidance::no_api_key_found("unknown"))?;
+            .ok_or_else(|| crate::auth_guidance::no_api_key_found("unknown", &self.inner.docs))?;
         let registry = self.registry();
         if let Some(error) = registry.store_error(&model.provider) {
             return Err(error);
@@ -1040,7 +1053,10 @@ impl AgentSession {
             has_auth = auth.source.is_some();
         }
         if !has_auth {
-            return Err(crate::auth_guidance::no_api_key_found(&model.provider));
+            return Err(crate::auth_guidance::no_api_key_found(
+                &model.provider,
+                &self.inner.docs,
+            ));
         }
         let mut sections = IndexMap::new();
         let ctx = self.extension_context(CancellationToken::new());
@@ -1730,6 +1746,7 @@ mod tests {
             allowed_tools: None,
             excluded_tools: Vec::new(),
             resources: Resources::default(),
+            docs: crate::docs::Locations::default(),
         });
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _slot = session.inner.registry.write();

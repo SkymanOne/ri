@@ -6,6 +6,7 @@ pub mod auth_guidance;
 pub mod bash_executor;
 pub mod compaction;
 pub mod config;
+pub mod docs;
 pub mod extensions;
 pub mod glob;
 pub mod images;

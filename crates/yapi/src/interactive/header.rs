@@ -65,8 +65,13 @@ fn logo_rows(mode: ColorMode) -> [Vec<Span<'static>>; 2] {
     [row(LOGO[0], LOGO[1]), row(LOGO[2], LOGO[3])]
 }
 
-/// The header rows: a blank row, the wordmark with the version, key hints and
-/// a blank row. `expanded` lists every hint (`ctrl+o`).
+/// The header's last line, pi's "Pi can explain its own features" tip: the
+/// model reads yapi's and pi's docs, locally or online.
+const TIP: &str =
+    "yapi can explain its own features and look up its docs. Ask it how to use or extend yapi.";
+
+/// The header rows: a blank row, the wordmark with the version, key hints, the
+/// docs tip and a blank row. `expanded` lists every hint (`ctrl+o`).
 pub fn render(
     theme: &Theme,
     keys: &Keybindings,
@@ -157,6 +162,9 @@ pub fn render(
             theme.fg("dim"),
         ));
     }
+    // pi's onboarding line, under both forms of the header.
+    content.push(Line::default());
+    content.push(lines::styled(TIP, theme.fg("dim")));
     if logo && let Some(first) = content.get_mut(1) {
         let mut spans = logo_bottom;
         spans.push(Span::raw(" "));
@@ -671,5 +679,23 @@ mod tests {
             top[8].style,
             brand(ORANGE, ColorMode::TrueColor).bg(terminal(RED, ColorMode::TrueColor))
         );
+    }
+
+    #[test]
+    fn ends_with_the_docs_tip() {
+        let theme = Theme::builtin("dark", ColorMode::TrueColor).unwrap();
+        let keys = Keybindings::new(
+            yapi_tui::keys::Keys::default(),
+            super::super::keybindings::definitions(),
+            &yapi_tui::keybindings::UserBindings::new(),
+        );
+        for expanded in [false, true] {
+            let rows: Vec<String> = render(&theme, &keys, expanded, false, 120)
+                .iter()
+                .map(|row| lines::plain(row).trim_end().to_owned())
+                .collect();
+            let end = &rows[rows.len() - 3..];
+            assert_eq!(end, ["", &format!(" {TIP}"), ""], "{rows:#?}");
+        }
     }
 }

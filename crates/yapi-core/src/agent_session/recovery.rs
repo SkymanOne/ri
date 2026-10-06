@@ -504,7 +504,7 @@ impl AgentSession {
         let outcome = async {
             let model = self
                 .model()
-                .ok_or_else(crate::auth_guidance::no_model_selected)?;
+                .ok_or_else(|| crate::auth_guidance::no_model_selected(&self.inner.docs))?;
             let settings =
                 CompactionSettings::resolve(lock(&self.inner.settings).settings(), Some(&model));
             let preparation = self.with_session(|session| {
