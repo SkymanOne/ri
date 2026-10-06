@@ -3,7 +3,7 @@
 use yapi_types::message::{Message, ThinkingLevel};
 use yapi_types::model::Model;
 
-use crate::stream::ThinkingBudgets;
+use crate::stream::{StreamOptions, ThinkingBudgets};
 use crate::transcript::estimate_context_tokens;
 
 const CONTEXT_SAFETY_TOKENS: u64 = 4096;
@@ -58,6 +58,42 @@ pub fn clamp_max_tokens_to_context(model: &Model, messages: &[Message], max_toke
     max_tokens.min(available)
 }
 
+/// pi's `streamSimple` output limit: the requested limit, else the model's, capped
+/// to the context window.
+pub fn requested_max_tokens(model: &Model, messages: &[Message], options: &StreamOptions) -> u64 {
+    clamp_max_tokens_to_context(
+        model,
+        messages,
+        options.max_tokens.unwrap_or(model.max_tokens),
+    )
+}
+
+/// The requested level clamped to the model; `None` when it is off.
+pub fn effort(model: &Model, options: &StreamOptions) -> Option<ThinkingLevel> {
+    options
+        .reasoning
+        .map(|level| clamp_level(model, level))
+        .filter(|level| *level != ThinkingLevel::Off)
+}
+
+/// Budget-based thinking at `level` on top of the output limit `base`: the output
+/// limit capped to the context, and the budget leaving room to answer under it.
+/// Returns `(max_tokens, budget)`.
+pub fn budgeted(
+    model: &Model,
+    messages: &[Message],
+    base: u64,
+    level: ThinkingLevel,
+    budgets: &ThinkingBudgets,
+) -> (u64, u64) {
+    let (adjusted, budget) = adjust_max_tokens_for_thinking(base, model.max_tokens, level, budgets);
+    let max_tokens = clamp_max_tokens_to_context(model, messages, adjusted);
+    (
+        max_tokens,
+        budget.min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS)),
+    )
+}
+
 /// The budget for budget-based thinking at `level`; `xhigh` and `max` use `high`.
 pub fn budget_for_level(level: ThinkingLevel, budgets: &ThinkingBudgets) -> u64 {
     match level {
@@ -72,17 +108,14 @@ pub fn budget_for_level(level: ThinkingLevel, budgets: &ThinkingBudgets) -> u64 
 
 /// Raises `base` by the thinking budget, capped at the model's output limit; shrinks
 /// the budget when it would leave no room to answer. Returns `(max_tokens, budget)`.
-pub fn adjust_max_tokens_for_thinking(
-    base: Option<u64>,
+fn adjust_max_tokens_for_thinking(
+    base: u64,
     model_max_tokens: u64,
     level: ThinkingLevel,
     budgets: &ThinkingBudgets,
 ) -> (u64, u64) {
     let mut budget = budget_for_level(level, budgets);
-    let max_tokens = match base {
-        None => model_max_tokens,
-        Some(base) => (base + budget).min(model_max_tokens),
-    };
+    let max_tokens = (base + budget).min(model_max_tokens);
     if max_tokens <= budget {
         budget = budget.min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
     }
@@ -133,11 +166,11 @@ mod tests {
     fn budgets_match_pi() {
         let budgets = ThinkingBudgets::default();
         assert_eq!(
-            adjust_max_tokens_for_thinking(Some(64000), 64000, ThinkingLevel::Medium, &budgets),
+            adjust_max_tokens_for_thinking(64000, 64000, ThinkingLevel::Medium, &budgets),
             (64000, 8192)
         );
         assert_eq!(
-            adjust_max_tokens_for_thinking(Some(1000), 2000, ThinkingLevel::High, &budgets),
+            adjust_max_tokens_for_thinking(1000, 2000, ThinkingLevel::High, &budgets),
             (2000, 976)
         );
     }

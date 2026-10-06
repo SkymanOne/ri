@@ -20,7 +20,7 @@ use crate::stream::{
     EventSender, Request, StreamEvent, StreamOptions, ThinkingBudgets, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{clamp_level, requested_max_tokens};
 use crate::transcript::{
     current_tools, initial_system_message, resolve_transcript, transform_messages,
 };
@@ -784,11 +784,7 @@ async fn connect(
         },
         Flavor::Vertex => vertex::target(model, options)?,
     };
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
+    let max_tokens = requested_max_tokens(model, messages, options);
     let thinking = thinking(model, options, flavor)?;
     let body = build_body(model, messages, options, max_tokens, &thinking)?;
     let body = yapi_types::json::to_string(&body).map_err(|err| err.to_string())?;

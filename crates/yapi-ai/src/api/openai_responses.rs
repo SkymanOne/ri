@@ -27,7 +27,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{effort, requested_max_tokens};
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// Which Responses endpoint a request goes to.
@@ -887,15 +887,8 @@ async fn connect(
         }
         None => return Err(format!("No API key for provider: {}", model.provider)),
     };
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
+    let max_tokens = requested_max_tokens(model, messages, options);
+    let effort = effort(model, options);
 
     let mut headers = Headers::default();
     let session = options

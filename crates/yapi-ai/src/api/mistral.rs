@@ -26,7 +26,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{clamp_level, clamp_max_tokens_to_context};
+use crate::thinking::{effort, requested_max_tokens};
 use crate::transcript::{current_tools, resolve_transcript, transform_messages};
 
 const TOOL_CALL_ID_LENGTH: usize = 9;
@@ -646,15 +646,8 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             let normalize = |id: &str, _: &AssistantMessage| ids.borrow_mut().normalize(id);
             transform_messages(&normalized, &model, Some(&normalize), now_ms())
         };
-        let max_tokens = clamp_max_tokens_to_context(
-            &model,
-            &messages,
-            options.max_tokens.unwrap_or(model.max_tokens),
-        );
-        let level = options
-            .reasoning
-            .map(|level| clamp_level(&model, level))
-            .filter(|level| *level != ThinkingLevel::Off);
+        let max_tokens = requested_max_tokens(&model, &messages, &options);
+        let level = effort(&model, &options);
         let payload = build_payload(
             &model,
             &normalized,

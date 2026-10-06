@@ -20,7 +20,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
     now_ms, send_error,
 };
-use crate::thinking::{adjust_max_tokens_for_thinking, clamp_max_tokens_to_context};
+use crate::thinking::{budgeted, requested_max_tokens};
 use crate::transcript::{
     current_tools, declared_tools, has_tool_redefinitions, initial_system_message,
     resolve_transcript, transform_messages,
@@ -119,11 +119,7 @@ fn thinking_options(
     messages: &[Message],
     options: &StreamOptions,
 ) -> Thinking {
-    let base = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
+    let base = requested_max_tokens(model, messages, options);
     let level = options
         .reasoning
         .filter(|level| *level != ThinkingLevel::Off);
@@ -143,16 +139,10 @@ fn thinking_options(
             max_tokens: base,
         };
     }
-    let (adjusted, budget) = adjust_max_tokens_for_thinking(
-        Some(base),
-        model.max_tokens,
-        level,
-        &options.thinking_budgets,
-    );
-    let max_tokens = clamp_max_tokens_to_context(model, messages, adjusted);
+    let (max_tokens, budget) = budgeted(model, messages, base, level, &options.thinking_budgets);
     Thinking {
         enabled: Some(true),
-        budget_tokens: Some(budget.min(max_tokens.saturating_sub(1024))),
+        budget_tokens: Some(budget),
         effort: None,
         max_tokens,
     }

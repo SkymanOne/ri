@@ -20,9 +20,7 @@ use crate::stream::{
     CacheRetention, EventSender, Request, StreamEvent, StreamOptions, new_output, now_ms,
     send_error,
 };
-use crate::thinking::{
-    MIN_ANSWER_TOKENS, budget_for_level, clamp_level, clamp_max_tokens_to_context,
-};
+use crate::thinking::{MIN_ANSWER_TOKENS, budget_for_level, effort, requested_max_tokens};
 use crate::transcript::{resolve_transcript, resolve_transcript_tools, transform_messages};
 
 /// Compat flags with detected defaults applied.
@@ -1024,15 +1022,8 @@ async fn connect(
         None => return Err(format!("No API key for provider: {}", model.provider)),
     };
     // streamSimple: clamp output to the context and the level to the model.
-    let max_tokens = clamp_max_tokens_to_context(
-        model,
-        messages,
-        options.max_tokens.unwrap_or(model.max_tokens),
-    );
-    let effort = options
-        .reasoning
-        .map(|level| clamp_level(model, level))
-        .filter(|level| *level != ThinkingLevel::Off);
+    let max_tokens = requested_max_tokens(model, messages, options);
+    let effort = effort(model, options);
     let retention = options.resolved_cache_retention();
     let params = build_params(
         model,
