@@ -687,7 +687,7 @@ impl Tool for McpResourceTool {
                 ResourceTool::List(kind) => kind,
             };
             let payload = self.list(kind, &args, &cancel).await?;
-            let json = yapi_types::json::to_string(&payload).map_err(|error| error.to_string())?;
+            let json = yapi_types::json::stringify(&payload);
             let server = string_argument(&args, "server")?.unwrap_or_default();
             let (content, details) = limit_with_details(
                 vec![ContentBlock::text(json)],

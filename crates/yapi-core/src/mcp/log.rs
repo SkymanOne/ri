@@ -28,7 +28,7 @@ pub fn format_message(server: &str, params: &Value, time: &str) -> String {
     let data = match &message["data"] {
         Value::String(text) => text.clone(),
         Value::Null if message.get("data").is_none() => "undefined".into(),
-        other => yapi_types::json::to_string(other).unwrap_or_default(),
+        other => yapi_types::json::stringify(other),
     };
     let text = data.replace("\r\n", "\n").replace('\n', "\n    ");
     format!("{time} [{server}] {level}{logger} {text}\n")

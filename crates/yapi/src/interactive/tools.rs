@@ -1173,12 +1173,7 @@ fn generic_call(name: &str, args: &Value, theme: &Theme, expanded: bool) -> Vec<
     }
     let pairs: Vec<String> = entries
         .iter()
-        .map(|(key, value)| {
-            format!(
-                "{key}={}",
-                yapi_types::json::to_string(value).unwrap_or_default()
-            )
-        })
+        .map(|(key, value)| format!("{key}={}", yapi_types::json::stringify(value)))
         .collect();
     let pairs = pairs.join(" ");
     let preview = if pairs.chars().count() > 100 {

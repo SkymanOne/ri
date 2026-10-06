@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 use yapi_core::tools::Namespace;
+use yapi_types::json::stringify;
 
 const INDENT: &str = "  ";
 /// Largest rendered input type, in UTF-16 units, before it becomes `unknown`.
@@ -63,10 +64,6 @@ pub fn identifier(name: &str) -> String {
 
 fn is_identifier(name: &str) -> bool {
     identifier(name) == name
-}
-
-fn stringify(value: &Value) -> String {
-    yapi_types::json::to_string(value).unwrap_or_else(|_| "unknown".into())
 }
 
 fn union(types: Vec<String>) -> String {

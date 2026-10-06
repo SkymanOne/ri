@@ -150,7 +150,7 @@ fn read_store(session: Option<&AgentSession>) -> Map<String, Value> {
             }
             for (key, value) in set {
                 store.shift_remove(key);
-                let text = yapi_types::json::to_string(value).unwrap_or_default();
+                let text = yapi_types::json::stringify(value);
                 store.insert(key.clone(), Value::String(text));
             }
         }
@@ -222,7 +222,7 @@ struct ScriptBridge {
 
 /// The successful result of an operation: `undefined` or a JSON value.
 fn script_value(value: Option<&Value>) -> Value {
-    json!({"json": value.map(|value| yapi_types::json::to_string(value).unwrap_or_default())})
+    json!({"json": value.map(yapi_types::json::stringify)})
 }
 
 /// Whether `query` names namespace `namespace`; pi's `isNamespaceName`.
@@ -818,7 +818,7 @@ impl Runner {
             "code": code,
             "tools": yapi_types::json::to_string(&tools_json).unwrap_or_default(),
             "globals": yapi_types::json::to_string(&globals).unwrap_or_default(),
-            "store": yapi_types::json::to_string(&store).unwrap_or_default(),
+            "store": yapi_types::json::stringify(&store),
         });
         let ending = self
             .run(&bridge, session.as_ref(), &payload, &options, &cancel)
@@ -848,7 +848,7 @@ impl Runner {
                     let parsed: Value = serde_json::from_str(value).unwrap_or(Value::Null);
                     let text = match parsed {
                         Value::String(text) => text,
-                        other => yapi_types::json::to_string(&other).unwrap_or_default(),
+                        other => yapi_types::json::stringify(&other),
                     };
                     items.push(json!({"type": "text", "text": text}));
                 }

@@ -60,7 +60,7 @@ impl SessionData {
         if let Some(tools) = &self.tools {
             object.insert("tools".into(), Value::Array(tools.clone()));
         }
-        yapi_types::json::to_string(&Value::Object(object)).unwrap_or_default()
+        yapi_types::json::stringify(&object)
     }
 }
 

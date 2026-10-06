@@ -172,7 +172,7 @@ impl wit::extension::host::Host for State {
         let result = self
             .host
             .request(&kind, &payload)
-            .map(|value| yapi_types::json::to_string(&value).unwrap_or_else(|_| "null".into()));
+            .map(|value| yapi_types::json::stringify(&value));
         self.host_time += begun.elapsed();
         result
     }
@@ -278,8 +278,7 @@ impl Instance {
 
     /// Runs dispatch `kind` with `payload` and waits for its result.
     pub async fn call(&self, kind: &str, payload: &Value) -> Result<Value, Error> {
-        let payload =
-            yapi_types::json::to_string(payload).map_err(|err| Error::Call(err.to_string()))?;
+        let payload = yapi_types::json::stringify(payload);
         let (reply, result) = oneshot::channel();
         self.commands
             .send(Command::Call {
@@ -427,9 +426,7 @@ impl Actor {
                     if generation != self.generation {
                         continue;
                     }
-                    let value = value.map(|value| {
-                        yapi_types::json::to_string(&value).unwrap_or_else(|_| "null".into())
-                    });
+                    let value = value.map(|value| yapi_types::json::stringify(&value));
                     self.guest(|bindings, store| {
                         bindings.yapi_extension_guest().call_resolve(
                             store,
