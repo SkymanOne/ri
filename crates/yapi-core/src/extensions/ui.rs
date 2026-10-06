@@ -80,6 +80,24 @@ pub trait ComponentHost: Send + Sync {
 
     /// Delivers raw terminal input to component `handle`.
     fn input(&self, handle: u32, data: &str);
+
+    /// Sends `op` to editor component `handle`, after the input delivered
+    /// before it: `{"op": "setText", "text"}`, `{"op": "addToHistory",
+    /// "text"}`, or `{"op": "configure", "border", "paddingX",
+    /// "autocompleteMaxVisible", "focused", "rows"}`, where `border` is a
+    /// thinking level or `bashMode`.
+    fn editor_op(&self, handle: u32, op: &Value);
+
+    /// Runs the runtime's `onTerminalInput` listeners over raw input `keys`,
+    /// in order. Answers the keys left to handle, as the listeners
+    /// transformed them, without those they consumed or emptied.
+    fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>>;
+
+    /// The suggestions of the runtime's autocomplete providers for pi's
+    /// provider arguments `request`, as for [`ExtensionUi::suggestions`],
+    /// with what applying each item gives: `{"prefix", "items", "applied":
+    /// [{"lines", "cursorLine", "cursorCol"}]}`, or `Null`.
+    fn suggestions(&self, request: Value) -> BoxFuture<'static, Value>;
 }
 
 /// A pi-tui component that lives in an extension runtime.
@@ -123,6 +141,11 @@ impl RemoteComponent {
     /// Delivers raw terminal input.
     pub fn input(&self, data: &str) {
         self.host.input(self.handle, data);
+    }
+
+    /// Sends an operation to the editor it is; see [`ComponentHost::editor_op`].
+    pub fn editor_op(&self, op: &Value) {
+        self.host.editor_op(self.handle, op);
     }
 }
 
@@ -238,6 +261,58 @@ pub trait ExtensionUi: Send + Sync {
     /// Whether [`ExtensionUi::custom`] and component widgets are shown.
     fn shows_components(&self) -> bool {
         false
+    }
+
+    /// Replaces the editor with `editor`, or restores the built-in one.
+    /// `embeds_status` when the editor shows the working status in its top
+    /// border.
+    fn set_editor(&self, _editor: Option<RemoteComponent>, _embeds_status: bool) {}
+
+    /// The extension's editor now holds `text`, paste markers expanded.
+    fn editor_changed(&self, _text: &str) {}
+
+    /// The extension's editor submitted `text`.
+    fn editor_submit(&self, _text: &str) {}
+
+    /// The extension's editor asks for app action `action`, a key binding id
+    /// such as `app.interrupt`.
+    fn editor_action(&self, _action: &str) {}
+
+    /// Starts passing raw input through the `onTerminalInput` listeners
+    /// that `listeners` runs, or stops with `None`. Only the JS runtime has
+    /// them.
+    fn set_terminal_input(&self, _listeners: Option<Arc<dyn ComponentHost>>) {}
+
+    /// Completes through the providers composed with
+    /// `addAutocompleteProvider`, which `providers` runs; `triggers` open
+    /// completion too. Only the JS runtime has them.
+    fn set_autocomplete(&self, _providers: Arc<dyn ComponentHost>, _triggers: Vec<String>) {}
+
+    /// What the built-in provider suggests for pi's provider arguments
+    /// `request`, `{"lines", "cursorLine", "cursorCol", "force"}` with
+    /// UTF-16 columns: pi's `AutocompleteSuggestions`, or `Null`.
+    fn suggestions(&self, _request: Value) -> BoxFuture<'static, Value> {
+        Box::pin(async { Value::Null })
+    }
+
+    /// The built-in provider's `applyCompletion` for `{"lines",
+    /// "cursorLine", "cursorCol", "item", "prefix"}`: `{"lines",
+    /// "cursorLine", "cursorCol"}`.
+    fn apply_completion(&self, _request: &Value) -> Value {
+        Value::Null
+    }
+
+    /// Whether raw input `data` is an extension shortcut, which then runs.
+    fn editor_shortcut(&self, _data: &str) -> bool {
+        false
+    }
+
+    /// The key bindings components match keys against: `{"kitty",
+    /// "bindings": {id: [key]}, "actions": [id]}`, where `actions` are the
+    /// app actions an extension's editor can ask for. `Null` keeps pi-tui's
+    /// defaults.
+    fn keybindings(&self) -> Value {
+        Value::Null
     }
 
     /// Shows `component` with keyboard focus until [`ExtensionUi::close`].

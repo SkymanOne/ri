@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use yapi_tui::autocomplete::{AutocompleteProvider, CombinedProvider, SlashCommand};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::select_list::SelectItem;
+use yapi_types::autocomplete::AutocompleteItem;
 
 fn fixture() -> Value {
     let text = std::fs::read_to_string(concat!(
@@ -71,7 +72,8 @@ fn completes_like_pi() {
                     Box::new(move |prefix: &str| {
                         let filtered = fuzzy_filter(levels.clone(), prefix, Clone::clone);
                         (!filtered.is_empty())
-                            .then(|| filtered.into_iter().map(SelectItem::new).collect())
+                            .then(|| filtered.into_iter().map(AutocompleteItem::new).collect())
+                            .into()
                     }) as yapi_tui::autocomplete::ArgumentCompleter
                 }),
             }

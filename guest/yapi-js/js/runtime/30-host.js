@@ -448,10 +448,68 @@
 		};
 	}
 	let tuiModule;
+	let facade;
 	const keybindings = async () => {
 		tuiModule ??= await import("@earendil-works/pi-tui");
 		return tuiModule.getKeybindings();
 	};
+	const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
+	// pi-tui's input listeners: `onTerminalInput` handlers, which see raw
+	// input before the editor and may consume or transform it.
+	const terminalListeners = new Set();
+	// `addAutocompleteProvider` factories and the provider they compose over
+	// the host's, as pi's `setupAutocompleteProvider` does.
+	const completionWrappers = [];
+	const hostCompletions = {
+		getSuggestions: (lines, cursorLine, cursorCol, options) =>
+			yapi.op("ui.suggestions", { lines, cursorLine, cursorCol, force: !!options?.force }).then((suggestions) => suggestions ?? null),
+		applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => request("applyCompletion", { lines, cursorLine, cursorCol, item: plain(item), prefix }),
+	};
+	let completions = hostCompletions;
+	function addCompletions(factory) {
+		completionWrappers.push(factory);
+		let provider = hostCompletions;
+		const triggers = [];
+		for (const wrap of completionWrappers) {
+			provider = wrap(provider);
+			triggers.push(...(provider.triggerCharacters ?? []));
+		}
+		if (triggers.length > 0) provider.triggerCharacters = [...new Set(triggers)];
+		completions = provider;
+		components.get(editorSlot.handle)?.setAutocompleteProvider?.(provider);
+		request("setAutocomplete", { triggerCharacters: provider.triggerCharacters ?? [] });
+	}
+	// The extension editor in the built-in one's place, and the app actions
+	// it asks the host for; pi's `setCustomEditorComponent`. The modules it
+	// needs load when the session binds, so the factory runs at once.
+	const editorSlot = { factory: undefined, handle: undefined };
+	let editorActions = [];
+	function setEditor(factory) {
+		const text = request("getEditorText", {}) ?? "";
+		const editor = typeof factory === "function" ? factory(tui, facade.getEditorTheme(), tuiModule.getKeybindings()) : undefined;
+		editorSlot.factory = editor ? factory : undefined;
+		if (editorSlot.handle !== undefined) unmount(editorSlot.handle);
+		editorSlot.handle = undefined;
+		if (!editor) {
+			request("setEditor", {});
+			return;
+		}
+		editor.onSubmit = (value) => request("editorSubmit", { text: value });
+		editor.onChange = () => request("editorChange", { text: editor.getExpandedText?.() ?? editor.getText() });
+		editor.setText(text);
+		editor.setAutocompleteProvider?.(completions);
+		// An editor extending `CustomEditor` triggers the app's actions, as the built-in editor does.
+		if (editor.actionHandlers instanceof Map) {
+			const action = (id) => () => request("editorAction", { action: id });
+			editor.onEscape ??= action("app.interrupt");
+			editor.onCtrlD ??= action("app.exit");
+			editor.onPasteImage ??= action("app.clipboard.pasteImage");
+			editor.onExtensionShortcut ??= (data) => !!request("editorShortcut", { data });
+			for (const id of editorActions) editor.actionHandlers.set(id, action(id));
+		}
+		editorSlot.handle = mount(editor);
+		request("setEditor", { handle: editorSlot.handle, embedsStatus: editor.embedWorkingStatus === true });
+	}
 	yapi.render = (handle, width) => {
 		const component = components.get(handle);
 		if (!component) return [];
@@ -471,7 +529,6 @@
 
 	// ----- contexts --------------------------------------------------------------------------------------
 	function createUi(data) {
-		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
 		const shown = !!(data.hasUI && data.components);
 		const replaceSlot = (slot, factory, ...args) => {
 			if (slots[slot] !== undefined) unmount(slots[slot]);
@@ -492,7 +549,14 @@
 			input: (title, placeholder, opts) => (data.hasUI ? yapi.op("ui.input", { title, placeholder, timeout: opts?.timeout }).then(orUndefined) : Promise.resolve(undefined)),
 			editor: (title, prefill) => (data.hasUI ? yapi.op("ui.editor", { title, prefill }).then(orUndefined) : Promise.resolve(undefined)),
 			notify: (message, type) => request("notify", type === undefined ? { message } : { message, type }),
-			onTerminalInput: () => () => {},
+			onTerminalInput(handler) {
+				if (!shown) return () => {};
+				if (terminalListeners.size === 0) request("setTerminalInput", { listening: true });
+				terminalListeners.add(handler);
+				return () => {
+					if (terminalListeners.delete(handler) && terminalListeners.size === 0) request("setTerminalInput", { listening: false });
+				};
+			},
 			setStatus: (key, text) => request("setStatus", { key, text }),
 			setWorkingMessage: (message) => request("setWorkingMessage", { message }),
 			setWorkingVisible: (visible) => request("setWorkingVisible", { visible }),
@@ -556,9 +620,13 @@
 			pasteToEditor: (text) => request("pasteToEditor", { text }),
 			setEditorText: (text) => request("setEditorText", { text }),
 			getEditorText: () => request("getEditorText", {}) ?? "",
-			addAutocompleteProvider() {},
-			setEditorComponent() {},
-			getEditorComponent: () => undefined,
+			addAutocompleteProvider(factory) {
+				if (shown) addCompletions(factory);
+			},
+			setEditorComponent(factory) {
+				if (shown) setEditor(factory);
+			},
+			getEditorComponent: () => (shown ? editorSlot.factory : undefined),
 			theme,
 			getAllThemes: () => request("getAllThemes", {}) ?? [],
 			getTheme: () => undefined,
@@ -836,15 +904,26 @@
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
 			return { extensions: results };
 		},
-		bind() {
+		async bind() {
 			bound = true;
 			let spec = null;
+			let keys = null;
 			try {
 				spec = yapi.request("ui.theme", {}) ?? null;
+				keys = yapi.request("ui.keybindings", {}) ?? null;
 			} catch {
 				// Hosts without a UI leave text plain.
 			}
 			theme.load(spec);
+			// Components match keys as the host's bindings do.
+			if (keys) {
+				tuiModule ??= await import("@earendil-works/pi-tui");
+				facade ??= await import("@earendil-works/pi-coding-agent");
+				tuiModule.setKittyProtocolActive(!!keys.kitty);
+				const definitions = Object.fromEntries(Object.entries(keys.bindings ?? {}).map(([id, defaultKeys]) => [id, { defaultKeys }]));
+				tuiModule.setKeybindings(new tuiModule.KeybindingsManager(definitions));
+				editorActions = keys.actions ?? [];
+			}
 			return null;
 		},
 		async reload() {
@@ -853,6 +932,10 @@
 			widgetHandles.clear();
 			transcriptViews.clear();
 			slots.footer = slots.header = undefined;
+			editorSlot.factory = editorSlot.handle = undefined;
+			terminalListeners.clear();
+			completionWrappers.length = 0;
+			completions = hostCompletions;
 			const results = [];
 			for (const [id, extension] of [...extensions]) {
 				extensions.delete(id);
@@ -891,6 +974,57 @@
 			const command = extensionOf(payload.extension).commands.get(payload.name);
 			if (typeof command?.getArgumentCompletions !== "function") return null;
 			return plain(await command.getArgumentCompletions(payload.prefix ?? "")) ?? null;
+		},
+		/**
+		 * The composed providers' suggestions for the host's editor, with what
+		 * applying each item gives, since the editor applies one at once.
+		 */
+		async autocomplete(payload) {
+			const { lines, cursorLine, cursorCol, force } = payload;
+			const provider = completions;
+			const suggestions = await provider.getSuggestions(lines, cursorLine, cursorCol, { signal: new AbortController().signal, force });
+			if (!Array.isArray(suggestions?.items) || suggestions.items.length === 0) return null;
+			const applied = suggestions.items.map((item) => {
+				try {
+					return plain(provider.applyCompletion(lines, cursorLine, cursorCol, item, suggestions.prefix)) ?? null;
+				} catch (error) {
+					console.error("Autocomplete error:", error);
+					return null;
+				}
+			});
+			return { prefix: suggestions.prefix ?? "", items: plain(suggestions.items), applied };
+		},
+		/** Runs the input listeners over each key as pi-tui does; `null` for a consumed key. */
+		terminalInput(payload) {
+			return (payload.keys ?? []).map((data) => {
+				let current = data;
+				for (const listener of terminalListeners) {
+					let result;
+					try {
+						result = listener(current);
+					} catch (error) {
+						console.error("Terminal input listener error:", error);
+						continue;
+					}
+					if (result?.consume) return null;
+					if (result?.data !== undefined) current = result.data;
+				}
+				return current;
+			});
+		},
+		/** An operation the host sends its editor; see `ComponentHost::editor_op`. */
+		editor(payload) {
+			const editor = components.get(payload.handle);
+			if (payload.op === "setText") editor?.setText?.(payload.text ?? "");
+			else if (payload.op === "addToHistory") editor?.addToHistory?.(payload.text ?? "");
+			else if (payload.op === "configure" && editor) {
+				editor.borderColor = payload.border === "bashMode" ? theme.getBashModeBorderColor() : theme.getThinkingBorderColor(payload.border);
+				editor.setPaddingX?.(payload.paddingX);
+				editor.setAutocompleteMaxVisible?.(payload.autocompleteMaxVisible);
+				if ("focused" in editor) editor.focused = !!payload.focused;
+				tui.terminal.rows = payload.rows;
+			}
+			return null;
 		},
 		async shortcut(payload) {
 			const shortcut = extensionOf(payload.extension).shortcuts.get(payload.shortcut);

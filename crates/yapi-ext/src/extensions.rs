@@ -15,11 +15,11 @@ use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
-    Command, Completion, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode,
-    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
-    WorkingIndicator,
+    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
+    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
+use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
@@ -317,7 +317,7 @@ struct JsExtension {
 /// An argument completion request: under way, or answered at a time.
 enum Fetched {
     Pending,
-    Ready(std::time::Instant, Option<Vec<Completion>>),
+    Ready(std::time::Instant, Option<Vec<AutocompleteItem>>),
 }
 
 /// How long fetched completions are reused before being asked for again.
@@ -364,13 +364,13 @@ impl Extension for JsExtension {
 
     /// pi awaits `getArgumentCompletions`; the editor asks synchronously, so
     /// a request the guest has not answered yet starts it in the background,
-    /// offers nothing, and has the editor ask again once it is answered.
-    fn complete(&self, command: &str, prefix: &str) -> Option<Vec<Completion>> {
+    /// is pending, and has the editor ask again once it is answered.
+    fn complete(&self, command: &str, prefix: &str) -> ArgumentCompletions {
         let completes = list(&self.description["commands"])
             .iter()
             .any(|entry| entry["name"] == command && entry["hasCompletions"] == true);
         if !completes {
-            return None;
+            return ArgumentCompletions::Ready(None);
         }
         let key = (command.to_owned(), prefix.to_owned());
         {
@@ -380,8 +380,8 @@ impl Extension for JsExtension {
                 Fetched::Ready(at, _) => at.elapsed() < COMPLETIONS_TTL,
             });
             match cache.get(&key) {
-                Some(Fetched::Ready(_, items)) => return items.clone(),
-                Some(Fetched::Pending) => return None,
+                Some(Fetched::Ready(_, items)) => return ArgumentCompletions::Ready(items.clone()),
+                Some(Fetched::Pending) => return ArgumentCompletions::Pending,
                 None => {
                     cache.insert(key.clone(), Fetched::Pending);
                 }
@@ -395,28 +395,14 @@ impl Extension for JsExtension {
                 .call("complete", &payload)
                 .await
                 .ok()
-                .and_then(|value| {
-                    value.as_array().map(|items| {
-                        items
-                            .iter()
-                            .map(|item| Completion {
-                                value: text(&item["value"]),
-                                label: item["label"]
-                                    .as_str()
-                                    .map_or_else(|| text(&item["value"]), str::to_owned),
-                                description: item["description"].as_str().map(str::to_owned),
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                })
+                .and_then(|value| serde_json::from_value::<Vec<AutocompleteItem>>(value).ok())
                 .filter(|items| !items.is_empty());
-            let found = items.is_some();
             lock(&cache).insert(key, Fetched::Ready(std::time::Instant::now(), items));
-            if found && let Some(session) = host.bridge.session() {
+            if let Some(session) = host.bridge.session() {
                 session.extension_binding().0.refresh_completions();
             }
         });
-        None
+        ArgumentCompletions::Pending
     }
 
     fn commands(&self) -> Vec<Command> {
@@ -752,16 +738,67 @@ impl ComponentHost for Components {
             host.instance.input(handle, data);
         }
     }
+
+    fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>> {
+        let host = self.0.upgrade();
+        Box::pin(async move {
+            let Some(host) = host else {
+                return keys;
+            };
+            match host
+                .instance
+                .call("terminalInput", &json!({"keys": keys}))
+                .await
+            {
+                Ok(Value::Array(results)) => results
+                    .into_iter()
+                    .filter_map(|key| {
+                        key.as_str()
+                            .filter(|key| !key.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .collect(),
+                // A runtime that cannot run its listeners lets the input through.
+                _ => keys,
+            }
+        })
+    }
+
+    fn suggestions(&self, request: Value) -> BoxFuture<'static, Value> {
+        let host = self.0.upgrade();
+        Box::pin(async move {
+            match host {
+                Some(host) => host
+                    .instance
+                    .call("autocomplete", &request)
+                    .await
+                    .unwrap_or(Value::Null),
+                None => Value::Null,
+            }
+        })
+    }
+
+    fn editor_op(&self, handle: u32, op: &Value) {
+        if let Some(host) = self.0.upgrade() {
+            let mut payload = op.clone();
+            payload["handle"] = json!(handle);
+            host.instance.post("editor", &payload);
+        }
+    }
 }
 
 impl SessionBridge {
+    /// What renders and runs this runtime's UI parts.
+    fn components(&self) -> Option<Arc<dyn ComponentHost>> {
+        Some(Arc::new(Components(self.owner.get()?.clone())))
+    }
+
     fn component(&self, handle: &Value) -> Option<RemoteComponent> {
         let handle = u32::try_from(handle.as_u64()?).ok()?;
-        let owner = self.owner.get()?.clone();
         Some(RemoteComponent::new(
             self.runtime_id,
             handle,
-            Arc::new(Components(owner)),
+            self.components()?,
         ))
     }
 
@@ -832,6 +869,28 @@ impl SessionBridge {
                     ui.close(component);
                 }
             }
+            "ui.setEditor" => ui.set_editor(
+                self.component(&payload["handle"]),
+                payload["embedsStatus"] == true,
+            ),
+            "ui.editorChange" => ui.editor_changed(&text(&payload["text"])),
+            "ui.editorSubmit" => ui.editor_submit(&text(&payload["text"])),
+            "ui.editorAction" => ui.editor_action(&text(&payload["action"])),
+            "ui.setTerminalInput" => {
+                ui.set_terminal_input(self.components().filter(|_| payload["listening"] == true));
+            }
+            "ui.setAutocomplete" => {
+                if let Some(providers) = self.components() {
+                    let triggers = list(&payload["triggerCharacters"])
+                        .iter()
+                        .map(text)
+                        .collect();
+                    ui.set_autocomplete(providers, triggers);
+                }
+            }
+            "ui.applyCompletion" => return ui.apply_completion(payload),
+            "ui.editorShortcut" => return Value::Bool(ui.editor_shortcut(&text(&payload["data"]))),
+            "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),
             "ui.getToolsExpanded" => return Value::Bool(ui.tools_expanded()),
             "ui.setToolsExpanded" => ui.set_tools_expanded(payload["expanded"] == true),
@@ -1093,6 +1152,10 @@ impl Bridge for SessionBridge {
         let kind = kind.to_owned();
         Box::pin(async move {
             match kind.as_str() {
+                "ui.suggestions" => {
+                    let (ui, _) = session.extension_binding();
+                    Ok(ui.suggestions(payload).await)
+                }
                 "codemode.execute" => codemode
                     .execute(
                         Some(session),

@@ -9,6 +9,7 @@ mod catalogs;
 mod chat;
 mod clipboard;
 mod commands;
+mod completions;
 pub mod config_selector;
 mod extension_ui;
 mod footer;
@@ -33,12 +34,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use ratatui_core::text::{Line, Span};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use yapi_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
 use yapi_core::bash_executor::BashResult;
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
+use yapi_tui::autocomplete::AutocompleteProvider;
 use yapi_tui::color::ColorMode;
 use yapi_tui::editor::{Editor, EditorEvent, EditorTheme};
 use yapi_tui::input::{Input, InputBuffer, escape_timeout};
@@ -138,6 +140,10 @@ enum Event {
     ),
     /// A request from an extension of the session with this epoch.
     Ui(u64, Box<extension_ui::Request>),
+    /// An app action an extension's editor asks for, by key binding id.
+    EditorAction(u64, String),
+    /// Keys that passed the extensions' `onTerminalInput` listeners.
+    TerminalInput(Vec<String>),
     /// Lines of the extension component with this key, rendered at a width.
     Rendered(u64, (u64, u32), usize, Vec<String>),
     /// The first session's extensions started.
@@ -435,6 +441,14 @@ struct App {
     shortcuts: Vec<yapi_core::extensions::ShortcutBinding>,
     /// An extension asked to exit once the agent settles.
     shutdown_requested: bool,
+    /// Keys waiting for extensions' `onTerminalInput` listeners, and whether
+    /// the listeners are running.
+    input_queue: Vec<String>,
+    listening: bool,
+    /// The built-in completion provider, for extensions' requests, and the
+    /// request waiting for its answer.
+    builtin_completions: Option<yapi_tui::autocomplete::CombinedProvider>,
+    waiting_suggestions: Option<(Value, tokio::sync::oneshot::Sender<Value>)>,
     /// pi's `[Extension issues]`: the extension each concerns, and what.
     extension_issues: Vec<(yapi_types::rpc::SourceInfo, String)>,
 }
@@ -696,13 +710,67 @@ impl App {
     }
 
     fn install_autocomplete(&mut self) {
-        let (tx, epoch) = (self.tx.clone(), self.epoch);
-        let provider = commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
-            .notify_with(std::sync::Arc::new(move || {
-                let _ = tx.send(Event::RefreshCompletions(epoch));
-            }));
-        self.editor.set_autocomplete(Box::new(provider));
+        self.install_completions();
         self.install_shortcuts();
+    }
+
+    /// The editor's completion: the built-in provider, or the one the
+    /// extensions' providers compose over it, as pi's
+    /// `setupAutocompleteProvider` installs it. The built-in provider also
+    /// answers the extensions' requests.
+    fn install_completions(&mut self) {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = tx.send(Event::RefreshCompletions(epoch));
+        });
+        let builtin = || {
+            commands::autocomplete(&self.session, self.fd.clone(), self.home.clone())
+                .notify_with(notify.clone())
+        };
+        let provider: Box<dyn AutocompleteProvider> = match &self.ext.completions {
+            Some((providers, triggers)) => Box::new(completions::ExtensionCompletions::new(
+                providers.clone(),
+                triggers.clone(),
+                notify.clone(),
+            )),
+            None => Box::new(builtin()),
+        };
+        self.builtin_completions = Some(builtin());
+        self.editor.set_autocomplete(provider);
+        self.answer_suggestions();
+    }
+
+    /// Answers an extension's request for the built-in provider's
+    /// suggestions, whose `@` search may answer later.
+    fn suggest(&mut self, request: Value, reply: tokio::sync::oneshot::Sender<Value>) {
+        // As pi aborts a superseded request, only the latest one waits.
+        if let Some((_, previous)) = self.waiting_suggestions.replace((request, reply)) {
+            let _ = previous.send(Value::Null);
+        }
+        self.answer_suggestions();
+    }
+
+    /// Answers the waiting request once the built-in provider has its answer.
+    fn answer_suggestions(&mut self) {
+        let (Some(builtin), Some((request, _))) =
+            (&self.builtin_completions, &self.waiting_suggestions)
+        else {
+            return;
+        };
+        let suggestions = match completions::request(request) {
+            Some((at, force)) => {
+                let suggestions =
+                    builtin.suggestions(&at.lines, at.cursor_line, at.cursor_col, force);
+                if builtin.pending() {
+                    return;
+                }
+                suggestions
+            }
+            None => None,
+        };
+        if let Some((_, reply)) = self.waiting_suggestions.take() {
+            let _ = reply.send(suggestions.map_or(Value::Null, completions::suggestions_json));
+        }
     }
 
     /// The extensions' shortcuts against the current key bindings, and pi's
@@ -722,6 +790,7 @@ impl App {
             .collect();
         let (shortcuts, warnings) = self.session.extension_shortcuts(&builtin);
         self.shortcuts = shortcuts;
+        self.mirror_keys();
         let extensions = self.session.extensions();
         let source_of = |path: &str| {
             extensions
@@ -757,6 +826,27 @@ impl App {
             issues.push((source_of(&path), message));
         }
         self.extension_issues = issues;
+    }
+
+    /// Mirrors the key bindings and shortcuts for extensions; see
+    /// [`ExtensionUi::keybindings`](yapi_core::extensions::ExtensionUi::keybindings).
+    fn mirror_keys(&self) {
+        let bindings: Map<String, Value> = self
+            .keys
+            .definitions()
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.to_owned(),
+                    json!(self.keys.keys(definition.id)),
+                )
+            })
+            .collect();
+        let mut shared = yapi_types::sync::lock(&self.ext.shared);
+        shared.keybindings =
+            json!({"kitty": self.kitty, "bindings": bindings, "actions": APP_KEYS});
+        shared.shortcuts = self.shortcuts.clone();
+        shared.keys = self.keys.decoder();
     }
 
     /// Renders the current branch's messages, as when a session opens.
@@ -817,7 +907,7 @@ impl App {
             }
         }
         for text in history {
-            self.editor.add_to_history(&text);
+            self.add_to_history(&text);
         }
         if !self.session.project_trusted() && yapi_core::trust::requires_trust(&self.cwd) {
             let spacer = !self.chat.is_empty();
@@ -846,19 +936,31 @@ impl App {
 
     // Rendering
 
-    fn border_style(&self) -> ratatui_core::style::Style {
+    /// pi's `updateEditorBorderColor`: `bashMode` while the text is a `!`
+    /// command, else the thinking level.
+    fn border_level(&self) -> &'static str {
         if self.editor.text().trim_start().starts_with('!') {
-            self.theme.fg("bashMode")
+            "bashMode"
         } else {
-            self.theme
-                .thinking_border(self.session.thinking_level().as_str())
+            self.session.thinking_level().as_str()
         }
     }
 
-    /// The status for the editor's top border, as pi's `renderInBorder` and
-    /// `renderSpinnerInBorder` draw it: the frame and message, and the frame
-    /// alone. An extension's custom frames are drawn as given.
-    fn status_lines(&self, border: ratatui_core::style::Style) -> Option<(StyledLine, StyledLine)> {
+    fn border_style(&self) -> ratatui_core::style::Style {
+        match self.border_level() {
+            "bashMode" => self.theme.fg("bashMode"),
+            level => self.theme.thinking_border(level),
+        }
+    }
+
+    /// The status as pi's status indicator draws it: the frame and message,
+    /// and the frame alone. An extension's custom frames are drawn as given.
+    /// The working status takes the `border` color in the editor's top
+    /// border, and the accent and muted colors outside it.
+    fn status_lines(
+        &self,
+        border: Option<ratatui_core::style::Style>,
+    ) -> Option<(StyledLine, StyledLine)> {
         let (indicator, started) = self.indicator.as_ref()?;
         let custom = match indicator {
             Indicator::Working => self.ext.working_indicator.as_ref(),
@@ -881,8 +983,8 @@ impl App {
         };
         let (spinner, text, message) = match indicator {
             Indicator::Working => (
-                border,
-                border,
+                border.unwrap_or_else(|| self.theme.fg("accent")),
+                border.unwrap_or_else(|| self.theme.fg("muted")),
                 self.ext
                     .working_message
                     .clone()
@@ -1123,7 +1225,18 @@ impl App {
                 1,
             ));
         }
-        let mut parts = vec![(std::mem::take(&mut out), 0), (Vec::new(), 0)];
+        let border = self.border_style();
+        // pi's status container shows the working status when the editor
+        // does not draw it in its border.
+        let mut status = Vec::new();
+        if let Some(editor) = &self.ext.editor
+            && !editor.embeds_status
+            && let Some((line, _)) = self.status_lines(None)
+        {
+            status.extend(lines::spacer(1));
+            status.extend(lines::text_row(line, width, 1));
+        }
+        let mut parts = vec![(std::mem::take(&mut out), 0), (status, 0)];
         // pi's widget container above the editor: a spacer, then the widgets.
         out.extend(lines::spacer(1));
         for (_, widget) in &mut self.ext.above {
@@ -1133,18 +1246,43 @@ impl App {
         let cursor;
         // An overlay draws over the screen; the editor stays below it.
         let overlaid = self.overlay.is_some() && matches!(self.selector, Some(Selector::Remote(_)));
+        // An extension's editor gets the built-in one's settings and status.
+        let custom = self.ext.editor.is_some().then(|| {
+            let config = json!({
+                "border": self.border_level(),
+                "paddingX": self.editor.padding_x(),
+                "autocompleteMaxVisible": self.editor.autocomplete_max_visible(),
+                "focused": !overlaid,
+                "rows": self.size.1,
+            });
+            (self.status_lines(Some(border)), config)
+        });
         if !overlaid && let Some(mut selector) = self.selector.take() {
             let (rows, at) = selector.render(width, &self.ui());
             self.selector = Some(selector);
             cursor = at.map(|(row, col)| (out.len() + row, col));
             out.extend(rows);
+        } else if let (Some(editor), Some((embedded, config))) = (self.ext.editor.as_mut(), custom)
+        {
+            editor.configure(config);
+            let (mut rows, at) = editor.view.render(width);
+            if editor.embeds_status
+                && let Some((status, spinner)) = embedded
+                && let Some(top) = status_border(status, spinner, 0, width, border)
+                && let Some(first) = rows.first_mut()
+            {
+                *first = top;
+            }
+            cursor = at
+                .filter(|_| !overlaid)
+                .map(|(row, col)| (out.len() + row, col));
+            out.extend(rows);
         } else {
-            let border = self.border_style();
             self.editor.border = border;
             self.editor.set_terminal_rows(self.size.1);
             self.editor.focused = !overlaid;
             let mut editor = self.editor.render(width);
-            if let Some((status, spinner)) = self.status_lines(border) {
+            if let Some((status, spinner)) = self.status_lines(Some(border)) {
                 let hidden = self.editor.hidden_above();
                 if let Some(top) = status_border(status, spinner, hidden, width, border) {
                     editor[0] = top;
@@ -1859,17 +1997,17 @@ impl App {
                     self.warning(
                         "A bash command is already running. Press Esc to cancel it first.",
                     );
-                    self.editor.set_text(&text);
+                    self.set_editor_text(&text);
                     return;
                 }
-                self.editor.add_to_history(&text);
+                self.add_to_history(&text);
                 self.run_bash(command.to_owned(), exclude);
                 return;
             }
         }
         if self.session.is_extension_command(&text) {
             // Extension commands run at once, even while a response streams.
-            self.editor.add_to_history(&text);
+            self.add_to_history(&text);
             let (session, notify) = (self.session.clone(), self.notifier());
             tokio::spawn(async move {
                 if let Err(error) = session.prompt(&text, Vec::new()).await {
@@ -1879,12 +2017,12 @@ impl App {
             return;
         }
         if self.manual_compaction {
-            self.editor.add_to_history(&text);
+            self.add_to_history(&text);
             self.compaction_queue.push((text, false));
             self.status("Queued message for after compaction");
             return;
         }
-        self.editor.add_to_history(&text);
+        self.add_to_history(&text);
         if self.running {
             self.queue_messages(vec![(text, StreamingBehavior::Steer)]);
             return;
@@ -1967,12 +2105,28 @@ impl App {
             if !current.trim().is_empty() {
                 text = format!("{text}\n\n{current}");
             }
-            self.editor.set_text(&text);
+            self.set_editor_text(&text);
         }
         if abort {
             self.session.abort();
         }
         queued.len()
+    }
+
+    /// Replaces the editor's text, in an extension's editor too.
+    fn set_editor_text(&mut self, text: &str) {
+        self.editor.set_text(text);
+        if let Some(editor) = &self.ext.editor {
+            editor.set_text(text);
+        }
+    }
+
+    /// Adds a prompt to the history of the editor in use.
+    fn add_to_history(&mut self, text: &str) {
+        match &self.ext.editor {
+            Some(editor) => editor.add_to_history(text),
+            None => self.editor.add_to_history(text),
+        }
     }
 
     fn on_escape(&mut self) {
@@ -1993,7 +2147,7 @@ impl App {
             return;
         }
         if self.editor.text().trim_start().starts_with('!') {
-            self.editor.set_text("");
+            self.set_editor_text("");
             return;
         }
         let action = self
@@ -2018,6 +2172,48 @@ impl App {
         }
     }
 
+    /// Keys of one read, as decoded: through the extensions'
+    /// `onTerminalInput` listeners first while there are any, as pi-tui's
+    /// input listeners see input before everything else. The listeners run
+    /// beside the loop; later keys wait behind them, in order.
+    fn on_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
+        self.input_queue.extend(keys);
+        self.pump_input(terminal);
+    }
+
+    /// Hands the waiting keys to the listeners, or handles them when no
+    /// extension listens.
+    fn pump_input(&mut self, terminal: &mut Terminal) {
+        if self.listening || self.input_queue.is_empty() {
+            return;
+        }
+        let keys = std::mem::take(&mut self.input_queue);
+        let Some(listeners) = self.ext.listeners.clone() else {
+            self.handle_keys(keys, terminal);
+            return;
+        };
+        self.listening = true;
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let keys = listeners.terminal_input(keys).await;
+            let _ = tx.send(Event::TerminalInput(keys));
+        });
+    }
+
+    /// Handles the keys of one read, as one editor input batch.
+    fn handle_keys(&mut self, keys: Vec<String>, terminal: &mut Terminal) {
+        self.editor.begin_input_batch();
+        for key in keys {
+            // Pastes are never key releases.
+            if !yapi_tui::keys::is_key_release(&key) {
+                self.handle_key(&key, terminal);
+            }
+        }
+        self.editor.end_input_batch();
+        // Listeners of the next keys read the text these left.
+        self.ext.mirror_editor_text(self.editor.expanded_text());
+    }
+
     fn handle_key(&mut self, data: &str, terminal: &mut Terminal) {
         if self.dispatch_key(data, terminal) {
             self.footer_cache = None;
@@ -2036,23 +2232,16 @@ impl App {
             self.handle_selector_key(data);
             return true;
         }
+        // An extension's editor handles its keys, app keys included.
+        if let Some(editor) = &self.ext.editor {
+            editor.view.input(data);
+            return false;
+        }
         // Extension shortcuts come first, as in pi's editor.
-        let decoder = self.keys.decoder();
-        if let Some(binding) = self
-            .shortcuts
-            .iter()
-            .find(|binding| decoder.matches(data, &binding.key))
-            .cloned()
+        if let Some(binding) =
+            extension_ui::shortcut_for(&self.shortcuts, self.keys.decoder(), data).cloned()
         {
-            let (session, notify) = (self.session.clone(), self.notifier());
-            tokio::spawn(async move {
-                if let Err(error) = session.run_shortcut(&binding).await {
-                    notify(
-                        format!("Shortcut handler error: {error}"),
-                        NotifyKind::Error,
-                    );
-                }
-            });
+            self.run_shortcut(binding);
             return true;
         }
         let keys = &self.keys;
@@ -2078,7 +2267,29 @@ impl App {
                 EditorEvent::None => false,
             };
         };
+        self.run_action(action, terminal);
+        true
+    }
+
+    /// Runs extension shortcut `binding` beside the loop.
+    fn run_shortcut(&self, binding: yapi_core::extensions::ShortcutBinding) {
+        let (session, notify) = (self.session.clone(), self.notifier());
+        tokio::spawn(async move {
+            if let Err(error) = session.run_shortcut(&binding).await {
+                notify(
+                    format!("Shortcut handler error: {error}"),
+                    NotifyKind::Error,
+                );
+            }
+        });
+    }
+
+    /// Runs app action `action`, a key binding id, as the built-in editor's
+    /// handlers do.
+    fn run_action(&mut self, action: &str, terminal: &mut Terminal) {
         match action {
+            "app.interrupt" => self.on_escape(),
+            "app.exit" => self.quit = true,
             "app.clear" => {
                 if self
                     .last_clear
@@ -2086,7 +2297,7 @@ impl App {
                 {
                     self.quit = true;
                 } else {
-                    self.editor.set_text("");
+                    self.set_editor_text("");
                     self.last_clear = Some(Instant::now());
                 }
             }
@@ -2116,19 +2327,19 @@ impl App {
             "app.message.followUp" => {
                 let text = self.editor.expanded_text().trim().to_owned();
                 if text.is_empty() {
-                    return true;
+                    return;
                 }
                 if self.manual_compaction {
-                    self.editor.add_to_history(&text);
-                    self.editor.set_text("");
+                    self.add_to_history(&text);
+                    self.set_editor_text("");
                     self.compaction_queue.push((text, true));
                     self.status("Queued message for after compaction");
                 } else if self.running {
-                    self.editor.add_to_history(&text);
-                    self.editor.set_text("");
+                    self.add_to_history(&text);
+                    self.set_editor_text("");
                     self.queue_messages(vec![(text, StreamingBehavior::FollowUp)]);
                 } else {
-                    self.editor.set_text("");
+                    self.set_editor_text("");
                     self.on_submit(text);
                 }
             }
@@ -2149,7 +2360,6 @@ impl App {
             "app.session.resume" => self.open_resume(),
             _ => {}
         }
-        true
     }
 
     fn toggle_tools(&mut self) {
@@ -2601,7 +2811,7 @@ impl App {
                 if let Some(text) = outcome.editor_text
                     && self.editor.text().trim().is_empty()
                 {
-                    self.editor.set_text(&text);
+                    self.set_editor_text(&text);
                 }
                 self.status("Navigated to selected point");
             }
@@ -2662,10 +2872,10 @@ impl App {
         match result {
             Ok(text) => {
                 if at {
-                    self.editor.set_text("");
+                    self.set_editor_text("");
                     self.status("Cloned to new session");
                 } else {
-                    self.editor.set_text(text.as_deref().unwrap_or_default());
+                    self.set_editor_text(text.as_deref().unwrap_or_default());
                     self.status("Forked to new session");
                 }
             }
@@ -2810,7 +3020,7 @@ impl App {
         });
         let _ = std::fs::remove_dir_all(&dir);
         if let Some(text) = edited {
-            self.editor.set_text(&text);
+            self.set_editor_text(&text);
         }
     }
 }
@@ -3106,11 +3316,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     for event in early_events {
         app.on_event(event);
     }
-    app.editor.begin_input_batch();
-    for key in early {
-        app.handle_key(&key, &mut terminal);
-    }
-    app.editor.end_input_batch();
+    app.handle_keys(early, &mut terminal);
     app.warn_anthropic_subscription(None);
     app.ext.set_tools_expanded(app.expanded);
     app.binding = Some(None);
@@ -3156,31 +3362,39 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         tokio::select! {
             event = rx.recv() => {
                 let Some(event) = event else { break };
-                if let Event::Input(bytes) = event {
-                    app.editor.begin_input_batch();
-                    for key in decode_input(&mut buffer, &mut terminal.protocol, &bytes) {
-                        // Pastes are never key releases.
-                        if !yapi_tui::keys::is_key_release(&key) {
-                            app.handle_key(&key, &mut terminal);
+                match event {
+                    Event::Input(bytes) => {
+                        let keys = decode_input(&mut buffer, &mut terminal.protocol, &bytes);
+                        app.on_keys(keys, &mut terminal);
+                        if app.kitty != terminal.protocol.kitty {
+                            app.keys.set_kitty(terminal.protocol.kitty);
+                            app.kitty = terminal.protocol.kitty;
+                            app.mirror_keys();
                         }
                     }
-                    app.editor.end_input_batch();
-                    app.keys.set_kitty(terminal.protocol.kitty);
-                    app.kitty = terminal.protocol.kitty;
-                } else {
-                    app.on_event(event);
+                    Event::EditorAction(epoch, action) if epoch == app.epoch => {
+                        app.run_action(&action, &mut terminal);
+                    }
+                    Event::TerminalInput(keys) => {
+                        app.listening = false;
+                        app.handle_keys(keys, &mut terminal);
+                        app.pump_input(&mut terminal);
+                    }
+                    event => app.on_event(event),
                 }
                 dirty = true;
             }
             _ = tokio::time::sleep(input_wait) => {
-                for input in buffer.flush() {
-                    if let Input::Key(key) = input {
-                        app.handle_key(&key, &mut terminal);
-                    }
-                }
-                if let Some(pending) = terminal.protocol.flush() {
-                    app.handle_key(&pending, &mut terminal);
-                }
+                let mut keys: Vec<String> = buffer
+                    .flush()
+                    .into_iter()
+                    .filter_map(|input| match input {
+                        Input::Key(key) => Some(key),
+                        _ => None,
+                    })
+                    .collect();
+                keys.extend(terminal.protocol.flush());
+                app.on_keys(keys, &mut terminal);
                 dirty = true;
             }
             _ = tokio::time::sleep(tick) => dirty = true,
@@ -3384,6 +3598,10 @@ impl App {
             theme_override,
             shortcuts: Vec::new(),
             shutdown_requested: false,
+            input_queue: Vec::new(),
+            listening: false,
+            builtin_completions: None,
+            waiting_suggestions: None,
             extension_issues: Vec::new(),
         };
         app.style_alt_screen();
@@ -3488,6 +3706,7 @@ impl App {
             },
             Event::RefreshCompletions(epoch) if epoch == self.epoch => {
                 self.editor.refresh_autocomplete();
+                self.answer_suggestions();
             }
             Event::ExtensionError(epoch, message, stack) if epoch == self.epoch => {
                 self.extension_error(message, stack.as_deref());
