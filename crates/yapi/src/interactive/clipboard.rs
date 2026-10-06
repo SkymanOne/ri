@@ -5,9 +5,9 @@
 //! first, then OSC 52 for remote and headless sessions.
 
 use base64::Engine as _;
-use std::io::Write;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 const MAX_OSC52_ENCODED_LENGTH: usize = 100_000;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -23,30 +23,25 @@ fn is_wsl() -> bool {
 }
 
 /// Runs `command` with `input` on stdin; whether it exited successfully in time.
-fn run(command: &str, args: &[&str], input: &str) -> bool {
-    let Ok(mut child) = Command::new(command)
+async fn run(command: &str, args: &[&str], input: &str) -> bool {
+    let Ok(mut child) = tokio::process::Command::new(command)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()
     else {
         return false;
     };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes());
-    }
-    let deadline = Instant::now() + COMMAND_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return status.success(),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
-            _ => {
-                let _ = child.kill();
-                return false;
-            }
+    let finished = tokio::time::timeout(COMMAND_TIMEOUT, async {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input.as_bytes()).await;
         }
-    }
+        child.wait().await
+    })
+    .await;
+    matches!(finished, Ok(Ok(status)) if status.success())
 }
 
 /// The OSC 52 sequence that sets the clipboard, or `None` when too long.
@@ -56,7 +51,7 @@ fn osc52(text: &str) -> Option<String> {
 }
 
 /// Copies `text`. Terminal output (OSC 52) goes through `emit`.
-pub fn copy(text: &str, emit: impl Fn(&str)) -> Result<(), String> {
+pub async fn copy(text: &str, emit: impl Fn(&str)) -> Result<(), String> {
     let linux = cfg!(target_os = "linux");
     let mut commands: Vec<(&str, Vec<&str>)> = Vec::new();
     if cfg!(target_os = "macos") {
@@ -75,9 +70,13 @@ pub fn copy(text: &str, emit: impl Fn(&str)) -> Result<(), String> {
             commands.push(("xsel", vec!["--clipboard", "--input"]));
         }
     }
-    let mut copied = commands
-        .iter()
-        .any(|(command, args)| run(command, args, text));
+    let mut copied = false;
+    for (command, args) in &commands {
+        if run(command, args, text).await {
+            copied = true;
+            break;
+        }
+    }
     let mut emitted = false;
     if !copied
         && linux
@@ -131,4 +130,22 @@ pub fn copy(text: &str, emit: impl Fn(&str)) -> Result<(), String> {
         }
     }
     Err("Clipboard unavailable".into())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn commands_run_without_blocking_the_runtime() {
+        let started = std::time::Instant::now();
+        let tick = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            started.elapsed()
+        });
+        assert!(run("sh", &["-c", "cat >/dev/null; sleep 0.5"], "text").await);
+        assert!(tick.await.unwrap() < Duration::from_millis(400));
+        assert!(!run("sh", &["-c", "exit 1"], "").await);
+        assert!(!run("yapi-test-missing-command", &[], "").await);
+    }
 }

@@ -2175,10 +2175,19 @@ impl App {
             self.error("No agent messages to copy yet.");
             return;
         };
-        match clipboard::copy(&text, emit) {
-            Ok(()) => self.status("Copied last agent message to clipboard"),
-            Err(error) => self.error(error),
-        }
+        self.copy_to_clipboard(text, "Copied last agent message to clipboard");
+    }
+
+    /// pi's `copyToClipboard` beside the loop, then `done` or the error.
+    fn copy_to_clipboard(&self, text: String, done: &'static str) {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        tokio::spawn(async move {
+            let (message, kind) = match clipboard::copy(&text, emit).await {
+                Ok(()) => (done.to_owned(), NotifyKind::Info),
+                Err(error) => (error, NotifyKind::Error),
+            };
+            let _ = tx.send(Event::Notify(epoch, message, kind));
+        });
     }
 
     fn cycle_model(&mut self, forward: bool) {
@@ -2333,10 +2342,7 @@ impl App {
             }
             Action::Copy(text) => match text {
                 None => self.error("Selected entry has no text to copy"),
-                Some(text) => match clipboard::copy(&text, emit) {
-                    Ok(()) => self.status("Copied selected message to clipboard"),
-                    Err(error) => self.error(error),
-                },
+                Some(text) => self.copy_to_clipboard(text, "Copied selected message to clipboard"),
             },
             Action::ToggleTools => self.toggle_tools(),
             Action::Provider(option) => self.provider_chosen(*option),
