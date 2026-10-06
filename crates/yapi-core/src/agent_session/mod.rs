@@ -1345,7 +1345,10 @@ impl AgentSession {
         }
     }
 
-    /// What extensions see of the run's provider requests to `model`.
+    /// What extensions see of the run's provider requests to `model`: pi's
+    /// `before_provider_request`, whose handlers each return the body the
+    /// next one sees, `before_provider_headers`, `after_provider_response`
+    /// and `provider_stream_event`.
     fn request_hooks(&self, model: &Model, cancel: &CancellationToken) -> RequestHooks {
         let model = model.clone();
         RequestHooks {
@@ -1353,25 +1356,42 @@ impl AgentSession {
                 "before_provider_request",
                 cancel,
                 |session, payload, cancel| {
-                    Box::pin(async move { session.before_provider_request(payload, cancel).await })
+                    Box::pin(async move {
+                        session
+                            .chain("before_provider_request", "payload", payload, cancel)
+                            .await
+                    })
                 },
             ),
             headers: self.headers_hook(cancel),
             response: self.hook(
                 "after_provider_response",
                 cancel,
-                |session, response, cancel| {
-                    Box::pin(async move { session.after_provider_response(response, cancel).await })
+                |session, response: yapi_ai::stream::ProviderResponse, cancel| {
+                    let event = serde_json::json!({
+                        "type": "after_provider_response",
+                        "status": response.status,
+                        "headers": response.headers,
+                    });
+                    Box::pin(async move {
+                        session.emit_extension_event(&event, cancel).await;
+                    })
                 },
             ),
             stream_event: self.hook(
                 "provider_stream_event",
                 cancel,
                 move |session, data, cancel| {
-                    let model = model.clone();
-                    Box::pin(
-                        async move { session.provider_stream_event(&model, data, cancel).await },
-                    )
+                    let event = serde_json::json!({
+                        "data": data,
+                        "type": "provider_stream_event",
+                        "provider": model.provider,
+                        "api": model.api,
+                        "model": model.id,
+                    });
+                    Box::pin(async move {
+                        session.emit_extension_event(&event, cancel).await;
+                    })
                 },
             ),
         }

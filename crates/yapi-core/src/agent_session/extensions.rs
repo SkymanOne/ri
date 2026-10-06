@@ -611,20 +611,9 @@ impl AgentSession {
         })
     }
 
-    /// pi's `before_provider_request`: the request body extensions return
-    /// in place of `payload`, each seeing the previous one's.
-    pub(super) async fn before_provider_request(
-        &self,
-        payload: Value,
-        cancel: CancellationToken,
-    ) -> Value {
-        self.chain("before_provider_request", "payload", payload, cancel)
-            .await
-    }
-
     /// Passes `value` through the extensions handling `kind` as the event's
     /// `field`, each seeing the `field` the previous one returned.
-    async fn chain(
+    pub(super) async fn chain(
         &self,
         kind: &str,
         field: &str,
@@ -717,38 +706,6 @@ impl AgentSession {
                 .collect(),
             None => headers,
         }
-    }
-
-    /// pi's `after_provider_response`: a provider answered.
-    pub(super) async fn after_provider_response(
-        &self,
-        response: yapi_ai::stream::ProviderResponse,
-        cancel: CancellationToken,
-    ) {
-        let event = serde_json::json!({
-            "type": "after_provider_response",
-            "status": response.status,
-            "headers": response.headers,
-        });
-        self.emit_extension_event(&event, cancel).await;
-    }
-
-    /// pi's `provider_stream_event`: `data`, an event `model`'s provider
-    /// streamed, as parsed.
-    pub(super) async fn provider_stream_event(
-        &self,
-        model: &Model,
-        data: Value,
-        cancel: CancellationToken,
-    ) {
-        let event = serde_json::json!({
-            "data": data,
-            "type": "provider_stream_event",
-            "provider": model.provider,
-            "api": model.api,
-            "model": model.id,
-        });
-        self.emit_extension_event(&event, cancel).await;
     }
 
     /// A blocking extension dialog of `kind` (`select`, `confirm`, `input`,
