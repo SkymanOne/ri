@@ -775,6 +775,9 @@
 	EventEmitter.default = EventEmitter;
 	builtins.events = EventEmitter;
 	yapi.EventEmitter = EventEmitter;
+	// As in Node, `process` is an EventEmitter.
+	Object.setPrototypeOf(process, EventEmitter.prototype);
+	EventEmitter.call(process);
 
 	// ----- util -------------------------------------------------------------------------------------
 	const util = {

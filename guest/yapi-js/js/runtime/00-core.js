@@ -819,7 +819,7 @@
 
 	// ----- process --------------------------------------------------------------------------
 	const environment = yapi.request("env") ?? {};
-	const listeners = new Map();
+	// 10-node.js makes it an EventEmitter, as in Node.
 	globalThis.process = {
 		env: environment,
 		argv: ["yapi", "extension"],
@@ -876,36 +876,6 @@
 		getuid: () => 0,
 		getgid: () => 0,
 		emitWarning: (warning) => yapi.log("warn", [warning]),
-		on(event, listener) {
-			const list = listeners.get(event) ?? [];
-			list.push(listener);
-			listeners.set(event, list);
-			return this;
-		},
-		once(event, listener) {
-			return this.on(event, listener);
-		},
-		off(event, listener) {
-			listeners.set(
-				event,
-				(listeners.get(event) ?? []).filter((item) => item !== listener),
-			);
-			return this;
-		},
-		removeListener(event, listener) {
-			return this.off(event, listener);
-		},
-		removeAllListeners(event) {
-			if (event) listeners.delete(event);
-			else listeners.clear();
-			return this;
-		},
-		emit(event, ...args) {
-			for (const listener of listeners.get(event) ?? []) listener(...args);
-			return (listeners.get(event) ?? []).length > 0;
-		},
-		listeners: (event) => [...(listeners.get(event) ?? [])],
-		listenerCount: (event) => (listeners.get(event) ?? []).length,
 		getBuiltinModule: (name) => globalThis.__yapi_builtins[String(name).replace(/^node:/, "")],
 		stdout: {
 			isTTY: false,

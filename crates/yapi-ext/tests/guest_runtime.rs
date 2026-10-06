@@ -144,3 +144,25 @@ export default function (pi) {
         r#"["😀","�","€","c3",true,true,true,[97,239,191,189,98],"A","﻿A","���",[65],[65,4],"_-8",[255,239]]"#
     );
 }
+
+/// `process` is an EventEmitter: `once` listeners run once.
+#[tokio::test(flavor = "multi_thread")]
+async fn process_is_an_event_emitter() {
+    let main = r#"
+import EventEmitter from "node:events";
+export default function (pi) {
+	let calls = 0;
+	const listener = () => calls++;
+	const chained = process.once("probe", listener) === process;
+	const first = process.emit("probe");
+	const second = process.emit("probe");
+	const left = process.listenerCount("probe");
+	process.on("probe", listener);
+	pi.registerCommand("probe", {
+		description: [process instanceof EventEmitter, chained, first, second, calls, left, process.listenerCount("probe")].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    assert_eq!(probe("process", main).await, "true,true,true,false,1,0,1");
+}
