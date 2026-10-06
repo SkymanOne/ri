@@ -320,11 +320,15 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<(), NpmError> {
     Ok(())
 }
 
+/// The `package.json` of the package at `dir`, when it reads and parses. A
+/// byte order mark is ignored, as npm ignores it.
+fn read_manifest(dir: &Path) -> Option<Value> {
+    yapi_types::json::parse(&std::fs::read_to_string(dir.join("package.json")).ok()?).ok()
+}
+
 /// The version of the package installed at `dir`, if any.
 pub(crate) fn installed_version(dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(dir.join("package.json")).ok()?;
-    let manifest: Value = serde_json::from_str(&text).ok()?;
-    manifest["version"].as_str().map(str::to_owned)
+    read_manifest(dir)?["version"].as_str().map(str::to_owned)
 }
 
 /// Installs into `root/node_modules`, hoisting dependencies there when Node's
@@ -427,10 +431,7 @@ fn root_manifest(root: &Path) -> Result<Map<String, Value>, NpmError> {
     if !ignore.exists() {
         std::fs::write(&ignore, "*\n!.gitignore\n").map_err(io(&ignore))?;
     }
-    let path = root.join("package.json");
-    let manifest = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    let manifest = read_manifest(root)
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_else(|| {
             let mut manifest = Map::new();
@@ -481,10 +482,9 @@ pub async fn install(
 /// Installs the dependencies of the package in `dir` (a git checkout) into
 /// its own `node_modules`.
 pub async fn install_dependencies(npm: &mut Npm, dir: &Path) -> Result<(), NpmError> {
-    let Ok(text) = std::fs::read_to_string(dir.join("package.json")) else {
+    let Some(manifest) = read_manifest(dir) else {
         return Ok(());
     };
-    let manifest: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     let mut installer = Installer {
         npm,
         root_modules: dir.join("node_modules"),
@@ -529,10 +529,7 @@ fn prune(modules: &Path, roots: &[String]) {
             continue;
         }
         reached.push(dir.clone());
-        let manifest: Value = std::fs::read_to_string(dir.join("package.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or(Value::Null);
+        let manifest = read_manifest(&dir).unwrap_or(Value::Null);
         for key in ["dependencies", "optionalDependencies"] {
             for name in manifest[key]
                 .as_object()
@@ -599,6 +596,15 @@ mod tests {
         assert!(!satisfies("1.2.4", "1.2.3 || 2"));
         assert!(satisfies("1.2.9", "1.2.x"));
         assert!(!satisfies("1.3.0", "1.2.x"));
+    }
+
+    #[test]
+    fn reads_manifests_with_a_byte_order_mark() {
+        let dir = std::env::temp_dir().join(format!("yapi-npm-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), "\u{feff}{\"version\": \"1.2.3\"}").unwrap();
+        assert_eq!(installed_version(&dir).as_deref(), Some("1.2.3"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
