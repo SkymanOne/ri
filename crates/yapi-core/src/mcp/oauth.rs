@@ -316,8 +316,6 @@ pub struct Challenge {
     pub scope: Option<String>,
     /// `error`, such as `insufficient_scope`.
     pub error: Option<String>,
-    /// `error_description`.
-    pub error_description: Option<String>,
 }
 
 fn field(header: &str, name: &str) -> Option<String> {
@@ -350,7 +348,6 @@ pub fn parse_www_authenticate(header: Option<&str>) -> Challenge {
             .map(String::from),
         scope: field(header, "scope"),
         error: field(header, "error"),
-        error_description: field(header, "error_description"),
     }
 }
 
@@ -1275,7 +1272,6 @@ mod tests {
                 ),
                 scope: None,
                 error: Some("insufficient_scope".into()),
-                error_description: None,
             }
         );
         assert_eq!(
