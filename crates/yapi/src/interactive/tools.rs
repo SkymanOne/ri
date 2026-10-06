@@ -9,6 +9,7 @@ use std::time::Instant;
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 use serde_json::Value;
+use yapi_core::bash_executor::{sanitize_binary, strip_ansi};
 use yapi_core::tools::truncate::format_size;
 use yapi_tui::lines::{self, StyledLine, box_content_width, boxed};
 use yapi_tui::theme::Theme;
@@ -83,44 +84,6 @@ pub struct ToolDraw {
     pub result: Option<super::extension_ui::RemoteView>,
     /// Requests sent for the call and the result, to drop stale answers.
     pub requests: [u64; 2],
-}
-
-/// Strips escape sequences and control characters other than tab and newline.
-pub fn sanitize(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\x1b' => match chars.peek() {
-                Some('[') => {
-                    chars.next();
-                    for next in chars.by_ref() {
-                        if ('\x40'..='\x7e').contains(&next) {
-                            break;
-                        }
-                    }
-                }
-                Some(']') => {
-                    chars.next();
-                    while let Some(next) = chars.next() {
-                        if next == '\x07' {
-                            break;
-                        }
-                        if next == '\x1b' && chars.peek() == Some(&'\\') {
-                            chars.next();
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            '\r' => {}
-            '\n' | '\t' => out.push(c),
-            c if c.is_control() => {}
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 /// pi-tui's `getImageDimensions` with the `Image` component's default: the
@@ -209,7 +172,9 @@ pub fn text_output(result: &ToolResult) -> String {
         .content
         .iter()
         .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(sanitize(&text.text)),
+            ContentBlock::Text(text) => {
+                Some(sanitize_binary(&strip_ansi(&text.text)).replace('\r', ""))
+            }
             _ => None,
         })
         .collect();
@@ -1402,11 +1367,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_durations_and_sanitizes() {
+    fn formats_durations() {
         assert_eq!(format_duration(1234), "1.2s");
         assert_eq!(format_duration(125_000), "2m 5s");
         assert_eq!(format_duration(3_725_000), "1h 2m 5s");
-        assert_eq!(sanitize("a\x1b[31mb\x1b[0m\r\nc\x07"), "ab\nc");
+    }
+
+    #[test]
+    fn text_output_sanitizes_as_pi() {
+        let result = |text: &str| ToolResult {
+            content: vec![ContentBlock::text(text)],
+            ..ToolResult::default()
+        };
+        assert_eq!(text_output(&result("a\x1b[31mb\x1b[0m\r\nc\x07")), "ab\nc");
+        // pi keeps DEL and C1 controls, drops interlinear annotations, and
+        // strips charset selections and 8-bit CSI sequences whole.
+        assert_eq!(
+            text_output(&result("a\x7fb\u{85}c\u{fff9}d\x1b(Be\u{9b}31mf\tg")),
+            "a\x7fb\u{85}cdef\tg"
+        );
     }
 
     #[test]
