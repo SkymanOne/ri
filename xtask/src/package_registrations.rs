@@ -244,7 +244,7 @@ enum Outcome {
     /// model, which sandboxes pi's side, stops one of its extensions.
     PiFails,
     /// yapi's npm client fails where pi's install succeeds.
-    RiInstall,
+    YapiInstall,
     /// The registrations differ, or yapi fails to load an installed package.
     Differs,
 }
@@ -261,7 +261,7 @@ fn outcome(got: &Value, want: &Value) -> Outcome {
         return Outcome::PiFails;
     }
     if got.get("install").is_some() {
-        return Outcome::RiInstall;
+        return Outcome::YapiInstall;
     }
     let same = ["extensions", "errors"]
         .iter()
@@ -385,7 +385,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
             match result {
                 Outcome::Match => "ok      ",
                 Outcome::PiFails => "pi-fails",
-                Outcome::RiInstall => "install ",
+                Outcome::YapiInstall => "install ",
                 Outcome::Differs => "DIFFER  ",
             }
         );
@@ -403,7 +403,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
         "{counted} packages: {} match pi, {} differ, {} fail to install in yapi. Skipped {} that fail in pi itself: {}",
         count(Outcome::Match),
         count(Outcome::Differs),
-        count(Outcome::RiInstall),
+        count(Outcome::YapiInstall),
         count(Outcome::PiFails),
         outcomes
             .get(&Outcome::PiFails)
