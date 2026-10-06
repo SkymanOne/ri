@@ -8,7 +8,7 @@
 mod common;
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::{cli_source, custom_entries, engine, options, scratch, session};
@@ -18,6 +18,7 @@ use yapi_core::agent_session::AgentSession;
 use yapi_core::extensions::{Extension, Mode, NoUi};
 use yapi_ext::ExtensionHost;
 use yapi_ext::codemode::CodemodeExtension;
+use yapi_types::event::AgentEvent;
 use yapi_types::message::{ContentBlock, Message, ToolResultMessage};
 
 fn codemode() -> Arc<dyn Extension> {
@@ -29,6 +30,21 @@ fn codemode() -> Arc<dyn Extension> {
 
 /// Runs each script as one codemode call of the model, then ends the run.
 async fn run(dir: &Path, scripts: &[&str]) -> (AgentSession, Faux, Vec<ToolResultMessage>) {
+    let (session, faux) = start(dir, scripts).await;
+    session.prompt("go", Vec::new()).await.unwrap();
+    let results = session
+        .messages()
+        .into_iter()
+        .filter_map(|message| match message {
+            Message::ToolResult(result) => Some(result),
+            _ => None,
+        })
+        .collect();
+    (session, faux, results)
+}
+
+/// A session whose model calls codemode with each script, then ends.
+async fn start(dir: &Path, scripts: &[&str]) -> (AgentSession, Faux) {
     let mut responses: Vec<Response> = scripts
         .iter()
         .enumerate()
@@ -45,16 +61,7 @@ async fn run(dir: &Path, scripts: &[&str]) -> (AgentSession, Faux, Vec<ToolResul
     let session = session(&faux, dir, vec![codemode()]);
     session.set_active_tools(vec!["read".into(), "bash".into(), "codemode".into()]);
     session.bind_extensions(Arc::new(NoUi), Mode::Print).await;
-    session.prompt("go", Vec::new()).await.unwrap();
-    let results = session
-        .messages()
-        .into_iter()
-        .filter_map(|message| match message {
-            Message::ToolResult(result) => Some(result),
-            _ => None,
-        })
-        .collect();
-    (session, faux, results)
+    (session, faux)
 }
 
 /// The text blocks after the result header, which is checked and dropped.
@@ -153,6 +160,79 @@ async fn scripts_call_tools_and_print_output() {
             .contains("- codemode: Run JavaScript that calls other tools")
     );
     drop(session);
+}
+
+/// Nested calls and the script's progress rows report in pi's order: a
+/// call's start, its running row, its end, its finished row. They report from
+/// the task that runs codemode, so no scheduling can reorder them (#41).
+#[tokio::test(flavor = "multi_thread")]
+async fn nested_calls_report_in_pi_order() {
+    let dir = scratch("codemode-order");
+    std::fs::write(dir.join("hello.txt"), "hi\n").unwrap();
+    let (session, _faux) = start(
+        &dir,
+        &["await tools.read({}).catch(() => 0); await tools.read({path: 'hello.txt'}); await tools.bash({command: 'echo two; exit 2'})"],
+    )
+    .await;
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let sink = log.clone();
+    session.subscribe(Box::new(move |event| {
+        let line = match event {
+            AgentEvent::ToolExecutionStart { tool_call_id, .. } => format!("start {tool_call_id}"),
+            AgentEvent::ToolExecutionEnd { tool_call_id, .. } => format!("end {tool_call_id}"),
+            // How often bash reports its output depends on timing.
+            AgentEvent::ToolExecutionUpdate {
+                parent_tool_call_id: Some(_),
+                ..
+            } => return,
+            AgentEvent::ToolExecutionUpdate {
+                tool_call_id,
+                partial_result,
+                ..
+            } => {
+                let calls = &partial_result.details.as_ref().unwrap()["calls"];
+                let rows: Vec<String> = calls
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|call| {
+                        format!(
+                            "{} {}",
+                            call["id"].as_str().unwrap(),
+                            call["status"].as_str().unwrap()
+                        )
+                    })
+                    .collect();
+                format!("update {tool_call_id} [{}]", rows.join(", "))
+            }
+            _ => return,
+        };
+        sink.lock().unwrap().push((tokio::task::try_id(), line));
+    }));
+    session.prompt("go", Vec::new()).await.unwrap();
+
+    let log = log.lock().unwrap();
+    let lines: Vec<&str> = log.iter().map(|(_, line)| line.as_str()).collect();
+    assert_eq!(
+        lines,
+        [
+            "start toolu_1",
+            "start toolu_1/1",
+            "update toolu_1 [toolu_1/? running]",
+            "end toolu_1/1",
+            "update toolu_1 [toolu_1/1 error]",
+            "start toolu_1/2",
+            "update toolu_1 [toolu_1/1 error, toolu_1/? running]",
+            "end toolu_1/2",
+            "update toolu_1 [toolu_1/1 error, toolu_1/2 ok]",
+            "start toolu_1/3",
+            "update toolu_1 [toolu_1/1 error, toolu_1/2 ok, toolu_1/? running]",
+            "end toolu_1/3",
+            "update toolu_1 [toolu_1/1 error, toolu_1/2 ok, toolu_1/3 error]",
+            "end toolu_1",
+        ]
+    );
+    assert!(log.iter().all(|(task, _)| *task == log[0].0), "{log:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
