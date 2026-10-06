@@ -141,48 +141,17 @@ pub(crate) async fn exec(payload: Value) -> Result<Value, String> {
     }))
 }
 
-/// Runs a process and blocks until it exits; the result of [`exec`].
+/// Runs a process and blocks until it exits: the result of [`exec`], or
+/// `{stdout, stderr, code, error}` when it cannot run.
 pub(crate) fn exec_sync(payload: &Value) -> Result<Value, String> {
-    let spawn = Spawn::parse(payload);
-    let mut child = match spawn.command().spawn() {
-        Ok(child) => child,
-        Err(err) => {
-            return Ok(json!({
-                "stdout": "", "stderr": "", "code": Value::Null,
-                "error": spawn_error(&spawn.command, &err),
-            }));
-        }
-    };
-    if let (Some(input), Some(mut stdin)) = (spawn.input, child.stdin.take()) {
-        std::thread::spawn(move || {
-            use std::io::Write as _;
-            let _ = stdin.write_all(input.as_bytes());
-        });
-    }
-    let deadline = spawn.timeout.map(|limit| std::time::Instant::now() + limit);
-    let mut killed = false;
-    if let Some(deadline) = deadline {
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if std::time::Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    killed = true;
-                    break;
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-                Err(_) => break,
-            }
-        }
-    }
-    let output = child.wait_with_output().map_err(|err| err.to_string())?;
-    Ok(json!({
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
-        "code": output.status.code(),
-        "signal": signal_name(&output.status),
-        "killed": killed,
-    }))
+    // Requests run on an instance's thread, outside the tokio runtime.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| err.to_string())?;
+    Ok(runtime.block_on(exec(payload.clone())).unwrap_or_else(
+        |error| json!({"stdout": "", "stderr": "", "code": Value::Null, "error": error}),
+    ))
 }
 
 /// Sends `{url, method, headers, body | bodyBase64}`; answers `{status,
@@ -279,21 +248,94 @@ fn spawn_error(command: &str, err: &std::io::Error) -> String {
     format!("spawn {command} {code}")
 }
 
+/// The signals Node names, as its `signo_string` does; others have no name.
+#[cfg(unix)]
+const SIGNALS: &[(rustix::process::Signal, &str)] = {
+    use rustix::process::Signal;
+    &[
+        (Signal::HUP, "SIGHUP"),
+        (Signal::INT, "SIGINT"),
+        (Signal::QUIT, "SIGQUIT"),
+        (Signal::ILL, "SIGILL"),
+        (Signal::TRAP, "SIGTRAP"),
+        (Signal::ABORT, "SIGABRT"),
+        (Signal::BUS, "SIGBUS"),
+        (Signal::FPE, "SIGFPE"),
+        (Signal::KILL, "SIGKILL"),
+        (Signal::USR1, "SIGUSR1"),
+        (Signal::SEGV, "SIGSEGV"),
+        (Signal::USR2, "SIGUSR2"),
+        (Signal::PIPE, "SIGPIPE"),
+        (Signal::ALARM, "SIGALRM"),
+        (Signal::TERM, "SIGTERM"),
+        (Signal::CHILD, "SIGCHLD"),
+        #[cfg(target_os = "linux")]
+        (Signal::STKFLT, "SIGSTKFLT"),
+        (Signal::CONT, "SIGCONT"),
+        (Signal::STOP, "SIGSTOP"),
+        (Signal::TSTP, "SIGTSTP"),
+        (Signal::TTIN, "SIGTTIN"),
+        (Signal::TTOU, "SIGTTOU"),
+        (Signal::URG, "SIGURG"),
+        (Signal::XCPU, "SIGXCPU"),
+        (Signal::XFSZ, "SIGXFSZ"),
+        (Signal::VTALARM, "SIGVTALRM"),
+        (Signal::PROF, "SIGPROF"),
+        (Signal::WINCH, "SIGWINCH"),
+        (Signal::IO, "SIGIO"),
+        #[cfg(target_os = "linux")]
+        (Signal::POWER, "SIGPWR"),
+        #[cfg(target_os = "macos")]
+        (Signal::INFO, "SIGINFO"),
+        (Signal::SYS, "SIGSYS"),
+    ]
+};
+
+/// The name of the signal that ended a process, as Node reports it.
 fn signal_name(status: &std::process::ExitStatus) -> Option<&'static str> {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt as _;
-        status.signal().map(|signal| match signal {
-            1 => "SIGHUP",
-            2 => "SIGINT",
-            9 => "SIGKILL",
-            15 => "SIGTERM",
-            _ => "SIGTERM",
-        })
+        let signal = status.signal()?;
+        SIGNALS
+            .iter()
+            .find(|(known, _)| known.as_raw() == signal)
+            .map(|(_, name)| *name)
     }
     #[cfg(not(unix))]
     {
         let _ = status;
         None
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_signals_as_node_does() {
+        for name in ["SEGV", "USR1", "TERM"] {
+            let script = format!("kill -s {name} $$");
+            let result = exec_sync(&json!({"command": "/bin/sh", "args": ["-c", script]})).unwrap();
+            assert_eq!(result["signal"], format!("SIG{name}"), "{result}");
+            assert_eq!(result["code"], Value::Null, "{result}");
+        }
+    }
+
+    /// Output beyond a pipe's buffer must not stall a process until its
+    /// timeout kills it; a timeout stops it with SIGTERM, as in Node.
+    #[test]
+    fn exec_sync_reads_output_while_it_waits() {
+        let run = |script: &str, timeout: u64| {
+            exec_sync(&json!({"command": "/bin/sh", "args": ["-c", script], "timeout": timeout}))
+                .unwrap()
+        };
+        let result = run("head -c 200000 /dev/zero", 5000);
+        assert_eq!(result["killed"], false);
+        assert_eq!(result["stdout"].as_str().map(str::len), Some(200_000));
+        let result = run("sleep 10", 100);
+        assert_eq!(result["killed"], true);
+        assert_eq!(result["signal"], "SIGTERM");
     }
 }

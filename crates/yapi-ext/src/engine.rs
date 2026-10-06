@@ -22,7 +22,7 @@ const YAPI_JS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/yapi-js.wasm.de
 pub(crate) const WASM_STACK: usize = 8 * 1024 * 1024;
 
 /// How often the epoch advances; guest time limits are checked at this rate.
-pub(crate) const TICK: Duration = Duration::from_millis(10);
+const TICK: Duration = Duration::from_millis(10);
 
 wasmtime::component::bindgen!({ path: "../../wit/since_v0.1.0", world: "extension" });
 

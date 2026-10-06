@@ -1,4 +1,4 @@
-//! Helpers shared by the session tests.
+//! Helpers shared by the integration tests.
 #![allow(
     clippy::unwrap_used,
     dead_code,

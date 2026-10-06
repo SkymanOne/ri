@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use oxc::allocator::Allocator;
 use oxc::codegen::Codegen;
@@ -33,11 +33,11 @@ enum Format {
     Json,
 }
 
-/// A file prepared for the guest.
+/// A file prepared for the guest; cheap to clone.
 #[derive(Clone, Debug)]
 struct Prepared {
     format: Format,
-    source: String,
+    source: Arc<str>,
 }
 
 /// Resolves and prepares modules for one instance.
@@ -125,7 +125,7 @@ impl Loader {
     pub(crate) fn load(&self, path: &str) -> Result<Value, String> {
         let prepared = self.prepare(Path::new(path))?;
         Ok(match prepared.format {
-            Format::Module => json!({ "source": prepared.source }),
+            Format::Module => json!({ "source": &*prepared.source }),
             Format::Json => json!({ "source": format!("export default {};", prepared.source) }),
             Format::CommonJs => json!({ "kind": "cjs" }),
         })
@@ -137,8 +137,8 @@ impl Loader {
     pub(crate) fn source(&self, path: &str) -> Result<Value, String> {
         let prepared = self.prepare(Path::new(path))?;
         Ok(match prepared.format {
-            Format::Json => json!({ "source": prepared.source, "kind": "json" }),
-            Format::CommonJs => json!({ "source": prepared.source, "kind": "cjs" }),
+            Format::Json => json!({ "source": &*prepared.source, "kind": "json" }),
+            Format::CommonJs => json!({ "source": &*prepared.source, "kind": "cjs" }),
             Format::Module => {
                 return Err(format!(
                     "require() of ES module {path} is not supported in yapi extensions; use import"
@@ -148,10 +148,7 @@ impl Loader {
     }
 
     fn prepare(&self, path: &Path) -> Result<Prepared, String> {
-        let mut prepared = self
-            .prepared
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut prepared = yapi_types::sync::lock(&self.prepared);
         if let Some(found) = prepared.get(path) {
             return Ok(found.clone());
         }
@@ -175,7 +172,7 @@ impl Loader {
                 .map_err(|err| format!("{}: {err}", file.display()))?;
             Prepared {
                 format: Format::Json,
-                source: text.to_owned(),
+                source: text.into(),
             }
         } else {
             self.transpile_cached(file, text)?
@@ -205,7 +202,7 @@ impl Loader {
             };
             return Ok(Prepared {
                 format,
-                source: source.to_owned(),
+                source: source.into(),
             });
         }
         let prepared = transpile(path, text)?;
@@ -292,7 +289,7 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
     if common_js {
         return Ok(Prepared {
             format: Format::CommonJs,
-            source,
+            source: source.into(),
         });
     }
     // One line, so stack traces keep the file's line numbers.
@@ -323,7 +320,7 @@ fn transpile(path: &Path, text: &str) -> Result<Prepared, String> {
     source.insert_str(0, &prelude);
     Ok(Prepared {
         format: Format::Module,
-        source,
+        source: source.into(),
     })
 }
 
