@@ -5,6 +5,8 @@
 use ratatui_core::style::Style;
 use ratatui_core::text::{Line, Span};
 
+use yapi_types::autocomplete::AutocompleteItem;
+
 use crate::keybindings::Keybindings;
 use crate::text::{truncate_to_width, visible_width};
 
@@ -21,6 +23,27 @@ pub struct SelectItem {
     pub label: String,
     /// Shown in a second column when there is room.
     pub description: Option<String>,
+}
+
+/// pi-tui's autocomplete items are select list items.
+impl From<AutocompleteItem> for SelectItem {
+    fn from(item: AutocompleteItem) -> SelectItem {
+        SelectItem {
+            value: item.value,
+            label: item.label,
+            description: item.description,
+        }
+    }
+}
+
+impl From<SelectItem> for AutocompleteItem {
+    fn from(item: SelectItem) -> AutocompleteItem {
+        AutocompleteItem {
+            value: item.value,
+            label: item.label,
+            description: item.description,
+        }
+    }
 }
 
 impl SelectItem {

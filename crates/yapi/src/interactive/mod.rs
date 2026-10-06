@@ -757,15 +757,19 @@ impl App {
         else {
             return;
         };
-        let (lines, line, col, force) = completions::request(request);
-        let suggestions = builtin.suggestions(&lines, line, col, force);
-        if builtin.pending() {
-            return;
-        }
+        let suggestions = match completions::request(request) {
+            Some((at, force)) => {
+                let suggestions =
+                    builtin.suggestions(&at.lines, at.cursor_line, at.cursor_col, force);
+                if builtin.pending() {
+                    return;
+                }
+                suggestions
+            }
+            None => None,
+        };
         if let Some((_, reply)) = self.waiting_suggestions.take() {
-            let _ = reply.send(suggestions.map_or(Value::Null, |suggestions| {
-                completions::suggestions_json(&suggestions)
-            }));
+            let _ = reply.send(suggestions.map_or(Value::Null, completions::suggestions_json));
         }
     }
 

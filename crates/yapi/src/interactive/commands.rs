@@ -253,14 +253,7 @@ pub fn autocomplete(
                 complete: Some(Box::new(move |prefix: &str| {
                     match owner.complete(&name, prefix) {
                         Some(items) => Arguments::Ready(Some(
-                            items
-                                .into_iter()
-                                .map(|item| SelectItem {
-                                    value: item.value,
-                                    label: item.label,
-                                    description: item.description,
-                                })
-                                .collect(),
+                            items.into_iter().map(SelectItem::from).collect(),
                         )),
                         None if owner.completing(&name, prefix) => Arguments::Pending,
                         None => Arguments::Ready(None),

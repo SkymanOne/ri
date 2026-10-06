@@ -7,89 +7,93 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use serde::Deserialize;
 use serde_json::{Value, json};
 use yapi_core::extensions::ComponentHost;
 use yapi_tui::autocomplete::{
     AutocompleteProvider, Completion, Suggestions, apply_completion, should_trigger_file_completion,
 };
 use yapi_tui::select_list::SelectItem;
+use yapi_types::autocomplete::{AutocompleteItem, AutocompleteSuggestions, EditorState};
 use yapi_types::js::{byte_index, utf16_index};
 use yapi_types::sync::lock;
 
-/// The lines and cursor of pi's provider arguments, in byte columns.
-fn cursor(value: &Value) -> (Vec<String>, usize, usize) {
-    let lines: Vec<String> = value["lines"]
-        .as_array()
-        .map(|lines| {
-            lines
-                .iter()
-                .map(|line| line.as_str().unwrap_or_default().to_owned())
-                .collect()
-        })
-        .unwrap_or_default();
-    let line = value["cursorLine"].as_u64().unwrap_or(0) as usize;
-    let units = value["cursorCol"].as_u64().unwrap_or(0) as usize;
-    let col = byte_index(lines.get(line).map_or("", String::as_str), units);
-    (lines, line, col)
-}
-
-/// pi's provider arguments for the cursor at byte column `col`.
-fn arguments(lines: &[String], line: usize, col: usize, force: bool) -> Value {
-    let units = utf16_index(lines.get(line).map_or("", String::as_str), col);
-    json!({"lines": lines, "cursorLine": line, "cursorCol": units, "force": force})
-}
-
-fn item(value: &Value) -> SelectItem {
-    let text = |key: &str| value[key].as_str().map(str::to_owned);
-    let item_value = text("value").unwrap_or_default();
-    SelectItem {
-        label: text("label").unwrap_or_else(|| item_value.clone()),
-        value: item_value,
-        description: text("description"),
+/// An editor state from JavaScript, in byte columns.
+fn from_js(state: EditorState) -> Completion {
+    let line = state
+        .lines
+        .get(state.cursor_line)
+        .map_or("", String::as_str);
+    Completion {
+        cursor_col: byte_index(line, state.cursor_col),
+        cursor_line: state.cursor_line,
+        lines: state.lines,
     }
 }
 
-fn completion(value: &Value) -> Option<Completion> {
-    value.is_object().then(|| {
-        let (lines, cursor_line, cursor_col) = cursor(value);
-        Completion {
-            lines,
-            cursor_line,
-            cursor_col,
-        }
-    })
+/// The editor state at byte column `col`, for JavaScript.
+fn to_js(lines: &[String], line: usize, col: usize) -> EditorState {
+    EditorState {
+        lines: lines.to_vec(),
+        cursor_line: line,
+        cursor_col: utf16_index(lines.get(line).map_or("", String::as_str), col),
+    }
 }
 
-/// The lines, cursor and `force` flag of a request for suggestions from an
-/// extension, in byte columns.
-pub(super) fn request(value: &Value) -> (Vec<String>, usize, usize, bool) {
-    let (lines, line, col) = cursor(value);
-    (lines, line, col, value["force"] == true)
+/// The editor state and `force` flag of an extension's request for
+/// suggestions, in byte columns; `None` when it is malformed.
+pub(super) fn request(value: &Value) -> Option<(Completion, bool)> {
+    let state = serde_json::from_value(value.clone()).ok()?;
+    Some((from_js(state), value["force"] == true))
 }
 
 /// Suggestions as pi's `AutocompleteSuggestions`.
-pub(super) fn suggestions_json(suggestions: &Suggestions) -> Value {
-    let items: Vec<Value> = suggestions
-        .items
-        .iter()
-        .map(|item| json!({"value": item.value, "label": item.label, "description": item.description}))
-        .collect();
-    json!({"prefix": suggestions.prefix, "items": items})
+pub(super) fn suggestions_json(suggestions: Suggestions) -> Value {
+    let suggestions = AutocompleteSuggestions {
+        items: suggestions
+            .items
+            .into_iter()
+            .map(AutocompleteItem::from)
+            .collect(),
+        prefix: suggestions.prefix,
+    };
+    serde_json::to_value(suggestions).unwrap_or(Value::Null)
 }
 
-/// The built-in provider's `applyCompletion` for pi's arguments `request`.
+/// The built-in provider's `applyCompletion` for an extension's request:
+/// pi's provider arguments with `item` and `prefix`.
 pub(super) fn apply(request: &Value) -> Value {
-    let (lines, line, col) = cursor(request);
+    let (Ok(state), Ok(item)) = (
+        serde_json::from_value::<EditorState>(request.clone()),
+        serde_json::from_value::<AutocompleteItem>(request["item"].clone()),
+    ) else {
+        return Value::Null;
+    };
+    let at = from_js(state);
     let prefix = request["prefix"].as_str().unwrap_or_default();
-    let applied = apply_completion(&lines, line, col, &item(&request["item"]), prefix);
-    let units = utf16_index(
-        applied
-            .lines
-            .get(applied.cursor_line)
-            .map_or("", String::as_str),
-        applied.cursor_col,
+    let applied = apply_completion(
+        &at.lines,
+        at.cursor_line,
+        at.cursor_col,
+        &item.into(),
+        prefix,
     );
-    json!({"lines": applied.lines, "cursorLine": applied.cursor_line, "cursorCol": units})
+    serde_json::to_value(to_js(
+        &applied.lines,
+        applied.cursor_line,
+        applied.cursor_col,
+    ))
+    .unwrap_or(Value::Null)
+}
+
+/// What the extension runtime answers the editor: the composed providers'
+/// suggestions and what applying each one gives.
+#[derive(Deserialize)]
+struct Answer {
+    #[serde(flatten)]
+    suggestions: AutocompleteSuggestions,
+    #[serde(default)]
+    applied: Vec<Option<EditorState>>,
 }
 
 /// The editor's position when it asked: lines, cursor and `force`.
@@ -158,7 +162,8 @@ impl AutocompleteProvider for ExtensionCompletions {
             });
         }
         self.pending.store(true, Ordering::Relaxed);
-        let arguments = arguments(lines, line, col, force);
+        let mut arguments = serde_json::to_value(to_js(lines, line, col)).unwrap_or(Value::Null);
+        arguments["force"] = json!(force);
         let (providers, last, notify) = (
             self.providers.clone(),
             self.last.clone(),
@@ -166,18 +171,21 @@ impl AutocompleteProvider for ExtensionCompletions {
         );
         tokio::spawn(async move {
             let value = providers.suggestions(arguments).await;
-            let answered = value["items"]
-                .as_array()
-                .filter(|items| !items.is_empty())
-                .map(|items| {
+            let answered = serde_json::from_value::<Answer>(value)
+                .ok()
+                .filter(|answer| !answer.suggestions.items.is_empty())
+                .map(|answer| {
                     let suggestions = Suggestions {
-                        items: items.iter().map(item).collect(),
-                        prefix: value["prefix"].as_str().unwrap_or_default().to_owned(),
+                        items: answer
+                            .suggestions
+                            .items
+                            .into_iter()
+                            .map(SelectItem::from)
+                            .collect(),
+                        prefix: answer.suggestions.prefix,
                     };
-                    let applied = (0..items.len())
-                        .map(|index| completion(&value["applied"][index]))
-                        .collect();
-                    (suggestions, applied)
+                    let applied = answer.applied.into_iter().map(|state| state.map(from_js));
+                    (suggestions, applied.collect())
                 });
             // A later request replaced this one.
             match lock(&last).as_mut() {

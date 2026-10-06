@@ -15,11 +15,11 @@ use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
-    Command, Completion, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode,
-    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
-    WorkingIndicator,
+    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
+    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
+use yapi_types::autocomplete::AutocompleteItem;
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
@@ -317,7 +317,7 @@ struct JsExtension {
 /// An argument completion request: under way, or answered at a time.
 enum Fetched {
     Pending,
-    Ready(std::time::Instant, Option<Vec<Completion>>),
+    Ready(std::time::Instant, Option<Vec<AutocompleteItem>>),
 }
 
 /// How long fetched completions are reused before being asked for again.
@@ -366,7 +366,7 @@ impl Extension for JsExtension {
     /// a request the guest has not answered yet starts it in the background,
     /// offers nothing while [`Extension::completing`], and has the editor ask
     /// again once it is answered.
-    fn complete(&self, command: &str, prefix: &str) -> Option<Vec<Completion>> {
+    fn complete(&self, command: &str, prefix: &str) -> Option<Vec<AutocompleteItem>> {
         let completes = list(&self.description["commands"])
             .iter()
             .any(|entry| entry["name"] == command && entry["hasCompletions"] == true);
@@ -396,20 +396,7 @@ impl Extension for JsExtension {
                 .call("complete", &payload)
                 .await
                 .ok()
-                .and_then(|value| {
-                    value.as_array().map(|items| {
-                        items
-                            .iter()
-                            .map(|item| Completion {
-                                value: text(&item["value"]),
-                                label: item["label"]
-                                    .as_str()
-                                    .map_or_else(|| text(&item["value"]), str::to_owned),
-                                description: item["description"].as_str().map(str::to_owned),
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                })
+                .and_then(|value| serde_json::from_value::<Vec<AutocompleteItem>>(value).ok())
                 .filter(|items| !items.is_empty());
             lock(&cache).insert(key, Fetched::Ready(std::time::Instant::now(), items));
             if let Some(session) = host.bridge.session() {

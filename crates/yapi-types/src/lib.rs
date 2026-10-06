@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod autocomplete;
 pub mod classify;
 pub mod collate;
 pub mod config;

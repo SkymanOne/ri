@@ -24,6 +24,7 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
+use yapi_types::autocomplete::AutocompleteItem;
 use yapi_types::rpc::SourceInfo;
 
 use crate::agent_session::WeakSession;
@@ -140,17 +141,6 @@ pub struct Command {
     pub name: String,
     /// What it does.
     pub description: String,
-}
-
-/// A completion for a command's argument.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Completion {
-    /// Text that replaces the argument.
-    pub value: String,
-    /// Shown in the list.
-    pub label: String,
-    /// Shown next to the label.
-    pub description: Option<String>,
 }
 
 /// An extension command with the name it is invoked by; pi's
@@ -333,7 +323,7 @@ pub trait Extension: Send + Sync {
     }
 
     /// Completions for the argument of `command`; `None` offers none.
-    fn complete(&self, _command: &str, _prefix: &str) -> Option<Vec<Completion>> {
+    fn complete(&self, _command: &str, _prefix: &str) -> Option<Vec<AutocompleteItem>> {
         None
     }
 

@@ -16,6 +16,7 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio::sync::watch;
+use yapi_types::autocomplete::AutocompleteItem;
 use yapi_types::config::ConfigFile;
 use yapi_types::rpc::SourceInfo;
 use yapi_types::sync::lock;
@@ -31,7 +32,7 @@ use super::tools::{
 use crate::extensions::codemode;
 use crate::extensions::tool_search::{TOOL_SEARCH_TOOL_NAME, is_tool_search};
 use crate::extensions::{
-    Command, Completion, Context, DialogOptions, Extension, ExtensionUi, Mode, NotifyKind, Tools,
+    Command, Context, DialogOptions, Extension, ExtensionUi, Mode, NotifyKind, Tools,
     builtin_source,
 };
 use crate::tools::{Exposure, Namespace, RegisteredTool};
@@ -920,7 +921,7 @@ impl Extension for McpExtension {
         }]
     }
 
-    fn complete(&self, _command: &str, prefix: &str) -> Option<Vec<Completion>> {
+    fn complete(&self, _command: &str, prefix: &str) -> Option<Vec<AutocompleteItem>> {
         let words: Vec<&str> = prefix.split_whitespace().collect();
         let trailing = prefix.ends_with(char::is_whitespace);
         let (action, server) = match (words.as_slice(), trailing) {
@@ -935,7 +936,7 @@ impl Extension for McpExtension {
                 ["login", "logout", "reconnect"]
                     .into_iter()
                     .filter(|item| item.starts_with(action))
-                    .map(|item| Completion {
+                    .map(|item| AutocompleteItem {
                         value: format!("{item} "),
                         label: item.into(),
                         description: None,
@@ -947,7 +948,7 @@ impl Extension for McpExtension {
             return None;
         }
         let shared = lock(&self.shared);
-        let items: Vec<Completion> = shared
+        let items: Vec<AutocompleteItem> = shared
             .servers
             .iter()
             .filter(|candidate| {
@@ -958,7 +959,7 @@ impl Extension for McpExtension {
                 }
             })
             .filter(|candidate| candidate.entry.name.starts_with(server))
-            .map(|candidate| Completion {
+            .map(|candidate| AutocompleteItem {
                 value: format!("{action} {}", candidate.entry.name),
                 label: candidate.entry.name.clone(),
                 description: Some(describe_state(candidate, true)),
