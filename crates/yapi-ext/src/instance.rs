@@ -274,30 +274,32 @@ impl Instance {
 
     /// Runs dispatch `kind` with `payload` and waits for its result.
     pub async fn call(&self, kind: &str, payload: &Value) -> Result<Value, Error> {
-        let payload = yapi_types::json::stringify(payload);
-        let (reply, result) = oneshot::channel();
-        self.commands
-            .send(Command::Call {
-                kind: kind.to_owned(),
-                payload,
-                reply,
-            })
-            .map_err(|_| Error::Stopped)?;
+        let result = self.send_call(kind, payload).ok_or(Error::Stopped)?;
         result.await.map_err(|_| Error::Stopped)?
     }
 
     /// Runs dispatch `kind` with `payload` without waiting for its result,
     /// after the calls and input sent before it.
     pub fn post(&self, kind: &str, payload: &Value) {
-        let Ok(payload) = yapi_types::json::to_string(payload) else {
-            return;
-        };
-        let (reply, _) = oneshot::channel();
-        let _ = self.commands.send(Command::Call {
-            kind: kind.to_owned(),
-            payload,
-            reply,
-        });
+        self.send_call(kind, payload);
+    }
+
+    /// Queues dispatch `kind`; the receiver of its result, or `None` once the
+    /// instance stopped.
+    fn send_call(
+        &self,
+        kind: &str,
+        payload: &Value,
+    ) -> Option<oneshot::Receiver<Result<Value, Error>>> {
+        let (reply, result) = oneshot::channel();
+        self.commands
+            .send(Command::Call {
+                kind: kind.to_owned(),
+                payload: yapi_types::json::stringify(payload),
+                reply,
+            })
+            .ok()?;
+        Some(result)
     }
 
     /// The lines of component `handle` at `width` columns; empty when the
