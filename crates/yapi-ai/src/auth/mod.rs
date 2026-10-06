@@ -363,6 +363,16 @@ pub(crate) fn post_form(
         .body(form(fields))
 }
 
+/// `Date.now() + expires_in * 1000 - margin`, in milliseconds.
+pub(crate) fn expiry(expires_in: f64, margin_ms: f64) -> u64 {
+    let value = now_ms() as f64 + expires_in * 1000.0 - margin_ms;
+    if value.is_finite() && value > 0.0 {
+        value as u64
+    } else {
+        0
+    }
+}
+
 /// A JSON object of string fields, in order.
 pub(crate) fn object(pairs: &[(&str, &str)]) -> serde_json::Value {
     pairs.iter().copied().collect()

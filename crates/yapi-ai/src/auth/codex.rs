@@ -6,12 +6,11 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::anthropic::expiry;
 use super::callback::{Received, callback_or_manual, start_code_server};
 use super::device::{Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    callback_host, error_text, form, parse_authorization_input, pkce, send,
+    callback_host, error_text, expiry, form, parse_authorization_input, pkce, send,
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";

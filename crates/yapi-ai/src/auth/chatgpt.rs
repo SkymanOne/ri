@@ -7,11 +7,10 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 use yapi_types::auth::OAuthCredential;
 
-use super::anthropic::expiry;
 use super::callback::{Reply, Server, error_page, query, success_page};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    callback_host, error_text, form, json_body, pkce, post_form, send,
+    callback_host, error_text, expiry, form, json_body, pkce, post_form, send,
 };
 
 /// Every sign-in registers a new client under this id; the callback carries the issued one.

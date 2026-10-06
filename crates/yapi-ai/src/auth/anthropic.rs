@@ -9,7 +9,7 @@ use yapi_types::auth::OAuthCredential;
 
 use super::callback::{Received, callback_or_manual, start_code_server};
 use super::{
-    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, callback_host, now_ms,
+    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, callback_host, expiry,
     parse_authorization_input, pkce,
 };
 
@@ -60,16 +60,6 @@ fn credential(token: Token) -> OAuthCredential {
         refresh: token.refresh,
         expires: expiry(token.expires_in, EXPIRY_MARGIN_MS),
         extra: Map::new(),
-    }
-}
-
-/// `Date.now() + expires_in * 1000 - margin`, in milliseconds.
-pub(crate) fn expiry(expires_in: f64, margin_ms: f64) -> u64 {
-    let value = now_ms() as f64 + expires_in * 1000.0 - margin_ms;
-    if value.is_finite() && value > 0.0 {
-        value as u64
-    } else {
-        0
     }
 }
 
