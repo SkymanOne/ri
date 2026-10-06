@@ -142,6 +142,26 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 [Native extension examples](native-examples.md) walks through five complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter and a minimal starting point.
 
+### Host requests
+
+`request(kind, payload)` sends a request to yapi and returns its JSON answer. yapi supports these kinds for native extensions:
+
+| Kind | Payload | Answer |
+|---|---|---|
+| `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats the message as console output from a Pi extension. |
+| `cwd` | `{}` | The working folder extensions see, as a string |
+| `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all optional except `command` | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits |
+| `ui.notify` | `{"message", "type"}`, with `type` one of `info`, `warning` and `error`, or left out | `null`, as Pi's `ctx.ui.notify` |
+| `session.sendMessage` | `{"message": {"customType", "content", "display", "details"}, "options": {"triggerTurn", "deliverAs"}}` | `null`, as Pi's `pi.sendMessage` |
+| `session.appendEntry` | `{"customType", "data"}` | `null`, as Pi's `pi.appendEntry` |
+| `session.read` | `{"method", "args"}` | The result of Pi's `ctx.sessionManager.<method>(...args)` |
+
+`exec.sync` runs `command` with the strings in `args` and waits for it. Without `cwd` the process starts in yapi's working folder. `env` replaces the whole environment, `input` is written to standard input, and `timeout` kills the process after that many milliseconds. `code` is `null` when a signal ended the process, and `killed` is `true` when the timeout did. A process that cannot start answers `{"stdout": "", "stderr": "", "code": null, "error"}`, where `error` is Node's spawn error, such as `spawn git ENOENT`. The request fails when the extension may not run processes.
+
+`session.read` takes the method's arguments as the array `args`, such as `["<entry id>"]` for `getEntry`. The methods are `getCwd`, `getSessionDir`, `getSessionId`, `getSessionFile`, `getSessionName`, `isPersisted`, `getHeader`, `getEntries`, `getEntry`, `getChildren`, `getLabel`, `getLeafId`, `getLeafEntry`, `getBranch` and `buildSessionContext`. Entries have the shapes of Pi's session files.
+
+`ui.notify` and the `session` requests fail while the init function runs, before yapi binds the extension to a session. Every other kind is internal to yapi and may change or disappear in any release.
+
 ## Limits
 
 Handlers run synchronously, and host actions answer at once. Asynchronous host operations such as timers and HTTP requests are planned. Extension UI components are available to Pi extensions only.

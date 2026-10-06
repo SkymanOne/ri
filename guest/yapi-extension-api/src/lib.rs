@@ -1,5 +1,10 @@
 #![doc = env!("CARGO_PKG_DESCRIPTION")]
 //!
+//! Native WebAssembly extensions are unstable until yapi 1.0. The WIT world,
+//! the Rust SDK and the host requests they use may change in any release
+//! before then, and extensions may need to be rebuilt. Pi extensions from npm
+//! use Pi's extension API and are not affected.
+//!
 //! An extension is a `cdylib` built for `wasm32-wasip2`. Its init function
 //! registers what it offers; [`extension!`] exports it:
 //!
@@ -282,7 +287,41 @@ impl Api {
     }
 }
 
-/// Sends request `kind` to the host and returns its answer.
+/// Sends request `kind` with JSON `payload` to the host and returns its
+/// answer, `null` when the host answers nothing. A request the host refuses
+/// returns its message as the error.
+///
+/// yapi supports these kinds for native extensions:
+///
+/// | Kind | Payload | Answer |
+/// |---|---|---|
+/// | `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats `message` as console output from a Pi extension. |
+/// | `cwd` | `{}` | The working directory extensions see, as a string. |
+/// | `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all but `command` optional | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits. See below. |
+/// | `ui.notify` | `{"message", "type"}`, with `type` one of `info`, `warning` and `error`, or absent | `null`. Pi's `ctx.ui.notify`. |
+/// | `session.sendMessage` | `{"message": {"customType", "content", "display", "details"}, "options": {"triggerTurn", "deliverAs"}}` | `null`. Pi's `pi.sendMessage`, with the same message and options. |
+/// | `session.appendEntry` | `{"customType", "data"}` | `null`. Pi's `pi.appendEntry`. |
+/// | `session.read` | `{"method", "args"}` | The result of Pi's `ctx.sessionManager.<method>(...args)`. See below. |
+///
+/// `exec.sync` runs `command` with the strings in `args` and waits for it.
+/// `cwd` defaults to yapi's working directory, `env` replaces the whole
+/// environment, `input` is written to standard input, and `timeout` kills the
+/// process after that many milliseconds. `code` is `null` when a signal ended
+/// the process, and `killed` is `true` when the timeout did. A process that
+/// cannot start answers `{"stdout": "", "stderr": "", "code": null, "error"}`,
+/// where `error` is Node's spawn error, such as `spawn git ENOENT`. The
+/// request fails when the extension may not run processes.
+///
+/// `session.read` takes the method's arguments as the array `args`, such as
+/// `["<entry id>"]` for `getEntry`. The methods are `getCwd`,
+/// `getSessionDir`, `getSessionId`, `getSessionFile`, `getSessionName`,
+/// `isPersisted`, `getHeader`, `getEntries`, `getEntry`, `getChildren`,
+/// `getLabel`, `getLeafId`, `getLeafEntry`, `getBranch` and
+/// `buildSessionContext`. Entries have the shapes of Pi's session files.
+///
+/// `ui.notify` and the `session` requests fail while the init function runs,
+/// before yapi binds the extension to a session. Every other kind is internal
+/// to yapi and unstable: it may change or disappear in any release.
 pub fn request(kind: &str, payload: &Value) -> Result<Value, String> {
     let text = host::request(kind, &payload.to_string())?;
     if text.is_empty() {
