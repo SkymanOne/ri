@@ -1,6 +1,6 @@
 {
   "exitCode": 1,
   "stdout": "",
-  "stderr": "No API key found for anthropic.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <sign-in help>\n",
+  "stderr": "No API key found for anthropic.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <pi docs>/providers.md\n  <pi docs>/models.md\n",
   "requests": []
 }

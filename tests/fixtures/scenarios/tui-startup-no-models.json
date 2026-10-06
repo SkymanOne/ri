@@ -5,7 +5,8 @@
   "requests": [],
   "screen": [
     " Warning: No models available. Use /login to log into a provider via OAuth or API key. See:",
-    "   <sign-in help>",
+    "   <pi docs>/providers.md",
+    "   <pi docs>/models.md",
     "",
     "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "",

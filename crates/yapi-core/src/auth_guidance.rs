@@ -1,15 +1,24 @@
 //! What to tell the user when no model or credential is usable.
 //!
 //! Port of `packages/coding-agent/src/core/auth-guidance.ts` in pi `v1.0.0`.
-//! pi points to the docs in its install; yapi ships none, so it points to its
-//! documentation site.
 
-/// Where yapi documents providers and sign-in.
-pub const PROVIDER_DOCS: &str = "https://skymanone.github.io/yapi/models.html";
+/// pi's docs, in the local docs or online.
+fn pi_docs() -> String {
+    crate::docs::Locations::find(&crate::config::agent_dir()).pi_docs
+}
+
+/// The page on providers and signing in to them, pi's
+/// `join(getDocsPath(), "providers.md")`.
+pub fn providers_doc() -> String {
+    format!("{}/providers.md", pi_docs())
+}
 
 /// pi's `getProviderLoginHelp`.
 pub fn provider_login_help() -> String {
-    format!("Use /login to log into a provider via OAuth or API key. See:\n  {PROVIDER_DOCS}")
+    let docs = pi_docs();
+    format!(
+        "Use /login to log into a provider via OAuth or API key. See:\n  {docs}/providers.md\n  {docs}/models.md"
+    )
 }
 
 /// pi's `formatNoModelsAvailableMessage`.
@@ -40,15 +49,16 @@ pub fn no_api_key_found(provider: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    /// The link names a page that the documentation site builds from `docs/`.
+    /// The help names pi's providers and models pages where the docs are.
     #[test]
-    fn provider_docs_is_a_docs_page() {
-        let page = super::PROVIDER_DOCS
-            .strip_prefix("https://skymanone.github.io/yapi/")
-            .and_then(|page| page.strip_suffix(".html"))
-            .unwrap();
-        let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
-        let summary = std::fs::read_to_string(docs.join("SUMMARY.md")).unwrap();
-        assert!(summary.contains(&format!("]({page}.md)")), "{page}");
+    fn help_names_pi_providers_and_models_pages() {
+        let docs = super::pi_docs();
+        assert_eq!(
+            super::provider_login_help(),
+            format!(
+                "Use /login to log into a provider via OAuth or API key. See:\n  {docs}/providers.md\n  {docs}/models.md"
+            )
+        );
+        assert_eq!(super::providers_doc(), format!("{docs}/providers.md"));
     }
 }

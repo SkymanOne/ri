@@ -206,17 +206,13 @@ fn pattern(text: &str) -> Regex {
     Regex::new(text).expect("the normalizer's patterns are valid")
 }
 
-/// yapi's sign-in help, `yapi_core::auth_guidance::PROVIDER_DOCS`.
-const SIGN_IN_DOCS: &str = "https://skymanone.github.io/yapi/models.html";
-/// pi's sign-in help: a providers.md line followed by a models.md path.
-static PROVIDERS_DOC: LazyLock<Regex> = LazyLock::new(|| {
-    pattern(
-        r"(?m)^[^\n]*/pi-coding-agent/docs/providers\.md\n[^\n]*/pi-coding-agent/docs/models\.md",
-    )
-});
-/// pi's `<docs>` section of the system prompt.
+/// The `<docs>` section of the system prompt.
 static DOCS_SECTION: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"\n\n<docs>\n(?s:(?:.*?\n)?)</docs>"));
+/// A page of pi's docs that messages name: in pi's install, in the local
+/// docs yapi installs, or on GitHub.
+static PI_DOC: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r#"[^\s"]*/docs/(providers|models)\.md"#));
 /// A path to pi's codemode reference.
 static CODEMODE_DOC: LazyLock<Regex> =
     LazyLock::new(|| pattern(r#"[^\s"]*/pi-coding-agent/docs/codemode\.md"#));
@@ -723,17 +719,13 @@ impl Normalizer<'_> {
             .replace(".yapi/mcp.json", ".pi/mcp.json")
             .replace(".yapi/settings.json", ".pi/settings.json")
             .replace("~/.yapi/agent", "~/.pi/agent")
-            .replace("start yapi in the project", "start pi in the project")
-            // The sign-in help points at yapi's docs site; pi's into its install.
-            .replace(SIGN_IN_DOCS, "<sign-in help>");
-        text = PROVIDERS_DOC
-            .replace_all(&text, "  <sign-in help>")
-            .into_owned();
+            .replace("start yapi in the project", "start pi in the project");
         for (from, to) in &self.renames {
             text = text.replace(from, to);
         }
-        // pi's documentation section points into pi's install; yapi has none.
+        // The documentation section names each program and its docs.
         let text = DOCS_SECTION.replace_all(&text, "");
+        let text = PI_DOC.replace_all(&text, "<pi docs>/$1.md");
         // Codemode's reference: in pi's install, and in yapi's agent directory.
         let text = text.replace("<agent>/docs/codemode.md", "<codemode docs>");
         let text = CODEMODE_DOC.replace_all(&text, "<codemode docs>");
@@ -958,27 +950,8 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             .take_while(|row| !row.trim().is_empty() && TIP.contains(row.trim()))
             .count(),
     };
-    // pi's sign-in help lists two documents in its install, one per row; yapi
-    // links its docs site in one row. Both become `<sign-in help>`.
-    let mut merged: Vec<String> = Vec::new();
-    let mut rest = rows[start..].iter().peekable();
-    while let Some(row) = rest.next() {
-        if row
-            .trim_end()
-            .ends_with("/pi-coding-agent/docs/providers.md")
-            && rest
-                .peek()
-                .is_some_and(|next| next.trim_end().ends_with("/pi-coding-agent/docs/models.md"))
-        {
-            rest.next();
-            let indent = &row[..row.len() - row.trim_start().len()];
-            merged.push(format!("{indent}{SIGN_IN_DOCS}"));
-        } else {
-            merged.push(row.clone());
-        }
-    }
     let mut out: Vec<String> = Vec::new();
-    for row in &merged {
+    for row in &rows[start..] {
         // Both logos' top rows contain `▀▀█`; Apple Terminal shows wordmarks.
         if row.contains("▀▀█") || row.starts_with(" YaPi v") {
             continue;
