@@ -797,14 +797,7 @@ fn builtin_enabled(name: &str, args: &Args, settings: &[Vec<String>; 2]) -> bool
 /// [`builtin_enabled`].
 fn extension_settings(settings: &SettingsManager) -> [Vec<String>; 2] {
     [Scope::Project, Scope::Global].map(|scope| {
-        settings
-            .document(scope)
-            .get("extensions")
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.as_str().map(str::to_owned))
-            .collect()
+        yapi_core::packages::resolve::string_list(settings.document(scope), "extensions")
     })
 }
 
