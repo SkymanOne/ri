@@ -563,6 +563,9 @@ pub(super) struct ExtensionState {
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
     pub editor: Option<CustomEditor>,
+    // One runtime has listeners and providers: every Pi extension shares the
+    // JS runtime. Per-package restricted grants would add instances that
+    // overwrite these.
     /// What runs the `onTerminalInput` listeners, while there are any.
     pub listeners: Option<Arc<dyn ComponentHost>>,
     /// What runs the providers composed with `addAutocompleteProvider`, and

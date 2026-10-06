@@ -94,8 +94,8 @@ Traits exist only where implementations vary across a crate or plugin boundary. 
 | `AgentHooks` | `yapi-agent` | Intercept the loop: context transform, before and after tool calls, queue reads. | `yapi-core` session, which dispatches to extensions |
 | `Extension` | `yapi-core` | Register capabilities; handle events, tool calls and commands; build components for the transcript items it draws. | Built-ins (MCP); wasm instances in `yapi-ext` |
 | `Bridge` | `yapi-ext` | Answer an instance's requests and operations that need the session. | The session bridge of loaded extensions; `NoBridge` for headless loading |
-| `ExtensionUi` | `yapi-core` | Dialogs, notifications, widgets, custom components. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
-| `ComponentHost` | `yapi-core` | Render an extension component for a width; deliver input to it. | Extension runtimes in `yapi-ext` |
+| `ExtensionUi` | `yapi-core` | Dialogs, notifications, widgets, custom components, extension editors, input listeners and autocomplete providers. | Interactive TUI; RPC (`extension_ui_request`); headless no-op |
+| `ComponentHost` | `yapi-core` | Render an extension component for a width; deliver input and editor operations to it; run the runtime's terminal input listeners and autocomplete providers. | Extension runtimes in `yapi-ext` |
 
 Add a trait only when a second implementation or a plugin boundary exists.
 
