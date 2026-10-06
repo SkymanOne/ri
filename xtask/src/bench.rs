@@ -10,7 +10,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{ExitCode, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -21,9 +21,10 @@ use yapi_mock::{Cassette, MockServer};
 /// Measure yapi (and pi with `--pi`).
 #[derive(clap::Args)]
 pub struct Args {
-    /// The yapi executable; build it with `cargo build --release -p yapi`.
-    #[arg(long, default_value = "target/release/yapi")]
-    yapi: PathBuf,
+    /// The yapi executable [default: the workspace's target/release/yapi];
+    /// build it with `cargo build --release -p yapi`.
+    #[arg(long)]
+    yapi: Option<PathBuf>,
     /// Also measure this pi executable.
     #[arg(long)]
     pi: Option<PathBuf>,
@@ -686,14 +687,30 @@ fn print_report(programs: &[Program], rows: &[Row]) {
     }
 }
 
-pub fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let root = std::env::temp_dir().join(format!("yapi-bench-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+/// A directory removed with its contents when dropped, so a failed run
+/// leaves nothing behind.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub fn run(args: Args) -> anyhow::Result<()> {
+    let temp = TempDir(std::env::temp_dir().join(format!("yapi-bench-{}", std::process::id())));
+    let root = &temp.0;
+    let _ = std::fs::remove_dir_all(root);
     let cwd = root.join("project");
     std::fs::create_dir_all(&cwd)?;
+    let yapi = args
+        .yapi
+        .clone()
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/release/yapi"));
     let mut targets = vec![(
         "yapi",
-        std::fs::canonicalize(&args.yapi).context("yapi executable; build with --release")?,
+        std::fs::canonicalize(&yapi)
+            .with_context(|| format!("{}; build with --release", yapi.display()))?,
         "YAPI_CODING_AGENT_DIR",
     )];
     if let Some(pi) = &args.pi {
@@ -805,7 +822,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
 
     let mut keys = Vec::new();
     for program in &programs {
-        keys.push(keystrokes(program, &root, &args)?);
+        keys.push(keystrokes(program, root, &args)?);
     }
     for percent in [50.0, 99.0] {
         rows.push(Row {
@@ -826,7 +843,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     ));
 
     let opened = alternate(&programs, args.memory_runs, |_, program| {
-        memory(program, &large_session(program, &root, args.lines)?, |_| {
+        memory(program, &large_session(program, root, args.lines)?, |_| {
             Ok(())
         })
     })?;
@@ -896,8 +913,7 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             format_value(runtime as f64 / 1e6, "MB"),
         );
     }
-    let _ = std::fs::remove_dir_all(&root);
-    Ok(ExitCode::SUCCESS)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -932,11 +948,21 @@ mod tests {
         assert_eq!(typed(&rows[2..4]), 0);
     }
 
+    #[test]
+    fn temp_dir_is_removed_when_dropped() {
+        let path = std::env::temp_dir().join(format!("yapi-bench-drop-{}", std::process::id()));
+        std::fs::create_dir_all(path.join("project")).unwrap();
+        drop(TempDir(path.clone()));
+        assert!(!path.exists());
+    }
+
     #[cfg(unix)]
     #[test]
     fn print_mode_that_exits_early_fails_with_its_stderr() {
         use std::os::unix::fs::PermissionsExt as _;
-        let dir = std::env::temp_dir().join(format!("yapi-bench-test-{}", std::process::id()));
+        let temp =
+            TempDir(std::env::temp_dir().join(format!("yapi-bench-test-{}", std::process::id())));
+        let dir = temp.0.clone();
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("broken");
         std::fs::write(&script, "#!/bin/sh\necho no provider >&2\nexit 3\n").unwrap();
@@ -956,7 +982,6 @@ mod tests {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             first_request(&program, &listener).await.unwrap_err()
         });
-        std::fs::remove_dir_all(&dir).unwrap();
         let error = format!("{error:#}");
         assert!(error.contains("exited with"), "{error}");
         assert!(error.contains("no provider"), "{error}");

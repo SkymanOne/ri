@@ -38,7 +38,7 @@ enum Command {
 
 fn main() -> anyhow::Result<ExitCode> {
     match Cli::parse().command {
-        Command::Bench(args) => bench::run(args),
+        Command::Bench(args) => bench::run(args).map(|()| ExitCode::SUCCESS),
         Command::E2e(args) => e2e::run_command(args),
         Command::JsRuntime(args) => js_runtime::run(args),
         Command::MockSse(args) => mock_sse::run(args),
