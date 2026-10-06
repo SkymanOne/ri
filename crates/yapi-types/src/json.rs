@@ -30,6 +30,16 @@ pub fn stringify(value: &impl JsonValue) -> String {
     to_string(value).unwrap_or_default()
 }
 
+/// A JavaScript number as JSON: an integer when it is a safe one, so it
+/// compares equal to the same number parsed from a pi file.
+pub fn number(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
+        Value::from(value as i64)
+    } else {
+        serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
+    }
+}
+
 /// Serializes `value` like `JSON.stringify(value, null, indent)`.
 pub fn to_string_pretty<T: Serialize + ?Sized>(
     value: &T,

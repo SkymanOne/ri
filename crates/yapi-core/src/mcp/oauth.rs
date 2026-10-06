@@ -231,22 +231,13 @@ fn js_number(value: &Value) -> Option<f64> {
     }
 }
 
-/// A JSON number as JavaScript holds it: an integer when it is one.
-pub(super) fn number(value: f64) -> Value {
-    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
-        Value::from(value as i64)
-    } else {
-        serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
-    }
-}
-
 fn parse_tokens(value: &Value) -> Result<Object, OAuthError> {
     let input = object(value, "OAuth token response")?;
     // `Number(null)` is 0, which would mark the token as expired at once.
     let expires_in = match input.get("expires_in") {
         value if absent(value) => None,
         value => match value.and_then(js_number) {
-            Some(seconds) if seconds.is_finite() => Some(number(seconds)),
+            Some(seconds) if seconds.is_finite() => Some(yapi_types::json::number(seconds)),
             _ => return Err(other("Invalid expires_in")),
         },
     };
@@ -985,7 +976,9 @@ impl<'a> Provider<'a> {
         let expires_at = tokens
             .get("expires_in")
             .and_then(Value::as_f64)
-            .map(|seconds| number(yapi_types::time::now_ms() as f64 + seconds * 1000.0));
+            .map(|seconds| {
+                yapi_types::json::number(yapi_types::time::now_ms() as f64 + seconds * 1000.0)
+            });
         self.update(|state| {
             state.insert("tokens".into(), Value::Object(tokens));
             *state = spread(state, [("tokensExpireAt", expires_at)]);

@@ -5,7 +5,7 @@
 //! the JSON Schema keywords tool schemas use; `$ref`, `format` and `pattern` are
 //! accepted without checking.
 
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Value};
 use yapi_types::message::{ToolCall, ToolDeclaration};
 
 /// Validated, coerced arguments for `call`, or the error pi reports to the model.
@@ -62,21 +62,13 @@ fn matches_type(value: &Value, kind: &str) -> bool {
     }
 }
 
-fn number(value: f64) -> Value {
-    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
-        Value::from(value as i64)
-    } else {
-        Number::from_f64(value).map_or(Value::Null, Value::Number)
-    }
-}
-
 fn coerce_primitive(value: &Value, kind: &str) -> Option<Value> {
     match (kind, value) {
         ("number" | "integer", Value::Null) => Some(Value::from(0)),
         ("number" | "integer", Value::String(text)) if !text.trim().is_empty() => {
             let parsed: f64 = text.trim().parse().ok()?;
             (parsed.is_finite() && (kind == "number" || parsed.fract() == 0.0))
-                .then(|| number(parsed))
+                .then(|| yapi_types::json::number(parsed))
         }
         ("number" | "integer", Value::Bool(flag)) => Some(Value::from(u8::from(*flag))),
         ("boolean", Value::Null) => Some(Value::Bool(false)),
