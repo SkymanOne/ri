@@ -545,7 +545,7 @@ impl ScriptBridge {
         if let Some(usage) = usage {
             let mut total = lock(&self.model_usage);
             *total = Some(match total.as_ref() {
-                Some(previous) => yapi_core::compaction::combine_usage(previous, &usage),
+                Some(previous) => previous.combine(&usage),
                 None => usage,
             });
         }

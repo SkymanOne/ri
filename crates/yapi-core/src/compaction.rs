@@ -1178,12 +1178,6 @@ pub fn collect_branch_entries(
     (entries, common)
 }
 
-/// Sum of two usages, as pi's `combineUsage`; [`Usage::combine`], kept for
-/// the crates that still call it.
-pub fn combine_usage(first: &Usage, second: &Usage) -> Usage {
-    first.combine(second)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
