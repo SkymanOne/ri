@@ -10,7 +10,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -292,12 +292,19 @@ fn disk_size(path: &Path) -> std::io::Result<u64> {
     Ok(total)
 }
 
+/// The longest wait for print mode's request.
+const REQUEST_LIMIT: Duration = Duration::from_secs(20);
+
 /// Time from starting print mode to the first byte of its request, received
-/// by a listener standing in for the provider.
-fn first_request(program: &Program, listener: &std::net::TcpListener) -> anyhow::Result<Duration> {
-    use std::io::Read as _;
+/// by a listener standing in for the provider. Fails with the program's
+/// stderr when it exits first or sends nothing within [`REQUEST_LIMIT`].
+async fn first_request(
+    program: &Program,
+    listener: &tokio::net::TcpListener,
+) -> anyhow::Result<Duration> {
+    use tokio::io::AsyncReadExt as _;
     let started = Instant::now();
-    let mut child = std::process::Command::new(&program.path)
+    let mut child = tokio::process::Command::new(&program.path)
         .args([
             "-p",
             "--no-session",
@@ -309,17 +316,31 @@ fn first_request(program: &Program, listener: &std::net::TcpListener) -> anyhow:
         .env_clear()
         .envs(program.env.iter().map(|(key, value)| (*key, value)))
         // Print mode reads piped stdin into the prompt.
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
-    let (mut stream, _) = listener.accept()?;
-    let mut byte = [0u8; 1];
-    stream.read_exact(&mut byte)?;
-    let elapsed = started.elapsed();
-    drop(stream);
-    let _ = child.kill();
-    let _ = child.wait();
+    let request = async {
+        let (mut stream, _) = listener.accept().await?;
+        stream.read_exact(&mut [0u8; 1]).await?;
+        // Held open until the program is stopped, so it cannot retry.
+        anyhow::Ok((started.elapsed(), stream))
+    };
+    let received = tokio::select! {
+        received = tokio::time::timeout(REQUEST_LIMIT, request) => received
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("no request within {REQUEST_LIMIT:?}"))),
+        status = child.wait() => Err(anyhow::anyhow!("exited with {} before its request", status?)),
+    };
+    let _ = child.start_kill();
+    let output = child.wait_with_output().await?;
+    let (elapsed, _stream) = received.with_context(|| {
+        format!(
+            "{} in print mode, stderr:\n{}",
+            program.name,
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })?;
     Ok(elapsed)
 }
 
@@ -764,20 +785,22 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
     rows.push(Row::median("Startup, interactive", Samples::Time, paint));
 
-    let listeners = programs
-        .iter()
-        .map(|program| {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-            let url = format!("http://{}", listener.local_addr()?);
-            std::fs::write(
-                program.agent.join("models.json"),
-                json!({"providers": {"anthropic": {"baseUrl": url}}}).to_string(),
-            )?;
-            Ok(listener)
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()?;
+    let mut listeners = Vec::new();
+    for program in &programs {
+        let listener = runtime.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
+        let url = format!("http://{}", listener.local_addr()?);
+        std::fs::write(
+            program.agent.join("models.json"),
+            json!({"providers": {"anthropic": {"baseUrl": url}}}).to_string(),
+        )?;
+        listeners.push(listener);
+    }
     let request = alternate(&programs, args.runs, |index, program| {
-        first_request(program, &listeners[index])
+        runtime.block_on(first_request(program, &listeners[index]))
     })?;
     for program in &programs {
         let _ = std::fs::remove_file(program.agent.join("models.json"));
@@ -827,10 +850,6 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         })
         .collect();
     std::fs::write(cwd.join("sample.txt"), sample)?;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()?;
     let active = alternate(&programs, args.memory_runs, |_, program| {
         active_rss(program, &runtime)
     })?;
@@ -887,4 +906,38 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
     let _ = std::fs::remove_dir_all(&root);
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn print_mode_that_exits_early_fails_with_its_stderr() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("yapi-bench-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("broken");
+        std::fs::write(&script, "#!/bin/sh\necho no provider >&2\nexit 3\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let program = Program {
+            name: "broken",
+            path: script,
+            env: Vec::new(),
+            cwd: dir.clone(),
+            agent: dir.clone(),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let error = runtime.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            first_request(&program, &listener).await.unwrap_err()
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+        let error = format!("{error:#}");
+        assert!(error.contains("exited with"), "{error}");
+        assert!(error.contains("no provider"), "{error}");
+    }
 }
