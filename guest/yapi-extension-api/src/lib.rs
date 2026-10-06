@@ -486,9 +486,9 @@ pub fn dispatch(init: fn(&mut Api), id: u64, kind: &str, payload: &str) -> Vec<O
 #[macro_export]
 macro_rules! extension {
     ($init:path) => {
-        struct __RiExtension;
+        struct __YapiExtension;
 
-        impl $crate::bindings::exports::yapi::extension::guest::Guest for __RiExtension {
+        impl $crate::bindings::exports::yapi::extension::guest::Guest for __YapiExtension {
             fn dispatch(
                 id: u64,
                 kind: ::std::string::String,
@@ -516,6 +516,6 @@ macro_rules! extension {
             }
         }
 
-        $crate::bindings::__export_world!(__RiExtension with_types_in $crate::bindings);
+        $crate::bindings::__export_world!(__YapiExtension with_types_in $crate::bindings);
     };
 }
