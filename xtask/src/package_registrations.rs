@@ -336,9 +336,7 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
                 let (all, done, saved, verbose, exe) = (&all, &done, &saved, args.verbose, &exe);
                 async move {
                     let got = measure(exe, index, &version, verbose).await;
-                    let mut all = all
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let mut all = yapi_types::sync::lock(all);
                     all.insert(name.clone(), got.clone());
                     // Replaced whole, so a reader never sees half a file.
                     if let Ok(text) = yapi_types::json::to_string_pretty(&*all, "\t") {

@@ -8,6 +8,7 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, bail};
 use sha2::{Digest as _, Sha256};
+use yapi_types::time::hex;
 
 /// Files and directories the components are built from.
 const INPUTS: [&str; 6] = [
@@ -146,10 +147,6 @@ fn artifacts_hash() -> anyhow::Result<String> {
         )?);
     }
     Ok(hashes.join(" "))
-}
-
-fn hex(digest: &[u8]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn file_hash(path: &Path) -> anyhow::Result<String> {
