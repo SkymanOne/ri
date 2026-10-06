@@ -1,6 +1,6 @@
 [package]
 name = "yapi"
-description = "Coding agent CLI compatible with pi packages."
+description = "Yet Another Pi (in Rust) - Fast, Portable, Compatible"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

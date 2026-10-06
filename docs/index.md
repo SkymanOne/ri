@@ -1,6 +1,8 @@
 # yapi
 
-yapi (Yet Another Pi) is a minimal, extensible AI agent for the terminal, written in Rust. Give it a goal and a working folder, and it can inspect files, run commands, edit content and work through multi-step tasks.
+**Yet Another Pi (in Rust) - Fast, Portable, Compatible**
+
+yapi is a minimal, extensible AI agent for the terminal, written in Rust. Give it a goal and a working folder, and it can inspect files, run commands, edit content and work through multi-step tasks.
 
 yapi is a reimplementation of [Pi](https://pi.dev) `v1.0.0`. It uses Pi's commands, settings, session files, packages and extension API, so a Pi setup works in yapi as it is. Adapt it to your workflow with extensions, skills, prompt templates and themes, or install a Pi package. It ships as one native binary and needs no Node.js.
 
