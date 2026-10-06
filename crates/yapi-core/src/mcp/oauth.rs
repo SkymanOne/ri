@@ -788,21 +788,6 @@ async fn register_client(
     parse_client_information(&json(response).await?)
 }
 
-/// The scopes of a step-up authorization: the challenged ones plus those
-/// granted so far, each once; `None` without challenged scopes.
-pub fn step_up_scope(granted: Option<&str>, challenged: Option<&str>) -> Option<String> {
-    let challenged = challenged.filter(|scope| !scope.is_empty())?;
-    let mut scopes: Vec<&str> = Vec::new();
-    for scope in [granted.unwrap_or_default(), challenged] {
-        for word in scope.split_whitespace() {
-            if !scopes.contains(&word) {
-                scopes.push(word);
-            }
-        }
-    }
-    Some(scopes.join(" "))
-}
-
 /// A response without `scope` grants the requested scope (RFC 6749).
 fn with_scope(mut tokens: Object, scope: Option<&str>) -> Object {
     if !tokens.contains_key("scope")
@@ -1380,12 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn merges_step_up_scopes() {
-        assert_eq!(
-            step_up_scope(Some("read write"), Some("admin read")).as_deref(),
-            Some("read write admin")
-        );
-        assert_eq!(step_up_scope(Some("read"), None), None);
+    fn sends_credentials_only_over_https_or_loopback() {
         assert!(secure_endpoint("http://auth.test/token").is_err());
         assert!(secure_endpoint("http://127.0.0.1:1/token").is_ok());
     }

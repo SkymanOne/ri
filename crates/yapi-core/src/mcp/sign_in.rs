@@ -31,7 +31,7 @@ use super::connection::resolve_value;
 use super::jsonrpc::McpError;
 use super::oauth::{
     Challenge, Fetch, FlowOptions, FlowResult, OAuthError, Object, Provider, authorize,
-    parse_www_authenticate, step_up_scope, text,
+    parse_www_authenticate, text,
 };
 use crate::config::APP_NAME;
 
@@ -264,13 +264,13 @@ fn callback_settings(settings: &OAuthConfig) -> CallbackSettings {
     }
 }
 
-/// Scopes of both lists, each once.
-fn merge_scopes(first: Option<&str>, second: Option<&str>) -> Option<String> {
+/// pi's `mergeScopes`: the scopes of every list, each once.
+fn merge_scopes(lists: &[Option<&str>]) -> Option<String> {
     let mut scopes: Vec<&str> = Vec::new();
-    for word in [first, second]
-        .into_iter()
+    for word in lists
+        .iter()
         .flatten()
-        .flat_map(str::split_whitespace)
+        .flat_map(|list| list.split_whitespace())
     {
         if !scopes.contains(&word) {
             scopes.push(word);
@@ -516,24 +516,21 @@ impl McpAuth {
             self.store.save(next).await.map_err(failed)?;
         }
         let provider = self.provider(&settings, &redirect_url).map_err(failed)?;
-        // A server asking for more scope gets it on top of the configured scope and the granted one.
+        // A server asking for more scope gets it on top of the configured scope and, since the
+        // challenge may list only the missing scopes, on top of the scope granted so far.
         let challenged = challenge
             .as_ref()
             .and_then(|challenge| challenge.scope.as_deref());
-        let requested = match step_up {
-            true => step_up_scope(
-                tokens(stored.as_ref()).and_then(|tokens| text(tokens, "scope")),
-                challenged,
-            ),
-            false => challenged.map(str::to_owned),
-        };
+        let granted = (step_up && challenged.is_some())
+            .then(|| tokens(stored.as_ref()).and_then(|tokens| text(tokens, "scope")))
+            .flatten();
         let flow = FlowOptions {
             server_url: self.server_url.clone(),
             resource_metadata_url: challenge
                 .as_ref()
                 .and_then(|challenge| challenge.resource_metadata_url.clone()),
             authorization_server_metadata_url: settings.auth_server_metadata_url.clone(),
-            scope: merge_scopes(settings.scope.as_deref(), requested.as_deref()),
+            scope: merge_scopes(&[settings.scope.as_deref(), granted, challenged]),
             // A refresh keeps the granted scope; more scope needs the browser flow.
             skip_refresh: step_up,
             ..FlowOptions::default()
@@ -695,10 +692,10 @@ mod tests {
     #[test]
     fn merges_scopes() {
         assert_eq!(
-            merge_scopes(Some("a b"), Some("b c")).as_deref(),
+            merge_scopes(&[Some("a b"), None, Some("b c a")]).as_deref(),
             Some("a b c")
         );
-        assert_eq!(merge_scopes(None, Some("")), None);
+        assert_eq!(merge_scopes(&[None, Some("")]), None);
     }
 
     #[test]
