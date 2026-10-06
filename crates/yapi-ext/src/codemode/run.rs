@@ -10,8 +10,11 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
+use futures_util::stream::FuturesUnordered;
 use serde_json::{Map, Value, json};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::UpdateSink;
 use yapi_core::agent_session::AgentSession;
@@ -218,7 +221,12 @@ struct ScriptBridge {
     model_usage: Mutex<Option<Usage>>,
     /// Images `models.generateImages()` returned.
     generated_images: AtomicUsize,
+    /// Operations the script started, for [`Runner::run`] to drive.
+    jobs: mpsc::UnboundedSender<Job>,
 }
+
+/// An operation the script started, which replies when it is done.
+type Job = BoxFuture<'static, ()>;
 
 /// The successful result of an operation: `undefined` or a JSON value.
 fn script_value(value: Option<&Value>) -> Value {
@@ -570,30 +578,44 @@ impl Bridge for WeakBridge {
         Ok(Value::Null)
     }
 
+    /// The operation runs as a job of the script's run, on the tool call's
+    /// task, so its events and the progress updates it publishes go out in
+    /// the order pi emits them.
     fn start(&self, kind: &str, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
         let Some(bridge) = self.0.upgrade() else {
             return Box::pin(async { Err("The script has ended".into()) });
         };
         let name = payload["name"].as_str().unwrap_or_default().to_owned();
         let args = payload["args"].as_str().map(str::to_owned);
-        match kind {
-            "codemode.call" => Box::pin(bridge.call(name, args)),
+        let operation: BoxFuture<'static, Result<Value, String>> = match kind {
+            "codemode.call" => Box::pin(bridge.clone().call(name, args)),
             "codemode.global" => {
                 let args: Value = args
                     .as_deref()
                     .and_then(|args| serde_json::from_str(args).ok())
                     .unwrap_or(Value::Null);
                 if name.starts_with("models.") {
-                    return Box::pin(bridge.model_global(name, args));
+                    Box::pin(bridge.clone().model_global(name, args))
+                } else {
+                    let result = bridge.global(&name, &args);
+                    Box::pin(async move { result })
                 }
-                let result = bridge.global(&name, &args);
-                Box::pin(async move { result })
             }
             other => {
                 let message = format!("{other} is not available to scripts");
                 Box::pin(async move { Err(message) })
             }
-        }
+        };
+        let (reply, result) = oneshot::channel();
+        // A job sent after the run ended is dropped, and so is its reply.
+        let _ = bridge.jobs.send(Box::pin(async move {
+            let _ = reply.send(operation.await);
+        }));
+        Box::pin(async move {
+            result
+                .await
+                .unwrap_or_else(|_| Err("The script has ended".to_owned()))
+        })
     }
 
     /// Engine diagnostics are discarded, as pi discards them.
@@ -801,6 +823,7 @@ impl Runner {
             .chain(models::GLOBALS.iter().filter(|_| docs.is_some()))
             .map(|name| json!({"name": name, "spread": true}))
             .collect();
+        let (jobs, started_jobs) = mpsc::unbounded_channel();
         let bridge = Arc::new(ScriptBridge {
             session: session.clone(),
             call_id,
@@ -813,6 +836,7 @@ impl Runner {
             model_calls: AtomicU64::new(0),
             model_usage: Mutex::default(),
             generated_images: AtomicUsize::new(0),
+            jobs,
         });
         let payload = json!({
             "code": code,
@@ -821,7 +845,14 @@ impl Runner {
             "store": yapi_types::json::stringify(&store),
         });
         let ending = self
-            .run(&bridge, session.as_ref(), &payload, &options, &cancel)
+            .run(
+                &bridge,
+                started_jobs,
+                session.as_ref(),
+                &payload,
+                &options,
+                &cancel,
+            )
             .await;
 
         let (output, mut calls) = {
@@ -903,6 +934,7 @@ impl Runner {
     async fn run(
         &self,
         bridge: &Arc<ScriptBridge>,
+        mut jobs: mpsc::UnboundedReceiver<Job>,
         session: Option<&AgentSession>,
         payload: &Value,
         options: &SourceOptions,
@@ -960,11 +992,31 @@ impl Runner {
                 Err(error) => sandbox(error.to_string()),
             }
         };
-        tokio::select! {
-            ending = script => ending,
-            () = cancel.cancelled() => aborted(),
-            () = timeout => timed_out(),
+        tokio::pin!(script, timeout);
+        // The script's operations run here, on the tool call's task, which
+        // also emits the updates they publish.
+        let mut running = FuturesUnordered::new();
+        let ending = loop {
+            tokio::select! {
+                biased;
+                ending = &mut script => break ending,
+                () = cancel.cancelled() => break aborted(),
+                () = &mut timeout => break timed_out(),
+                Some(()) = running.next(), if !running.is_empty() => {}
+                Some(job) = jobs.recv() => running.push(job),
+            }
+            // What a step published goes out before the next step, as pi
+            // emits it before the script resumes or the next call starts.
+            tokio::task::yield_now().await;
+        };
+        // Calls the script left running end on their own, as in pi.
+        while let Ok(job) = jobs.try_recv() {
+            running.push(job);
         }
+        if !running.is_empty() {
+            tokio::spawn(async move { while running.next().await.is_some() {} });
+        }
+        ending
     }
 }
 

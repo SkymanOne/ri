@@ -361,6 +361,13 @@ pub trait Extension: Send + Sync {
         Box::pin(async {})
     }
 
+    /// Resolves once the extension code that is running has finished and
+    /// delivered its results. pi runs extension code to completion before it
+    /// reads the next input.
+    fn settle(&self) -> BoxFuture<'_, ()> {
+        Box::pin(async {})
+    }
+
     /// The session started or was bound to a mode.
     fn session_start<'a>(&'a self, _ctx: &'a Context) -> BoxFuture<'a, ()> {
         Box::pin(async {})

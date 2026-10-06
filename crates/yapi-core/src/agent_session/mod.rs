@@ -1516,6 +1516,9 @@ impl AgentSession {
                 parent_tool_call_id: parent.clone(),
             })
             .await;
+        // pi awaits the start event, which lets the caller's queued progress
+        // update, such as codemode's running row, go out before the call runs.
+        tokio::task::yield_now().await;
         let callable = self.callable_tools();
         let exclusive = !started.holds_queue
             && callable.iter().any(|tool| {
