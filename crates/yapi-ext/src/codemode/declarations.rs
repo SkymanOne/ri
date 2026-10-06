@@ -62,11 +62,7 @@ pub fn identifier(name: &str) -> String {
 }
 
 fn is_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    identifier(name) == name
 }
 
 fn stringify(value: &Value) -> String {
@@ -96,26 +92,6 @@ struct Schemas<'a> {
     expansions: usize,
 }
 
-fn decode_component(segment: &str) -> String {
-    let bytes = segment.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%'
-            && let Some(byte) = segment
-                .get(index + 1..index + 3)
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        {
-            out.push(byte);
-            index += 3;
-            continue;
-        }
-        out.push(bytes[index]);
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 fn resolve_ref<'a>(reference: &str, root: &'a Value) -> Option<&'a Value> {
     if reference != "#" && !reference.starts_with("#/") {
         return None;
@@ -127,7 +103,8 @@ fn resolve_ref<'a>(reference: &str, root: &'a Value) -> Option<&'a Value> {
         .split('/')
         .filter(|segment| !segment.is_empty())
     {
-        let key = decode_component(segment)
+        let key = percent_encoding::percent_decode_str(segment)
+            .decode_utf8_lossy()
             .replace("~1", "/")
             .replace("~0", "~");
         current = current.as_object()?.get(&key)?;

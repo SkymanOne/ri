@@ -4,9 +4,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, Message, StopReason, ThinkingContent, ToolCall,
 };
 
 use crate::stream::{EventStream, Provider, Request, StreamEvent, new_output, now_ms};
@@ -56,10 +55,7 @@ impl Response {
 }
 
 fn text_block(text: &str) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: text.to_owned(),
-        text_signature: None,
-    })
+    ContentBlock::text(text)
 }
 
 /// Replays responses in order and records the requests it receives. When the
@@ -109,90 +105,28 @@ impl Provider for Faux {
         sender.send(StreamEvent::Start(output.clone()));
 
         for block in response.content {
-            let index = output.content.len();
-            match block {
-                ContentBlock::Text(text) => {
-                    output.content.push(text_block(""));
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::TextStart {
-                            content_index: index,
-                        },
-                    );
-                    output.content[index] = ContentBlock::Text(text.clone());
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::TextDelta {
-                            content_index: index,
-                            delta: text.text.clone(),
-                        },
-                    );
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::TextEnd {
-                            content_index: index,
-                            content: text.text,
-                        },
-                    );
-                }
-                ContentBlock::Thinking(thinking) => {
-                    output.content.push(ContentBlock::Thinking(ThinkingContent {
+            let (empty, delta) = match &block {
+                ContentBlock::Text(text) => (text_block(""), text.text.clone()),
+                ContentBlock::Thinking(thinking) => (
+                    ContentBlock::Thinking(ThinkingContent {
                         thinking: String::new(),
                         ..thinking.clone()
-                    }));
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ThinkingStart {
-                            content_index: index,
-                        },
-                    );
-                    output.content[index] = ContentBlock::Thinking(thinking.clone());
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ThinkingDelta {
-                            content_index: index,
-                            delta: thinking.thinking.clone(),
-                        },
-                    );
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ThinkingEnd {
-                            content_index: index,
-                            content: thinking.thinking,
-                        },
-                    );
-                }
-                ContentBlock::ToolCall(call) => {
-                    output.content.push(ContentBlock::ToolCall(ToolCall {
+                    }),
+                    thinking.thinking.clone(),
+                ),
+                ContentBlock::ToolCall(call) => (
+                    ContentBlock::ToolCall(ToolCall {
                         arguments: Map::new(),
                         ..call.clone()
-                    }));
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ToolcallStart {
-                            content_index: index,
-                            id: call.id.clone(),
-                            tool_name: call.name.clone(),
-                        },
-                    );
-                    output.content[index] = ContentBlock::ToolCall(call.clone());
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ToolcallDelta {
-                            content_index: index,
-                            delta: yapi_types::json::to_string(&call.arguments).unwrap_or_default(),
-                        },
-                    );
-                    sender.update(
-                        &output,
-                        AssistantMessageEvent::ToolcallEnd {
-                            content_index: index,
-                            tool_call: call,
-                        },
-                    );
-                }
-                ContentBlock::Image(_) => {}
-            }
+                    }),
+                    yapi_types::json::to_string(&call.arguments).unwrap_or_default(),
+                ),
+                ContentBlock::Image(_) => continue,
+            };
+            let index = sender.start(&mut output, empty);
+            sender.delta(&mut output, index, &delta);
+            output.content[index] = block;
+            sender.end(&output, index);
         }
 
         let has_calls = output

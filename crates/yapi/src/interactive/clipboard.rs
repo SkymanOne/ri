@@ -4,6 +4,7 @@
 //! in pi `v1.0.0`, without pi's native clipboard addon: platform commands
 //! first, then OSC 52 for remote and headless sessions.
 
+use base64::Engine as _;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -50,7 +51,7 @@ fn run(command: &str, args: &[&str], input: &str) -> bool {
 
 /// The OSC 52 sequence that sets the clipboard, or `None` when too long.
 fn osc52(text: &str) -> Option<String> {
-    let encoded = yapi_core::tools::base64(text.as_bytes());
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
     (encoded.len() <= MAX_OSC52_ENCODED_LENGTH).then(|| format!("\x1b]52;c;{encoded}\x07"))
 }
 

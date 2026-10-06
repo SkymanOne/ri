@@ -8,9 +8,9 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{Poll, poll_device_code};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, post_form, trusted_url};
 use super::{
-    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthAuth, OAuthProvider, form,
+    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
     json_body, now_ms, send,
 };
 
@@ -18,9 +18,7 @@ const CLIENT_ID: &str = "17e5f671-d194-4dfb-9706-5516cb48c098";
 const DEFAULT_OAUTH_HOST: &str = "https://auth.kimi.com";
 const DEVICE_CODE_TIMEOUT_SECONDS: f64 = 15.0 * 60.0;
 const DEFAULT_POLL_INTERVAL_SECONDS: f64 = 5.0;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const REFRESH_MAX_RETRIES: u32 = 3;
-const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 /// The Kimi Code sign-in.
 #[derive(Clone, Debug, Default)]
@@ -40,27 +38,6 @@ impl KimiOAuth {
             .trim_end_matches('/')
             .to_owned()
     }
-}
-
-/// An http(s) URL, the only kind opened in the browser.
-fn trusted_url(value: &Value) -> Option<String> {
-    let url = url::Url::parse(value.as_str()?).ok()?;
-    matches!(url.scheme(), "http" | "https").then(|| url.to_string())
-}
-
-fn positive(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn post(url: &str, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
-    crate::http::client()
-        .post(url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "application/json")
-        .timeout(REQUEST_TIMEOUT)
-        .body(form(fields))
 }
 
 fn js(value: &Value) -> String {
@@ -95,7 +72,7 @@ impl KimiOAuth {
         let host = self.host();
         let cancel = interaction.cancel();
         let response = send(
-            post(
+            post_form(
                 &format!("{host}/api/oauth/device_authorization"),
                 &[("client_id", CLIENT_ID)],
             ),
@@ -141,7 +118,7 @@ impl KimiOAuth {
         });
         let token_url = format!("{host}/api/oauth/token");
         poll_device_code(Some(interval), Some(expires_in), true, cancel, || {
-            let request = post(
+            let request = post_form(
                 &token_url,
                 &[
                     ("client_id", CLIENT_ID),
@@ -207,7 +184,7 @@ impl KimiOAuth {
             if cancel.is_cancelled() {
                 return Err(AuthError::failed("Kimi Code token refresh aborted"));
             }
-            let request = post(
+            let request = post_form(
                 &url,
                 &[
                     ("client_id", CLIENT_ID),

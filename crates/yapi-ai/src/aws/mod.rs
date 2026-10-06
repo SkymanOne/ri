@@ -18,8 +18,9 @@ use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{now_ms, rfc3339_ms};
+use crate::auth::now_ms;
 use crate::credentials::ProviderEnv;
+use yapi_types::time::parse_iso;
 
 /// AWS credentials.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,7 +183,7 @@ fn from_env(env: &AwsEnv) -> Chained {
             access_key_id: id.to_owned(),
             secret_access_key: secret.to_owned(),
             session_token: env.get("AWS_SESSION_TOKEN").map(str::to_owned),
-            expiration_ms: env.get("AWS_CREDENTIAL_EXPIRATION").and_then(rfc3339_ms),
+            expiration_ms: env.get("AWS_CREDENTIAL_EXPIRATION").and_then(parse_iso),
         }),
         _ => Err(ChainError::next(
             "Unable to find environment variable credentials.",
@@ -442,39 +443,23 @@ async fn sts(
     let pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let body = crate::auth::form(&pairs);
     let url = url::Url::parse(&endpoint).map_err(|err| err.to_string())?;
-    let host = match url.port() {
-        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
-        None => url.host_str().unwrap_or_default().to_owned(),
-    };
-    let mut headers = vec![
-        (
-            "content-type".to_owned(),
-            "application/x-www-form-urlencoded".to_owned(),
-        ),
-        ("host".to_owned(), host),
-    ];
+    let mut headers = vec![(
+        "content-type".to_owned(),
+        "application/x-www-form-urlencoded".to_owned(),
+    )];
     if let Some(credentials) = signer {
-        let amz_date = sigv4::amz_date(now_ms());
-        let authorization = sigv4::sign(
-            "POST",
-            url.path(),
-            "",
+        sigv4::sign_request(
+            &url,
             &mut headers,
             body.as_bytes(),
             credentials,
-            &sigv4::Scope {
-                region,
-                service: "sts",
-                amz_date: &amz_date,
-            },
+            region,
+            "sts",
         );
-        headers.push(("authorization".to_owned(), authorization));
     }
     let mut request = crate::http::client().post(url.as_str()).body(body);
     for (name, value) in &headers {
-        if name != "host" {
-            request = request.header(name.as_str(), value.as_str());
-        }
+        request = request.header(name.as_str(), value.as_str());
     }
     let response = send(request, cancel).await?;
     let status = response.status().as_u16();
@@ -489,9 +474,7 @@ async fn sts(
         secret_access_key: xml_text(&text, "SecretAccessKey")
             .ok_or("STS returned no SecretAccessKey")?,
         session_token: xml_text(&text, "SessionToken"),
-        expiration_ms: xml_text(&text, "Expiration")
-            .as_deref()
-            .and_then(rfc3339_ms),
+        expiration_ms: xml_text(&text, "Expiration").as_deref().and_then(parse_iso),
     })
 }
 
@@ -543,7 +526,7 @@ async fn credential_process(
             "Profile {profile} credential_process returned invalid credentials."
         ));
     };
-    let expiration_ms = data["Expiration"].as_str().and_then(rfc3339_ms);
+    let expiration_ms = data["Expiration"].as_str().and_then(parse_iso);
     if expiration_ms.is_some_and(|expires| expires < now_ms()) {
         return Err(format!(
             "Profile {profile} credential_process returned expired credentials."
@@ -590,10 +573,15 @@ async fn sso(
         Some(session) => session.clone(),
         None => setting("sso_start_url").unwrap_or_default(),
     };
-    use sha1::Digest as _;
     let file = ini::home(env).join(".aws/sso/cache").join(format!(
         "{}.json",
-        sigv4::hex(&sha1::Sha1::digest(cache_id.as_bytes()))
+        yapi_types::time::hex(
+            aws_lc_rs::digest::digest(
+                &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+                cache_id.as_bytes()
+            )
+            .as_ref()
+        )
     ));
     let invalid =
         || format!("The SSO session associated with this profile is invalid. {SSO_REFRESH}");
@@ -603,10 +591,7 @@ async fn sso(
         .and_then(|text| serde_json::from_str(&text).ok())
         .ok_or_else(invalid)?;
     let access = token["accessToken"].as_str().ok_or_else(invalid)?;
-    let expires = token["expiresAt"]
-        .as_str()
-        .and_then(rfc3339_ms)
-        .unwrap_or(0);
+    let expires = token["expiresAt"].as_str().and_then(parse_iso).unwrap_or(0);
     if expires <= now_ms() {
         return Err(format!(
             "The SSO session associated with this profile has expired. {SSO_REFRESH}"
@@ -687,7 +672,7 @@ fn metadata_credentials(body: &Value) -> Result<Credentials, String> {
             access_key_id: id.to_owned(),
             secret_access_key: secret.to_owned(),
             session_token: body["Token"].as_str().map(str::to_owned),
-            expiration_ms: body["Expiration"].as_str().and_then(rfc3339_ms),
+            expiration_ms: body["Expiration"].as_str().and_then(parse_iso),
         }),
         _ => Err("Invalid response received from instance metadata service.".into()),
     }

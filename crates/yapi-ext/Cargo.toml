@@ -16,6 +16,7 @@ getrandom.workspace = true
 md-5.workspace = true
 oxc.workspace = true
 oxc_resolver.workspace = true
+percent-encoding.workspace = true
 yapi-agent.workspace = true
 yapi-ai.workspace = true
 yapi-core.workspace = true

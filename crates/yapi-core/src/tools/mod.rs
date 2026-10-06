@@ -29,7 +29,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
-use yapi_types::message::{ContentBlock, TextContent, ThinkingLevel, ToolDeclaration};
+use yapi_types::message::{ContentBlock, ThinkingLevel, ToolDeclaration};
 use yapi_types::model::Model;
 
 pub use bash::Bash;
@@ -37,7 +37,7 @@ pub use edit::Edit;
 pub use find::Find;
 pub use grep::Grep;
 pub use ls::Ls;
-pub use read::{Read, base64, image_mime_type};
+pub use read::{Read, image_mime_type};
 pub use write::Write;
 
 /// Names of the tools active by default.
@@ -273,16 +273,9 @@ fn plain_declaration(name: &str, description: String, parameters: Value) -> Tool
     }
 }
 
-fn text(text: impl Into<String>) -> ContentBlock {
-    ContentBlock::Text(TextContent {
-        text: text.into(),
-        text_signature: None,
-    })
-}
-
 fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult {
     ToolResult {
-        content: vec![text(content)],
+        content: vec![ContentBlock::text(content)],
         details,
         ..ToolResult::default()
     }
@@ -327,15 +320,15 @@ pub fn js_number(value: f64) -> String {
     yapi_types::json::to_string(&value).unwrap_or_default()
 }
 
-/// Output capped at the default byte limit with no line limit, then pi's
-/// bracketed notices: `before`, the byte limit if hit, `after`. The truncation
-/// goes into `details` when it applied.
+/// The result of output capped at the default byte limit with no line limit,
+/// then pi's bracketed notices: `before`, the byte limit if hit, `after`. The
+/// truncation joins `details` when it applied; empty details are left out.
 fn capped_output(
     raw: &str,
     before: Vec<String>,
     after: Vec<String>,
-    details: &mut serde_json::Map<String, Value>,
-) -> String {
+    mut details: serde_json::Map<String, Value>,
+) -> ToolResult {
     let mut notices = before;
     let truncation = truncate::truncate_head(raw, JS_MAX_SAFE_INTEGER, truncate::DEFAULT_MAX_BYTES);
     let mut output = truncation.content.clone();
@@ -353,14 +346,11 @@ fn capped_output(
     if !notices.is_empty() {
         output += &format!("\n\n[{}]", notices.join(". "));
     }
-    output
+    text_result(
+        output,
+        (!details.is_empty()).then_some(Value::Object(details)),
+    )
 }
 
 /// `Number.MAX_SAFE_INTEGER`, pi's "no line limit".
 const JS_MAX_SAFE_INTEGER: usize = 9_007_199_254_740_991;
-
-pub(crate) fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    let _ = getrandom::fill(&mut buffer);
-    buffer.iter().map(|byte| format!("{byte:02x}")).collect()
-}

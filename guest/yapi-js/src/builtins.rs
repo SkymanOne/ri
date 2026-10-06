@@ -134,18 +134,9 @@ fn node_module(ctx: &Ctx<'_>, name: &str) -> rquickjs::Result<String> {
     let yapi: Object<'_> = ctx.globals().get("__yapi")?;
     let exports: Function<'_> = yapi.get("builtinExports")?;
     let names: Vec<String> = exports.call((name,))?;
-    let mut source = format!(
-        "const m = globalThis.__yapi_builtins[{}];\nexport default m;\n",
-        crate::json_string(name)
-    );
-    for (index, export) in names.iter().enumerate() {
-        source.push_str(&format!("const e{index} = m.{export};\n"));
-    }
-    let list: Vec<String> = names
-        .iter()
-        .enumerate()
-        .map(|(index, export)| format!("e{index} as {export}"))
-        .collect();
-    source.push_str(&format!("export {{ {} }};\n", list.join(", ")));
-    Ok(source)
+    Ok(format!(
+        "const m = globalThis.__yapi_builtins[{}];\nexport default m;\n{}",
+        serde_json::Value::from(name),
+        crate::reexports(&names)
+    ))
 }

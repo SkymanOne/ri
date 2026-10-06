@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 use yapi_types::auth::OAuthCredential;
 
-use super::callback::{Reply, Server, error_page, success_page};
+use super::callback::{Reply, Server, error_page, query, success_page};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
     callback_host, form, pkce, send,
@@ -44,10 +44,7 @@ fn parse_input(input: &str) -> Option<String> {
         return None;
     }
     if let Ok(url) = Url::parse(value) {
-        return url
-            .query_pairs()
-            .find(|(key, _)| key == "code")
-            .map(|(_, code)| code.into_owned());
+        return query(&url, "code");
     }
     if value.contains("code=") {
         return url::form_urlencoded::parse(value.as_bytes())
@@ -62,22 +59,6 @@ fn error_detail(body: &Value) -> Option<String> {
         .iter()
         .find_map(|key| body[*key].as_str().map(str::to_owned))
         .or_else(|| body["error"]["message"].as_str().map(str::to_owned))
-}
-
-fn random_uuid() -> String {
-    let mut bytes = [0u8; 16];
-    let _ = getrandom::fill(&mut bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    )
 }
 
 impl OpenRouterOAuth {
@@ -146,19 +127,14 @@ impl OpenRouterOAuth {
         let pkce = pkce::generate();
         // OpenRouter sends no `state`; the random path keeps stray requests
         // from completing the sign-in.
-        let path = format!("/oauth/callback/{}", random_uuid());
+        let path = format!("/oauth/callback/{}", yapi_types::time::uuid_v4());
         let route = path.clone();
         let handler = move |method: &str, url: &Url| -> Reply<String> {
             if method != "GET" || url.path() != route {
                 return Reply::page(404, error_page("Callback route not found.", None));
             }
-            let query = |name: &str| {
-                url.query_pairs()
-                    .find(|(key, _)| key == name)
-                    .map(|(_, value)| value.into_owned())
-            };
-            if let Some(error) = query("error") {
-                let description = query("error_description").unwrap_or(error);
+            if let Some(error) = query(url, "error") {
+                let description = query(url, "error_description").unwrap_or(error);
                 return Reply {
                     status: 400,
                     html: error_page("OpenRouter authorization failed.", Some(&description)),
@@ -167,7 +143,7 @@ impl OpenRouterOAuth {
                     )))),
                 };
             }
-            match query("code").filter(|code| !code.is_empty()) {
+            match query(url, "code").filter(|code| !code.is_empty()) {
                 Some(code) => Reply {
                     status: 200,
                     html: success_page("Signed in to OpenRouter. You may now close this page."),

@@ -7,11 +7,7 @@ import { Value } from "typebox/value";
 
 const yapi = globalThis.__yapi;
 
-function unavailable(name) {
-	const error = new Error(`${name} from @earendil-works/pi-ai is not available in yapi extensions`);
-	error.code = "ERR_NOT_SUPPORTED";
-	throw error;
-}
+const unavailable = (name) => yapi.unsupported(`${name} from @earendil-works/pi-ai is not available in yapi extensions`);
 
 export { Type };
 

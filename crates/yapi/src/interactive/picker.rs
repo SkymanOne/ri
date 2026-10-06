@@ -8,19 +8,18 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use yapi_tui::color::ColorMode;
 use yapi_tui::input::{Input, InputBuffer, escape_timeout};
 use yapi_tui::keys::Keys;
 use yapi_tui::screen::MainScreen;
-use yapi_tui::terminal::{
-    BRACKETED_PASTE_DISABLE, BRACKETED_PASTE_ENABLE, ColorQuery, Filtered, KeyboardProtocol,
-    color_query,
-};
+use yapi_tui::terminal::{ColorQuery, KeyboardProtocol};
 
 use super::config_selector::ConfigSelector;
 use super::selectors::{Action, ChoiceDialog, Outcome, Selector, Ui};
 use super::session_selector::{SessionSelector, Sources};
-use super::{COLOR_QUERY_TIMEOUT, emit, home_dir, keybindings, load_theme, true_color};
+use super::{
+    COLOR_QUERY_TIMEOUT, color_mode, decode_input, emit, home_dir, keybindings, load_theme,
+    terminal_enter, terminal_leave,
+};
 
 /// Shows the session selector; the chosen session file, or `None` when
 /// cancelled.
@@ -105,11 +104,7 @@ fn run_selector(
     let raw = yapi_tui::terminal::RawMode::enable()?;
     let mut protocol = KeyboardProtocol::default();
     let mut query = ColorQuery::new();
-    emit(&format!(
-        "{BRACKETED_PASTE_ENABLE}{}{}",
-        protocol.query(),
-        color_query()
-    ));
+    emit(&terminal_enter(&mut protocol));
     let mut buffer = InputBuffer::new();
     let mut keys_in: Vec<String> = Vec::new();
     let read = |buffer: &mut InputBuffer,
@@ -117,45 +112,27 @@ fn run_selector(
                 query: &mut ColorQuery,
                 timeout: Duration|
      -> Vec<String> {
-        let mut out = Vec::new();
         #[cfg(unix)]
         if !yapi_tui::terminal::stdin_ready(timeout) {
-            return out;
+            return Vec::new();
         }
         let mut bytes = [0u8; 4096];
         let count = std::io::Read::read(&mut std::io::stdin(), &mut bytes).unwrap_or(0);
-        let mut write = String::new();
-        for input in buffer.push(&bytes[..count]) {
-            match input {
-                Input::Key(sequence) => {
-                    if let Filtered::Forward(keys) = protocol.filter(&sequence, &mut write) {
-                        out.extend(keys.into_iter().filter(|key| !query.consume(key)));
-                    }
-                }
-                Input::Paste(text) => out.push(format!("\x1b[200~{text}\x1b[201~")),
-            }
-        }
-        if !write.is_empty() {
-            emit(&write);
-        }
-        out
+        let mut keys = decode_input(buffer, protocol, &bytes[..count]);
+        keys.retain(|key| !query.consume(key));
+        keys
     };
     let deadline = Instant::now() + COLOR_QUERY_TIMEOUT;
     while !query.is_done() && Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
         keys_in.extend(read(&mut buffer, &mut protocol, &mut query, remaining));
     }
-    let mode = if true_color() {
-        ColorMode::TrueColor
-    } else {
-        ColorMode::Ansi256
-    };
     let (theme, _) = load_theme(
         theme_setting,
         &super::themes::ThemeFiles::default(),
         agent_dir,
         &query.colors(),
-        mode,
+        color_mode(),
     );
     let mut keys = keybindings::load(agent_dir, Keys::detect(protocol.kitty));
     keys.set_kitty(protocol.kitty);
@@ -201,9 +178,7 @@ fn run_selector(
         emit(&screen.frame(&[], None, width, height));
     }
     let mut out = screen.stop();
-    out.push_str(BRACKETED_PASTE_DISABLE);
-    out.push_str(&protocol.disable());
-    out.push_str("\x1b[?25h");
+    out.push_str(&terminal_leave(&mut protocol));
     emit(&out);
     #[cfg(unix)]
     raw.restore();

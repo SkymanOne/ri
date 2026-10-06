@@ -21,6 +21,7 @@ use yapi_core::tools::RegisteredTool;
 use yapi_types::event::ToolResult;
 use yapi_types::message::{ContentBlock, Usage};
 use yapi_types::session::FileEntry;
+use yapi_types::sync::lock;
 
 use super::declarations::{Declaration, identifier, sample};
 use super::models;
@@ -166,46 +167,21 @@ fn truncate_text(text: &str, max: usize) -> String {
     }
 }
 
-fn text_of(result: &ToolResult) -> String {
-    let texts: Vec<&str> = result
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect();
-    texts.join("\n")
-}
-
 /// A nested call as `details.calls` reports it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CallRecord {
     id: String,
     name: String,
     args: String,
     status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     duration_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     /// Cost in USD of a `models.*` call that reported usage.
+    #[serde(skip_serializing_if = "Option::is_none")]
     cost: Option<f64>,
-}
-
-impl CallRecord {
-    fn json(&self) -> Value {
-        let mut out =
-            json!({"id": self.id, "name": self.name, "args": self.args, "status": self.status});
-        if let Some(duration) = self.duration_ms {
-            out["durationMs"] = json!(duration);
-        }
-        if let Some(error) = &self.error {
-            out["error"] = json!(error);
-        }
-        if let Some(cost) = self.cost {
-            out["cost"] = json!(cost);
-        }
-        out
-    }
 }
 
 /// What the script produced so far.
@@ -244,12 +220,6 @@ struct ScriptBridge {
     generated_images: AtomicUsize,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// The successful result of an operation: `undefined` or a JSON value.
 fn script_value(value: Option<&Value>) -> Value {
     json!({"json": value.map(|value| yapi_types::json::to_string(value).unwrap_or_default())})
@@ -267,11 +237,7 @@ fn is_namespace_name(namespace: &str, query: &str) -> bool {
 
 impl ScriptBridge {
     fn publish(&self) {
-        let calls: Vec<Value> = lock(&self.progress)
-            .calls
-            .iter()
-            .map(CallRecord::json)
-            .collect();
+        let calls = lock(&self.progress).calls.clone();
         (self.updates)(ToolResult {
             details: Some(json!({"calls": calls})),
             ..ToolResult::default()
@@ -429,7 +395,7 @@ impl ScriptBridge {
         let outcome = session
             .execute_tool(&self.call_id, &name, args, cancel.clone(), None)
             .await;
-        let text = text_of(&outcome.result);
+        let text = yapi_types::message::blocks_text(&outcome.result.content, "\n");
         {
             let mut progress = lock(&self.progress);
             let record = &mut progress.calls[index];
@@ -543,44 +509,25 @@ impl ScriptBridge {
                 .acquire()
                 .await
                 .map_err(|err| err.to_string())?;
-            let cancel = self.calls.child_token();
-            if kind == "classifier" {
-                let model = registry
-                    .classifiers()
-                    .iter()
-                    .find(|model| model.provider == provider && model.id == id)
-                    .cloned()
-                    .ok_or_else(|| format!("Unknown classifier model \"{provider}/{id}\""))?;
-                let context: yapi_types::classify::ClassifierContext =
-                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
-                let options = yapi_ai::api::classify::ClassifyOptions {
-                    cancel,
-                    ..Default::default()
-                };
-                serde_json::to_value(registry.classify(&model, &context, options).await)
-            } else {
-                let model = registry
-                    .image_models()
-                    .iter()
-                    .find(|model| model.provider == provider && model.id == id)
-                    .cloned()
-                    .ok_or_else(|| format!("Unknown image model \"{provider}/{id}\""))?;
-                let context: yapi_types::classify::ImagesContext =
-                    serde_json::from_value(context.clone()).map_err(|err| err.to_string())?;
-                let options = yapi_ai::api::images::ImagesOptions {
-                    cancel,
-                    ..Default::default()
-                };
-                let result = registry.generate_images(&model, &context, options).await;
-                let images = result
-                    .output
-                    .iter()
-                    .filter(|block| matches!(block, yapi_types::classify::ImagesContent::Image(_)))
-                    .count();
+            let result = models::run_model(
+                registry,
+                kind,
+                (&provider, &id),
+                context,
+                None,
+                self.calls.child_token(),
+            )
+            .await?;
+            if kind == "image" {
+                let images = result["output"].as_array().map_or(0, |output| {
+                    output
+                        .iter()
+                        .filter(|block| block["type"] == "image")
+                        .count()
+                });
                 self.generated_images.fetch_add(images, Ordering::Relaxed);
-                serde_json::to_value(result)
             }
-            .map_err(|err| err.to_string())?
+            result
         };
         let usage: Option<Usage> = result
             .get("usage")
@@ -694,9 +641,7 @@ fn summary(calls: &[CallRecord]) -> String {
 
 /// Writes the full text output to a temp file; the path or why not.
 fn spill(text: &str) -> Result<String, String> {
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes).map_err(|err| err.to_string())?;
-    let name: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    let name = yapi_types::time::random_hex(8);
     let path = std::env::temp_dir().join(format!("yapi-codemode-{name}.txt"));
     std::fs::write(&path, text).map_err(|err| err.to_string())?;
     Ok(path.display().to_string())
@@ -942,16 +887,13 @@ impl Runner {
                 "Script failed"
             }
         );
-        let mut content = vec![ContentBlock::Text(yapi_types::message::TextContent {
-            text: header,
-            text_signature: None,
-        })];
+        let mut content = vec![ContentBlock::text(header)];
         content.extend(
             items
                 .into_iter()
                 .filter_map(|item| serde_json::from_value::<ContentBlock>(item).ok()),
         );
-        let mut details = json!({"calls": calls.iter().map(CallRecord::json).collect::<Vec<_>>()});
+        let mut details = json!({ "calls": calls });
         if let Some(path) = full_output_path {
             details["fullOutputPath"] = json!(path);
         }

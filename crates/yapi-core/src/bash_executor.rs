@@ -8,10 +8,9 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use regex_lite::Regex;
-use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::tools::bash::{kill_tree, shell_command, shell_with};
+use crate::tools::bash::{Pipes, create_log, exit_code_of, kill_tree, shell_command, shell_with};
 use crate::tools::truncate::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncate_tail};
 
 const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
@@ -61,9 +60,7 @@ impl Output {
         if self.file.is_some() {
             return;
         }
-        let path =
-            std::env::temp_dir().join(format!("yapi-bash-{}.log", crate::tools::random_hex(8)));
-        if let Ok(mut file) = std::fs::File::create(&path) {
+        if let Some((path, mut file)) = create_log() {
             for chunk in &self.chunks {
                 let _ = file.write_all(chunk.as_bytes());
             }
@@ -73,15 +70,7 @@ impl Output {
 
     fn push(&mut self, data: &[u8], on_chunk: &mut impl FnMut(&str)) {
         self.total_bytes += data.len();
-        self.pending.extend_from_slice(data);
-        let valid = match std::str::from_utf8(&self.pending) {
-            Ok(text) => text.len(),
-            Err(err) if err.error_len().is_none() => err.valid_up_to(),
-            Err(_) => self.pending.len(),
-        };
-        let rest = self.pending.split_off(valid);
-        let decoded =
-            String::from_utf8_lossy(&std::mem::replace(&mut self.pending, rest)).into_owned();
+        let decoded = yapi_types::js::decode_utf8_stream(&mut self.pending, data);
         self.text(&decoded, on_chunk);
     }
 
@@ -147,8 +136,7 @@ pub async fn execute(
         .map_err(|err| err.to_string())?;
     let pid = child.id();
     let _tracked = crate::tools::bash::TrackedChild::new(pid);
-    let mut stdout = child.stdout.take();
-    let mut stderr = child.stderr.take();
+    let mut pipes = Pipes::take(&mut child);
     let mut output = Output {
         chunks: Vec::new(),
         kept: 0,
@@ -156,50 +144,27 @@ pub async fn execute(
         pending: Vec::new(),
         file: None,
     };
-    let (mut out_buf, mut err_buf) = (vec![0u8; 8192], vec![0u8; 8192]);
     let mut cancelled = false;
     let mut exit_code: Option<i32> = None;
     // Descendants may hold the pipes open: stop reading shortly after the
     // shell exits once output goes quiet.
     let mut exited_at: Option<Instant> = None;
     loop {
-        if exited_at.is_some() && stdout.is_none() && stderr.is_none() {
+        if exited_at.is_some() && !pipes.is_open() {
             break;
         }
         let grace = exited_at.map(|at| at + EXIT_STDIO_GRACE);
-        // Biased: when both pipes have data, stdout's came first more often
-        // than not, and a random pick would reorder `echo a; echo b >&2`.
         tokio::select! {
             biased;
-            read = async { stdout.as_mut().unwrap_or_else(|| unreachable!()).read(&mut out_buf).await }, if stdout.is_some() => {
-                match read {
-                    Ok(0) | Err(_) => stdout = None,
-                    Ok(n) => {
-                        output.push(&out_buf[..n], &mut on_chunk);
-                        if let Some(at) = &mut exited_at { *at = Instant::now(); }
-                    }
-                }
-            }
-            read = async { stderr.as_mut().unwrap_or_else(|| unreachable!()).read(&mut err_buf).await }, if stderr.is_some() => {
-                match read {
-                    Ok(0) | Err(_) => stderr = None,
-                    Ok(n) => {
-                        output.push(&err_buf[..n], &mut on_chunk);
-                        if let Some(at) = &mut exited_at { *at = Instant::now(); }
-                    }
+            bytes = pipes.read(), if pipes.is_open() => {
+                if !bytes.is_empty() {
+                    output.push(bytes, &mut on_chunk);
+                    if let Some(at) = &mut exited_at { *at = Instant::now(); }
                 }
             }
             status = child.wait(), if exited_at.is_none() => {
                 exited_at = Some(Instant::now());
-                exit_code = status.ok().map(|status| {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::process::ExitStatusExt;
-                        status.code().unwrap_or_else(|| status.signal().map_or(1, |signal| 128 + signal))
-                    }
-                    #[cfg(not(unix))]
-                    { status.code().unwrap_or(1) }
-                });
+                exit_code = status.ok().map(|status| exit_code_of(status).unwrap_or(1));
             }
             () = async { tokio::time::sleep_until(grace.unwrap_or_else(|| unreachable!()).into()).await }, if grace.is_some() => {
                 break;

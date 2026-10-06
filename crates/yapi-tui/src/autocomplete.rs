@@ -5,10 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use yapi_types::collate::locale_compare;
+use yapi_types::sync::lock;
 
 use crate::fuzzy::fuzzy_filter;
 use crate::select_list::SelectItem;
-use crate::text::{is_autocomplete_separator, is_js_whitespace, utf16_len};
+use crate::text::{is_autocomplete_separator, is_js_whitespace};
 
 /// Completions for the text before the cursor.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -117,12 +118,6 @@ impl Drop for CombinedProvider {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 const PATH_WRAPPERS: [(char, char); 5] =
     [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>'), ('`', '`')];
 
@@ -203,31 +198,13 @@ struct PathPrefix<'a> {
 }
 
 fn parse_path_prefix(prefix: &str) -> PathPrefix<'_> {
-    if let Some(raw) = prefix.strip_prefix("@\"") {
-        PathPrefix {
-            raw,
-            at: true,
-            quoted: true,
-        }
-    } else if let Some(raw) = prefix.strip_prefix('"') {
-        PathPrefix {
-            raw,
-            at: false,
-            quoted: true,
-        }
-    } else if let Some(raw) = prefix.strip_prefix('@') {
-        PathPrefix {
-            raw,
-            at: true,
-            quoted: false,
-        }
-    } else {
-        PathPrefix {
-            raw: prefix,
-            at: false,
-            quoted: false,
-        }
-    }
+    let (at, rest) = prefix
+        .strip_prefix('@')
+        .map_or((false, prefix), |rest| (true, rest));
+    let (quoted, raw) = rest
+        .strip_prefix('"')
+        .map_or((false, rest), |raw| (true, raw));
+    PathPrefix { raw, at, quoted }
 }
 
 fn completion_value(path: &str, at: bool, quoted: bool) -> String {
@@ -287,22 +264,10 @@ fn fd_path_query(query: &str) -> String {
         return normalized;
     }
     const SEPARATOR: &str = "[\\\\/]";
-    let escape = |segment: &str| {
-        segment
-            .chars()
-            .map(|c| {
-                if ".*+?^${}()|[]\\".contains(c) {
-                    format!("\\{c}")
-                } else {
-                    c.to_string()
-                }
-            })
-            .collect::<String>()
-    };
     let mut pattern = trimmed
         .split('/')
         .filter(|segment| !segment.is_empty())
-        .map(escape)
+        .map(regex_lite::escape)
         .collect::<Vec<_>>()
         .join(SEPARATOR);
     if normalized.ends_with('/') {
@@ -724,7 +689,7 @@ impl CombinedProvider {
             b_score
                 .cmp(a_score)
                 .then_with(|| depth(&a.path).cmp(&depth(&b.path)))
-                .then_with(|| utf16_len(&a.path).cmp(&utf16_len(&b.path)))
+                .then_with(|| yapi_types::js::len(&a.path).cmp(&yapi_types::js::len(&b.path)))
                 .then_with(|| locale_compare(&a.path, &b.path))
         });
         let items: Vec<SelectItem> = scored

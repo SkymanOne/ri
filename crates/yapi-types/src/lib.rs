@@ -19,6 +19,8 @@ pub mod models;
 pub mod rpc;
 pub mod session;
 pub mod settings;
+pub mod sync;
+pub mod time;
 
 use serde::{Deserialize, Deserializer};
 

@@ -16,7 +16,7 @@ use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::keys::Keys;
 use yapi_tui::lines::{self, StyledLine, styled};
-use yapi_tui::markdown::{self, MarkdownOptions, MarkdownTheme};
+use yapi_tui::markdown::{self, MarkdownOptions};
 use yapi_tui::select_list::SelectItem;
 use yapi_tui::theme::Theme;
 
@@ -134,16 +134,6 @@ fn tagged(description: &str, tag: &str) -> String {
     }
 }
 
-/// pi's `getModelSearchText`.
-fn model_search_text(id: &str, provider: &str, name: &str) -> String {
-    let name = if name.is_empty() {
-        String::new()
-    } else {
-        format!(" {name}")
-    };
-    format!("{id} {provider} {provider}/{id} {provider} {id}{name}")
-}
-
 /// The editor's completion source: built-in commands with model, thinking
 /// and login arguments, prompt templates, skill commands and paths.
 pub fn autocomplete(
@@ -169,14 +159,12 @@ pub fn autocomplete(
                     if models.is_empty() {
                         return None;
                     }
-                    let filtered = fuzzy_filter(models, prefix, |model| {
-                        model_search_text(&model.id, &model.provider, &model.name)
-                    });
+                    let filtered = fuzzy_filter(models, prefix, super::scoped_models::search_text);
                     (!filtered.is_empty()).then(|| {
                         filtered
                             .into_iter()
                             .map(|model| SelectItem {
-                                value: format!("{}/{}", model.provider, model.id),
+                                value: model.reference(),
                                 label: model.id,
                                 description: Some(model.provider),
                             })
@@ -407,9 +395,7 @@ pub fn session_info(session: &AgentSession, theme: &Theme) -> Vec<StyledLine> {
         info.push(Line::default());
         info.push(bold("Cost"));
         info.push(dim_label(theme, "Total:", format!("${:.3}", totals.cost)));
-        let selected = session
-            .model()
-            .map(|model| format!("{}/{}", model.provider, model.id));
+        let selected = session.model().map(|model| model.reference());
         let single_selected =
             stats.breakdown.len() == 1 && Some(&stats.breakdown[0].0) == selected.as_ref();
         if !single_selected {
@@ -426,14 +412,8 @@ pub fn session_info(session: &AgentSession, theme: &Theme) -> Vec<StyledLine> {
     info
 }
 
-/// The `/hotkeys` block.
-pub fn hotkeys(
-    keys: &Keybindings,
-    shortcuts: &[yapi_core::extensions::ShortcutBinding],
-    theme: &Theme,
-    markdown_theme: &MarkdownTheme,
-    width: usize,
-) -> Vec<StyledLine> {
+/// The `/hotkeys` markdown.
+fn hotkeys(keys: &Keybindings, shortcuts: &[yapi_core::extensions::ShortcutBinding]) -> String {
     let k = |action: &str| keys_display(keys, action);
     let new_line_note = if cfg!(windows) {
         " (Ctrl+Enter on Windows Terminal)"
@@ -535,13 +515,24 @@ pub fn hotkeys(
             ));
         }
     }
-    let text = text.trim().to_owned();
+    text.trim().to_owned()
+}
+
+/// pi's `/hotkeys` and `/changelog` blocks: `title` and the `text` markdown
+/// between borders.
+fn framed_markdown(
+    title: &str,
+    text: &str,
+    width: usize,
+    ctx: &super::chat::RenderContext<'_>,
+) -> Vec<StyledLine> {
+    let border = ctx.theme.fg("border");
     let mut out = lines::spacer(1);
-    out.push(lines::border(width, theme.fg("border")));
+    out.push(lines::border(width, border));
     out.extend(lines::text(
         &[styled(
-            "Keyboard Shortcuts",
-            theme.fg("accent").add_modifier(Modifier::BOLD),
+            title,
+            ctx.theme.fg("accent").add_modifier(Modifier::BOLD),
         )],
         width,
         1,
@@ -550,14 +541,14 @@ pub fn hotkeys(
     ));
     out.extend(lines::spacer(1));
     out.extend(markdown::render(
-        &text,
+        text,
         width,
         1,
         1,
-        markdown_theme,
+        ctx.markdown,
         MarkdownOptions::default(),
     ));
-    out.push(lines::border(width, theme.fg("border")));
+    out.push(lines::border(width, border));
     out
 }
 
@@ -657,35 +648,13 @@ impl super::App {
             }
             "/changelog" => {
                 self.push(super::Item::Render(Box::new(|width, ctx| {
-                    let mut out = lines::spacer(1);
-                    out.push(lines::border(width, ctx.theme.fg("border")));
-                    out.extend(lines::text(
-                        &[styled(
-                            "What's New",
-                            ctx.theme.fg("accent").add_modifier(Modifier::BOLD),
-                        )],
-                        width,
-                        1,
-                        0,
-                        None,
-                    ));
-                    out.extend(lines::spacer(1));
-                    out.extend(markdown::render(
-                        "No changelog entries found.",
-                        width,
-                        1,
-                        1,
-                        ctx.markdown,
-                        MarkdownOptions::default(),
-                    ));
-                    out.push(lines::border(width, ctx.theme.fg("border")));
-                    out
+                    framed_markdown("What's New", "No changelog entries found.", width, ctx)
                 })));
             }
             "/hotkeys" => {
-                let (keys, shortcuts) = (self.keys.clone(), self.shortcuts.clone());
+                let text = hotkeys(&self.keys, &self.shortcuts);
                 self.push(super::Item::Render(Box::new(move |width, ctx| {
-                    hotkeys(&keys, &shortcuts, ctx.theme, ctx.markdown, width)
+                    framed_markdown("Keyboard Shortcuts", &text, width, ctx)
                 })));
             }
             "/fork" => self.open_fork(),
@@ -926,26 +895,10 @@ impl super::App {
         self.expand_key = super::keybindings::keys_text(&self.keys, "app.tools.expand");
         self.cancel_key = super::keybindings::keys_text(&self.keys, "tui.select.cancel");
         self.install_shortcuts();
-        let (theme, theme_error) = super::load_theme(
-            self.theme_override
-                .as_deref()
-                .or(self.session.settings().theme.as_deref()),
-            &self.theme_files,
-            &self.agent_dir,
-            &self.colors,
-            self.color_mode,
-        );
-        self.markdown = super::markdown_theme(&theme);
-        self.editor.set_theme(super::editor_theme(&theme));
-        self.theme = theme;
-        self.style_alt_screen();
         let settings = self.session.settings();
         self.hide_thinking = settings.hide_thinking_block.unwrap_or(false);
         self.output_pad = usize::from(settings.output_pad.unwrap_or(1).min(1));
-        self.invalidate_all();
-        if let Some(error) = theme_error {
-            self.error(error);
-        }
+        self.use_theme(self.theme_override.clone().or(settings.theme).as_deref());
         if let Some(error) = self
             .session
             .with_registry(|registry| registry.error().map(str::to_owned))

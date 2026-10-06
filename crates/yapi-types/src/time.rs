@@ -92,8 +92,16 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     bytes
 }
 
-fn hex(bytes: &[u8]) -> String {
+/// `bytes` as lowercase hexadecimal.
+pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// `count` random bytes as lowercase hexadecimal.
+pub fn random_hex(count: usize) -> String {
+    let mut bytes = vec![0u8; count];
+    let _ = getrandom::fill(&mut bytes);
+    hex(&bytes)
 }
 
 /// A random UUID v4, as `crypto.randomUUID`.

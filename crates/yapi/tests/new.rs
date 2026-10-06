@@ -4,22 +4,14 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
+mod common;
+
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap()
-}
-
 fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("new-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+    common::scratch(&format!("new-{name}"))
 }
 
 fn yapi_new(cwd: &Path, args: &[&str]) -> Output {
@@ -60,7 +52,7 @@ fn creates_a_package_from_the_template() {
     let output = yapi_new(&dir, &["my-ext"]);
     assert!(output.status.success(), "{output:?}");
     let project = dir.join("my-ext");
-    let template = repo().join("crates/yapi/templates/extension");
+    let template = common::repo().join("crates/yapi/templates/extension");
     // The template's files, without the one only `cargo generate` reads.
     let expected: Vec<String> = files(&template)
         .into_iter()
@@ -84,7 +76,7 @@ fn creates_a_package_from_the_template() {
     // `crates/yapi-ext/tests/native.rs` builds and runs this example.
     assert_eq!(
         read(project.join("src/lib.rs")),
-        read(repo().join("guest/examples/hello/src/lib.rs"))
+        read(common::repo().join("guest/examples/hello/src/lib.rs"))
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.starts_with("Created native extension package \"my-ext\" in my-ext\n"));
@@ -132,7 +124,7 @@ fn the_package_loads_once_built() {
     assert!(yapi_new(&dir, &["greeter-ext"]).status.success());
     let project = dir.join("greeter-ext");
     std::fs::copy(
-        repo().join("crates/yapi-ext/tests/fixtures/hello.wasm"),
+        common::repo().join("crates/yapi-ext/tests/fixtures/hello.wasm"),
         project.join("extensions/greeter_ext.wasm"),
     )
     .unwrap();

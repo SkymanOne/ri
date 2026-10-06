@@ -92,7 +92,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 
 | Concern | Choice |
 |---|---|
-| Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` |
+| Async, HTTP, CLI | `tokio`, `reqwest` with rustls, `clap` for commands pi does not have (`yapi new`, `yapi import`, `xtask`). Pi's own arguments and commands keep ports of pi's hand-written parsers, whose quirks and messages clap cannot reproduce. |
 | Serialization | `serde`, `serde_json` |
 | TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ratatui-image` |
 | Markdown, diffs, images | `pulldown-cmark`, `similar`, `image` |
@@ -274,6 +274,7 @@ MB means 10^6 bytes. Runs alternate between yapi and pi, and reports give the ra
 - A change to user-facing behavior updates the matching page in `docs/` in the same commit.
 - A change to the architecture or to a decision updates this file in the same commit.
 - Commit messages use `type(scope): summary`. Type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`; scope is the crate name.
+- Pull request descriptions state the key changes, behavior changes and decisions. They do not paraphrase commits or report line counts.
 - Stage explicit paths. Never commit secrets, `target/` or local caches.
 
 ## Milestones

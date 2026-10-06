@@ -35,37 +35,28 @@ pub fn normalize(input: &str) -> String {
 
 /// Expands `~` and `file://` URLs.
 pub fn expand(text: &str) -> String {
+    // pi's `fileURLToPath`.
+    if text.starts_with("file://") {
+        return url::Url::parse(text)
+            .ok()
+            .and_then(|url| url.to_file_path().ok())
+            .map_or_else(
+                || text.to_owned(),
+                |path| path.to_string_lossy().into_owned(),
+            );
+    }
+    expand_home(text)
+}
+
+/// `~` and `~/…` name the home directory, as in a shell.
+pub fn expand_home(text: &str) -> String {
     if text == "~" {
         return home_dir().to_string_lossy().into_owned();
     }
-    if let Some(rest) = text.strip_prefix("~/") {
-        return home_dir().join(rest).to_string_lossy().into_owned();
+    match text.strip_prefix("~/") {
+        Some(rest) => home_dir().join(rest).to_string_lossy().into_owned(),
+        None => text.to_owned(),
     }
-    if let Some(rest) = text.strip_prefix("file://") {
-        return percent_decode(rest);
-    }
-    text.to_owned()
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%'
-            && index + 2 < bytes.len() + 1
-            && let Some(byte) = text
-                .get(index + 1..index + 3)
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        {
-            out.push(byte);
-            index += 3;
-            continue;
-        }
-        out.push(bytes[index]);
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Lexically resolves `path` against `base`: absolute result, no `.` or `..`.

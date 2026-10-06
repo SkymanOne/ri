@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+getrandom.workspace = true
 indexmap.workspace = true
 ryu-js.workspace = true
 serde.workspace = true

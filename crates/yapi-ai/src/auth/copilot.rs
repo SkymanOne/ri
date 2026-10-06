@@ -388,7 +388,7 @@ impl CopilotOAuth {
         let body = form(&[
             ("client_id", CLIENT_ID),
             ("device_code", device_code),
-            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ("grant_type", super::device::DEVICE_CODE_GRANT),
         ]);
         let github_token = poll_device_code(interval, Some(expires_in), true, cancel, || {
             let request = crate::http::client()

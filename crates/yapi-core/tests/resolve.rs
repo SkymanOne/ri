@@ -133,3 +133,22 @@ fn resolves_resources_as_pi() {
     }
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+/// pi's `readPiManifest` ignores a manifest list unless every entry is a
+/// string.
+#[test]
+fn ignores_manifest_lists_with_non_strings() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("resolve-mixed-manifest");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("prompts")).unwrap();
+    std::fs::write(root.join("a.ts"), "").unwrap();
+    std::fs::write(root.join("prompts/p.md"), "").unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"pi": {"extensions": ["./a.ts", 1], "prompts": ["./prompts/p.md"]}}"#,
+    )
+    .unwrap();
+    let resources = yapi_core::packages::package_resources(&root, None, true);
+    assert!(resources.extensions.is_empty(), "{resources:?}");
+    assert_eq!(resources.prompts, [root.join("prompts/p.md")]);
+}

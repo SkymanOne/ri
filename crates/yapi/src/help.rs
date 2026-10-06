@@ -7,16 +7,19 @@ use std::io::{IsTerminal, Write};
 
 use yapi_core::config::{AGENT_DIR_ENV, APP_NAME, PROJECT_DIR, SESSION_DIR_ENV};
 
+/// `text`, bold when `bold` is set.
+fn heading(bold: bool, text: &str) -> String {
+    if bold {
+        format!("\x1b[1m{text}\x1b[22m")
+    } else {
+        text.to_owned()
+    }
+}
+
 /// The help text, listing `flags` the loaded extensions registered; headings
 /// are bold when `bold` is set.
 pub fn text(bold: bool, flags: &[yapi_ext::Flag]) -> String {
-    let b = |text: &str| {
-        if bold {
-            format!("\x1b[1m{text}\x1b[22m")
-        } else {
-            text.to_owned()
-        }
-    };
+    let b = |text: &str| heading(bold, text);
     let app = APP_NAME;
     format!(
         r#"{title} - AI coding assistant with read, bash, edit, write tools
@@ -225,11 +228,6 @@ fn extension_flags(bold: bool, flags: &[yapi_ext::Flag]) -> String {
     if flags.is_empty() {
         return String::new();
     }
-    let heading = if bold {
-        "\x1b[1mExtension CLI Flags:\x1b[22m"
-    } else {
-        "Extension CLI Flags:"
-    };
     let lines: Vec<String> = flags
         .iter()
         .map(|flag| {
@@ -241,24 +239,23 @@ fn extension_flags(bold: bool, flags: &[yapi_ext::Flag]) -> String {
             format!("{:<30}{description}", format!("  --{}{value}", flag.name))
         })
         .collect();
-    format!("\n{heading}\n{}\n", lines.join("\n"))
+    format!(
+        "\n{}\n{}\n",
+        heading(bold, "Extension CLI Flags:"),
+        lines.join("\n")
+    )
 }
 
 /// Prints the help with the loaded extensions' `flags`, to stderr when
 /// `to_stderr` is set, as pi does once print or a mode owns stdout.
 pub fn print(flags: &[yapi_ext::Flag], to_stderr: bool) {
-    let colored = |terminal: bool| terminal && std::env::var_os("NO_COLOR").is_none();
-    if to_stderr {
-        let stderr = std::io::stderr();
-        let _ = stderr
-            .lock()
-            .write_all(text(colored(stderr.is_terminal()), flags).as_bytes());
+    let (mut out, terminal): (Box<dyn Write>, bool) = if to_stderr {
+        (Box::new(std::io::stderr()), std::io::stderr().is_terminal())
     } else {
-        let stdout = std::io::stdout();
-        let _ = stdout
-            .lock()
-            .write_all(text(colored(stdout.is_terminal()), flags).as_bytes());
-    }
+        (Box::new(std::io::stdout()), std::io::stdout().is_terminal())
+    };
+    let bold = terminal && std::env::var_os("NO_COLOR").is_none();
+    let _ = out.write_all(text(bold, flags).as_bytes());
 }
 
 #[cfg(test)]

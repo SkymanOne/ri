@@ -13,6 +13,7 @@ use yapi_ai::providers;
 use yapi_ai::registry::{LoginKind, ModelRegistry};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::select_list::visible_range;
 use yapi_tui::text_input::{InputEvent, TextInput};
 use yapi_types::collate::locale_compare;
 
@@ -363,11 +364,7 @@ impl ProviderSelector {
         out.push(input);
         out.extend(lines::spacer(1));
         let count = self.filtered.len();
-        let start = self
-            .selected
-            .saturating_sub(MAX_VISIBLE / 2)
-            .min(count.saturating_sub(MAX_VISIBLE));
-        let end = (start + MAX_VISIBLE).min(count);
+        let (start, end) = visible_range(self.selected, count, MAX_VISIBLE);
         for (index, option) in self.filtered[start..end].iter().enumerate() {
             let mut spans = if start + index == self.selected {
                 vec![
@@ -939,19 +936,7 @@ impl super::App {
         if let Some(id) = self.session.settings().device_id {
             return id;
         }
-        let mut bytes = [0u8; 16];
-        let _ = getrandom::fill(&mut bytes);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-        let id = format!(
-            "{}-{}-{}-{}-{}",
-            &hex[..8],
-            &hex[8..12],
-            &hex[12..16],
-            &hex[16..20],
-            &hex[20..]
-        );
+        let id = yapi_core::time::uuid_v4();
         let _ = self
             .session
             .set_global_setting("deviceId", Some(serde_json::Value::String(id.clone())));

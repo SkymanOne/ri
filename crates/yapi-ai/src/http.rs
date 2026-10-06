@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use indexmap::IndexMap;
 use reqwest::header::HeaderMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -99,6 +100,52 @@ pub fn user_agent() -> String {
         std::env::consts::OS,
         std::env::consts::ARCH
     )
+}
+
+/// Request headers as pi merges them (`providerHeadersToRecord`): names compare
+/// case-insensitively, a later value replaces an earlier one at the end, and
+/// `None` removes the header.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Headers(pub(crate) Vec<(String, String)>);
+
+impl Headers {
+    /// Sets `name` to `value`, or removes it for `None`.
+    pub(crate) fn set(&mut self, name: &str, value: Option<impl Into<String>>) {
+        self.0.retain(|(key, _)| !key.eq_ignore_ascii_case(name));
+        if let Some(value) = value {
+            self.0.push((name.to_owned(), value.into()));
+        }
+    }
+
+    /// Sets each of `headers` in order, as [`Headers::set`] does.
+    pub(crate) fn extend(&mut self, headers: &IndexMap<String, Option<String>>) {
+        for (name, value) in headers {
+            self.set(name, value.as_deref());
+        }
+    }
+
+    /// Sets each of a model's configured `headers` in order.
+    pub(crate) fn extend_model(&mut self, headers: Option<&IndexMap<String, String>>) {
+        for (name, value) in headers.into_iter().flatten() {
+            self.set(name, Some(value.as_str()));
+        }
+    }
+
+    /// The value of `name`.
+    pub(crate) fn get(&self, name: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// `request` with these headers added.
+    pub(crate) fn apply(&self, mut request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        for (name, value) in &self.0 {
+            request = request.header(name.as_str(), value.as_str());
+        }
+        request
+    }
 }
 
 /// Why a request produced no usable response.
@@ -247,6 +294,15 @@ pub fn sdk_status_message(status: u16, error: Option<&Value>, raw: Option<&str>)
     }
 }
 
+/// pi's `formatProviderError` for an OpenAI SDK status error: the SDK message
+/// from the body's `error`, or from the raw body when it is not JSON.
+pub(crate) fn openai_status_message(status: u16, body: &str, prefix: Option<&str>) -> String {
+    let json = serde_json::from_str::<Value>(body).ok();
+    let error = json.as_ref().and_then(|json| json.get("error"));
+    let message = sdk_status_message(status, error, json.is_none().then_some(body));
+    provider_error_message(&message, Some(status), error, prefix)
+}
+
 /// The message of an error the OpenAI SDK raises without a status, such as an
 /// error payload inside a stream: its `message`, or the error as JSON.
 pub fn sdk_error_message(error: &Value) -> String {
@@ -294,7 +350,8 @@ pub async fn next_openai_chunk(
     }
 }
 
-fn is_truthy(value: &Value) -> bool {
+/// JavaScript truthiness of a JSON value.
+pub(crate) fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,
@@ -328,15 +385,17 @@ pub fn provider_error_message(
     }
 }
 
-fn truncate_chars(text: &str, max: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= max {
+/// `text` cut to `max` UTF-16 units with a `... [truncated N chars]` note, as
+/// pi shortens error bodies.
+pub(crate) fn truncate_chars(text: &str, max: usize) -> String {
+    let len = yapi_types::js::len(text);
+    if len <= max {
         return text.to_owned();
     }
     format!(
         "{}... [truncated {} chars]",
-        String::from_utf16_lossy(&units[..max]),
-        units.len() - max
+        yapi_types::js::slice(text, 0, max),
+        len - max
     )
 }
 

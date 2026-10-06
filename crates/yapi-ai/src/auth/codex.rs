@@ -11,7 +11,7 @@ use super::callback::{Received, callback_or_manual, start_code_server};
 use super::device::{Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    SelectOption, callback_host, error_text, form, parse_authorization_input, pkce, send,
+    callback_host, error_text, form, parse_authorization_input, pkce, send,
 };
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -51,7 +51,7 @@ struct Token {
 }
 
 /// The JSON payload of a JWT, or `None`.
-pub(crate) fn decode_jwt(token: &str) -> Option<Value> {
+fn decode_jwt(token: &str) -> Option<Value> {
     let parts: Vec<&str> = token.split('.').collect();
     let [_, payload, _] = parts.as_slice() else {
         return None;
@@ -64,7 +64,8 @@ pub(crate) fn decode_jwt(token: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn account_id(access: &str) -> Option<String> {
+/// The ChatGPT account id in a Codex access token.
+pub(crate) fn account_id(access: &str) -> Option<String> {
     decode_jwt(access)?
         .get(JWT_CLAIM_PATH)?
         .get("chatgpt_account_id")?
@@ -161,12 +162,7 @@ impl CodexOAuth {
 
     async fn login_browser(&self, interaction: &Interaction) -> Result<OAuthCredential, AuthError> {
         let pkce = pkce::generate();
-        let mut state_bytes = [0u8; 16];
-        let _ = getrandom::fill(&mut state_bytes);
-        let state: String = state_bytes
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let state = yapi_types::time::random_hex(16);
         // Port 1455 is shared with the Codex CLI; when it is taken, the pasted redirect URL is used.
         let mut server = start_code_server(
             "OpenAI",
@@ -376,19 +372,13 @@ impl OAuthProvider for CodexOAuth {
     ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
         Box::pin(async move {
             let method = interaction
-                .prompt(AuthPrompt::Select {
-                    message: "Select OpenAI Codex login method:".into(),
-                    options: vec![
-                        SelectOption {
-                            id: BROWSER.into(),
-                            label: "Browser login (default)".into(),
-                        },
-                        SelectOption {
-                            id: DEVICE_CODE.into(),
-                            label: "Device code login (headless)".into(),
-                        },
+                .prompt(AuthPrompt::select(
+                    "Select OpenAI Codex login method:",
+                    &[
+                        (BROWSER, "Browser login (default)"),
+                        (DEVICE_CODE, "Device code login (headless)"),
                     ],
-                })
+                ))
                 .await?;
             match method.as_str() {
                 DEVICE_CODE => self.login_device_code(interaction).await,

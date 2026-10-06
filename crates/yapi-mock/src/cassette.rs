@@ -18,15 +18,20 @@ pub struct Cassette {
 impl Cassette {
     /// Reads a cassette from a JSON file.
     pub fn load(path: &Path) -> Result<Self, Error> {
-        let text = fs::read_to_string(path).map_err(|source| Error::Read {
-            path: path.to_owned(),
-            source,
-        })?;
-        serde_json::from_str(&text).map_err(|source| Error::Parse {
-            path: path.to_owned(),
-            source,
-        })
+        load_json(path)
     }
+}
+
+/// Reads a JSON file as `T`.
+pub(crate) fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Error> {
+    let text = fs::read_to_string(path).map_err(|source| Error::Read {
+        path: path.to_owned(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| Error::Parse {
+        path: path.to_owned(),
+        source,
+    })
 }
 
 /// One expected request and the response to it.
@@ -36,6 +41,27 @@ pub struct Interaction {
     pub request: RequestMatch,
     /// What the server replies.
     pub response: Response,
+}
+
+impl Interaction {
+    /// Answers `method` `path` with `status` and `body` as JSON.
+    pub fn json(method: &str, path: &str, status: u16, body: &serde_json::Value) -> Interaction {
+        Interaction {
+            request: RequestMatch {
+                method: method.into(),
+                path: path.into(),
+            },
+            response: Response {
+                status,
+                headers: [("content-type".to_owned(), "application/json".to_owned())]
+                    .into_iter()
+                    .collect(),
+                chunks: vec![body.to_string()],
+                body_base64: None,
+                chunk_delay_ms: 0,
+            },
+        }
+    }
 }
 
 /// Method and path a request must have. The query string is not compared.

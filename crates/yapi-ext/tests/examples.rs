@@ -44,6 +44,36 @@ fn dump(loaded: &Value) -> Value {
     })
 }
 
+/// pi's `discoverAndLoadExtensions` for one path, with empty project and agent
+/// directories: a file, a directory's entry points, or else its extension
+/// files and its subdirectories' entry points, by name.
+fn discover(path: &Path) -> Vec<PathBuf> {
+    use yapi_core::extensions::discovery::entries;
+    if !path.is_dir() {
+        return vec![path.to_owned()];
+    }
+    if let Some(found) = entries(path) {
+        return found;
+    }
+    let mut listed: Vec<_> = std::fs::read_dir(path).unwrap().flatten().collect();
+    listed.sort_by_key(std::fs::DirEntry::file_name);
+    let mut found = Vec::new();
+    for entry in listed {
+        let (path, kind) = (entry.path(), entry.file_type().unwrap());
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if (kind.is_file() || kind.is_symlink())
+            && [".ts", ".js", ".wasm"]
+                .iter()
+                .any(|ext| name.ends_with(ext))
+        {
+            found.push(path);
+        } else if kind.is_dir() || kind.is_symlink() {
+            found.extend(entries(&path).unwrap_or_default());
+        }
+    }
+    found
+}
+
 async fn load_example(
     engine: Engine,
     examples: PathBuf,
@@ -54,8 +84,7 @@ async fn load_example(
     let agent_dir = scratch.join("agent");
     std::fs::create_dir_all(&cwd).unwrap();
     std::fs::create_dir_all(&agent_dir).unwrap();
-    let entry = examples.join(&name).to_string_lossy().into_owned();
-    let paths = yapi_core::extensions::discovery::discover(&[entry], &cwd, &agent_dir);
+    let paths = discover(&examples.join(&name));
     let mut options = Options::new(cwd.clone());
     options.agent_dir = agent_dir.clone();
     let instance = Instance::start(&engine, options, Arc::new(NoBridge))

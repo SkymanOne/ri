@@ -3,9 +3,13 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use super::AuthError;
+use super::{AuthError, form};
+
+/// RFC 8628's grant type for exchanging a device code.
+pub(crate) const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 const TIMEOUT_MESSAGE: &str = "Device flow timed out";
 const SLOW_DOWN_TIMEOUT_MESSAGE: &str = "Device flow timed out after one or more slow_down responses. This is often caused by clock drift in WSL or VM environments. Please sync or restart the VM clock and try again.";
@@ -14,6 +18,29 @@ const MINIMUM_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_INTERVAL_SECONDS: f64 = 5.0;
 /// RFC 8628 section 3.5: `slow_down` adds five seconds.
 const SLOW_DOWN_INCREMENT: Duration = Duration::from_secs(5);
+
+/// An http(s) URL, the only kind opened in the browser.
+pub(crate) fn trusted_url(value: &Value) -> Option<String> {
+    let url = url::Url::parse(value.as_str()?).ok()?;
+    matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+}
+
+/// A finite number above zero.
+pub(crate) fn positive(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+/// A form POST that accepts JSON, with a 30-second timeout.
+pub(crate) fn post_form(url: &str, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
+    crate::http::client()
+        .post(url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .timeout(Duration::from_secs(30))
+        .body(form(fields))
+}
 
 /// The result of one poll.
 #[derive(Debug, PartialEq)]

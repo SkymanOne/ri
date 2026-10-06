@@ -8,6 +8,7 @@ use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::select_list::{step, visible_range};
 use yapi_tui::text_input::TextInput;
 use yapi_types::model::Model;
 
@@ -93,7 +94,7 @@ fn sorted_ids(enabled: &Enabled, all: &[String]) -> Vec<String> {
 }
 
 /// pi's `getModelSearchText`.
-fn search_text(model: &Model) -> String {
+pub(super) fn search_text(model: &Model) -> String {
     let name = if model.name.is_empty() {
         String::new()
     } else {
@@ -134,10 +135,7 @@ const MAX_VISIBLE: usize = 8;
 impl ScopedModelsSelector {
     /// A selector over `models` with `enabled` checked.
     pub fn new(models: Vec<Model>, enabled: Enabled) -> ScopedModelsSelector {
-        let all = models
-            .iter()
-            .map(|model| format!("{}/{}", model.provider, model.id))
-            .collect();
+        let all = models.iter().map(Model::reference).collect();
         let mut input = TextInput::default();
         input.focused = true;
         let mut selector = ScopedModelsSelector {
@@ -178,10 +176,7 @@ impl ScopedModelsSelector {
         if let Some(enabled) = enabled {
             self.enabled = enabled;
         }
-        self.all = models
-            .iter()
-            .map(|model| format!("{}/{}", model.provider, model.id))
-            .collect();
+        self.all = models.iter().map(Model::reference).collect();
         self.models = models;
         self.catalogs = status;
         self.refresh();
@@ -191,9 +186,7 @@ impl ScopedModelsSelector {
     }
 
     fn model(&self, id: &str) -> Option<&Model> {
-        self.models
-            .iter()
-            .find(|model| format!("{}/{}", model.provider, model.id) == id)
+        self.models.iter().find(|model| model.reference() == id)
     }
 
     fn refresh(&mut self) {
@@ -288,11 +281,7 @@ impl ScopedModelsSelector {
             out.extend(row(styled("  No matching models", muted)));
         } else {
             let count = self.rows.len();
-            let start = self
-                .selected
-                .saturating_sub(MAX_VISIBLE / 2)
-                .min(count.saturating_sub(MAX_VISIBLE));
-            let end = (start + MAX_VISIBLE).min(count);
+            let (start, end) = visible_range(self.selected, count, MAX_VISIBLE);
             for (index, item) in self.rows.iter().enumerate().take(end).skip(start) {
                 let selected = index == self.selected;
                 let id = item
@@ -362,23 +351,11 @@ impl ScopedModelsSelector {
         let kb = ui.keys;
         let count = self.rows.len();
         if kb.matches(data, "tui.select.up") {
-            if count > 0 {
-                self.selected = if self.selected == 0 {
-                    count - 1
-                } else {
-                    self.selected - 1
-                };
-            }
+            self.selected = step(self.selected, count, false);
             return Outcome::None;
         }
         if kb.matches(data, "tui.select.down") {
-            if count > 0 {
-                self.selected = if self.selected + 1 >= count {
-                    0
-                } else {
-                    self.selected + 1
-                };
-            }
+            self.selected = step(self.selected, count, true);
             return Outcome::None;
         }
         let up = kb.matches(data, "app.models.reorderUp");
@@ -439,7 +416,7 @@ impl ScopedModelsSelector {
                 .models
                 .iter()
                 .filter(|model| model.provider == provider)
-                .map(|model| format!("{}/{}", model.provider, model.id))
+                .map(Model::reference)
                 .collect();
             let all_on = ids.iter().all(|id| is_enabled(&self.enabled, id));
             self.enabled = if all_on {
@@ -474,10 +451,6 @@ impl ScopedModelsSelector {
     }
 }
 
-fn model_id(model: &Model) -> String {
-    format!("{}/{}", model.provider, model.id)
-}
-
 /// The ids the `enabledModels` patterns select, then the patterns that
 /// select nothing; `None` without patterns.
 pub(super) fn configured_ids(patterns: &[String], models: &[Model]) -> Enabled {
@@ -485,7 +458,7 @@ pub(super) fn configured_ids(patterns: &[String], models: &[Model]) -> Enabled {
         return None;
     }
     let (scoped, _) = yapi_core::model_resolver::resolve_model_scope(patterns, models);
-    let mut ids: Vec<String> = scoped.iter().map(|entry| model_id(&entry.model)).collect();
+    let mut ids: Vec<String> = scoped.iter().map(|entry| entry.model.reference()).collect();
     for pattern in patterns {
         let (found, _) =
             yapi_core::model_resolver::resolve_model_scope(std::slice::from_ref(pattern), models);
@@ -507,7 +480,7 @@ impl super::App {
                 &models,
             )
         } else {
-            Some(scoped.iter().map(|entry| model_id(&entry.model)).collect())
+            Some(scoped.iter().map(|entry| entry.model.reference()).collect())
         };
         let mut selector = ScopedModelsSelector::new(models, enabled);
         selector.refresh_id = self.next_refresh_id();
@@ -520,16 +493,12 @@ impl super::App {
     /// `enabledModels` setting, as pi's callbacks do.
     pub(super) fn scoped_models_changed(&mut self, enabled: Enabled, save: bool) {
         let models = self.session.available_models();
-        let available: Vec<String> = models.iter().map(model_id).collect();
+        let available: Vec<String> = models.iter().map(Model::reference).collect();
         let all_enabled = |ids: &[String]| available.iter().all(|id| ids.contains(id));
         if save {
-            let every = enabled.as_ref().is_some_and(|ids| {
-                ids.len() == available.len() && ids.iter().all(|id| available.contains(id))
-            });
-            let patterns = enabled.filter(|_| !every);
-            let value = patterns.map(|ids| {
-                serde_json::Value::Array(ids.into_iter().map(serde_json::Value::String).collect())
-            });
+            let value = enabled
+                .and_then(|ids| normalize(ids, &available))
+                .map(serde_json::Value::from);
             let _ = self.session.set_global_setting("enabledModels", value);
             self.status("Model selection saved to settings");
             return;

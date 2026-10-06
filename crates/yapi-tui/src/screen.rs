@@ -73,6 +73,15 @@ pub struct MainScreen {
     pub overlays: Vec<Overlay>,
 }
 
+/// Moves the cursor `diff` rows down, or up when negative.
+fn move_rows(out: &mut String, diff: isize) {
+    if diff > 0 {
+        out.push_str(&format!("\x1b[{diff}B"));
+    } else if diff < 0 {
+        out.push_str(&format!("\x1b[{}A", -diff));
+    }
+}
+
 impl MainScreen {
     /// A renderer that has drawn nothing yet.
     pub fn new() -> MainScreen {
@@ -92,11 +101,7 @@ impl MainScreen {
             return;
         };
         let target = row.min(total - 1);
-        if target > self.hardware_cursor_row {
-            out.push_str(&format!("\x1b[{}B", target - self.hardware_cursor_row));
-        } else if target < self.hardware_cursor_row {
-            out.push_str(&format!("\x1b[{}A", self.hardware_cursor_row - target));
-        }
+        move_rows(out, target as isize - self.hardware_cursor_row as isize);
         out.push_str(&format!("\x1b[{}G", col + 1));
         self.hardware_cursor_row = target;
         out.push_str(if self.show_hardware_cursor {
@@ -217,13 +222,6 @@ impl MainScreen {
             |target: usize, hardware_row: usize, prev_top: usize, top: usize| -> isize {
                 (target as isize - top as isize) - (hardware_row as isize - prev_top as isize)
             };
-        let move_by = |out: &mut String, diff: isize| {
-            if diff > 0 {
-                out.push_str(&format!("\x1b[{diff}B"));
-            } else if diff < 0 {
-                out.push_str(&format!("\x1b[{}A", -diff));
-            }
-        };
 
         if first >= lines.len() {
             // Only deletions at the end.
@@ -239,7 +237,7 @@ impl MainScreen {
                     return out;
                 }
                 out.push_str(SYNC_START);
-                move_by(&mut out, line_diff(target, hardware_row, prev_top, top));
+                move_rows(&mut out, line_diff(target, hardware_row, prev_top, top));
                 out.push('\r');
                 let start_offset = usize::from(!lines.is_empty());
                 if start_offset > 0 {
@@ -287,7 +285,7 @@ impl MainScreen {
             top += scroll;
             hardware_row = move_target;
         }
-        move_by(
+        move_rows(
             &mut out,
             line_diff(move_target, hardware_row, prev_top, top),
         );
@@ -331,11 +329,10 @@ impl MainScreen {
         }
         let mut out = String::from(" ");
         let target = self.previous.len();
-        if target > self.hardware_cursor_row {
-            out.push_str(&format!("\x1b[{}B", target - self.hardware_cursor_row));
-        } else if target < self.hardware_cursor_row {
-            out.push_str(&format!("\x1b[{}A", self.hardware_cursor_row - target));
-        }
+        move_rows(
+            &mut out,
+            target as isize - self.hardware_cursor_row as isize,
+        );
         out.push_str("\r\n");
         out
     }
@@ -689,16 +686,7 @@ impl AltScreen {
             let label = truncate(&label, right_edge.saturating_sub(left), "");
             let label_width = line_width(&label);
             if label_width > 0 {
-                let label = Line::from(
-                    label
-                        .spans
-                        .into_iter()
-                        .map(|span| {
-                            let style = self.jump_label_style.patch(span.style);
-                            Span::styled(span.content, style)
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let label = Line::from(crate::lines::under(label.spans, self.jump_label_style));
                 rows[viewport - 1] =
                     composite(&rows[viewport - 1], &label, left, label_width, width);
             }

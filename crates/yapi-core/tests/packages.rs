@@ -204,9 +204,8 @@ async fn installs_npm_packages_with_dependencies() {
         listed[0].installed_path.as_deref(),
         Some(root.join("node_modules/ext-pkg").as_path())
     );
-    let resolved = packages.resolve(false, |error| panic!("{error}")).await;
     assert_eq!(
-        resolved[0].resources.extensions,
+        listed[0].extensions,
         [root.join("node_modules/ext-pkg/index.ts")]
     );
 
@@ -353,9 +352,8 @@ async fn local_packages_are_stored_relative_to_the_scope() {
             dir.join("project/missing").display()
         )
     );
-    let resolved = packages.resolve(false, |error| panic!("{error}")).await;
     assert_eq!(
-        resolved[0].resources.extensions,
+        packages.list()[0].extensions,
         [dir.join("project/tools/index.ts")]
     );
     assert_eq!(std::env::current_dir().unwrap(), previous);
@@ -407,10 +405,10 @@ async fn installs_native_extensions() {
     let installed = dir.join("agent/npm/node_modules/shout/dist/shout.wasm");
     assert_eq!(std::fs::read(&installed).unwrap(), WASM.as_bytes());
 
-    let resolved = packages.resolve(false, |error| panic!("{error}")).await;
-    let extensions: Vec<PathBuf> = resolved
-        .iter()
-        .flat_map(|package| package.resources.extensions.clone())
+    let extensions: Vec<PathBuf> = packages
+        .list()
+        .into_iter()
+        .flat_map(|package| package.extensions)
         .collect();
     assert_eq!(
         extensions,

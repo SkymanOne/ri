@@ -91,6 +91,22 @@ pub enum AuthPrompt {
     },
 }
 
+impl AuthPrompt {
+    /// A [`AuthPrompt::Select`] of `(id, label)` options.
+    pub(crate) fn select(message: impl Into<String>, options: &[(&str, &str)]) -> AuthPrompt {
+        AuthPrompt::Select {
+            message: message.into(),
+            options: options
+                .iter()
+                .map(|(id, label)| SelectOption {
+                    id: (*id).to_owned(),
+                    label: (*label).to_owned(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// A labelled link in an info event.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -290,45 +306,7 @@ pub fn builtin_oauth(provider: &str) -> Option<Arc<dyn OAuthProvider>> {
     }
 }
 
-/// Unix time in milliseconds.
-pub(crate) fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| {
-            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
-        })
-}
-
-/// Milliseconds since the epoch of an RFC 3339 time such as
-/// `2026-10-04T12:00:00Z` or `2026-10-04T12:00:00.5+02:00`.
-pub(crate) fn rfc3339_ms(text: &str) -> Option<u64> {
-    let (date, time) = text.trim().split_once(['T', 't', ' '])?;
-    let (time, offset_seconds) = if let Some(time) = time.strip_suffix(['Z', 'z']) {
-        (time, 0)
-    } else {
-        let at = time.rfind(['+', '-'])?;
-        let (clock, offset) = time.split_at(at);
-        let sign = if offset.starts_with('-') { -1 } else { 1 };
-        let mut parts = offset[1..].split(':').map(|part| part.parse::<i64>().ok());
-        let (hours, minutes) = (parts.next()??, parts.next().flatten().unwrap_or(0));
-        (clock, sign * (hours * 3600 + minutes * 60))
-    };
-    let mut date = date.split('-').map(|part| part.parse::<i64>().ok());
-    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
-    let time = time.split('.').next()?;
-    let mut time = time.split(':').map(|part| part.parse::<i64>().ok());
-    let (hour, minute, second) = (time.next()??, time.next()??, time.next()??);
-    // Days from the civil date, after Howard Hinnant's algorithm.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (month + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let seconds = days * 86_400 + hour * 3600 + minute * 60 + second - offset_seconds;
-    u64::try_from(seconds).ok().map(|s| s * 1000)
-}
+pub(crate) use yapi_types::time::now_ms;
 
 /// pi's `OAUTH_CALLBACK_HOST`: `PI_OAUTH_CALLBACK_HOST`, else `127.0.0.1`.
 pub(crate) fn callback_host() -> String {
@@ -346,12 +324,10 @@ pub(crate) fn parse_authorization_input(input: &str) -> (Option<String>, Option<
         return (None, None);
     }
     if let Ok(url) = url::Url::parse(value) {
-        let get = |name: &str| {
-            url.query_pairs()
-                .find(|(key, _)| key == name)
-                .map(|(_, value)| value.into_owned())
-        };
-        return (get("code"), get("state"));
+        return (
+            callback::query(&url, "code"),
+            callback::query(&url, "state"),
+        );
     }
     if let Some((code, state)) = value.split_once('#') {
         let state = state.split('#').next().unwrap_or_default();
@@ -374,26 +350,14 @@ pub(crate) fn parse_authorization_input(input: &str) -> (Option<String>, Option<
 
 /// An `application/x-www-form-urlencoded` body.
 pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    for (key, value) in pairs {
-        serializer.append_pair(key, value);
-    }
-    serializer.finish()
+    url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish()
 }
 
 /// A JSON object of string fields, in order.
 pub(crate) fn object(pairs: &[(&str, &str)]) -> serde_json::Value {
-    serde_json::Value::Object(
-        pairs
-            .iter()
-            .map(|(key, value)| {
-                (
-                    (*key).to_owned(),
-                    serde_json::Value::String((*value).to_owned()),
-                )
-            })
-            .collect(),
-    )
+    pairs.iter().copied().collect()
 }
 
 /// The body parsed as JSON; `null` when it is not JSON.
@@ -439,20 +403,6 @@ pub(crate) fn network_message(err: &dyn std::error::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_rfc3339_times() {
-        assert_eq!(rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(
-            rfc3339_ms("2026-10-04T12:30:15.5Z"),
-            Some(1_791_117_015_000)
-        );
-        assert_eq!(
-            rfc3339_ms("2026-10-04T14:30:15+02:00"),
-            Some(1_791_117_015_000)
-        );
-        assert_eq!(rfc3339_ms("2026-10-04"), None);
-    }
 
     #[test]
     fn parses_pasted_input_like_pi() {

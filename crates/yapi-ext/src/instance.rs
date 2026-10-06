@@ -394,12 +394,9 @@ impl Actor {
                     if generation != self.generation {
                         continue;
                     }
-                    let value =
-                        match value {
-                            Ok(value) => Ok(yapi_types::json::to_string(&value)
-                                .unwrap_or_else(|_| "null".into())),
-                            Err(message) => Err(message),
-                        };
+                    let value = value.map(|value| {
+                        yapi_types::json::to_string(&value).unwrap_or_else(|_| "null".into())
+                    });
                     self.guest(|bindings, store| {
                         bindings.yapi_extension_guest().call_resolve(
                             store,
@@ -428,13 +425,16 @@ impl Actor {
         }
     }
 
-    fn render(&mut self, handle: u32, width: u32) -> Vec<String> {
-        {
-            let state = self.store.data_mut();
-            state.call_started = Instant::now();
-            state.host_time = Duration::ZERO;
-        }
+    /// Starts the clock and the epoch deadline of a guest call.
+    fn start_call(&mut self) {
+        let state = self.store.data_mut();
+        state.call_started = Instant::now();
+        state.host_time = Duration::ZERO;
         self.store.set_epoch_deadline(1);
+    }
+
+    fn render(&mut self, handle: u32, width: u32) -> Vec<String> {
+        self.start_call();
         match self
             .bindings
             .yapi_extension_guest()
@@ -457,12 +457,7 @@ impl Actor {
             &mut Store<State>,
         ) -> wasmtime::Result<Vec<wit::extension::types::Outcome>>,
     ) {
-        {
-            let state = self.store.data_mut();
-            state.call_started = Instant::now();
-            state.host_time = Duration::ZERO;
-        }
-        self.store.set_epoch_deadline(1);
+        self.start_call();
         let result = call(&self.bindings, &mut self.store);
         let started = std::mem::take(&mut self.store.data_mut().started);
         match result {

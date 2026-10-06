@@ -56,8 +56,7 @@ pub fn run(args: &[String]) -> u8 {
 fn configure(local: bool, trust: Option<bool>) -> anyhow::Result<u8> {
     let cwd = std::env::current_dir()?;
     let agent_dir = agent_dir();
-    let settings = crate::packages::command_settings(&cwd, &agent_dir, trust)?;
-    let trusted = settings.project_trusted();
+    let (settings, trusted) = crate::startup::load_settings(&cwd, &agent_dir, trust, true)?;
     if local && !trusted {
         eprintln!("Project is not trusted. Use --approve to modify local resource config.");
         return Ok(1);

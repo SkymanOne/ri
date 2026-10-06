@@ -1,14 +1,15 @@
 //! `yapi install`, `remove` (`uninstall`), `update` and `list`: pi's package
 //! commands (`package-manager-cli.ts` in pi `v1.0.0`).
 
-use std::io::{IsTerminal as _, Write as _};
-use std::path::{Path, PathBuf};
+use std::io::Write as _;
+use std::path::PathBuf;
 
 use yapi_core::config::agent_dir;
 use yapi_core::extensions::discovery::is_native;
 use yapi_core::packages::PackageManager;
-use yapi_core::settings::{Scope, SettingsManager};
-use yapi_core::trust::{TrustStore, needs_prompt, resolve_trusted};
+use yapi_core::settings::Scope;
+
+use crate::{err, out};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Command {
@@ -33,7 +34,7 @@ impl Command {
             Command::Install => "yapi install <source> [-l] [--approve|--no-approve]",
             Command::Remove => "yapi remove <source> [-l] [--approve|--no-approve]",
             Command::Update => {
-                "yapi update [source|self|yapi] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve]"
+                "yapi update [source|self|yapi] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve] [--force]"
             }
             Command::List => "yapi list [--approve|--no-approve]",
         }
@@ -49,7 +50,7 @@ impl Command {
                 "Usage:\n  {usage}\n\nRemove a package and its source from settings.\nAlias: yapi uninstall <source> [-l]\n\nOptions:\n  -l, --local       Remove from project settings (.yapi/settings.json)\n  -a, --approve     Trust project-local files for this command\n  -na, --no-approve Ignore project-local files for this command\n\nExamples:\n  yapi remove npm:@foo/bar\n  yapi uninstall npm:@foo/bar\n"
             ),
             Command::Update => format!(
-                "Usage:\n  {usage}\n\nUpdate installed packages or model catalogs.\n\nOptions:\n  --self                  Update yapi only (default when no target is given)\n  --extensions            Update installed packages only\n  --models                Refresh model catalogs only\n  --all                   Update yapi and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n"
+                "Usage:\n  {usage}\n\nUpdate installed packages or model catalogs.\n\nOptions:\n  --self                  Update yapi only (default when no target is given)\n  --extensions            Update installed packages only\n  --models                Refresh model catalogs only\n  --all                   Update yapi and installed packages\n  --extension <source>    Update one package only\n  -a, --approve           Trust project-local files for this command\n  -na, --no-approve       Ignore project-local files for this command\n  --force                 No effect: yapi updates only through its installer\n"
             ),
             Command::List => format!(
                 "Usage:\n  {usage}\n\nList installed packages from user and project settings.\n\nOptions:\n  -a, --approve      Trust project-local files for this command\n  -na, --no-approve  Ignore project-local files for this command\n"
@@ -59,9 +60,10 @@ impl Command {
 }
 
 /// What to update.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum Update {
     /// yapi itself.
+    #[default]
     Myself,
     /// Packages: all, or the one named.
     Packages(Option<String>),
@@ -87,6 +89,8 @@ struct Options {
     extension: Option<String>,
     /// pi's `conflictingOptions`: the first conflict between flags.
     conflict: Option<String>,
+    /// What `update` updates.
+    target: Update,
 }
 
 /// What `yapi update` says instead of updating yapi.
@@ -106,6 +110,9 @@ fn parse(command: Command, args: &[String]) -> Options {
             "--extensions" if command == Command::Update => options.extensions_flag = true,
             "--all" if command == Command::Update => options.all_flag = true,
             "--models" if command == Command::Update => options.models_flag = true,
+            // pi's `--force` reinstalls pi itself, which yapi leaves to its
+            // installer.
+            "--force" if command == Command::Update => {}
             "-a" | "--approve" => options.trust = Some(true),
             "-na" | "--no-approve" => options.trust = Some(false),
             "--extension" if command == Command::Update => match args.get(index) {
@@ -135,97 +142,74 @@ fn parse(command: Command, args: &[String]) -> Options {
         }
     }
     if command == Command::Update {
-        let conflict = update_conflict(&options);
+        let (target, conflict) = update_target(&options);
+        options.target = target;
         if options.conflict.is_none() {
-            options.conflict = conflict;
+            options.conflict = conflict.map(str::to_owned);
         }
     }
     options
 }
 
-/// pi's checks for update flags that cannot be combined.
-fn update_conflict(options: &Options) -> Option<String> {
-    let source = options.source.is_some();
-    let extension = options.extension.is_some();
+/// pi's update target and first conflict between update flags, worked out
+/// in one pass as pi's `parsePackageCommand` does.
+fn update_target(options: &Options) -> (Update, Option<&'static str>) {
     let (myself, extensions, all, models) = (
         options.self_flag,
         options.extensions_flag,
         options.all_flag,
         options.models_flag,
     );
-    let conflict = if all && (myself || extensions || models || extension) {
-        "--all cannot be combined with --self, --extensions, --models, or --extension"
-    } else if all && source {
-        "--all cannot be combined with a positional source"
-    } else if models && (myself || extensions || all || extension) {
-        "--models cannot be combined with --self, --extensions, --all, or --extension"
-    } else if models && source {
-        "--models cannot be combined with a positional source"
-    } else if models {
-        return None;
-    } else if extension && (myself || extensions || all) {
-        "--extension cannot be combined with --self, --extensions, or --all"
-    } else if extension && source {
-        "--extension cannot be combined with a positional source"
-    } else if !extension
-        && source
-        && !matches!(options.source.as_deref(), Some("self" | "yapi" | "pi"))
-        && (extensions || myself || all)
-    {
-        "positional update targets cannot be combined with --self, --extensions, or --all"
-    } else {
-        return None;
+    let (source, extension) = (options.source.as_deref(), options.extension.as_deref());
+    let mut conflict = None;
+    let mut note = |text: &'static str| {
+        conflict.get_or_insert(text);
     };
-    Some(conflict.to_owned())
-}
-
-fn update_target(options: &Options) -> Update {
-    if options.models_flag {
-        return Update::Models;
+    if all && (myself || extensions || models || extension.is_some()) {
+        note("--all cannot be combined with --self, --extensions, --models, or --extension");
     }
-    if let Some(source) = &options.extension {
-        return Update::Packages(Some(source.clone()));
+    if all && source.is_some() {
+        note("--all cannot be combined with a positional source");
     }
-    match options.source.as_deref() {
-        Some("self" | "yapi" | "pi") if options.extensions_flag => Update::All,
-        Some("self" | "yapi" | "pi") => Update::Myself,
-        Some(source) => Update::Packages(Some(source.to_owned())),
-        None if options.all_flag || (options.self_flag && options.extensions_flag) => Update::All,
-        None if options.extensions_flag => Update::Packages(None),
-        None => Update::Myself,
-    }
-}
-
-fn out(line: &str) {
-    let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-fn err(line: &str) {
-    let _ = writeln!(std::io::stderr(), "{line}");
-}
-
-/// pi's `createCommandSettingsManager`: settings whose project scope loads
-/// when `override_`, a stored decision or `defaultProjectTrust` trusts the
-/// project, or when the user trusts it at pi's prompt in a terminal.
-pub fn command_settings(
-    cwd: &Path,
-    agent_dir: &Path,
-    override_: Option<bool>,
-) -> anyhow::Result<SettingsManager> {
-    let global = SettingsManager::load(agent_dir, cwd, false)?;
-    let view = global.settings();
-    let store = TrustStore::new(agent_dir);
-    let default = view.default_project_trust;
-    let trusted = if std::io::stdin().is_terminal()
-        && std::io::stdout().is_terminal()
-        && needs_prompt(cwd, &store, override_, default)
-    {
-        crate::interactive::picker::ask_project_trust(agent_dir, cwd, view.theme.as_deref())?
-            .unwrap_or(false)
+    let target = if models {
+        if myself || extensions || all || extension.is_some() {
+            note("--models cannot be combined with --self, --extensions, --all, or --extension");
+        }
+        if source.is_some() {
+            note("--models cannot be combined with a positional source");
+        }
+        Update::Models
+    } else if let Some(extension) = extension {
+        if myself || extensions || all {
+            note("--extension cannot be combined with --self, --extensions, or --all");
+        }
+        if source.is_some() {
+            note("--extension cannot be combined with a positional source");
+        }
+        Update::Packages(Some(extension.to_owned()))
+    } else if let Some(source) = source {
+        if matches!(source, "self" | "yapi" | "pi") {
+            if extensions {
+                Update::All
+            } else {
+                Update::Myself
+            }
+        } else {
+            if extensions || myself || all {
+                note(
+                    "positional update targets cannot be combined with --self, --extensions, or --all",
+                );
+            }
+            Update::Packages(Some(source.to_owned()))
+        }
+    } else if all || (myself && extensions) {
+        Update::All
+    } else if extensions {
+        Update::Packages(None)
     } else {
-        resolve_trusted(cwd, &store, override_, default)
+        Update::Myself
     };
-    Ok(SettingsManager::load(agent_dir, cwd, trusted)?)
+    (target, conflict)
 }
 
 /// Runs a package command when `args` starts with one; its exit code.
@@ -274,7 +258,7 @@ pub async fn run(args: &[String]) -> Option<u8> {
         err(&format!("Usage: {usage}"));
         return Some(1);
     }
-    if command == Command::Update && update_target(&options) == Update::Models {
+    if command == Command::Update && options.target == Update::Models {
         return Some(refresh_models().await);
     }
     Some(execute(command, options).await)
@@ -287,19 +271,14 @@ async fn refresh_models() -> u8 {
     let Some(store) = registry.models_store().cloned() else {
         return 0;
     };
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let options = yapi_ai::model_catalog::RefreshOptions {
+    use yapi_ai::model_catalog::{REFRESH_TIMEOUT, RefreshOptions, cancel_after, refresh};
+    let options = RefreshOptions {
         force: true,
-        cancel: cancel.clone(),
+        cancel: cancel_after(REFRESH_TIMEOUT),
         ..Default::default()
     };
-    let timer = tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-        cancel.cancel();
-    });
     let targets = registry.catalog_targets().await;
-    let refreshed = yapi_ai::model_catalog::refresh(&targets, &store, &options).await;
-    timer.abort();
+    let refreshed = refresh(&targets, &store, &options).await;
     let failure = if refreshed.aborted {
         Some("Model catalog refresh timed out.".to_owned())
     } else if !refreshed.errors.is_empty() {
@@ -333,8 +312,8 @@ async fn execute(command: Command, options: Options) -> u8 {
         return 1;
     };
     let agent_dir = agent_dir();
-    let settings = match command_settings(&cwd, &agent_dir, options.trust) {
-        Ok(settings) => settings,
+    let settings = match crate::startup::load_settings(&cwd, &agent_dir, options.trust, true) {
+        Ok((settings, _)) => settings,
         Err(error) => {
             err(&format!("Error: {error}"));
             return 1;
@@ -372,8 +351,8 @@ async fn execute(command: Command, options: Options) -> u8 {
             Ok(())
         }
         Command::Update => {
-            let target = update_target(&options);
-            if target == Update::Myself && options.source.is_none() && !options.self_flag {
+            let target = &options.target;
+            if *target == Update::Myself && options.source.is_none() && !options.self_flag {
                 out("Extensions are skipped. Run yapi update --extensions to update extensions.");
             }
             let packages_result = match &target {

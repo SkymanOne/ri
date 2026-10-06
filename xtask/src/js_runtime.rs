@@ -63,10 +63,8 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
             "set WASI_SDK_PATH or pass --wasi-sdk to a WASI SDK (https://github.com/WebAssembly/wasi-sdk)"
         );
     };
-    let target_dir = Path::new("target/guest").canonicalize().or_else(|_| {
-        fs::create_dir_all("target/guest")?;
-        Path::new("target/guest").canonicalize()
-    })?;
+    fs::create_dir_all("target/guest")?;
+    let target_dir = Path::new("target/guest").canonicalize()?;
     let examples = examples()?;
     let mut build = vec![
         "build",

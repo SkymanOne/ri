@@ -11,12 +11,13 @@ use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
 use yapi_types::message::ToolDeclaration;
+use yapi_types::sync::lock;
 
 use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, Truncation, format_size, tail_bytes,
     truncate_tail,
 };
-use super::{ToolEnv, declaration, random_hex, text_result};
+use super::{ToolEnv, declaration, text_result};
 
 const MAX_TIMEOUT_MS: f64 = 2_147_483_647.0;
 const STRUCTURED_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
@@ -166,15 +167,7 @@ impl Accumulator {
 
     fn append(&mut self, data: &[u8]) {
         use std::io::Write;
-        self.pending.extend_from_slice(data);
-        let valid = match std::str::from_utf8(&self.pending) {
-            Ok(text) => text.len(),
-            Err(err) if err.error_len().is_none() => err.valid_up_to(),
-            Err(_) => self.pending.len(),
-        };
-        let rest = self.pending.split_off(valid);
-        let decoded =
-            String::from_utf8_lossy(&std::mem::replace(&mut self.pending, rest)).into_owned();
+        let decoded = yapi_types::js::decode_utf8_stream(&mut self.pending, data);
         self.append_text(&decoded);
         if self.file.is_some() || self.over_limits() {
             self.spill();
@@ -227,8 +220,7 @@ impl Accumulator {
         if self.file.is_some() {
             return;
         }
-        let path = std::env::temp_dir().join(format!("yapi-bash-{}.log", random_hex(8)));
-        if let Ok(mut file) = std::fs::File::create(&path) {
+        if let Some((path, mut file)) = create_log() {
             let _ = file.write_all(&std::mem::take(&mut self.raw));
             self.file = Some((path, file));
         }
@@ -372,10 +364,7 @@ impl TrackedChild {
     /// Tracks the process group led by `pid`.
     pub(crate) fn new(pid: Option<u32>) -> TrackedChild {
         if let Some(pid) = pid {
-            TRACKED
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(pid);
+            lock(&TRACKED).push(pid);
         }
         TrackedChild(pid)
     }
@@ -384,10 +373,7 @@ impl TrackedChild {
 impl Drop for TrackedChild {
     fn drop(&mut self) {
         if let Some(pid) = self.0 {
-            TRACKED
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .retain(|tracked| *tracked != pid);
+            lock(&TRACKED).retain(|tracked| *tracked != pid);
         }
     }
 }
@@ -395,29 +381,101 @@ impl Drop for TrackedChild {
 /// Kills every running command's process tree, as pi's
 /// `killTrackedDetachedChildren` does before exiting on a signal.
 pub fn kill_tracked_children() {
-    let tracked = std::mem::take(
-        &mut *TRACKED
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-    );
+    let tracked = std::mem::take(&mut *lock(&TRACKED));
     for pid in tracked {
         kill_tree(Some(pid));
     }
 }
 
+/// Sends `signal` to the process group of `pid`, or to `pid` alone.
 #[cfg(unix)]
-pub(crate) fn kill_tree(pid: Option<u32>) {
-    use rustix::process::{Pid, Signal, kill_process, kill_process_group};
+pub(crate) fn signal_tree(pid: Option<u32>, signal: rustix::process::Signal) {
+    use rustix::process::{Pid, kill_process, kill_process_group};
     let Some(pid) = pid.and_then(|pid| Pid::from_raw(pid as i32)) else {
         return;
     };
-    if kill_process_group(pid, Signal::KILL).is_err() {
-        let _ = kill_process(pid, Signal::KILL);
+    if kill_process_group(pid, signal).is_err() {
+        let _ = kill_process(pid, signal);
     }
+}
+
+#[cfg(unix)]
+pub(crate) fn kill_tree(pid: Option<u32>) {
+    signal_tree(pid, rustix::process::Signal::KILL);
 }
 
 #[cfg(not(unix))]
 pub(crate) fn kill_tree(_pid: Option<u32>) {}
+
+/// A child's stdout and stderr, read until both close.
+pub(crate) struct Pipes {
+    stdout: Option<tokio::process::ChildStdout>,
+    stderr: Option<tokio::process::ChildStderr>,
+    buffers: [Vec<u8>; 2],
+}
+
+impl Pipes {
+    /// Takes `child`'s piped stdout and stderr.
+    pub(crate) fn take(child: &mut tokio::process::Child) -> Pipes {
+        Pipes {
+            stdout: child.stdout.take(),
+            stderr: child.stderr.take(),
+            buffers: [vec![0; 8192], vec![0; 8192]],
+        }
+    }
+
+    /// Whether either pipe is still open.
+    pub(crate) fn is_open(&self) -> bool {
+        self.stdout.is_some() || self.stderr.is_some()
+    }
+
+    /// The next bytes from either pipe, preferring stdout: when both have
+    /// data, stdout's came first more often than not, and a random pick would
+    /// reorder `echo a; echo b >&2`. Empty when a pipe closed or none is open.
+    /// Cancel safe.
+    pub(crate) async fn read(&mut self) -> &[u8] {
+        let [out, err] = &mut self.buffers;
+        let (read, buffer) = tokio::select! {
+            biased;
+            read = async { self.stdout.as_mut().unwrap_or_else(|| unreachable!()).read(out).await }, if self.stdout.is_some() => {
+                if !matches!(read, Ok(1..)) {
+                    self.stdout = None;
+                }
+                (read, &self.buffers[0])
+            }
+            read = async { self.stderr.as_mut().unwrap_or_else(|| unreachable!()).read(err).await }, if self.stderr.is_some() => {
+                if !matches!(read, Ok(1..)) {
+                    self.stderr = None;
+                }
+                (read, &self.buffers[1])
+            }
+            else => return &[],
+        };
+        &buffer[..read.unwrap_or(0)]
+    }
+}
+
+/// A finished child's exit code; a signal's death is 128 plus the signal.
+pub(crate) fn exit_code_of(status: std::process::ExitStatus) -> Option<i32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status
+            .code()
+            .or_else(|| status.signal().map(|signal| 128 + signal))
+    }
+    #[cfg(not(unix))]
+    {
+        status.code()
+    }
+}
+
+/// A new file for the full output of a command: `yapi-bash-<hex>.log` in the
+/// temporary directory.
+pub(crate) fn create_log() -> Option<(PathBuf, std::fs::File)> {
+    let path = std::env::temp_dir().join(format!("yapi-bash-{}.log", crate::time::random_hex(8)));
+    std::fs::File::create(&path).ok().map(|file| (path, file))
+}
 
 enum Ending {
     Exited(Option<i32>),
@@ -485,8 +543,7 @@ impl Tool for Bash {
             let mut child = process.spawn().map_err(|err| err.to_string())?;
             let pid = child.id();
             let _tracked = TrackedChild::new(pid);
-            let mut stdout = child.stdout.take();
-            let mut stderr = child.stderr.take();
+            let mut pipes = Pipes::take(&mut child);
 
             updates(ToolResult::default());
             let started = Instant::now();
@@ -497,40 +554,24 @@ impl Tool for Bash {
             let mut ending: Option<Ending> = None;
             let mut exited_at: Option<Instant> = None;
             let mut exit_code = None;
-            let (mut out_buf, mut err_buf) = (vec![0u8; 8192], vec![0u8; 8192]);
 
             loop {
-                if stdout.is_none() && stderr.is_none() && exited_at.is_some() {
+                if !pipes.is_open() && exited_at.is_some() {
                     break;
                 }
                 let grace = exited_at.map(|at| at + EXIT_STDIO_GRACE);
                 let next_update = dirty.then(|| last_update + UPDATE_THROTTLE);
-                // Biased: when both pipes have data, stdout's came first more often
-                // than not, and a random pick would reorder `echo a; echo b >&2`.
                 tokio::select! {
                     biased;
-                    read = async { stdout.as_mut().unwrap_or_else(|| unreachable!()).read(&mut out_buf).await }, if stdout.is_some() => {
-                        match read {
-                            Ok(0) | Err(_) => stdout = None,
-                            Ok(n) => { output.append(&out_buf[..n]); dirty = true; if let Some(at) = &mut exited_at { *at = Instant::now(); } }
-                        }
-                    }
-                    read = async { stderr.as_mut().unwrap_or_else(|| unreachable!()).read(&mut err_buf).await }, if stderr.is_some() => {
-                        match read {
-                            Ok(0) | Err(_) => stderr = None,
-                            Ok(n) => { output.append(&err_buf[..n]); dirty = true; if let Some(at) = &mut exited_at { *at = Instant::now(); } }
+                    bytes = pipes.read(), if pipes.is_open() => {
+                        if !bytes.is_empty() {
+                            output.append(bytes);
+                            dirty = true;
+                            if let Some(at) = &mut exited_at { *at = Instant::now(); }
                         }
                     }
                     status = child.wait(), if exited_at.is_none() => {
-                        exit_code = status.ok().and_then(|status| {
-                            #[cfg(unix)]
-                            {
-                                use std::os::unix::process::ExitStatusExt;
-                                status.code().or_else(|| status.signal().map(|signal| 128 + signal))
-                            }
-                            #[cfg(not(unix))]
-                            { status.code() }
-                        });
+                        exit_code = status.ok().and_then(exit_code_of);
                         exited_at = Some(Instant::now());
                     }
                     () = async { tokio::time::sleep_until(grace.unwrap_or_else(|| unreachable!()).into()).await }, if grace.is_some() => {

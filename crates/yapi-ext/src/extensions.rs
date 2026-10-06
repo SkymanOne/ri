@@ -25,6 +25,7 @@ use yapi_types::message::{
     Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
 };
 use yapi_types::rpc::{SourceInfo, StreamingBehavior};
+use yapi_types::sync::lock;
 
 use crate::{Bridge, Engine, Error, Instance, Options};
 
@@ -48,12 +49,6 @@ pub struct Flag {
     pub description: Option<String>,
     /// The extension that registered it.
     pub extension_path: String,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Extensions loaded into one runtime instance, shared by the sessions of a
@@ -1124,46 +1119,21 @@ impl Bridge for SessionBridge {
                         true,
                     )))
                 }
-                "models.classify" => {
-                    let registry = session.registry();
-                    let (provider, id) = (text(&payload["provider"]), text(&payload["id"]));
-                    let Some(model) = registry
-                        .classifiers()
-                        .iter()
-                        .find(|model| model.provider == provider && model.id == id)
-                        .cloned()
-                    else {
-                        return Err(format!("Unknown classifier model \"{provider}/{id}\""));
+                "models.classify" | "models.generateImages" => {
+                    let kind = if kind == "models.classify" {
+                        "classifier"
+                    } else {
+                        "image"
                     };
-                    let context = serde_json::from_value(payload["context"].clone())
-                        .map_err(|error| error.to_string())?;
-                    let options = yapi_ai::api::classify::ClassifyOptions {
-                        temperature: payload["temperature"].as_f64(),
-                        cancel: caller_cancel,
-                        ..Default::default()
-                    };
-                    Ok(to_json(registry.classify(&model, &context, options).await))
-                }
-                "models.generateImages" => {
-                    let registry = session.registry();
-                    let (provider, id) = (text(&payload["provider"]), text(&payload["id"]));
-                    let Some(model) = registry
-                        .image_models()
-                        .iter()
-                        .find(|model| model.provider == provider && model.id == id)
-                        .cloned()
-                    else {
-                        return Err(format!("Unknown image model \"{provider}/{id}\""));
-                    };
-                    let context = serde_json::from_value(payload["context"].clone())
-                        .map_err(|error| error.to_string())?;
-                    let options = yapi_ai::api::images::ImagesOptions {
-                        cancel: caller_cancel,
-                        ..Default::default()
-                    };
-                    Ok(to_json(
-                        registry.generate_images(&model, &context, options).await,
-                    ))
+                    crate::codemode::run_model(
+                        &session.registry(),
+                        kind,
+                        (&text(&payload["provider"]), &text(&payload["id"])),
+                        &payload["context"],
+                        payload["temperature"].as_f64(),
+                        caller_cancel,
+                    )
+                    .await
                 }
                 "models.refresh" => {
                     let providers = payload["providers"].as_array().map(|providers| {

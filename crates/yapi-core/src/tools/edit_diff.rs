@@ -174,9 +174,9 @@ pub fn apply_edits(content: &str, edits: &[Replacement], path: &str) -> Result<S
     Ok(new_content)
 }
 
-fn replace(content: &str, matches: &[Match], offset: usize) -> String {
+fn replace<M: std::borrow::Borrow<Match>>(content: &str, matches: &[M], offset: usize) -> String {
     let mut result = content.to_owned();
-    for m in matches.iter().rev() {
+    for m in matches.iter().rev().map(M::borrow) {
         let start = m.index - offset;
         result.replace_range(start..start + m.length, &m.new_text);
     }
@@ -233,16 +233,7 @@ fn replace_preserving_lines(
         result.push_str(&original_lines[line..start].concat());
         let from = spans[start].0;
         let to = spans[end - 1].1;
-        let owned: Vec<Match> = group
-            .iter()
-            .map(|m| Match {
-                edit_index: m.edit_index,
-                index: m.index,
-                length: m.length,
-                new_text: m.new_text.clone(),
-            })
-            .collect();
-        result += &replace(&base[from..to], &owned, from);
+        result += &replace(&base[from..to], &group, from);
         line = end;
     }
     result.push_str(&original_lines[line..].concat());

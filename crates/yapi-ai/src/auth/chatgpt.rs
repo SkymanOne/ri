@@ -8,7 +8,7 @@ use url::Url;
 use yapi_types::auth::OAuthCredential;
 
 use super::anthropic::expiry;
-use super::callback::{Reply, Server, error_page, success_page};
+use super::callback::{Reply, Server, error_page, query, success_page};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
     callback_host, error_text, form, json_body, pkce, send,
@@ -53,12 +53,6 @@ impl Default for ChatGptOAuth {
 struct Authorization {
     code: String,
     client_id: String,
-}
-
-fn query(url: &Url, name: &str) -> Option<String> {
-    url.query_pairs()
-        .find(|(key, _)| key == name)
-        .map(|(_, value)| value.into_owned())
 }
 
 fn from_callback(url: &Url, expected_state: &str) -> Result<Authorization, AuthError> {

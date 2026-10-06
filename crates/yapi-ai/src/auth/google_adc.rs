@@ -313,7 +313,7 @@ async fn impersonate(
         .ok_or_else(|| "No access token in the impersonation response".to_owned())?;
     let expires_at_ms = body["expireTime"]
         .as_str()
-        .and_then(super::rfc3339_ms)
+        .and_then(yapi_types::time::parse_iso)
         .unwrap_or_else(|| now_ms() + 3600 * 1000);
     Ok((token.to_owned(), expires_at_ms))
 }

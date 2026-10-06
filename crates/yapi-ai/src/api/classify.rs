@@ -17,7 +17,7 @@ use yapi_types::classify::{
 use yapi_types::message::{Cost, Usage};
 use yapi_types::model::ClassifierModel;
 
-use crate::http::{self, Failure};
+use crate::http::{self, Failure, Headers};
 use crate::stream::{StreamOptions, now_ms};
 
 /// Options of one classification.
@@ -69,68 +69,27 @@ pub async fn classify(
         Ok(answers) => output.answers = answers,
         Err(message) => {
             output.answers = IndexMap::new();
-            output.stop_reason = if options.cancel.is_cancelled() {
-                OutcomeReason::Aborted
-            } else {
-                OutcomeReason::Error
-            };
+            output.stop_reason = failure_reason(&options.cancel);
             output.error_message = Some(message);
         }
     }
     output
 }
 
-/// pi's `providerHeadersToRecord`: later sources win, names compare
-/// case-insensitively, and `None` removes a header.
-pub(crate) fn merge_headers<'a>(
-    sources: impl IntoIterator<Item = Vec<(&'a str, Option<&'a str>)>>,
-) -> Vec<(String, String)> {
-    let mut merged: IndexMap<String, (String, String)> = IndexMap::new();
-    for source in sources {
-        for (name, value) in source {
-            let key = name.to_lowercase();
-            merged.shift_remove(&key);
-            if let Some(value) = value {
-                merged.insert(key, (name.to_owned(), value.to_owned()));
-            }
-        }
+/// The outcome of a failed request: `aborted` when `cancel` fired.
+pub(crate) fn failure_reason(cancel: &CancellationToken) -> OutcomeReason {
+    if cancel.is_cancelled() {
+        OutcomeReason::Aborted
+    } else {
+        OutcomeReason::Error
     }
-    merged.into_values().collect()
-}
-
-fn model_headers(headers: Option<&IndexMap<String, String>>) -> Vec<(&str, Option<&str>)> {
-    headers
-        .into_iter()
-        .flatten()
-        .map(|(name, value)| (name.as_str(), Some(value.as_str())))
-        .collect()
-}
-
-fn option_headers(headers: &IndexMap<String, Option<String>>) -> Vec<(&str, Option<&str>)> {
-    headers
-        .iter()
-        .map(|(name, value)| (name.as_str(), value.as_deref()))
-        .collect()
-}
-
-fn truncate(text: &str) -> String {
-    const MAX: usize = 4000;
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= MAX {
-        return text.to_owned();
-    }
-    format!(
-        "{}... [truncated {} chars]",
-        String::from_utf16_lossy(&units[..MAX]),
-        units.len() - MAX
-    )
 }
 
 /// POSTs `body` as JSON with pi's retry policy and returns the JSON answer.
 /// Errors read as pi's `formatProviderError` with `prefix`.
 pub(crate) async fn post_json(
     url: &str,
-    headers: &[(String, String)],
+    headers: &Headers,
     body: &Value,
     label: &str,
     prefix: &str,
@@ -144,10 +103,7 @@ pub(crate) async fn post_json(
     };
     let text = yapi_types::json::to_string(body).unwrap_or_default();
     let build = || {
-        let mut request = http::client().post(url).body(text.clone());
-        for (name, value) in headers {
-            request = request.header(name.as_str(), value.as_str());
-        }
+        let mut request = headers.apply(http::client().post(url).body(text.clone()));
         if let Some(timeout) = options.timeout_ms {
             request = request.timeout(std::time::Duration::from_millis(timeout));
         }
@@ -160,7 +116,7 @@ pub(crate) async fn post_json(
             return Err(if body.is_empty() {
                 format!("{prefix} ({status}): {label} returned {status}")
             } else {
-                format!("{prefix} ({status}): {}", truncate(body))
+                format!("{prefix} ({status}): {}", http::truncate_chars(body, 4000))
             });
         }
         Err(Failure::Connection(message)) if message == "Request timed out." => {
@@ -390,15 +346,11 @@ async fn system_one(
         model.base_url.trim_end_matches('/'),
         transport.path
     );
-    let authorization = format!("Bearer {api_key}");
-    let headers = merge_headers([
-        vec![
-            ("authorization", Some(authorization.as_str())),
-            ("content-type", Some("application/json")),
-        ],
-        model_headers(model.headers.as_ref()),
-        option_headers(&options.headers),
-    ]);
+    let mut headers = Headers::default();
+    headers.set("authorization", Some(format!("Bearer {api_key}")));
+    headers.set("content-type", Some("application/json"));
+    headers.extend_model(model.headers.as_ref());
+    headers.extend(&options.headers);
     let body = post_json(&url, &headers, &payload, label, &prefix, options).await?;
     let result = (transport.output)(body)?;
     // A request with malformed answers was still billed.
@@ -641,7 +593,7 @@ mod llama {
         model: &'a ClassifierModel,
         root: String,
         options: &'a ClassifyOptions,
-        headers: Vec<(String, String)>,
+        headers: Headers,
     }
 
     impl Request<'_> {
@@ -878,24 +830,18 @@ mod llama {
         for id in context.questions.keys() {
             render_question(context, id)?;
         }
-        let authorization = options
-            .api_key
-            .as_deref()
-            .filter(|key| !key.is_empty())
-            .map(|key| format!("Bearer {key}"));
-        let mut base = vec![("content-type", Some("application/json"))];
-        if let Some(authorization) = &authorization {
-            base.push(("authorization", Some(authorization.as_str())));
+        let mut headers = Headers::default();
+        headers.set("content-type", Some("application/json"));
+        if let Some(key) = options.api_key.as_deref().filter(|key| !key.is_empty()) {
+            headers.set("authorization", Some(format!("Bearer {key}")));
         }
+        headers.extend_model(model.headers.as_ref());
+        headers.extend(&options.headers);
         let request = Request {
             model,
             root: server_root(&model.base_url),
             options,
-            headers: merge_headers([
-                base,
-                model_headers(model.headers.as_ref()),
-                option_headers(&options.headers),
-            ]),
+            headers,
         };
         let mut answers = IndexMap::new();
         // One question at a time, so the server's prompt cache reuses the

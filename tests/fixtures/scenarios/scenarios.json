@@ -203,6 +203,13 @@
     "args": ["-p", "--no-session", "--model", "groq/openai/gpt-oss-120b", "@missing.md", "hi"]
   },
   {
+    "name": "tui-file-image",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["--no-session", "--no-tools", "--model", "anthropic/claude-sonnet-4-5", "@pixel.png", "Describe it"],
+    "binaryFiles": {"pixel.png": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGP4z8DA8B+MgBgAHfAD/dPQfSYAAAAASUVORK5CYII="},
+    "tty": {"cols": 100, "rows": 30, "keys": [{"wait": "Hello from the mock."}]}
+  },
+  {
     "name": "tui-startup",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--model", "anthropic/claude-sonnet-4-5"],

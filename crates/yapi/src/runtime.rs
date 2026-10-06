@@ -8,26 +8,12 @@ use std::path::{Path, PathBuf};
 
 use yapi_core::agent_session::AgentSession;
 use yapi_core::session::SessionManager;
-use yapi_types::message::{Content, ContentBlock, Message};
+use yapi_types::message::Message;
 use yapi_types::session::FileEntry;
 
 /// Builds a session around a session file, with the startup options of the
 /// process.
 pub type SessionFactory = Box<dyn Fn(SessionManager) -> anyhow::Result<AgentSession>>;
-
-/// pi's `extractUserMessageText`: the text blocks, joined.
-pub fn user_text(content: &Content) -> String {
-    match content {
-        Content::Text(text) => text.clone(),
-        Content::Blocks(blocks) => blocks
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text(text) => Some(text.text.as_str()),
-                _ => None,
-            })
-            .collect(),
-    }
-}
 
 /// The file for pi's `newSession`: a new one beside the current session's, or
 /// in memory when the current one is, linked to `parent` when given.
@@ -77,7 +63,7 @@ pub fn plan_fork(current: &AgentSession, entry_id: &str, at: bool) -> Result<For
             FileEntry::Message(message) => match &message.message {
                 Message::User(user) => Ok(Fork {
                     target: message.meta.parent_id.clone(),
-                    text: Some(user_text(&user.content)),
+                    text: Some(user.content.text("")),
                 }),
                 _ => Err(invalid()),
             },
@@ -137,11 +123,18 @@ impl Fork {
 }
 
 /// Why a session could not be switched to.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SwitchError {
     /// The file could not be read.
+    #[error("{0}")]
     Open(String),
     /// The session's working directory is gone; pi's `MissingSessionCwdError`.
+    #[error(
+        "Stored session working directory does not exist: {}\nSession file: {}\nCurrent working directory: {}",
+        session_cwd.display(),
+        file.display(),
+        fallback.display()
+    )]
     MissingCwd {
         /// The session file.
         file: PathBuf,
@@ -150,25 +143,6 @@ pub enum SwitchError {
         /// The directory it would run in instead.
         fallback: PathBuf,
     },
-}
-
-impl std::fmt::Display for SwitchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SwitchError::Open(error) => f.write_str(error),
-            SwitchError::MissingCwd {
-                file,
-                session_cwd,
-                fallback,
-            } => write!(
-                f,
-                "Stored session working directory does not exist: {}\nSession file: {}\nCurrent working directory: {}",
-                session_cwd.display(),
-                file.display(),
-                fallback.display()
-            ),
-        }
-    }
 }
 
 /// pi's `switchSession`: opens `path`, in `cwd_override` when given, and

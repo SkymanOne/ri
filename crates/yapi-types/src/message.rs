@@ -425,6 +425,24 @@ impl Content {
             Content::Blocks(blocks) => blocks_text(blocks, separator),
         }
     }
+
+    /// The content as blocks; a string becomes one text block.
+    pub fn into_blocks(self) -> Vec<ContentBlock> {
+        match self {
+            Content::Text(text) => vec![ContentBlock::text(text)],
+            Content::Blocks(blocks) => blocks,
+        }
+    }
+}
+
+impl ContentBlock {
+    /// A text block without a signature.
+    pub fn text(text: impl Into<String>) -> ContentBlock {
+        ContentBlock::Text(TextContent {
+            text: text.into(),
+            text_signature: None,
+        })
+    }
 }
 
 /// The text blocks of `blocks` joined by `separator`.

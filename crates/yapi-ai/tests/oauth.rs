@@ -4,7 +4,6 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
@@ -22,32 +21,11 @@ use yapi_ai::auth::radius::RadiusOAuth;
 use yapi_ai::auth::xai::XaiOAuth;
 use yapi_ai::auth::{AuthEvent, AuthPrompt, AuthRequest, Interaction, LoginOptions, OAuthProvider};
 use yapi_ai::registry::{LoginKind, ModelRegistry};
-use yapi_mock::{Cassette, Interaction as Exchange, MockServer, RequestMatch, Response};
+use yapi_mock::{Cassette, Interaction as Exchange, MockServer};
 use yapi_types::auth::{Credential, OAuthCredential};
 
-fn exchange(method: &str, path: &str, status: u16, body: &Value) -> Exchange {
-    Exchange {
-        request: RequestMatch {
-            method: method.into(),
-            path: path.into(),
-        },
-        response: Response {
-            status,
-            headers: [("content-type".to_owned(), "application/json".to_owned())]
-                .into_iter()
-                .collect(),
-            chunks: vec![body.to_string()],
-            body_base64: None,
-            chunk_delay_ms: 0,
-        },
-    }
-}
-
 async fn mock(interactions: Vec<Exchange>) -> MockServer {
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    MockServer::start(addr, Cassette { interactions })
-        .await
-        .unwrap()
+    MockServer::local(Cassette { interactions }).await.unwrap()
 }
 
 fn free_port() -> u16 {
@@ -134,13 +112,13 @@ fn auth_url(events: &[AuthEvent]) -> String {
 #[tokio::test]
 async fn anthropic_copy_code_login_and_refresh() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/v1/oauth/token",
             200,
             &json!({"access_token": "sk-ant-oat-1", "refresh_token": "r1", "expires_in": 3600}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/v1/oauth/token",
             200,
@@ -204,7 +182,7 @@ async fn anthropic_copy_code_login_and_refresh() {
 
 #[tokio::test]
 async fn anthropic_browser_login_takes_the_callback() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "POST",
         "/v1/oauth/token",
         200,
@@ -254,20 +232,20 @@ async fn anthropic_browser_login_takes_the_callback() {
 async fn codex_device_code_login() {
     let access = jwt(&json!({"https://api.openai.com/auth": {"chatgpt_account_id": "acct_9"}}));
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/api/accounts/deviceauth/usercode",
             200,
             &json!({"device_auth_id": "dev-1", "user_code": "ABCD-1234", "interval": "0"}),
         ),
-        exchange("POST", "/api/accounts/deviceauth/token", 403, &json!({})),
-        exchange(
+        Exchange::json("POST", "/api/accounts/deviceauth/token", 403, &json!({})),
+        Exchange::json(
             "POST",
             "/api/accounts/deviceauth/token",
             200,
             &json!({"authorization_code": "ac", "code_verifier": "cv"}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/oauth/token",
             200,
@@ -325,31 +303,31 @@ async fn copilot_device_flow_enables_policy_models() {
         .id
         .clone();
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/login/device/code",
             200,
             &json!({"device_code": "dc", "user_code": "WXYZ", "verification_uri": "https://github.com/login/device", "interval": 0, "expires_in": 30}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/login/oauth/access_token",
             200,
             &json!({"error": "authorization_pending"}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/login/oauth/access_token",
             200,
             &json!({"access_token": "gho_token"}),
         ),
-        exchange(
+        Exchange::json(
             "GET",
             "/copilot_internal/v2/token",
             200,
             &json!({"token": "tid=1;exp=2", "expires_at": 4_000_000_000_u64}),
         ),
-        exchange(
+        Exchange::json(
             "GET",
             "/models",
             200,
@@ -358,7 +336,7 @@ async fn copilot_device_flow_enables_policy_models() {
                 {"id": known, "model_picker_enabled": true, "policy": {"state": "unconfigured"}},
             ]}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             &format!("/models/{known}/policy"),
             200,
@@ -399,7 +377,7 @@ async fn copilot_device_flow_enables_policy_models() {
 
 #[tokio::test]
 async fn chatgpt_login_registers_a_client() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "POST",
         "/api/accounts/oauth/token",
         200,
@@ -458,7 +436,7 @@ fn agent_dir(name: &str) -> std::path::PathBuf {
 
 #[tokio::test]
 async fn registry_refreshes_expired_tokens_and_persists_them() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "POST",
         "/v1/oauth/token",
         200,
@@ -502,7 +480,7 @@ async fn registry_refreshes_expired_tokens_and_persists_them() {
 
 #[tokio::test]
 async fn registry_reports_refresh_failures_and_logs_in_with_keys() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "POST",
         "/v1/oauth/token",
         400,
@@ -591,20 +569,20 @@ fn device_code(events: &Events) -> (String, String) {
 #[tokio::test]
 async fn kimi_device_login_refresh_and_bearer_header() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/api/oauth/device_authorization",
             200,
             &json!({"device_code": "dc", "user_code": "KIMI-1", "verification_uri": "https://kimi.com/device", "verification_uri_complete": "https://kimi.com/device?code=KIMI-1", "interval": 1, "expires_in": 60}),
         ),
-        exchange("POST", "/api/oauth/token", 400, &json!({"error": "authorization_pending"})),
-        exchange(
+        Exchange::json("POST", "/api/oauth/token", 400, &json!({"error": "authorization_pending"})),
+        Exchange::json(
             "POST",
             "/api/oauth/token",
             200,
             &json!({"access_token": "kimi-access", "refresh_token": "kimi-refresh", "expires_in": 3600}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/api/oauth/token",
             401,
@@ -657,20 +635,20 @@ async fn kimi_device_login_refresh_and_bearer_header() {
 #[tokio::test]
 async fn meta_device_login_mints_an_api_key() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/oidc/device/authorization/",
             200,
             &json!({"device_code": "dc", "user_code": "META-1", "verification_uri": "https://meta.com/device", "interval": 1}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/oidc/device/token/",
             200,
             &json!({"access_token": "identity"}),
         ),
-        exchange("POST", "/muse-code/key", 200, &json!({"api_key": "meta-key"})),
-        exchange("POST", "/muse-code/key", 403, &json!({"detail": "session expired"})),
+        Exchange::json("POST", "/muse-code/key", 200, &json!({"api_key": "meta-key"})),
+        Exchange::json("POST", "/muse-code/key", 403, &json!({"detail": "session expired"})),
     ])
     .await;
     let url = server.url();
@@ -706,19 +684,19 @@ async fn meta_device_login_mints_an_api_key() {
 #[tokio::test]
 async fn xai_device_login_and_refresh_keep_the_refresh_token() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/oauth2/device/code",
             200,
             &json!({"device_code": "dc", "user_code": "XAI-1", "verification_uri": "https://accounts.x.ai/device", "expires_in": 60, "interval": 1}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/oauth2/token",
             200,
             &json!({"access_token": "xai-1", "refresh_token": "xr-1", "expires_in": 3600}),
         ),
-        exchange("POST", "/oauth2/token", 200, &json!({"access_token": "xai-2"})),
+        Exchange::json("POST", "/oauth2/token", 200, &json!({"access_token": "xai-2"})),
     ])
     .await;
     let oauth = XaiOAuth {
@@ -744,7 +722,7 @@ async fn xai_device_login_and_refresh_keep_the_refresh_token() {
 
 #[tokio::test]
 async fn openrouter_trades_a_pasted_code_for_a_key() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "POST",
         "/api/v1/auth/keys",
         200,
@@ -783,20 +761,20 @@ async fn openrouter_trades_a_pasted_code_for_a_key() {
 #[tokio::test]
 async fn radius_device_login_polls_until_authorized() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "POST",
             "/v1/oauth/device",
             200,
             &json!({"device_code": "dc", "user_code": "RAD-1", "verification_uri": "https://radius.pi.dev/device", "expires_in": 60, "interval": 1}),
         ),
-        exchange("POST", "/v1/oauth/token", 400, &json!({"error": "authorization_pending"})),
-        exchange(
+        Exchange::json("POST", "/v1/oauth/token", 400, &json!({"error": "authorization_pending"})),
+        Exchange::json(
             "POST",
             "/v1/oauth/token",
             200,
             &json!({"access_token": "rad-access", "refresh_token": "rad-refresh", "expires_in": 3600, "scope": "gateway offline_access"}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/v1/oauth/token",
             400,
@@ -841,13 +819,13 @@ async fn radius_device_login_polls_until_authorized() {
 #[tokio::test]
 async fn radius_browser_login_checks_the_state() {
     let server = mock(vec![
-        exchange(
+        Exchange::json(
             "GET",
             "/v1/oauth",
             200,
             &json!({"authorizationEndpoint": "https://radius.example/authorize"}),
         ),
-        exchange(
+        Exchange::json(
             "POST",
             "/v1/oauth/token",
             200,
@@ -901,7 +879,7 @@ async fn radius_browser_login_checks_the_state() {
 
 #[tokio::test]
 async fn llama_sign_in_checks_the_server_and_stores_its_url() {
-    let server = mock(vec![exchange(
+    let server = mock(vec![Exchange::json(
         "GET",
         "/models",
         200,

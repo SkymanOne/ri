@@ -210,11 +210,9 @@ async fn download(tool: ExternalTool, bin_dir: &Path) -> Result<PathBuf, String>
     );
     let archive = bin_dir.join(&asset);
     let binary = bin_dir.join(exe(tool.binary()));
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|err| err.to_string())?
+    let response = yapi_ai::http::client()
         .get(&url)
+        .timeout(Duration::from_secs(120))
         .send()
         .await
         .map_err(|err| err.to_string())?;
@@ -230,7 +228,7 @@ async fn download(tool: ExternalTool, bin_dir: &Path) -> Result<PathBuf, String>
         "extract_tmp_{}_{}_{}",
         tool.binary(),
         std::process::id(),
-        super::random_hex(4)
+        crate::time::random_hex(4)
     ));
     let result = async {
         std::fs::create_dir_all(&extract).map_err(|err| err.to_string())?;

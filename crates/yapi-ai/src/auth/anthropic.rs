@@ -9,8 +9,8 @@ use yapi_types::auth::OAuthCredential;
 
 use super::callback::{Received, callback_or_manual, start_code_server};
 use super::{
-    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, SelectOption,
-    callback_host, now_ms, parse_authorization_input, pkce,
+    AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, OAuthProvider, callback_host, now_ms,
+    parse_authorization_input, pkce,
 };
 
 /// Public client id, base64 in pi's source.
@@ -288,19 +288,13 @@ impl OAuthProvider for AnthropicOAuth {
     ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
         Box::pin(async move {
             let method = interaction
-                .prompt(AuthPrompt::Select {
-                    message: "Select Anthropic login method:".into(),
-                    options: vec![
-                        SelectOption {
-                            id: BROWSER.into(),
-                            label: "Browser login (default)".into(),
-                        },
-                        SelectOption {
-                            id: COPY_CODE.into(),
-                            label: "Copy code login (headless)".into(),
-                        },
+                .prompt(AuthPrompt::select(
+                    "Select Anthropic login method:",
+                    &[
+                        (BROWSER, "Browser login (default)"),
+                        (COPY_CODE, "Copy code login (headless)"),
                     ],
-                })
+                ))
                 .await?;
             match method.as_str() {
                 COPY_CODE => self.login_copy_code(interaction).await,

@@ -154,13 +154,10 @@ async fn serve_connection<T>(mut stream: TcpStream, state: Shared<T>) {
         }
         Err(_) => (404, error_page("Callback route not found.", None), None),
     };
-    let reason = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        409 => "Conflict",
-        _ => "Error",
-    };
+    let reason = reqwest::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|code| code.canonical_reason())
+        .unwrap_or("Error");
     let response = format!(
         "HTTP/1.1 {status} {reason}\r\ncontent-type: text/html; charset=utf-8\r\ncache-control: no-store\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{html}",
         html.len()
@@ -172,7 +169,8 @@ async fn serve_connection<T>(mut stream: TcpStream, state: Shared<T>) {
     }
 }
 
-fn query(url: &Url, name: &str) -> Option<String> {
+/// The first value of the query parameter `name`.
+pub(crate) fn query(url: &Url, name: &str) -> Option<String> {
     url.query_pairs()
         .find(|(key, _)| key == name)
         .map(|(_, value)| value.into_owned())

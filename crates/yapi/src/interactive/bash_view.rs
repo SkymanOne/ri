@@ -12,9 +12,9 @@ use yapi_core::tools::truncate::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncate_
 use yapi_tui::lines::{self, StyledLine, styled};
 
 use super::chat::RenderContext;
+use super::{SPINNER, SPINNER_INTERVAL};
 
 const PREVIEW_LINES: usize = 20;
-const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// A `!` command and its output.
 pub struct BashView {
@@ -136,8 +136,9 @@ impl BashView {
         }
         match &self.result {
             None => {
-                let frame =
-                    SPINNER[(self.started.elapsed().as_millis() / 80) as usize % SPINNER.len()];
+                let frame = SPINNER[(self.started.elapsed().as_millis()
+                    / SPINNER_INTERVAL.as_millis()) as usize
+                    % SPINNER.len()];
                 out.push(Line::default());
                 out.extend(lines::text(
                     &[Line::from(vec![

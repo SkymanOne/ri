@@ -193,12 +193,7 @@ impl Loader {
             digest.update(part.as_bytes());
             digest.update([0]);
         }
-        let hex: String = digest
-            .finalize()
-            .iter()
-            .take(16)
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let hex = yapi_types::time::hex(&digest.finalize()[..16]);
         let cached = dir.join(format!("{hex}.js"));
         if let Ok(source) = std::fs::read_to_string(&cached)
             && let Some((tag, source)) = source.split_once('\n')
@@ -220,12 +215,7 @@ impl Loader {
             "//esm"
         };
         // A missing cache only costs the next load a transpile.
-        if std::fs::create_dir_all(dir).is_ok() {
-            let partial = cached.with_extension(format!("{}.tmp", std::process::id()));
-            if std::fs::write(&partial, format!("{tag}\n{}", prepared.source)).is_ok() {
-                let _ = std::fs::rename(&partial, &cached);
-            }
-        }
+        crate::engine::write_cache(&cached, format!("{tag}\n{}", prepared.source));
         Ok(prepared)
     }
 }

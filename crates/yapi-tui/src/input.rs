@@ -157,14 +157,7 @@ impl InputBuffer {
 
     /// Feeds raw bytes, which may end inside a UTF-8 character.
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Input> {
-        self.utf8.extend_from_slice(bytes);
-        let valid = match std::str::from_utf8(&self.utf8) {
-            Ok(_) => self.utf8.len(),
-            Err(error) if error.error_len().is_none() => error.valid_up_to(),
-            Err(_) => self.utf8.len(),
-        };
-        let text = String::from_utf8_lossy(&self.utf8[..valid]).into_owned();
-        self.utf8.drain(..valid);
+        let text = yapi_types::js::decode_utf8_stream(&mut self.utf8, bytes);
         let mut out = Vec::new();
         self.push_str(&text, &mut out);
         out

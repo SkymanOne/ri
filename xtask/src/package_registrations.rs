@@ -131,15 +131,16 @@ async fn load(
     let mut packages =
         PackageManager::new(cwd.clone(), agent.clone(), settings, default_registry());
     let mut install_errors = Vec::new();
-    let resolved = packages
-        .resolve(true, |error| install_errors.push(error))
+    packages
+        .install_missing(|error| install_errors.push(error))
         .await;
     if let Some(error) = install_errors.first() {
         return Ok(json!({"version": version, "install": error}));
     }
-    let entries: Vec<PathBuf> = resolved
-        .iter()
-        .flat_map(|package| package.resources.extensions.clone())
+    let entries: Vec<PathBuf> = packages
+        .list()
+        .into_iter()
+        .flat_map(|package| package.extensions)
         .collect();
     let sources: Vec<SourceInfo> = entries
         .iter()
@@ -209,26 +210,20 @@ async fn load(
 }
 
 pub fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    runtime.block_on(compare(args))
+    tokio::runtime::Runtime::new()?.block_on(compare(args))
 }
 
 /// `value` without codemode's `models` line, which points into pi's install
 /// for pi and into the agent directory for yapi (docs/compat.md).
 fn without_models_line(value: Value) -> Value {
-    const LINE: &str = "\n- `models`: classifiers and image generation. Read ";
+    static LINE: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
+        regex_lite::Regex::new(
+            r"(?s)\n- `models`: classifiers and image generation\. Read .*? first\.",
+        )
+        .expect("the pattern is valid")
+    });
     match value {
-        Value::String(mut text) => {
-            while let Some(start) = text.find(LINE) {
-                match text[start..].find(" first.") {
-                    Some(end) => text.replace_range(start..start + end + " first.".len(), ""),
-                    None => break,
-                }
-            }
-            Value::String(text)
-        }
+        Value::String(text) => Value::String(LINE.replace_all(&text, "").into_owned()),
         Value::Array(items) => Value::Array(items.into_iter().map(without_models_line).collect()),
         Value::Object(object) => Value::Object(
             object
@@ -284,12 +279,8 @@ async fn compare(args: Args) -> anyhow::Result<ExitCode> {
     let fixtures = Path::new(FIXTURES);
     let top: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(fixtures.join("ranked.json"))?)?;
-    let scratch = Path::new("target/package-registrations")
-        .canonicalize()
-        .or_else(|_| {
-            std::fs::create_dir_all("target/package-registrations")?;
-            Path::new("target/package-registrations").canonicalize()
-        })?;
+    std::fs::create_dir_all("target/package-registrations")?;
+    let scratch = Path::new("target/package-registrations").canonicalize()?;
     let selected: Vec<(usize, String, String)> = top
         .iter()
         .enumerate()

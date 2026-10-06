@@ -47,7 +47,6 @@ use yapi_tui::keys::Keys;
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::markdown::MarkdownTheme;
 use yapi_tui::screen::{ALT_SCREEN_ENTER, ALT_SCREEN_LEAVE, AltScreen, MainScreen};
-use yapi_tui::select_list::SelectListTheme;
 use yapi_tui::terminal::{
     BRACKETED_PASTE_DISABLE, BRACKETED_PASTE_ENABLE, ColorQuery, Filtered, KeyboardProtocol,
     color_query,
@@ -58,7 +57,7 @@ use yapi_tui::theme::{
 };
 use yapi_types::event::{AgentEvent, AssistantMessageEvent, CompactionReason, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, ContentBlock, Message, StopReason, TextContent, ThinkingContent, ToolCall,
+    AssistantMessage, ContentBlock, ImageContent, Message, StopReason, ThinkingContent, ToolCall,
 };
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::{DoubleEscapeAction, TuiMode};
@@ -185,7 +184,7 @@ impl ExtensionReply {
     }
 }
 
-use crate::runtime::{SessionFactory, user_text};
+use crate::runtime::SessionFactory;
 
 /// What the run needs from startup.
 pub struct Options {
@@ -195,6 +194,8 @@ pub struct Options {
     pub verbose: bool,
     /// Messages to send at start, in order.
     pub initial: Vec<String>,
+    /// Images attached to the first of `initial`.
+    pub initial_images: Vec<ImageContent>,
     /// Builds replacement sessions for `/new`, `/resume`, `/fork` and `/clone`.
     pub factory: SessionFactory,
     /// `--use-theme`: the theme for this run instead of the `theme` setting.
@@ -203,6 +204,67 @@ pub struct Options {
     pub model_fallback: Option<String>,
     /// Whether model catalogs may be fetched; pi's `PI_OFFLINE` unset.
     pub model_network: bool,
+}
+
+/// The color mode for this terminal: truecolor when it advertises it.
+fn color_mode() -> ColorMode {
+    if true_color() {
+        ColorMode::TrueColor
+    } else {
+        ColorMode::Ansi256
+    }
+}
+
+/// The terminal's appearance from its reported background, else from
+/// `COLORFGBG`, else dark.
+fn appearance(colors: &yapi_tui::terminal::TerminalColors) -> Appearance {
+    match colors.background {
+        Some(background) => terminal_appearance(background, colors.foreground),
+        None => {
+            detect_colorfgbg(std::env::var("COLORFGBG").ok().as_deref()).unwrap_or(Appearance::Dark)
+        }
+    }
+}
+
+/// The sequences that take the terminal: bracketed paste on and the keyboard
+/// protocol and color queries.
+fn terminal_enter(protocol: &mut KeyboardProtocol) -> String {
+    format!(
+        "{BRACKETED_PASTE_ENABLE}{}{}",
+        protocol.query(),
+        color_query()
+    )
+}
+
+/// The sequences that hand the terminal back: bracketed paste and the
+/// keyboard protocol off, the cursor shown.
+fn terminal_leave(protocol: &mut KeyboardProtocol) -> String {
+    format!("{BRACKETED_PASTE_DISABLE}{}\x1b[?25h", protocol.disable())
+}
+
+/// Decodes terminal input into keys and bracketed pastes, in order, and
+/// writes back the keyboard protocol's replies.
+fn decode_input(
+    buffer: &mut InputBuffer,
+    protocol: &mut KeyboardProtocol,
+    bytes: &[u8],
+) -> Vec<String> {
+    let mut write = String::new();
+    let mut keys = Vec::new();
+    for input in buffer.push(bytes) {
+        match input {
+            Input::Key(sequence) => {
+                if let Filtered::Forward(forward) = protocol.filter(&sequence, &mut write) {
+                    keys.extend(forward);
+                }
+            }
+            Input::Paste(text) => keys.push(format!("\x1b[200~{text}\x1b[201~")),
+        }
+    }
+    if !write.is_empty() {
+        emit(&write);
+    }
+    keys
 }
 
 fn true_color() -> bool {
@@ -323,6 +385,8 @@ struct App {
     binding: Option<Option<AgentSession>>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
+    /// Images attached to the first of `initial`.
+    initial_images: Vec<ImageContent>,
     /// pi's `OverlayOptions` when the open custom component is an overlay.
     overlay: Option<Value>,
     /// Overlays an open overlay covers, bottom first, with their options;
@@ -368,20 +432,14 @@ fn markdown_theme(theme: &Theme) -> MarkdownTheme {
 fn editor_theme(theme: &Theme) -> EditorTheme {
     EditorTheme {
         border: theme.fg("borderMuted"),
-        select_list: SelectListTheme {
-            selected_text: theme.fg("accent"),
-            description: theme.fg("muted"),
-            scroll_info: theme.fg("muted"),
-            no_match: theme.fg("muted"),
-        },
+        select_list: selectors::select_list_theme(theme),
     }
 }
 
 /// The theme an export outside the terminal UI uses: the `theme` setting
 /// when it names a theme, else the system theme, without terminal colors.
 pub(crate) fn export_theme(setting: Option<&str>, agent_dir: &Path) -> (Theme, Appearance) {
-    let appearance =
-        detect_colorfgbg(std::env::var("COLORFGBG").ok().as_deref()).unwrap_or(Appearance::Dark);
+    let appearance = appearance(&yapi_tui::terminal::TerminalColors::default());
     let named = resolve_theme_setting(setting, appearance)
         .filter(|name| name != yapi_tui::theme::SYSTEM_THEME_NAME)
         .and_then(|name| {
@@ -403,17 +461,12 @@ pub(crate) fn export_theme(setting: Option<&str>, agent_dir: &Path) -> (Theme, A
 /// The configured theme as extensions see it outside the terminal UI, where
 /// no terminal colors are known.
 pub(crate) fn extension_theme(setting: Option<&str>, agent_dir: &Path) -> Value {
-    let mode = if true_color() {
-        ColorMode::TrueColor
-    } else {
-        ColorMode::Ansi256
-    };
     let (theme, _) = load_theme(
         setting,
         &themes::ThemeFiles::default(),
         agent_dir,
         &yapi_tui::terminal::TerminalColors::default(),
-        mode,
+        color_mode(),
     );
     extension_ui::theme_json(&theme)
 }
@@ -426,12 +479,7 @@ fn load_theme(
     colors: &yapi_tui::terminal::TerminalColors,
     mode: ColorMode,
 ) -> (Theme, Option<String>) {
-    let appearance = match colors.background {
-        Some(background) => terminal_appearance(background, colors.foreground),
-        None => {
-            detect_colorfgbg(std::env::var("COLORFGBG").ok().as_deref()).unwrap_or(Appearance::Dark)
-        }
-    };
+    let appearance = appearance(colors);
     let system = || {
         Theme::system(
             &SystemThemeInput {
@@ -673,7 +721,7 @@ impl App {
         for message in &messages {
             match message {
                 Message::User(user) => {
-                    let text = user_text(&user.content);
+                    let text = user.content.text("");
                     history.push(text.clone());
                     if !text.trim().is_empty() {
                         self.push(chat::user_item(text));
@@ -931,12 +979,7 @@ impl App {
         for index in 0..self.chat.len() {
             let fresh =
                 matches!(&self.cache[index], Some((w, g, _)) if *w == width && *g == generation);
-            let animating = match &self.chat[index] {
-                Item::Tool(view) => view.result.is_none() && view.started.is_some(),
-                Item::Bash(view) => view.running(),
-                _ => false,
-            };
-            if !fresh || animating {
+            if !fresh || self.chat[index].animating() {
                 let lines = self.chat[index].render(width, index == 0, &self.ctx());
                 self.cache[index] = Some((width, generation, lines));
                 first_changed = first_changed.min(index);
@@ -1006,45 +1049,27 @@ impl App {
             out.extend(view.render(width, &self.ctx()));
         }
         let dim = self.theme.fg("dim");
-        let steering: Vec<String> = self
-            .pending
-            .0
-            .iter()
-            .cloned()
-            .chain(
-                self.compaction_queue
-                    .iter()
-                    .filter(|(_, follow_up)| !follow_up)
-                    .map(|(text, _)| text.clone()),
-            )
-            .collect();
-        let follow_up: Vec<String> = self
-            .pending
-            .1
-            .iter()
-            .cloned()
-            .chain(
-                self.compaction_queue
-                    .iter()
-                    .filter(|(_, follow_up)| *follow_up)
-                    .map(|(text, _)| text.clone()),
-            )
-            .collect();
-        if !steering.is_empty() || !follow_up.is_empty() {
+        // Messages queued while compacting follow the session's queues.
+        let queue = |label: &str, texts: &[String], follow_up: bool| -> Vec<String> {
+            let compacting = self
+                .compaction_queue
+                .iter()
+                .filter(|(_, f)| *f == follow_up);
+            texts
+                .iter()
+                .chain(compacting.map(|(text, _)| text))
+                .map(|text| format!("{label}: {text}"))
+                .collect()
+        };
+        let queued = [
+            queue("Steering", &self.pending.0, false),
+            queue("Follow-up", &self.pending.1, true),
+        ]
+        .concat();
+        if !queued.is_empty() {
             out.extend(lines::spacer(1));
-            for text in steering {
-                out.push(lines::truncated_text(
-                    &lines::styled(format!("Steering: {text}"), dim),
-                    width,
-                    1,
-                ));
-            }
-            for text in follow_up {
-                out.push(lines::truncated_text(
-                    &lines::styled(format!("Follow-up: {text}"), dim),
-                    width,
-                    1,
-                ));
+            for text in queued {
+                out.push(lines::truncated_text(&lines::styled(text, dim), width, 1));
             }
             let key = keybindings::keys_display(&self.keys, "app.message.dequeue");
             out.push(lines::truncated_text(
@@ -1322,11 +1347,7 @@ impl App {
     fn animating(&self) -> bool {
         (self.fullscreen && self.alt.scrollbar_deadline().is_some())
             || self.indicator.is_some()
-            || self.chat.iter().any(|item| match item {
-                Item::Tool(view) => view.result.is_none() && view.started.is_some(),
-                Item::Bash(view) => view.running(),
-                _ => false,
-            })
+            || self.chat.iter().any(Item::animating)
             || self.pending_bash.iter().any(BashView::running)
             || matches!(&self.selector, Some(Selector::Session(selector)) if selector.has_timed_status())
             || self.countdown().is_some()
@@ -1351,22 +1372,14 @@ impl App {
             let content = &mut message.content;
             let ensure = |content: &mut Vec<ContentBlock>, at: usize, block: ContentBlock| {
                 while content.len() <= at {
-                    content.push(ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }));
+                    content.push(ContentBlock::text(""));
                 }
                 content[at] = block;
             };
             match event {
-                AssistantMessageEvent::TextStart { content_index } => ensure(
-                    content,
-                    content_index,
-                    ContentBlock::Text(TextContent {
-                        text: String::new(),
-                        text_signature: None,
-                    }),
-                ),
+                AssistantMessageEvent::TextStart { content_index } => {
+                    ensure(content, content_index, ContentBlock::text(""))
+                }
                 AssistantMessageEvent::TextDelta {
                     content_index,
                     delta,
@@ -1480,7 +1493,7 @@ impl App {
             }
             AgentEvent::MessageStart { message } => match message {
                 Message::User(user) => {
-                    let text = user_text(&user.content);
+                    let text = user.content.text("");
                     if !text.trim().is_empty() {
                         self.push(chat::user_item(text));
                     }
@@ -1754,7 +1767,7 @@ impl App {
         if self.running {
             messages.push((first, StreamingBehavior::Steer));
         } else {
-            self.start_prompt(first);
+            self.start_prompt(first, Vec::new());
         }
         messages.extend(queue.map(|(text, follow_up)| {
             let behavior = if follow_up {
@@ -1789,13 +1802,13 @@ impl App {
 
     // Input
 
-    fn start_prompt(&mut self, text: String) {
+    fn start_prompt(&mut self, text: String, images: Vec<ImageContent>) {
         self.running = true;
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            let result = session.prompt(&text, Vec::new()).await;
+            let result = session.prompt(&text, images).await;
             let _ = tx.send(Event::PromptDone(epoch, result));
         });
     }
@@ -1852,7 +1865,7 @@ impl App {
         for view in std::mem::take(&mut self.pending_bash) {
             self.push(Item::Bash(Box::new(view)));
         }
-        self.start_prompt(text);
+        self.start_prompt(text, Vec::new());
     }
 
     fn run_bash(&mut self, command: String, exclude: bool) {
@@ -2430,7 +2443,7 @@ impl App {
     }
 
     fn open_thinking_selector(&mut self) {
-        let theme = self.ui().select_list_theme();
+        let theme = selectors::select_list_theme(&self.theme);
         self.selector = Some(Selector::Thinking(Box::new(
             selectors::ThinkingSelector::new(
                 self.session.thinking_level(),
@@ -2731,9 +2744,7 @@ impl App {
         } else {
             out.push_str(&self.main.stop());
         }
-        out.push_str(BRACKETED_PASTE_DISABLE);
-        out.push_str(&terminal.protocol.disable());
-        out.push_str("\x1b[?25h");
+        out.push_str(&terminal_leave(&mut terminal.protocol));
         emit(&out);
         #[cfg(unix)]
         terminal.raw.restore();
@@ -2918,10 +2929,7 @@ fn assistant_error(message: &AssistantMessage) -> String {
 
 fn error_result(text: &str) -> ToolResult {
     ToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: text.to_owned(),
-            text_signature: None,
-        })],
+        content: vec![ContentBlock::text(text)],
         is_error: Some(true),
         ..ToolResult::default()
     }
@@ -3020,11 +3028,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         stdin_paused,
     };
     let mut query = ColorQuery::new();
-    emit(&format!(
-        "{BRACKETED_PASTE_ENABLE}{}{}",
-        terminal.protocol.query(),
-        color_query()
-    ));
+    emit(&terminal_enter(&mut terminal.protocol));
 
     // Wait briefly for the color replies; keys typed meanwhile are kept.
     let mut buffer = InputBuffer::new();
@@ -3037,37 +3041,17 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
             break;
         }
         match tokio::time::timeout(remaining, rx.recv()).await {
-            Ok(Some(Event::Input(bytes))) => {
-                let mut write = String::new();
-                for input in buffer.push(&bytes) {
-                    if let Input::Key(sequence) = input {
-                        if let Filtered::Forward(keys) =
-                            terminal.protocol.filter(&sequence, &mut write)
-                        {
-                            for key in keys {
-                                if !query.consume(&key) {
-                                    early.push(key);
-                                }
-                            }
-                        }
-                    } else if let Input::Paste(text) = input {
-                        early.push(format!("\x1b[200~{text}\x1b[201~"));
-                    }
-                }
-                if !write.is_empty() {
-                    emit(&write);
-                }
-            }
+            Ok(Some(Event::Input(bytes))) => early.extend(
+                decode_input(&mut buffer, &mut terminal.protocol, &bytes)
+                    .into_iter()
+                    .filter(|key| !query.consume(key)),
+            ),
             Ok(Some(event)) => early_events.push(event),
             Ok(None) | Err(_) => break,
         }
     }
 
-    let mode = if true_color() {
-        ColorMode::TrueColor
-    } else {
-        ColorMode::Ansi256
-    };
+    let mode = color_mode();
     let theme_files = themes::ThemeFiles::load(&session.resources().themes);
     let theme_override = options.use_theme.clone();
     let model_fallback = options.model_fallback;
@@ -3159,6 +3143,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         anthropic_warning_shown: false,
         ext: extension_ui::ExtensionState::default(),
         initial: options.initial,
+        initial_images: options.initial_images,
         provider_count: 0,
         model_network: options.model_network,
         next_refresh: 0,
@@ -3246,11 +3231,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
     #[cfg(unix)]
     let mut resize =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::window_change()).ok();
-    #[cfg(unix)]
-    let mut terminate =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
-    #[cfg(unix)]
-    let mut hangup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()).ok();
+    // SIGTERM, or SIGHUP when the terminal goes away; it ends the loop.
+    let terminated = crate::modes::rpc::termination();
+    tokio::pin!(terminated);
     let escape_wait = escape_timeout(|name| std::env::var(name).ok());
     let mut last_draw = Instant::now();
     let mut dirty = false;
@@ -3272,28 +3255,6 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         };
         #[cfg(not(unix))]
         let resized = std::future::pending::<Option<()>>();
-        // SIGTERM, or SIGHUP when the terminal goes away.
-        #[cfg(unix)]
-        let terminated = async {
-            let term = async {
-                match terminate.as_mut() {
-                    Some(signal) => signal.recv().await,
-                    None => std::future::pending().await,
-                }
-            };
-            let hup = async {
-                match hangup.as_mut() {
-                    Some(signal) => signal.recv().await,
-                    None => std::future::pending().await,
-                }
-            };
-            tokio::select! {
-                received = term => received,
-                received = hup => received,
-            }
-        };
-        #[cfg(not(unix))]
-        let terminated = std::future::pending::<Option<()>>();
         let progress_wait = app.progress_wait();
         let flush_wait = if dirty {
             FRAME_INTERVAL.saturating_sub(last_draw.elapsed())
@@ -3304,27 +3265,14 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
             event = rx.recv() => {
                 let Some(event) = event else { break };
                 if let Event::Input(bytes) = event {
-                    let mut write = String::new();
                     app.editor.begin_input_batch();
-                    for input in buffer.push(&bytes) {
-                        match input {
-                            Input::Key(sequence) => {
-                                if let Filtered::Forward(keys) = terminal.protocol.filter(&sequence, &mut write) {
-                                    for key in keys {
-                                        if yapi_tui::keys::is_key_release(&key) {
-                                            continue;
-                                        }
-                                        app.handle_key(&key, &mut terminal);
-                                    }
-                                }
-                            }
-                            Input::Paste(text) => app.handle_key(&format!("\x1b[200~{text}\x1b[201~"), &mut terminal),
+                    for key in decode_input(&mut buffer, &mut terminal.protocol, &bytes) {
+                        // Pastes are never key releases.
+                        if !yapi_tui::keys::is_key_release(&key) {
+                            app.handle_key(&key, &mut terminal);
                         }
                     }
                     app.editor.end_input_batch();
-                    if !write.is_empty() {
-                        emit(&write);
-                    }
                     app.keys.set_kitty(terminal.protocol.kitty);
                     app.kitty = terminal.protocol.kitty;
                 } else {
@@ -3352,7 +3300,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
                 app.invalidate_all();
                 dirty = true;
             }
-            _ = terminated => app.quit = true,
+            _ = &mut terminated => app.quit = true,
             _ = tokio::time::sleep(flush_wait), if dirty => {}
         }
         app.start_binding();
@@ -3395,9 +3343,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, options: Options) ->
         app.draw();
         out.push_str(&app.main.stop());
     }
-    out.push_str(BRACKETED_PASTE_DISABLE);
-    out.push_str(&terminal.protocol.disable());
-    out.push_str("\x1b[?25h");
+    out.push_str(&terminal_leave(&mut terminal.protocol));
     emit(&out);
     #[cfg(unix)]
     terminal.raw.restore();
@@ -3533,7 +3479,8 @@ impl App {
                 self.redraw_transcript();
                 let mut initial = std::mem::take(&mut self.initial).into_iter();
                 if let Some(first) = initial.next() {
-                    self.start_prompt(first);
+                    let images = std::mem::take(&mut self.initial_images);
+                    self.start_prompt(first, images);
                     self.queue_messages(
                         initial
                             .map(|message| (message, StreamingBehavior::FollowUp))

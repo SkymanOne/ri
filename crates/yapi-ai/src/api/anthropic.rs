@@ -5,21 +5,20 @@
 
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
-use yapi_types::event::AssistantMessageEvent;
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, TextContent, ThinkingContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, ThinkingContent, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::{AnthropicMessagesCompat, Model};
 
 use crate::auth::federation;
 use crate::cost::calculate_cost;
-use crate::http::{self, Failure, SseReader};
+use crate::http::{self, Failure, Headers, SseReader};
 use crate::json_parse::{parse_json_with_repair, parse_streaming_json};
 use crate::schema;
 use crate::stream::{
-    CacheRetention, EventSender, EventStream, Provider, Request, StreamEvent, StreamOptions,
-    new_output, now_ms, send_error,
+    CacheRetention, EventSender, Request, StreamEvent, StreamOptions, check_complete, new_output,
+    now_ms, send_error,
 };
 use crate::thinking::{adjust_max_tokens_for_thinking, clamp_max_tokens_to_context};
 use crate::transcript::{
@@ -54,22 +53,6 @@ const SERVER_SIDE_FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 const MID_CONVERSATION_OUTPUT_CONFIG_BETA: &str = "mid-conversation-output-config-2026-07-01";
 const THINKING_BINDING_CONTROLS_BETA: &str = "thinking-binding-controls-2026-08-01";
 const MID_CONVERSATION_TOOL_CHANGES_BETA: &str = "mid-conversation-tool-changes-2026-07-01";
-
-/// The `anthropic-messages` wire API.
-#[derive(Debug, Default)]
-pub struct AnthropicMessages;
-
-impl Provider for AnthropicMessages {
-    fn api(&self) -> &str {
-        "anthropic-messages"
-    }
-
-    fn stream(&self, request: Request) -> EventStream {
-        let (sender, stream) = EventStream::channel();
-        tokio::spawn(run(request, sender));
-        stream
-    }
-}
 
 /// Compat flags with pi's defaults applied.
 struct Compat {
@@ -215,7 +198,7 @@ fn from_claude_code_name(name: &str, tools: &[ToolDeclaration]) -> String {
         .map_or_else(|| name.to_owned(), |tool| tool.name.clone())
 }
 
-async fn run(request: Request, sender: EventSender) {
+pub(super) async fn run(request: Request, sender: EventSender) {
     let Request {
         model,
         messages,
@@ -230,178 +213,124 @@ async fn run(request: Request, sender: EventSender) {
         output.provider_thinking_level =
             Some(thinking.effort.clone().unwrap_or_else(|| "high".into()));
     }
-
     let api_key = options.api_key.clone().filter(|key| !key.is_empty());
-    let mut option_headers = options.headers.clone();
-    let mut model_headers: IndexMap<String, Option<String>> = model
-        .headers
-        .iter()
-        .flatten()
-        .map(|(key, value)| (key.clone(), Some(value.clone())))
-        .collect();
-    if model.provider == "github-copilot" {
-        for (key, value) in super::copilot_headers(&messages) {
-            model_headers.insert(key.to_owned(), Some(value));
-        }
-    }
-    let header_auth = options.has_header("authorization")
-        || options.has_header("x-api-key")
-        || options.has_header("cf-aig-authorization");
-    // Workload identity federation stands in for a key on Anthropic itself.
-    let federation = (model.provider == "anthropic" && api_key.is_none() && !header_auth)
-        .then(|| federation::Config::from_env(&model.base_url, options.env.as_ref()))
-        .flatten();
-    if api_key.is_none() && !header_auth && federation.is_none() {
-        send_error(
-            &sender,
-            output,
-            &options.cancel,
-            format!("No API key for provider: {}", model.provider),
-        );
-        return;
-    }
-
     let oauth =
         model.provider != "github-copilot" && api_key.as_deref().is_some_and(is_oauth_token);
-    let retention = options.resolved_cache_retention();
-    let params = match build_params(
-        &model,
-        &compat,
-        &normalized,
-        &tools,
-        oauth,
-        retention,
-        &thinking,
-        &options,
-    ) {
-        Ok(params) => params,
-        Err(message) => {
-            send_error(&sender, output, &options.cancel, message);
-            return;
-        }
-    };
-    let betas = beta_features(
-        &model,
-        &compat,
-        &normalized,
-        oauth,
-        &thinking,
-        &model_headers,
-        &option_headers,
-    );
 
-    // Headers: SDK defaults and auth, then pi's defaults, the model's and the
-    // caller's; later entries win and `None` removes.
-    let mut headers: IndexMap<String, Option<String>> = IndexMap::new();
-    let set =
-        |headers: &mut IndexMap<String, Option<String>>, name: &str, value: Option<String>| {
-            headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
-            headers.insert(name.to_owned(), value);
-        };
-    set(&mut headers, "anthropic-version", Some("2023-06-01".into()));
-    set(
-        &mut headers,
-        "content-type",
-        Some("application/json".into()),
-    );
-    if let Some(key) = &api_key {
-        if model.provider == "github-copilot" || oauth {
-            set(&mut headers, "authorization", Some(format!("Bearer {key}")));
-        } else {
-            set(&mut headers, "x-api-key", Some(key.clone()));
+    let response = async {
+        let mut model_headers: IndexMap<String, Option<String>> = model
+            .headers
+            .iter()
+            .flatten()
+            .map(|(key, value)| (key.clone(), Some(value.clone())))
+            .collect();
+        if model.provider == "github-copilot" {
+            for (key, value) in super::copilot_headers(&messages) {
+                model_headers.insert(key.to_owned(), Some(value));
+            }
         }
-    }
-    set(&mut headers, "accept", Some("application/json".into()));
-    set(
-        &mut headers,
-        "anthropic-dangerous-direct-browser-access",
-        Some("true".into()),
-    );
-    if oauth {
-        set(
-            &mut headers,
-            "user-agent",
-            Some(format!("claude-cli/{CLAUDE_CODE_VERSION}")),
+        let header_auth = options.has_header("authorization")
+            || options.has_header("x-api-key")
+            || options.has_header("cf-aig-authorization");
+        // Workload identity federation stands in for a key on Anthropic itself.
+        let federation = (model.provider == "anthropic" && api_key.is_none() && !header_auth)
+            .then(|| federation::Config::from_env(&model.base_url, options.env.as_ref()))
+            .flatten();
+        if api_key.is_none() && !header_auth && federation.is_none() {
+            return Err(format!("No API key for provider: {}", model.provider));
+        }
+
+        let retention = options.resolved_cache_retention();
+        let params = build_params(
+            &model,
+            &compat,
+            &normalized,
+            &tools,
+            oauth,
+            retention,
+            &thinking,
+            &options,
+        )?;
+        let betas = beta_features(
+            &model,
+            &compat,
+            &normalized,
+            oauth,
+            &thinking,
+            &model_headers,
+            &options.headers,
         );
-        set(&mut headers, "x-app", Some("cli".into()));
-    } else if let Some(session_id) = options
-        .session_id
-        .as_ref()
-        .filter(|_| retention != CacheRetention::None && compat.send_session_affinity_headers)
-    {
-        let name = if compat.session_affinity_format.as_deref() == Some("openrouter") {
-            "x-session-id"
-        } else {
-            "x-session-affinity"
-        };
-        set(&mut headers, name, Some(session_id.clone()));
-    }
-    for (key, value) in model_headers.drain(..).chain(option_headers.drain(..)) {
-        set(&mut headers, &key, value);
-    }
-    if !betas.is_empty() {
-        set(&mut headers, "anthropic-beta", Some(betas.join(",")));
-    }
 
-    let url = format!(
-        "{}/v1/messages?beta=true",
-        model.base_url.trim_end_matches('/')
-    );
-    let body = match yapi_types::json::to_string(&params) {
-        Ok(body) => body,
-        Err(err) => {
-            send_error(&sender, output, &options.cancel, err.to_string());
-            return;
-        }
-    };
-    if let Some(config) = &federation {
-        match federation::token(config, false, &options.cancel).await {
-            Ok(token) => federated_headers(&mut headers, &token),
-            Err(message) => {
-                send_error(&sender, output, &options.cancel, message);
-                return;
+        // Headers: SDK defaults and auth, then pi's defaults, the model's and
+        // the caller's; later entries win and `None` removes.
+        let mut headers = Headers::default();
+        headers.set("anthropic-version", Some("2023-06-01"));
+        headers.set("content-type", Some("application/json"));
+        if let Some(key) = &api_key {
+            if model.provider == "github-copilot" || oauth {
+                headers.set("authorization", Some(format!("Bearer {key}")));
+            } else {
+                headers.set("x-api-key", Some(key.as_str()));
             }
         }
-    }
-    let build = |headers: &IndexMap<String, Option<String>>| {
-        let mut request = http::client().post(&url).body(body.clone());
-        for (name, value) in headers.iter() {
-            if let Some(value) = value {
-                request = request.header(name.as_str(), value.as_str());
-            }
-        }
-        request
-    };
-    let mut result = http::send(|| build(&headers), &options).await;
-    // A 401 on a federated token: exchange again and retry once, as the SDK.
-    if let Some(config) = &federation
-        && matches!(result, Err(Failure::Status { status: 401, .. }))
-    {
-        federation::invalidate(config);
-        match federation::token(config, true, &options.cancel).await {
-            Ok(token) => {
-                federated_headers(&mut headers, &token);
-                result = http::send(|| build(&headers), &options).await;
-            }
-            Err(message) => {
-                send_error(&sender, output, &options.cancel, message);
-                return;
-            }
-        }
-    }
-    let response = match result {
-        Ok(response) => response,
-        Err(failure) => {
-            let message = match failure {
-                Failure::Status { status, body } => match serde_json::from_str::<Value>(&body) {
-                    Ok(json) => http::sdk_status_message(status, Some(&json), None),
-                    Err(_) => http::sdk_status_message(status, None, Some(&body)),
-                },
-                other => other.plain_message().unwrap_or_default(),
+        headers.set("accept", Some("application/json"));
+        headers.set("anthropic-dangerous-direct-browser-access", Some("true"));
+        if oauth {
+            headers.set(
+                "user-agent",
+                Some(format!("claude-cli/{CLAUDE_CODE_VERSION}")),
+            );
+            headers.set("x-app", Some("cli"));
+        } else if let Some(session_id) = options
+            .session_id
+            .as_ref()
+            .filter(|_| retention != CacheRetention::None && compat.send_session_affinity_headers)
+        {
+            let name = if compat.session_affinity_format.as_deref() == Some("openrouter") {
+                "x-session-id"
+            } else {
+                "x-session-affinity"
             };
-            send_error(&sender, output, &options.cancel, message);
-            return;
+            headers.set(name, Some(session_id.as_str()));
         }
+        headers.extend(&model_headers);
+        headers.extend(&options.headers);
+        if !betas.is_empty() {
+            headers.set("anthropic-beta", Some(betas.join(",")));
+        }
+
+        let url = format!(
+            "{}/v1/messages?beta=true",
+            model.base_url.trim_end_matches('/')
+        );
+        let body = yapi_types::json::to_string(&params).map_err(|err| err.to_string())?;
+        if let Some(config) = &federation {
+            let token = federation::token(config, false, &options.cancel).await?;
+            federated_headers(&mut headers, &token);
+        }
+        let build = |headers: &Headers| headers.apply(http::client().post(&url).body(body.clone()));
+        let mut result = http::send(|| build(&headers), &options).await;
+        // A 401 on a federated token: exchange again and retry once, as the SDK.
+        if let Some(config) = &federation
+            && matches!(result, Err(Failure::Status { status: 401, .. }))
+        {
+            federation::invalidate(config);
+            let token = federation::token(config, true, &options.cancel).await?;
+            federated_headers(&mut headers, &token);
+            result = http::send(|| build(&headers), &options).await;
+        }
+        result.map_err(|failure| match failure {
+            Failure::Status { status, body } => match serde_json::from_str::<Value>(&body) {
+                Ok(json) => http::sdk_status_message(status, Some(&json), None),
+                Err(_) => http::sdk_status_message(status, None, Some(&body)),
+            },
+            other => other.plain_message().unwrap_or_default(),
+        })
+    }
+    .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
 
     sender.send(StreamEvent::Start(output.clone()));
@@ -417,22 +346,15 @@ async fn run(request: Request, sender: EventSender) {
         .consume(SseReader::fetch(response), &model, &sender, &options)
         .await
     {
-        Ok(()) => {
-            let output = state.output;
-            sender.send(StreamEvent::Done(output));
-        }
+        Ok(()) => sender.send(StreamEvent::Done(state.output)),
         Err(message) => send_error(&sender, state.output, &options.cancel, message),
     }
 }
 
 /// Bearer auth with a federated token, adding the OAuth beta to any others.
-fn federated_headers(headers: &mut IndexMap<String, Option<String>>, token: &str) {
-    headers.retain(|key, _| !key.eq_ignore_ascii_case("authorization"));
-    headers.insert("authorization".into(), Some(format!("Bearer {token}")));
-    let beta = headers
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case("anthropic-beta"))
-        .and_then(|(_, value)| value.clone());
+fn federated_headers(headers: &mut Headers, token: &str) {
+    headers.set("authorization", Some(format!("Bearer {token}")));
+    let beta = headers.get("anthropic-beta").map(str::to_owned);
     let has_oauth = beta.as_deref().is_some_and(|beta| {
         beta.split(',')
             .any(|value| value.trim() == federation::OAUTH_API_BETA)
@@ -442,8 +364,7 @@ fn federated_headers(headers: &mut IndexMap<String, Option<String>>, token: &str
             Some(beta) => format!("{beta}, {}", federation::OAUTH_API_BETA),
             None => federation::OAUTH_API_BETA.to_owned(),
         };
-        headers.retain(|key, _| !key.eq_ignore_ascii_case("anthropic-beta"));
-        headers.insert("anthropic-beta".into(), Some(value));
+        headers.set("anthropic-beta", Some(value));
     }
 }
 
@@ -465,11 +386,10 @@ impl StreamState {
             .position(|candidate| *candidate == Some(index))
     }
 
-    fn push_block(&mut self, block: ContentBlock, index: u64) -> usize {
-        self.output.content.push(block);
+    fn push_block(&mut self, block: ContentBlock, index: u64, sender: &EventSender) {
         self.indices.push(Some(index));
         self.partial_json.push(String::new());
-        self.output.content.len() - 1
+        sender.start(&mut self.output, block);
     }
 
     async fn consume(
@@ -513,18 +433,11 @@ impl StreamState {
         if saw_start && !saw_stop {
             return Err("Anthropic stream ended before message_stop".into());
         }
-        if options.cancel.is_cancelled() {
-            return Err(http::ABORTED_DURING_STREAM.into());
-        }
-        match self.output.stop_reason {
-            StopReason::Pending => Err("Anthropic stream ended without a stop reason".into()),
-            StopReason::Aborted | StopReason::Error => Err(self
-                .output
-                .error_message
-                .clone()
-                .unwrap_or_else(|| "An unknown error occurred".into())),
-            _ => Ok(()),
-        }
+        check_complete(
+            &self.output,
+            &options.cancel,
+            "Anthropic stream ended without a stop reason",
+        )
     }
 
     fn handle(&mut self, event: &Value, model: &Model, sender: &EventSender) -> Result<(), String> {
@@ -577,145 +490,71 @@ impl StreamState {
             }
             "content_block_start" => {
                 let block = &event["content_block"];
-                let index = index.unwrap_or_default();
-                match block["type"].as_str().unwrap_or_default() {
-                    "fallback" => {
-                        if !self.output.content.is_empty() {
-                            return Err(
-                                "Anthropic performed an unsupported mid-output model fallback"
-                                    .into(),
-                            );
-                        }
-                    }
-                    "text" => {
-                        let position = self.push_block(
-                            ContentBlock::Text(TextContent {
-                                text: block["text"].as_str().unwrap_or_default().to_owned(),
-                                text_signature: None,
-                            }),
-                            index,
-                        );
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::TextStart {
-                                content_index: position,
-                            },
+                let text = |key: &str| block[key].as_str().unwrap_or_default().to_owned();
+                let content = match block["type"].as_str().unwrap_or_default() {
+                    "fallback" if !self.output.content.is_empty() => {
+                        return Err(
+                            "Anthropic performed an unsupported mid-output model fallback".into(),
                         );
                     }
-                    "thinking" => {
-                        let position = self.push_block(
-                            ContentBlock::Thinking(ThinkingContent {
-                                thinking: block["thinking"].as_str().unwrap_or_default().to_owned(),
-                                thinking_signature: Some(
-                                    block["signature"].as_str().unwrap_or_default().to_owned(),
-                                ),
-                                redacted: None,
-                            }),
-                            index,
-                        );
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ThinkingStart {
-                                content_index: position,
-                            },
-                        );
-                    }
-                    "redacted_thinking" => {
-                        let position = self.push_block(
-                            ContentBlock::Thinking(ThinkingContent {
-                                thinking: "[Reasoning redacted]".into(),
-                                thinking_signature: block["data"].as_str().map(str::to_owned),
-                                redacted: Some(true),
-                            }),
-                            index,
-                        );
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ThinkingStart {
-                                content_index: position,
-                            },
-                        );
-                    }
+                    "text" => ContentBlock::text(text("text")),
+                    "thinking" => ContentBlock::Thinking(ThinkingContent {
+                        thinking: text("thinking"),
+                        thinking_signature: Some(text("signature")),
+                        redacted: None,
+                    }),
+                    "redacted_thinking" => ContentBlock::Thinking(ThinkingContent {
+                        thinking: "[Reasoning redacted]".into(),
+                        thinking_signature: block["data"].as_str().map(str::to_owned),
+                        redacted: Some(true),
+                    }),
                     "tool_use" => {
-                        let raw_name = block["name"].as_str().unwrap_or_default();
-                        let name = if self.oauth {
-                            from_claude_code_name(raw_name, &self.tools)
-                        } else {
-                            raw_name.to_owned()
-                        };
-                        let id = block["id"].as_str().unwrap_or_default().to_owned();
-                        let position = self.push_block(
-                            ContentBlock::ToolCall(ToolCall {
-                                id: id.clone(),
-                                name: name.clone(),
-                                arguments: block["input"].as_object().cloned().unwrap_or_default(),
-                                thought_signature: None,
-                                namespace: None,
-                            }),
-                            index,
-                        );
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ToolcallStart {
-                                content_index: position,
-                                id,
-                                tool_name: name,
+                        let name = text("name");
+                        ContentBlock::ToolCall(ToolCall {
+                            id: text("id"),
+                            name: if self.oauth {
+                                from_claude_code_name(&name, &self.tools)
+                            } else {
+                                name
                             },
-                        );
+                            arguments: block["input"].as_object().cloned().unwrap_or_default(),
+                            thought_signature: None,
+                            namespace: None,
+                        })
                     }
-                    _ => {}
-                }
+                    _ => return Ok(()),
+                };
+                self.push_block(content, index.unwrap_or_default(), sender);
             }
             "content_block_delta" => {
                 let Some(position) = index.and_then(|index| self.position(index)) else {
                     return Ok(());
                 };
                 let delta = &event["delta"];
-                match (
+                let field = |key: &str| Some(delta[key].as_str().unwrap_or_default());
+                let piece = match (
                     delta["type"].as_str().unwrap_or_default(),
                     &mut self.output.content[position],
                 ) {
-                    ("text_delta", ContentBlock::Text(text)) => {
-                        let piece = delta["text"].as_str().unwrap_or_default();
-                        text.text.push_str(piece);
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::TextDelta {
-                                content_index: position,
-                                delta: piece.to_owned(),
-                            },
-                        );
-                    }
-                    ("thinking_delta", ContentBlock::Thinking(thinking)) => {
-                        let piece = delta["thinking"].as_str().unwrap_or_default();
-                        thinking.thinking.push_str(piece);
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ThinkingDelta {
-                                content_index: position,
-                                delta: piece.to_owned(),
-                            },
-                        );
-                    }
+                    ("text_delta", ContentBlock::Text(_)) => field("text"),
+                    ("thinking_delta", ContentBlock::Thinking(_)) => field("thinking"),
                     ("input_json_delta", ContentBlock::ToolCall(call)) => {
-                        let piece = delta["partial_json"].as_str().unwrap_or_default();
-                        self.partial_json[position].push_str(piece);
-                        call.arguments = parse_streaming_json(&self.partial_json[position]);
-                        sender.update(
-                            &self.output,
-                            AssistantMessageEvent::ToolcallDelta {
-                                content_index: position,
-                                delta: piece.to_owned(),
-                            },
-                        );
+                        let json = &mut self.partial_json[position];
+                        json.push_str(delta["partial_json"].as_str().unwrap_or_default());
+                        call.arguments = parse_streaming_json(json);
+                        field("partial_json")
                     }
                     ("signature_delta", ContentBlock::Thinking(thinking)) => {
                         thinking
                             .thinking_signature
                             .get_or_insert_with(String::new)
                             .push_str(delta["signature"].as_str().unwrap_or_default());
+                        None
                     }
-                    _ => {}
+                    _ => None,
+                };
+                if let Some(piece) = piece {
+                    sender.delta(&mut self.output, position, piece);
                 }
             }
             "content_block_stop" => {
@@ -723,25 +562,10 @@ impl StreamState {
                     return Ok(());
                 };
                 self.indices[position] = None;
-                let event = match &mut self.output.content[position] {
-                    ContentBlock::Text(text) => AssistantMessageEvent::TextEnd {
-                        content_index: position,
-                        content: text.text.clone(),
-                    },
-                    ContentBlock::Thinking(thinking) => AssistantMessageEvent::ThinkingEnd {
-                        content_index: position,
-                        content: thinking.thinking.clone(),
-                    },
-                    ContentBlock::ToolCall(call) => {
-                        call.arguments = parse_streaming_json(&self.partial_json[position]);
-                        AssistantMessageEvent::ToolcallEnd {
-                            content_index: position,
-                            tool_call: call.clone(),
-                        }
-                    }
-                    ContentBlock::Image(_) => return Ok(()),
-                };
-                sender.update(&self.output, event);
+                if let ContentBlock::ToolCall(call) = &mut self.output.content[position] {
+                    call.arguments = parse_streaming_json(&self.partial_json[position]);
+                }
+                sender.end(&self.output, position);
             }
             "message_delta" => {
                 let delta = &event["delta"];
@@ -874,10 +698,6 @@ fn native_tool_changes(compat: &Compat, messages: &[Message]) -> bool {
         && !has_tool_redefinitions(messages)
 }
 
-fn normalize_tool_call_id(id: &str) -> String {
-    super::sanitize_id_part(id).chars().take(64).collect()
-}
-
 #[allow(clippy::too_many_arguments, reason = "mirrors pi's buildParams inputs")]
 fn build_params(
     model: &Model,
@@ -892,7 +712,7 @@ fn build_params(
     let cache_control = cache_control(compat, retention);
     let initial = initial_system_message(messages);
     let initial_text = initial.map(|system| system.text()).unwrap_or_default();
-    let normalize = |id: &str, _: &AssistantMessage| normalize_tool_call_id(id);
+    let normalize = |id: &str, _: &AssistantMessage| super::normalize_tool_call_id(id);
     let transformed = transform_messages(messages, model, Some(&normalize), now_ms());
     let conversation = if initial.is_some() {
         &transformed[1..]

@@ -5,11 +5,7 @@ import { Container, Editor, Text } from "@earendil-works/pi-tui";
 
 const yapi = globalThis.__yapi;
 
-function unavailable(name) {
-	const error = new Error(`${name} from @earendil-works/pi-coding-agent is not available in yapi extensions`);
-	error.code = "ERR_NOT_SUPPORTED";
-	throw error;
-}
+const unavailable = (name) => yapi.unsupported(`${name} from @earendil-works/pi-coding-agent is not available in yapi extensions`);
 
 // ----- configuration ------------------------------------------------------
 /** yapi keeps project files in `.yapi/` and global ones in `~/.yapi/agent`. */

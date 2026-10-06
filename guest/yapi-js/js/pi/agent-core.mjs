@@ -1,10 +1,6 @@
 // `@earendil-works/pi-agent-core` for extensions in yapi. yapi runs the agent loop
 // natively, so these exports exist only so imports link; each throws when used.
-function unavailable(name) {
-	const error = new Error(`${name} from @earendil-works/pi-agent-core is not available in yapi extensions`);
-	error.code = "ERR_NOT_SUPPORTED";
-	throw error;
-}
+const unavailable = (name) => globalThis.__yapi.unsupported(`${name} from @earendil-works/pi-agent-core is not available in yapi extensions`);
 
 export class Agent {
 	constructor() {

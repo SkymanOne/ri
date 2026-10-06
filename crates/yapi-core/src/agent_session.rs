@@ -26,12 +26,13 @@ use yapi_types::event::{AgentEvent, ToolResult};
 use yapi_types::event::{CompactionReason, CompactionResult, SummarySource};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
-    TextContent, ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
+    ThinkingLevel, ToolCall, ToolResultMessage, UserMessage,
 };
 use yapi_types::model::Model;
 use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
+use yapi_types::sync::lock;
 
 use crate::compaction::{
     BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer, SummaryRetry,
@@ -331,12 +332,6 @@ impl WeakSession {
     pub fn upgrade(&self) -> Option<AgentSession> {
         self.0.upgrade().map(|inner| AgentSession { inner })
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl AgentSession {
@@ -1116,14 +1111,7 @@ impl AgentSession {
             if assistant.stop_reason == StopReason::Aborted && assistant.content.is_empty() {
                 return None;
             }
-            let text: String = assistant
-                .content
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::Text(text) => Some(text.text.as_str()),
-                    _ => None,
-                })
-                .collect();
+            let text = assistant_text(&assistant);
             let text = text.trim();
             (!text.is_empty()).then(|| text.to_owned())
         })
@@ -1137,10 +1125,7 @@ impl AgentSession {
     }
 
     fn user_message(text: String, images: Vec<ImageContent>) -> Message {
-        let mut content = vec![ContentBlock::Text(TextContent {
-            text,
-            text_signature: None,
-        })];
+        let mut content = vec![ContentBlock::text(text)];
         content.extend(images.into_iter().map(ContentBlock::Image));
         Message::User(UserMessage {
             content: Content::Blocks(content),
@@ -1340,7 +1325,7 @@ impl AgentSession {
         let Ok(content) = std::fs::read_to_string(&skill.file_path) else {
             return text.to_owned();
         };
-        let (_, body) = crate::resources::parse_frontmatter(&content);
+        let (_, body) = crate::resources::split_frontmatter(&content);
         let mut expanded = format!(
             "<skill name=\"{}\" location=\"{}\">\nReferences are relative to {}.\n\n{body}\n</skill>",
             skill.name,
@@ -2547,10 +2532,7 @@ impl AgentSession {
             None => ToolCallOutcome {
                 call: call.clone(),
                 result: ToolResult {
-                    content: vec![ContentBlock::Text(TextContent {
-                        text: "No assistant message issued this call".into(),
-                        text_signature: None,
-                    })],
+                    content: vec![ContentBlock::text("No assistant message issued this call")],
                     details: Some(Value::Object(serde_json::Map::new())),
                     ..ToolResult::default()
                 },
@@ -2598,19 +2580,10 @@ impl AgentSession {
             }
         };
         drop(queue);
-        let text: Vec<&str> = outcome
-            .result
-            .content
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text(text) => Some(text.text.as_str()),
-                _ => None,
-            })
-            .collect();
         nested.finish(
             started,
             outcome.is_error,
-            &text.join("\n"),
+            &yapi_types::message::blocks_text(&outcome.result.content, "\n"),
             outcome.result.usage.as_ref(),
         );
         hooks

@@ -127,25 +127,18 @@ impl Manager {
     }
 
     async fn refresh(&self) -> Result<(), String> {
-        let cancel = CancellationToken::new();
-        let timer = {
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-                cancel.cancel();
-            })
-        };
         // /llama already reached the server, so it refreshes even offline.
         let result = self
             .session
             .refresh_model_catalogs(RefreshOptions {
                 providers: Some(vec![llama::PROVIDER_ID.into()]),
                 allow_network: true,
-                cancel,
+                cancel: yapi_ai::model_catalog::cancel_after(
+                    yapi_ai::model_catalog::REFRESH_TIMEOUT,
+                ),
                 ..RefreshOptions::default()
             })
             .await;
-        timer.abort();
         if result.aborted {
             return Err("Model catalog refresh timed out.".into());
         }
@@ -275,8 +268,9 @@ impl Manager {
         Ok(())
     }
 
-    async fn download(&self, home: Option<std::path::PathBuf>) -> Result<(), String> {
-        let token = huggingface::find_token(&|name| std::env::var(name).ok(), home);
+    async fn download(&self) -> Result<(), String> {
+        let home = crate::tools::path::home_dir();
+        let token = huggingface::find_token(&|name| std::env::var(name).ok(), Some(home));
         let hub = huggingface::Client::new(token, None);
         let Some(query) = self
             .ctx_ui
@@ -464,7 +458,7 @@ impl LlamaExtension {
                 return;
             };
             let action = if choice == DOWNLOAD {
-                manager.download(home_dir()).await
+                manager.download().await
             } else {
                 match options
                     .iter()
@@ -496,10 +490,6 @@ impl LlamaExtension {
             }
         }
     }
-}
-
-fn home_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
 
 impl Extension for LlamaExtension {

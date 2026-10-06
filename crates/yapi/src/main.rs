@@ -25,6 +25,28 @@ use std::process::ExitCode;
 
 use args::Mode;
 
+/// Writes `line` to stdout; a closed stdout is not an error.
+pub(crate) fn out(line: &str) {
+    let _ = writeln!(std::io::stdout(), "{line}");
+}
+
+/// Writes `line` to stderr; a closed stderr is not an error.
+pub(crate) fn err(line: &str) {
+    let _ = writeln!(std::io::stderr(), "{line}");
+}
+
+/// Parses the arguments of `name`, a command pi does not have, with clap.
+/// On `--help` or an error it prints the help or the error and returns the
+/// exit code: 0 for help, 1 for an error, as yapi's other errors.
+pub(crate) fn parse_command<T: clap::Parser>(name: &str, args: &[String]) -> Result<T, u8> {
+    T::try_parse_from(std::iter::once(name).chain(args.iter().map(String::as_str))).map_err(
+        |error| {
+            let _ = error.print();
+            u8::from(error.use_stderr())
+        },
+    )
+}
+
 /// pi's `applyHttpProxySettings`: the global `httpProxy` setting stands in for
 /// unset proxy variables.
 fn apply_http_proxy() {
@@ -38,57 +60,41 @@ fn apply_http_proxy() {
     yapi_ai::http::set_settings_proxy(proxy.as_deref());
 }
 
+/// Runs `future` to completion on a current-thread runtime; its exit code.
+fn block_on(future: impl std::future::Future<Output = u8>) -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("{err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let code = runtime.block_on(future);
+    // A stdin read still in progress (RPC mode after a signal) runs on a
+    // blocking thread that only returns at end of input; exit without it.
+    runtime.shutdown_background();
+    ExitCode::from(code)
+}
+
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-    if raw.first().map(String::as_str) == Some("import") {
-        return ExitCode::from(import::run(&raw[1..]));
-    }
-    if raw.first().map(String::as_str) == Some("new") {
-        return ExitCode::from(new_command::run(&raw[1..]));
-    }
-    if raw.first().map(String::as_str) == Some("config") {
-        return ExitCode::from(config_command::run(&raw[1..]));
-    }
-    if raw.first().map(String::as_str) == Some("mcp") {
-        apply_http_proxy();
-        return match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => ExitCode::from(runtime.block_on(mcp_command::run(&raw[1..]))),
-            Err(err) => {
-                eprintln!("{err}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-    if raw.first().map(String::as_str) == Some("auth") {
-        return match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => ExitCode::from(runtime.block_on(auth_command::run(&raw))),
-            Err(err) => {
-                eprintln!("{err}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-    if matches!(
-        raw.first().map(String::as_str),
-        Some("install" | "remove" | "uninstall" | "update" | "list")
-    ) {
-        apply_http_proxy();
-        return match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => ExitCode::from(runtime.block_on(packages::run(&raw)).unwrap_or(0)),
-            Err(err) => {
-                eprintln!("{err}");
-                ExitCode::FAILURE
-            }
-        };
+    match raw.first().map(String::as_str) {
+        Some("import") => return ExitCode::from(import::run(&raw[1..])),
+        Some("new") => return ExitCode::from(new_command::run(&raw[1..])),
+        Some("config") => return ExitCode::from(config_command::run(&raw[1..])),
+        Some("mcp") => {
+            apply_http_proxy();
+            return block_on(mcp_command::run(&raw[1..]));
+        }
+        Some("auth") => return block_on(auth_command::run(&raw)),
+        Some("install" | "remove" | "uninstall" | "update" | "list") => {
+            apply_http_proxy();
+            return block_on(async { packages::run(&raw).await.unwrap_or(0) });
+        }
+        _ => {}
     }
     let mut parsed = args::parse(&raw);
     if parsed.version {
@@ -128,53 +134,31 @@ fn main() -> ExitCode {
         eprintln!("Error: {message}");
         return ExitCode::FAILURE;
     }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let code = runtime.block_on(run(&mut parsed));
-    // A stdin read still in progress (RPC mode after a signal) runs on a
-    // blocking thread that only returns at end of input; exit without it.
-    runtime.shutdown_background();
-    ExitCode::from(code)
+    block_on(run(&mut parsed))
 }
 
 /// The message of a panic in the interactive session, kept until the
 /// terminal is restored.
 static PANIC_MESSAGE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-/// Runs the interactive session so that a panic leaves the terminal usable,
-/// as pi's crash handler does: the terminal modes are reset and the message
-/// printed after them. Raw mode is restored as the session unwinds.
 /// Whether model catalogs may be fetched: pi's model runtime fetches only
 /// while `PI_OFFLINE` is unset, which `--offline` sets.
 fn model_network(args: &args::Args) -> bool {
     !args.offline && std::env::var_os("PI_OFFLINE").is_none()
 }
 
+/// Runs the interactive session so that a panic leaves the terminal usable,
+/// as pi's crash handler does: the terminal modes are reset and the message
+/// printed after them. Raw mode is restored as the session unwinds.
 async fn survive_crash(run: impl std::future::Future<Output = u8>) -> u8 {
-    use std::task::Poll;
+    use futures_util::FutureExt;
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|info| {
         if let Ok(mut slot) = PANIC_MESSAGE.lock() {
             *slot = Some(info.to_string());
         }
     }));
-    let mut run = Box::pin(run);
-    let outcome = std::future::poll_fn(|cx| {
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run.as_mut().poll(cx))) {
-            Ok(Poll::Ready(code)) => Poll::Ready(Ok(code)),
-            Ok(Poll::Pending) => Poll::Pending,
-            Err(panic) => Poll::Ready(Err(panic)),
-        }
-    })
-    .await;
+    let outcome = std::panic::AssertUnwindSafe(run).catch_unwind().await;
     std::panic::set_hook(previous);
     match outcome {
         Ok(code) => code,
@@ -323,6 +307,11 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 return 1;
             }
         };
+        // pi attaches `@` images to the initial message only.
+        let initial_images = match startup.initial_message {
+            Some(_) => startup.initial_images,
+            None => Vec::new(),
+        };
         let mut initial: Vec<String> = startup.initial_message.into_iter().collect();
         initial.extend(startup.messages);
         let args = parsed.clone();
@@ -333,6 +322,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 tui_mode,
                 verbose: parsed.verbose,
                 initial,
+                initial_images,
                 factory: Box::new(move |session| {
                     startup::create(&args, session, false, &extensions)
                 }),
@@ -358,17 +348,12 @@ async fn run(parsed: &mut args::Args) -> u8 {
         if model_network(parsed) {
             let session = startup.session.clone();
             tokio::spawn(async move {
-                let cancel = tokio_util::sync::CancellationToken::new();
-                let options = yapi_ai::model_catalog::RefreshOptions {
-                    cancel: cancel.clone(),
+                use yapi_ai::model_catalog::{REFRESH_TIMEOUT, RefreshOptions, cancel_after};
+                let options = RefreshOptions {
+                    cancel: cancel_after(REFRESH_TIMEOUT),
                     ..Default::default()
                 };
-                let timer = tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
-                    cancel.cancel();
-                });
                 session.refresh_model_catalogs(options).await;
-                timer.abort();
             });
         }
         // pi's RPC mode starts without a model, on a placeholder; prompts
@@ -405,7 +390,6 @@ async fn run(parsed: &mut args::Args) -> u8 {
     }
 }
 
-/// pi's `--resume` picker over this project's sessions, then all of them.
 /// Asks whether to trust the working directory when its project resources
 /// need trust and nothing decides it, and applies the answer to this run. A
 /// cancelled prompt leaves the project untrusted.
@@ -429,6 +413,7 @@ fn ask_project_trust(parsed: &mut args::Args) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// pi's `--resume` picker over this project's sessions, then all of them.
 fn pick_session(parsed: &args::Args) -> anyhow::Result<Option<std::path::PathBuf>> {
     let agent_dir = yapi_core::config::agent_dir();
     let (cwd, custom, theme) = startup::resume_context(parsed)?;

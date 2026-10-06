@@ -117,10 +117,11 @@ impl Ls {
             ));
             details.insert("entryLimitReached".into(), json!(limit));
         }
-        let text = capped_output(&results.join("\n"), notices, Vec::new(), &mut details);
-        Ok(text_result(
-            text,
-            (!details.is_empty()).then_some(Value::Object(details)),
+        Ok(capped_output(
+            &results.join("\n"),
+            notices,
+            Vec::new(),
+            details,
         ))
     }
 }

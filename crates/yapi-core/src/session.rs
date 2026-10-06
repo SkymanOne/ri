@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use yapi_types::message::{
     BranchSummaryMessage, CompactionSummaryMessage, Content, ContentBlock, CustomMessage, Message,
-    TextContent, Usage,
+    Usage,
 };
 use yapi_types::session::{
     BranchSummaryEntry, CURRENT_VERSION, CompactionEntry, ContextEditEntry, CustomEntry,
@@ -612,10 +612,7 @@ impl SessionManager {
         }
         let replacement = replacement.map(|content| match content {
             Content::Text(text) if matches!(role, "assistant" | "toolResult") => {
-                Content::Blocks(vec![ContentBlock::Text(TextContent {
-                    text,
-                    text_signature: None,
-                })])
+                Content::Blocks(vec![ContentBlock::text(text)])
             }
             content => content,
         });
@@ -1061,13 +1058,7 @@ fn edited(
     let Some(replacement) = replacement else {
         return Vec::new();
     };
-    let as_blocks = || match &replacement.content {
-        Content::Text(text) => vec![ContentBlock::Text(TextContent {
-            text: text.clone(),
-            text_signature: None,
-        })],
-        Content::Blocks(blocks) => blocks.clone(),
-    };
+    let as_blocks = || replacement.content.clone().into_blocks();
     messages
         .into_iter()
         .map(|message| match message {

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
+use yapi_types::sync::lock;
 
 use super::client::{ClientOptions, McpClient, RequestOptions, Root, Tool};
 use super::config::{ServerEntry, ServerTransport};
@@ -85,24 +86,6 @@ pub struct Connection {
     closed: AtomicBool,
     on_tools: ToolsListener,
     readable_resources: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// `~` and `~/…` name the home directory, as in a shell.
-fn expand_home(value: &str) -> String {
-    let home = crate::tools::path::home_dir();
-    if value == "~" {
-        return home.display().to_string();
-    }
-    match value.strip_prefix("~/") {
-        Some(rest) => home.join(rest).display().to_string(),
-        None => value.to_owned(),
-    }
 }
 
 /// pi's `resolveConfigValueOrThrow`: environment references and `!command`.
@@ -269,9 +252,14 @@ impl Connection {
                 }
                 Ok(Transport::Stdio(Box::new(StdioTransport::new(
                     StdioOptions {
-                        command: expand_home(command),
-                        args: args.iter().map(|arg| expand_home(arg)).collect(),
-                        cwd: self.cwd.join(expand_home(cwd.as_deref().unwrap_or("."))),
+                        command: crate::tools::path::expand_home(command),
+                        args: args
+                            .iter()
+                            .map(|arg| crate::tools::path::expand_home(arg))
+                            .collect(),
+                        cwd: self.cwd.join(crate::tools::path::expand_home(
+                            cwd.as_deref().unwrap_or("."),
+                        )),
                         env: resolved,
                     },
                 ))))

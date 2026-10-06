@@ -279,13 +279,10 @@ impl Grep {
         } else {
             Vec::new()
         };
-        let text = capped_output(&output.join("\n"), notices, after, &mut details);
+        let mut result = capped_output(&output.join("\n"), notices, after, details);
         if lines_truncated {
-            details.insert("linesTruncated".into(), json!(true));
+            result.details.get_or_insert_with(|| json!({}))["linesTruncated"] = json!(true);
         }
-        Ok(text_result(
-            text,
-            (!details.is_empty()).then_some(Value::Object(details)),
-        ))
+        Ok(result)
     }
 }

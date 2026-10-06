@@ -6,6 +6,8 @@
     reason = "test helpers; a panic is a test failure"
 )]
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -16,22 +18,12 @@ use yapi_ext::{Engine, Instance, NoBridge, Options};
 use yapi_mock::{Cassette, MockServer};
 use yapi_types::rpc::SourceInfo;
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap()
-}
-
 fn skill(path: &str) -> PathBuf {
-    repo().join("skills").join(path)
+    common::repo().join("skills").join(path)
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("skills-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+    common::scratch(&format!("skills-{name}"))
 }
 
 /// The relative link targets in a Markdown file, without anchors.
@@ -47,7 +39,7 @@ fn relative_links(text: &str) -> Vec<String> {
 #[test]
 fn skills_load_cleanly_and_their_links_resolve() {
     let source = SourceInfo {
-        path: repo().join("skills").display().to_string(),
+        path: common::repo().join("skills").display().to_string(),
         source: "local".into(),
         scope: "user".into(),
         origin: "top-level".into(),
@@ -147,9 +139,10 @@ fn check_extension_reports_commands_and_load_errors() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_prints_the_answer() {
-    let cassette =
-        Cassette::load(&repo().join("tests/fixtures/cassettes/anthropic-messages/text.json"))
-            .unwrap();
+    let cassette = Cassette::load(
+        &common::repo().join("tests/fixtures/cassettes/anthropic-messages/text.json"),
+    )
+    .unwrap();
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let server = MockServer::start(addr, cassette).await.unwrap();
     let dir = scratch("ask");

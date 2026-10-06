@@ -38,17 +38,6 @@ impl ColorMode {
     }
 }
 
-/// sRGB channels, 0 to 255.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rgb {
-    /// Red.
-    pub r: u8,
-    /// Green.
-    pub g: u8,
-    /// Blue.
-    pub b: u8,
-}
-
 type Vector = [f64; 3];
 type Matrix = [Vector; 3];
 
@@ -111,7 +100,7 @@ fn linear_to_srgb(value: f64) -> f64 {
     }
 }
 
-fn srgb_to_linear(value: f64) -> f64 {
+pub(crate) fn srgb_to_linear(value: f64) -> f64 {
     if value <= 0.04045 {
         value / 12.92
     } else {
@@ -138,12 +127,8 @@ fn rgb_to_oklab(rgb: [f64; 3]) -> Vector {
 }
 
 /// JavaScript's `Math.round`: halves round up.
-fn js_round(value: f64) -> f64 {
-    (value + 0.5).floor()
-}
-
 fn linear_srgb_to_rgb(linear: Vector) -> [f64; 3] {
-    linear.map(|value| js_round(linear_to_srgb(value).clamp(0.0, 1.0) * 255.0))
+    linear.map(|value| yapi_types::js::round(linear_to_srgb(value).clamp(0.0, 1.0) * 255.0))
 }
 
 fn lms_slopes(a: f64, b: f64) -> Vector {
@@ -293,19 +278,21 @@ fn oklch_to_rgb(l: f64, c: f64, h: f64) -> [f64; 3] {
     if in_gamut(direct) {
         return linear_srgb_to_rgb(direct);
     }
-    let mut linear = at(0.0);
-    let (mut low, mut high) = (0.0, c);
+    linear_srgb_to_rgb(at(bisect(0.0, c, |chroma| in_gamut(at(chroma)))))
+}
+
+/// Twenty halvings of the interval between `good` and `bad`, moving `good`
+/// to each midpoint `ok` accepts; the last such `good`.
+pub(crate) fn bisect(mut good: f64, mut bad: f64, ok: impl Fn(f64) -> bool) -> f64 {
     for _ in 0..20 {
-        let chroma = (low + high) / 2.0;
-        let candidate = at(chroma);
-        if in_gamut(candidate) {
-            low = chroma;
-            linear = candidate;
+        let middle = (good + bad) / 2.0;
+        if ok(middle) {
+            good = middle;
         } else {
-            high = chroma;
+            bad = middle;
         }
     }
-    linear_srgb_to_rgb(linear)
+    good
 }
 
 const BASIC_COLORS: [[f64; 3]; 16] = [
@@ -443,7 +430,7 @@ impl Color {
         let [r, g, b] = self.to_rgb();
         let channel = |value: f64| {
             // JavaScript's Math.round: halves round up.
-            let rounded = (value + 0.5).floor().clamp(0.0, 255.0);
+            let rounded = yapi_types::js::round(value).clamp(0.0, 255.0);
             format!("{:02x}", rounded as u8)
         };
         format!("#{}{}{}", channel(r), channel(g), channel(b))
@@ -481,7 +468,8 @@ impl Color {
         let rgb = self.to_rgb();
         match mode {
             ColorMode::TrueColor => {
-                let [r, g, b] = rgb.map(|channel| js_round(channel).clamp(0.0, 255.0) as u8);
+                let [r, g, b] =
+                    rgb.map(|channel| yapi_types::js::round(channel).clamp(0.0, 255.0) as u8);
                 ratatui_core::style::Color::Rgb(r, g, b)
             }
             ColorMode::Ansi256 => ratatui_core::style::Color::Indexed(rgb_to_ansi256(rgb)),
@@ -513,7 +501,7 @@ pub fn rgb_to_ansi256(rgb: [f64; 3]) -> u8 {
     let cube = [CUBE_VALUES[r], CUBE_VALUES[g], CUBE_VALUES[b]];
     let cube_index = 16 + 36 * r + 6 * g + b;
     let grays: Vec<f64> = (0..24).map(|i| 8.0 + f64::from(i) * 10.0).collect();
-    let gray = js_round(0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]);
+    let gray = yapi_types::js::round(0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]);
     let offset = closest(&grays, gray);
     let value = grays[offset];
     let spread = rgb[0].max(rgb[1]).max(rgb[2]) - rgb[0].min(rgb[1]).min(rgb[2]);

@@ -12,12 +12,12 @@ use yapi_ai::transcript::{current_tools, tool_state_changes};
 use yapi_ai::validation::validate_tool_arguments;
 use yapi_types::event::{AgentEvent, ToolResult};
 use yapi_types::message::{
-    AssistantMessage, Content, ContentBlock, Message, StopReason, SystemMessage, TextContent,
-    ThinkingLevel, ToolCall, ToolDeclaration, ToolResultMessage,
+    AssistantMessage, Content, ContentBlock, Message, StopReason, SystemMessage, ThinkingLevel,
+    ToolCall, ToolDeclaration, ToolResultMessage,
 };
 use yapi_types::model::Model;
 
-use crate::hooks::{AfterToolCall, AgentHooks, BeforeToolCall, Turn, TurnDecision};
+use crate::hooks::{AfterToolCall, AgentHooks, BeforeToolCall};
 use crate::tool::{ExecutionMode, Tool, UpdateSink};
 
 /// Starts a provider request; dispatches on the model's wire API.
@@ -108,11 +108,10 @@ async fn emit_message(hooks: &dyn AgentHooks, message: &Message) {
 async fn run_loop(
     context: &mut AgentContext,
     new_messages: &mut Vec<Message>,
-    mut config: LoopConfig,
+    config: LoopConfig,
     hooks: &dyn AgentHooks,
 ) {
     let mut first_turn = true;
-    let mut explicit_continuation = false;
     let mut pending = hooks.steering_messages().await;
 
     loop {
@@ -139,29 +138,10 @@ async fn run_loop(
                 new_messages.push(message);
             }
 
-            if let Some(update) = hooks.prepare_request(&context.messages).await {
-                if let Some(messages) = update.messages {
-                    context.messages = messages;
-                }
-                if let Some(model) = update.model {
-                    config.model = model;
-                }
-                if let Some(level) = update.thinking_level {
-                    config.thinking_level = level;
-                }
-            }
-
             let message = stream_response(context, &config, hooks).await;
             new_messages.push(Message::Assistant(Box::new(message.clone())));
 
             if matches!(message.stop_reason, StopReason::Error | StopReason::Aborted) {
-                hooks
-                    .finish_turn(Turn {
-                        message: &message,
-                        tool_results: &[],
-                        messages: &context.messages,
-                    })
-                    .await;
                 hooks
                     .on_event(&AgentEvent::TurnEnd {
                         message: Message::Assistant(Box::new(message)),
@@ -196,41 +176,20 @@ async fn run_loop(
                 tool_results = results;
             }
 
-            let decision = hooks
-                .finish_turn(Turn {
-                    message: &message,
-                    tool_results: &tool_results,
-                    messages: &context.messages,
-                })
-                .await;
             hooks
                 .on_event(&AgentEvent::TurnEnd {
                     message: Message::Assistant(Box::new(message)),
                     tool_results,
                 })
                 .await;
-            if decision == TurnDecision::End {
-                end(hooks, new_messages).await;
-                return;
-            }
-            explicit_continuation = decision == TurnDecision::Continue;
             pending = hooks.steering_messages().await;
-            if more_tool_calls || !pending.is_empty() {
-                explicit_continuation = false;
-            }
         }
 
         let follow_up = hooks.follow_up_messages().await;
-        if !follow_up.is_empty() {
-            explicit_continuation = false;
-            pending = follow_up;
-            continue;
+        if follow_up.is_empty() {
+            break;
         }
-        if explicit_continuation {
-            explicit_continuation = false;
-            continue;
-        }
-        break;
+        pending = follow_up;
     }
     end(hooks, new_messages).await;
 }
@@ -396,10 +355,7 @@ async fn complete(
 
 fn error_result(message: &str) -> ToolResult {
     ToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: message.to_owned(),
-            text_signature: None,
-        })],
+        content: vec![ContentBlock::text(message)],
         details: Some(Value::Object(Default::default())),
         ..ToolResult::default()
     }

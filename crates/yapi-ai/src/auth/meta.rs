@@ -9,16 +9,15 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{Poll, poll_device_code};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, post_form, trusted_url};
 use super::{
-    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, form, json_body,
-    now_ms, send,
+    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, json_body, now_ms,
+    send,
 };
 
 const CLIENT_ID: &str = "1031625952748946";
 const API_KEY_LIFETIME_MS: u64 = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 /// The Meta sign-in and its endpoints.
 #[derive(Clone, Debug)]
@@ -52,26 +51,6 @@ fn error_detail(json: &Value) -> String {
         })
         .map(|value| format!(": {value}"))
         .unwrap_or_default()
-}
-
-fn trusted_url(value: &Value) -> Option<String> {
-    let url = url::Url::parse(value.as_str()?).ok()?;
-    matches!(url.scheme(), "http" | "https").then(|| url.to_string())
-}
-
-fn positive(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn post_form(url: &str, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
-    crate::http::client()
-        .post(url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "application/json")
-        .timeout(REQUEST_TIMEOUT)
-        .body(form(fields))
 }
 
 impl MetaOAuth {

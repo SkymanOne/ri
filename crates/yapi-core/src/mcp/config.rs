@@ -83,6 +83,15 @@ pub enum ServerTransport {
     },
 }
 
+impl ServerTransport {
+    /// Whether the server would sign in with OAuth: HTTP without an
+    /// `Authorization` header or provider auth.
+    pub fn uses_oauth(&self) -> bool {
+        matches!(self, ServerTransport::Http { headers, auth_provider: None, .. }
+            if !headers.keys().any(|name| name.eq_ignore_ascii_case("authorization")))
+    }
+}
+
 /// One validated server entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerConfig {
@@ -137,26 +146,11 @@ impl ServerConfig {
     }
 }
 
-/// `*` matches any characters.
+/// pi's `toolPatternRegExp`: `*` matches any characters.
 fn glob(pattern: &str, text: &str) -> bool {
-    let parts: Vec<&str> = pattern.split('*').collect();
-    let mut rest = text;
-    for (index, part) in parts.iter().enumerate() {
-        if index == 0 {
-            match rest.strip_prefix(part) {
-                Some(after) => rest = after,
-                None => return false,
-            }
-        } else if index == parts.len() - 1 {
-            return rest.ends_with(part);
-        } else {
-            match rest.find(part) {
-                Some(position) => rest = &rest[position + part.len()..],
-                None => return false,
-            }
-        }
-    }
-    rest.is_empty()
+    let parts: Vec<String> = pattern.split('*').map(regex_lite::escape).collect();
+    regex_lite::Regex::new(&format!("^{}$", parts.join(".*")))
+        .is_ok_and(|regex| regex.is_match(text))
 }
 
 /// Which file defined a server.

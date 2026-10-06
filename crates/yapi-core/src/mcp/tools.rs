@@ -16,11 +16,11 @@ use sha2::Digest as _;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_types::event::ToolResult;
-use yapi_types::message::{ContentBlock, ToolDeclaration};
+use yapi_types::message::{ContentBlock, ToolDeclaration, blocks_text};
 
 use super::client::RequestOptions;
 use super::connection::Connection;
-use super::content::{block_to_llm, text, to_llm_content};
+use super::content::{block_to_llm, to_llm_content};
 use crate::tools::truncate::{format_size, truncate_middle};
 
 /// Provider tool names hold at most 64 characters of `[A-Za-z0-9_-]`.
@@ -51,11 +51,7 @@ pub fn tool_name(server: &str, tool: &str, is_taken: impl Fn(&str) -> bool) -> S
         return name;
     }
     let digest = sha2::Sha256::digest(format!("{server}\0{tool}").as_bytes());
-    let hash: String = digest
-        .iter()
-        .take(4)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let hash = crate::time::hex(&digest[..4]);
     format!(
         "{}_{hash}",
         &name[..name.len().min(MAX_TOOL_NAME_LENGTH - hash.len() - 1)]
@@ -75,15 +71,12 @@ pub fn server_tool_label(tools: &crate::extensions::Tools, name: &str) -> Option
     })
 }
 
-fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    let _ = getrandom::fill(&mut buffer);
-    buffer.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 /// Saves `data` to a temp file only the user can read; its path.
 async fn save_temp(data: &[u8], extension: &str) -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join(format!("yapi-mcp-{}{extension}", random_hex(8)));
+    let path = std::env::temp_dir().join(format!(
+        "yapi-mcp-{}{extension}",
+        crate::time::random_hex(8)
+    ));
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -98,21 +91,10 @@ async fn save_temp(data: &[u8], extension: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn text_of(content: &[ContentBlock]) -> String {
-    content
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// Keeps model-facing text within [`OUTPUT_MAX_BYTES`]: longer text becomes
 /// one block in Codex's format with the full text's path; images follow it.
 pub async fn limit_content(content: Vec<ContentBlock>) -> (Vec<ContentBlock>, Option<PathBuf>) {
-    let combined = text_of(&content);
+    let combined = blocks_text(&content, "\n");
     let truncation = truncate_middle(&combined, OUTPUT_MAX_BYTES);
     if !truncation.truncated {
         return (content, None);
@@ -128,7 +110,7 @@ pub async fn limit_content(content: Vec<ContentBlock>) -> (Vec<ContentBlock>, Op
         Err(error) => (format!("[Could not save the full output: {error}]"), None),
     };
     let tokens = truncation.total_bytes.div_ceil(4);
-    let mut limited = vec![text(format!(
+    let mut limited = vec![ContentBlock::text(format!(
         "Warning: truncated output (original token count: {tokens})\nTotal output lines: {}\n\n{}\n\n{where_}",
         truncation.total_lines, truncation.content
     ))];
@@ -205,7 +187,7 @@ async fn block_content(server: &str, block: &Value, readable_resources: bool) ->
             let title = field(block, "title")
                 .or(field(block, "name"))
                 .unwrap_or_default();
-            text(format!(
+            ContentBlock::text(format!(
                 "[Resource {} \"{title}\"{details}{description}{read}]",
                 field(block, "uri").unwrap_or_default()
             ))
@@ -222,7 +204,7 @@ async fn block_content(server: &str, block: &Value, readable_resources: bool) ->
                 .decode(field(resource, "blob").unwrap_or_default())
                 .unwrap_or_default();
             if is_text_mime(mime) {
-                return text(String::from_utf8_lossy(&data));
+                return ContentBlock::text(String::from_utf8_lossy(&data));
             }
             let kind = format!(
                 "{}, {}",
@@ -230,11 +212,11 @@ async fn block_content(server: &str, block: &Value, readable_resources: bool) ->
                 format_size(data.len())
             );
             match save_temp(&data, &extension_of(uri)).await {
-                Ok(path) => text(format!(
+                Ok(path) => ContentBlock::text(format!(
                     "[Binary resource {uri} ({kind}) saved to {}]",
                     path.display()
                 )),
-                Err(error) => text(format!(
+                Err(error) => ContentBlock::text(format!(
                     "[Binary resource {uri} ({kind}) could not be saved: {error}]"
                 )),
             }
@@ -274,8 +256,10 @@ pub async fn convert_result(
         model_content(server, &blocks, readable_resources).await
     };
     let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
-    if is_error && text_of(&converted).is_empty() {
-        converted.push(text(format!("MCP tool {server}/{tool} returned an error")));
+    if is_error && blocks_text(&converted, "\n").is_empty() {
+        converted.push(ContentBlock::text(format!(
+            "MCP tool {server}/{tool} returned an error"
+        )));
     }
     let (content, path) = limit_content(converted).await;
     let mut details = json!({"server": server, "tool": tool});
@@ -409,7 +393,7 @@ impl Tool for McpTool {
                         .map(str::to_owned)
                         .unwrap_or_else(|| format!("Progress {}{total}", progress["progress"]));
                     updates(ToolResult {
-                        content: vec![text(message)],
+                        content: vec![ContentBlock::text(message)],
                         details: Some(json!({"server": server, "tool": tool})),
                         ..ToolResult::default()
                     });
@@ -657,7 +641,7 @@ impl McpResourceTool {
         }
         let converted = model_content(server.name(), &blocks, false).await;
         let converted = if converted.is_empty() {
-            vec![text(format!("Resource {uri} is empty."))]
+            vec![ContentBlock::text(format!("Resource {uri} is empty."))]
         } else {
             converted
         };
@@ -704,7 +688,7 @@ impl Tool for McpResourceTool {
             }
             let payload = self.list(&args, &cancel).await?;
             let json = yapi_types::json::to_string(&payload).map_err(|error| error.to_string())?;
-            let (content, path) = limit_content(vec![text(json)]).await;
+            let (content, path) = limit_content(vec![ContentBlock::text(json)]).await;
             let server = string_argument(&args, "server")?.unwrap_or_default();
             let mut details = json!({"server": server, "tool": self.declaration.name});
             if let Some(path) = path {

@@ -15,16 +15,10 @@ use yapi_tui::theme::Theme;
 use yapi_types::rpc::SourceInfo;
 
 use super::keybindings::keys_text;
+use super::selectors::key_hint as hint;
 
 fn brand(r: f64, g: f64, b: f64, mode: ColorMode) -> Style {
     Style::new().fg(Color::Rgb(r, g, b).to_terminal(mode))
-}
-
-fn hint(theme: &Theme, key: &str, text: &str) -> Vec<Span<'static>> {
-    vec![
-        Span::styled(key.to_owned(), theme.fg("dim")),
-        Span::styled(format!(" {text}"), theme.fg("muted")),
-    ]
 }
 
 /// The header rows: a blank row, the wordmark with the version, key hints and
@@ -109,14 +103,9 @@ pub fn render(
             hint(theme, "!", "bash"),
             hint(theme, &key("app.tools.expand"), "more"),
         ];
-        let mut spans = Vec::new();
-        for (index, part) in parts.into_iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::styled(" · ", theme.fg("muted")));
-            }
-            spans.extend(part);
-        }
-        content.push(Line::from(spans));
+        content.push(Line::from(
+            parts.join(&Span::styled(" · ", theme.fg("muted"))),
+        ));
         content.push(lines::styled(
             format!(
                 "Press {} to show full startup help{}.",

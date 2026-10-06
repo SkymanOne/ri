@@ -37,6 +37,7 @@ reqwest = { version = "0.13", default-features = false, features = ["http2", "ru
 portable-pty = "0.9"
 oxc = { version = "=0.152.0", default-features = false, features = ["codegen", "semantic", "transformer"] }
 oxc_resolver = { version = "=11.24.3", default-features = false }
+percent-encoding = "2.3"
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui-core = { version = "0.1", features = ["std"] }
 rustix = { version = "1", features = ["process"] }
@@ -60,6 +61,7 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1"
 unicode-width = "0.2"
 vt100 = "0.16"
+yaml-rust2 = { version = "0.13", default-features = false }
 
 # Enforces the code rules in AGENTS.md. CI denies all warnings.
 [workspace.lints.rust]

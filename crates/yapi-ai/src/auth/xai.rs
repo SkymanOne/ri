@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{Poll, poll_device_code};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, form, now_ms, send,
 };
@@ -15,7 +15,6 @@ const SCOPE: &str = "openid profile email offline_access grok-cli:access api:acc
 /// Refresh this long before the reported expiry.
 const REFRESH_SKEW_MS: u64 = 5 * 60 * 1000;
 const DEFAULT_TOKEN_LIFETIME_SECONDS: f64 = 3600.0;
-const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 /// The xAI sign-in and its endpoints.
 #[derive(Clone, Debug)]

@@ -24,8 +24,6 @@ struct Screen {
     output: Vec<u8>,
     last_output: Instant,
     seen_output: bool,
-    /// When the program first wrote anything.
-    first_output: Option<Instant>,
 }
 
 /// A running program attached to a terminal of a fixed size.
@@ -35,7 +33,6 @@ pub struct Pty {
     screen: Arc<Mutex<Screen>>,
     updates: Receiver<()>,
     cols: u16,
-    spawned: Instant,
     // Keeps the terminal open while the program runs.
     _master: Box<dyn portable_pty::MasterPty + Send>,
 }
@@ -103,7 +100,6 @@ impl Pty {
             command.env(key, value);
         }
         command.env("TERM", "xterm-256color");
-        let spawned = Instant::now();
         let child = pair.slave.spawn_command(command).map_err(io_error)?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(io_error)?;
@@ -113,7 +109,6 @@ impl Pty {
             output: Vec::new(),
             last_output: Instant::now(),
             seen_output: false,
-            first_output: None,
         }));
         let (notify, updates) = channel();
         let shared = Arc::clone(&screen);
@@ -137,10 +132,8 @@ impl Pty {
                             let mut screen = shared.lock().unwrap_or_else(PoisonError::into_inner);
                             screen.parser.process(&buffer[..count]);
                             screen.output.extend_from_slice(&buffer[..count]);
-                            let now = Instant::now();
-                            screen.last_output = now;
+                            screen.last_output = Instant::now();
                             screen.seen_output = true;
-                            screen.first_output.get_or_insert(now);
                         }
                         if notify.send(()).is_err() {
                             break;
@@ -155,20 +148,12 @@ impl Pty {
             screen,
             updates,
             cols,
-            spawned,
             _master: pair.master,
         })
     }
 
     fn lock(&self) -> MutexGuard<'_, Screen> {
         self.screen.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// How long after its start the program first wrote output, if it has.
-    pub fn first_output(&self) -> Option<Duration> {
-        self.lock()
-            .first_output
-            .map(|at| at.duration_since(self.spawned))
     }
 
     /// The program's process id.

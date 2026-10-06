@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, bail};
+use base64::Engine as _;
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
 use yapi_core::agent_session::{AgentSession, Resources, SessionConfig};
@@ -80,7 +81,7 @@ fn file_arguments(files: &[String], cwd: &Path) -> anyhow::Result<(String, Vec<I
             .with_context(|| format!("Error: Could not read file {}", path.display()))?;
         if let Some(mime_type) = yapi_core::tools::image_mime_type(&bytes) {
             images.push(ImageContent {
-                data: yapi_core::tools::base64(&bytes),
+                data: base64::engine::general_purpose::STANDARD.encode(&bytes),
                 mime_type: mime_type.to_owned(),
             });
             text += &format!("<file name=\"{}\"></file>\n", path.display());
@@ -265,21 +266,31 @@ fn custom_session_dir(args: &Args, settings: &SettingsManager, cwd: &Path) -> Op
         .map(|dir| resolve_to_cwd(dir, cwd))
 }
 
-/// Settings for `cwd`, with project settings when the project is trusted, and
-/// whether it is.
-fn load_settings(
-    args: &Args,
+/// Settings for `cwd` and whether the project is trusted: pi's
+/// `createCommandSettingsManager`. Project settings load when `override_`, a
+/// stored decision or `defaultProjectTrust` trusts the project, or, with
+/// `ask` and a terminal, when the user trusts it at pi's prompt.
+pub fn load_settings(
     cwd: &Path,
     agent_dir: &Path,
+    override_: Option<bool>,
+    ask: bool,
 ) -> anyhow::Result<(SettingsManager, bool)> {
-    let trust = TrustStore::new(agent_dir);
-    let global_settings = SettingsManager::load(agent_dir, cwd, false)?;
-    let trusted = resolve_trusted(
-        cwd,
-        &trust,
-        args.project_trust_override,
-        global_settings.settings().default_project_trust,
-    );
+    use std::io::IsTerminal;
+    let global = SettingsManager::load(agent_dir, cwd, false)?;
+    let view = global.settings();
+    let store = TrustStore::new(agent_dir);
+    let default = view.default_project_trust;
+    let trusted = if ask
+        && std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && yapi_core::trust::needs_prompt(cwd, &store, override_, default)
+    {
+        crate::interactive::picker::ask_project_trust(agent_dir, cwd, view.theme.as_deref())?
+            .unwrap_or(false)
+    } else {
+        resolve_trusted(cwd, &store, override_, default)
+    };
     Ok((SettingsManager::load(agent_dir, cwd, trusted)?, trusted))
 }
 
@@ -287,22 +298,15 @@ fn load_settings(
 /// directory if any, and the theme setting.
 pub fn resume_context(args: &Args) -> anyhow::Result<(PathBuf, Option<PathBuf>, Option<String>)> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
-    let (settings, _) = load_settings(args, &cwd, &agent_dir())?;
+    let (settings, _) = load_settings(&cwd, &agent_dir(), args.project_trust_override, false)?;
     let custom = custom_session_dir(args, &settings, &cwd);
     Ok((cwd, custom, settings.settings().theme.clone()))
 }
 
 /// The user cancelled a startup prompt; the run ends without an error.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("")]
 pub struct Cancelled;
-
-impl std::fmt::Display for Cancelled {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(())
-    }
-}
-
-impl std::error::Error for Cancelled {}
 
 /// Builds the session for a run. Errors are user-facing messages; a
 /// [`Cancelled`] error ends the run quietly. `interactive` allows prompts.
@@ -314,7 +318,7 @@ pub fn start(
 ) -> anyhow::Result<Startup> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     let agent_dir = agent_dir();
-    let (settings, _) = load_settings(args, &cwd, &agent_dir)?;
+    let (settings, _) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)?;
     let custom_dir = custom_session_dir(args, &settings, &cwd);
     let mut session = open_session(args, &cwd, &agent_dir, custom_dir.as_deref())?;
     // pi's missing-cwd check: the interactive mode offers to continue in the
@@ -409,7 +413,7 @@ fn build(
 ) -> anyhow::Result<(AgentSession, Option<String>)> {
     let cwd = session.cwd().to_path_buf();
     let agent_dir = agent_dir();
-    let (settings, trusted) = load_settings(args, &cwd, &agent_dir)?;
+    let (settings, trusted) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)?;
     yapi_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
     // A `models.json` error is shown by the interactive mode, as in pi.
     let mut registry = ModelRegistry::load(&agent_dir);
@@ -789,8 +793,8 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     let cwd = std::env::current_dir()
         .map_err(|err| fail(format!("reading the working directory: {err}")))?;
     let agent_dir = agent_dir();
-    let (settings, _) =
-        load_settings(args, &cwd, &agent_dir).map_err(|err| fail(err.to_string()))?;
+    let (settings, _) = load_settings(&cwd, &agent_dir, args.project_trust_override, false)
+        .map_err(|err| fail(err.to_string()))?;
     let mut messages = Vec::new();
     let mut missing = Vec::new();
     let mut requested = Vec::new();
@@ -813,15 +817,6 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
             ));
         }
     }
-    // pi's source info: `cli` for `-e`, `local` for settings entries, `auto`
-    // for installed ones, and the package's source for package resources.
-    let source = |path: PathBuf, source: &str, scope: &str| SourceInfo {
-        path: path.to_string_lossy().into_owned(),
-        source: source.into(),
-        scope: scope.into(),
-        origin: "top-level".into(),
-        base_dir: None,
-    };
     let mut themes = Vec::new();
     let mut skills = Vec::new();
     let mut prompts = Vec::new();
@@ -830,7 +825,7 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     let mut sources: Vec<SourceInfo> = Vec::new();
     for path in &requested {
         let found = yapi_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None, true);
-        let cli = |path: &PathBuf| source(path.clone(), "cli", "temporary");
+        let cli = |path: &PathBuf| yapi_core::resources::cli_source(path);
         sources.extend(found.extensions.iter().map(cli));
         skills.extend(found.skills.iter().map(cli));
         prompts.extend(found.prompts.iter().map(cli));
@@ -844,9 +839,11 @@ pub async fn load_extensions(args: &Args) -> Result<Extensions, ExtensionErrors>
     );
     let offline = args.offline || yapi_core::tools::external::offline();
     // Installs missing packages; what they provide comes from pi's resolver.
-    packages
-        .resolve(!offline, |message| eprintln!("Warning: {message}"))
-        .await;
+    if !offline {
+        packages
+            .install_missing(|message| eprintln!("Warning: {message}"))
+            .await;
+    }
     // pi's precedence: the project's settings entries and discovered
     // extensions, then the user's, then packages. `--no-extensions` leaves
     // them out; packages still provide their skills, prompts and themes.

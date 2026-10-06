@@ -18,10 +18,8 @@ use crate::segment::{
     Granularity, find_word_backward, find_word_forward, is_paste_marker, parse_paste_marker,
     paste_marker_spans, segment,
 };
-use crate::select_list::{SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme};
-use crate::text::{
-    has_cjk, has_whitespace, is_autocomplete_separator, take_width, utf16_len, visible_width,
-};
+use crate::select_list::{SelectItem, SelectList, SelectListLayout, SelectListTheme};
+use crate::text::{has_cjk, has_whitespace, is_autocomplete_separator, take_width, visible_width};
 
 const HISTORY_LIMIT: usize = 100;
 const LARGE_PASTE_LINES: usize = 10;
@@ -260,17 +258,8 @@ fn decode_pasted_controls(text: &str) -> String {
     out
 }
 
-/// The largest char boundary of `text` at or below `index`.
-fn floor_boundary(text: &str, index: usize) -> usize {
-    let mut index = index.min(text.len());
-    while !text.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
 fn to_utf16(text: &str, byte: usize) -> usize {
-    utf16_len(&text[..floor_boundary(text, byte)])
+    yapi_types::js::len(&text[..text.floor_char_boundary(byte)])
 }
 
 fn from_utf16(text: &str, units: usize) -> usize {
@@ -491,18 +480,6 @@ impl Editor {
         self.set_text_internal(&normalized, false);
     }
 
-    /// Inserts `text` at the cursor as one undoable change.
-    pub fn insert_text_at_cursor(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        self.cancel_autocomplete();
-        self.push_undo();
-        self.last_action = None;
-        self.exit_history();
-        self.insert_text(text);
-    }
-
     fn valid_ids(&self) -> Vec<u32> {
         self.pastes.keys().copied().collect()
     }
@@ -516,11 +493,11 @@ impl Editor {
 
     fn before_cursor(&self) -> &str {
         let line = self.current_line();
-        &line[..floor_boundary(line, self.state.cursor_col)]
+        &line[..line.floor_char_boundary(self.state.cursor_col)]
     }
 
     fn set_cursor_col(&mut self, col: usize) {
-        self.state.cursor_col = floor_boundary(self.current_line(), col);
+        self.state.cursor_col = self.current_line().floor_char_boundary(col);
         self.preferred_visual_col = None;
         self.snapped_from_cursor_col = None;
     }
@@ -707,7 +684,7 @@ impl Editor {
             let mut cursor_in_padding = false;
             match line.cursor {
                 Some(position) => {
-                    let position = floor_boundary(&line.text, position);
+                    let position = line.text.floor_char_boundary(position);
                     let (before, after) = line.text.split_at(position);
                     if self.focused {
                         self.cursor = Some((out.len(), padding_x + visible_width(before)));
@@ -995,7 +972,7 @@ impl Editor {
         let normalized = normalize(text);
         let inserted: Vec<&str> = normalized.split('\n').collect();
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         let (before, after) = line.split_at(col);
         if inserted.len() == 1 {
             self.state.lines[self.state.cursor_line] = format!("{before}{normalized}{after}");
@@ -1026,7 +1003,9 @@ impl Editor {
             }
             self.last_action = Some(LastAction::TypeWord);
         }
-        let col = floor_boundary(self.current_line(), self.state.cursor_col);
+        let col = self
+            .current_line()
+            .floor_char_boundary(self.state.cursor_col);
         let line = self.state.cursor_line;
         self.state.lines[line].insert_str(col, text);
         self.set_cursor_col(col + text.len());
@@ -1072,7 +1051,7 @@ impl Editor {
             filtered.insert(0, ' ');
         }
         let line_count = filtered.split('\n').count();
-        let chars = utf16_len(&filtered);
+        let chars = yapi_types::js::len(&filtered);
         if line_count > LARGE_PASTE_LINES || chars > LARGE_PASTE_CHARS {
             self.paste_counter += 1;
             let id = self.paste_counter;
@@ -1094,7 +1073,7 @@ impl Editor {
         self.last_action = None;
         self.push_undo();
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         let (before, after) = line.split_at(col);
         let index = self.state.cursor_line;
         self.state.lines[index] = before.to_owned();
@@ -1134,10 +1113,9 @@ impl Editor {
                 self.remove_paste(target);
             }
             let line = self.current_line().to_owned();
-            let col = floor_boundary(&line, self.state.cursor_col);
-            let start = floor_boundary(&line, col.saturating_sub(length));
-            self.state.lines[self.state.cursor_line] =
-                format!("{}{}", &line[..start], &line[col..]);
+            let col = line.floor_char_boundary(self.state.cursor_col);
+            let start = line.floor_char_boundary(col.saturating_sub(length));
+            self.state.lines[self.state.cursor_line].replace_range(start..col, "");
             self.set_cursor_col(start);
         } else if self.state.cursor_line > 0 {
             self.push_undo();
@@ -1183,15 +1161,14 @@ impl Editor {
         self.exit_history();
         self.last_action = None;
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         if col < line.len() {
             self.push_undo();
             let ids = self.valid_ids();
             let first = segment(&line[col..], Granularity::Grapheme, &ids)
                 .first()
                 .map_or(1, |seg| seg.text.len());
-            self.state.lines[self.state.cursor_line] =
-                format!("{}{}", &line[..col], &line[col + first..]);
+            self.state.lines[self.state.cursor_line].replace_range(col..col + first, "");
         } else if self.state.cursor_line + 1 < self.state.lines.len() {
             self.push_undo();
             self.merge_with_next_line();
@@ -1210,11 +1187,24 @@ impl Editor {
         }
     }
 
+    /// Kills the line break before the cursor's line, or after it unless
+    /// `backward`, joining the two lines.
+    fn kill_newline(&mut self, backward: bool, accumulate: bool) {
+        self.push_undo();
+        self.kill_ring.push("\n", backward, accumulate);
+        self.last_action = Some(LastAction::Kill);
+        if backward {
+            self.merge_with_previous_line();
+        } else {
+            self.merge_with_next_line();
+        }
+    }
+
     fn delete_to_line_start(&mut self) {
         self.exit_history();
         let accumulate = self.last_action == Some(LastAction::Kill);
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         if col > 0 {
             self.push_undo();
             self.kill_ring.push(&line[..col], true, accumulate);
@@ -1222,10 +1212,7 @@ impl Editor {
             self.state.lines[self.state.cursor_line] = line[col..].to_owned();
             self.set_cursor_col(0);
         } else if self.state.cursor_line > 0 {
-            self.push_undo();
-            self.kill_ring.push("\n", true, accumulate);
-            self.last_action = Some(LastAction::Kill);
-            self.merge_with_previous_line();
+            self.kill_newline(true, accumulate);
         }
     }
 
@@ -1233,17 +1220,14 @@ impl Editor {
         self.exit_history();
         let accumulate = self.last_action == Some(LastAction::Kill);
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         if col < line.len() {
             self.push_undo();
             self.kill_ring.push(&line[col..], false, accumulate);
             self.last_action = Some(LastAction::Kill);
             self.state.lines[self.state.cursor_line] = line[..col].to_owned();
         } else if self.state.cursor_line + 1 < self.state.lines.len() {
-            self.push_undo();
-            self.kill_ring.push("\n", false, accumulate);
-            self.last_action = Some(LastAction::Kill);
-            self.merge_with_next_line();
+            self.kill_newline(false, accumulate);
         }
     }
 
@@ -1252,20 +1236,17 @@ impl Editor {
         let accumulate = self.last_action == Some(LastAction::Kill);
         if self.state.cursor_col == 0 {
             if self.state.cursor_line > 0 {
-                self.push_undo();
-                self.kill_ring.push("\n", true, accumulate);
-                self.last_action = Some(LastAction::Kill);
-                self.merge_with_previous_line();
+                self.kill_newline(true, accumulate);
             }
             return;
         }
         self.push_undo();
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         let from = find_word_backward(&line, col, &self.valid_ids());
         self.kill_ring.push(&line[from..col], true, accumulate);
         self.last_action = Some(LastAction::Kill);
-        self.state.lines[self.state.cursor_line] = format!("{}{}", &line[..from], &line[col..]);
+        self.state.lines[self.state.cursor_line].replace_range(from..col, "");
         self.set_cursor_col(from);
     }
 
@@ -1273,13 +1254,10 @@ impl Editor {
         self.exit_history();
         let accumulate = self.last_action == Some(LastAction::Kill);
         let line = self.current_line().to_owned();
-        let col = floor_boundary(&line, self.state.cursor_col);
+        let col = line.floor_char_boundary(self.state.cursor_col);
         if col >= line.len() {
             if self.state.cursor_line + 1 < self.state.lines.len() {
-                self.push_undo();
-                self.kill_ring.push("\n", false, accumulate);
-                self.last_action = Some(LastAction::Kill);
-                self.merge_with_next_line();
+                self.kill_newline(false, accumulate);
             }
             return;
         }
@@ -1287,7 +1265,7 @@ impl Editor {
         let to = find_word_forward(&line, col, &self.valid_ids());
         self.kill_ring.push(&line[col..to], false, accumulate);
         self.last_action = Some(LastAction::Kill);
-        self.state.lines[self.state.cursor_line] = format!("{}{}", &line[..col], &line[to..]);
+        self.state.lines[self.state.cursor_line].replace_range(col..to, "");
     }
 
     fn yank(&mut self) {
@@ -1320,10 +1298,9 @@ impl Editor {
         let parts: Vec<&str> = yanked.split('\n').collect();
         if parts.len() == 1 {
             let line = self.current_line().to_owned();
-            let col = floor_boundary(&line, self.state.cursor_col);
-            let start = floor_boundary(&line, col.saturating_sub(yanked.len()));
-            self.state.lines[self.state.cursor_line] =
-                format!("{}{}", &line[..start], &line[col..]);
+            let col = line.floor_char_boundary(self.state.cursor_col);
+            let start = line.floor_char_boundary(col.saturating_sub(yanked.len()));
+            self.state.lines[self.state.cursor_line].replace_range(start..col, "");
             self.set_cursor_col(start);
             return;
         }
@@ -1331,10 +1308,11 @@ impl Editor {
             return;
         };
         let first = &self.state.lines[start_line];
-        let start_col = floor_boundary(first, first.len().saturating_sub(parts[0].len()));
+        let start_col = first.floor_char_boundary(first.len().saturating_sub(parts[0].len()));
         let before = first[..start_col].to_owned();
-        let after = self.current_line()
-            [floor_boundary(self.current_line(), self.state.cursor_col)..]
+        let after = self.current_line()[self
+            .current_line()
+            .floor_char_boundary(self.state.cursor_col)..]
             .to_owned();
         self.state.lines.splice(
             start_line..=self.state.cursor_line,
@@ -1371,7 +1349,7 @@ impl Editor {
                 Jump::Backward => {
                     let to = if current {
                         // The cursor's character is skipped; a match may start just before it.
-                        let col = floor_boundary(line, self.state.cursor_col);
+                        let col = line.floor_char_boundary(self.state.cursor_col);
                         let start = line[..col].chars().last().map_or(0, |c| col - c.len_utf8());
                         (start + target.len()).min(line.len())
                     } else {
@@ -1381,7 +1359,7 @@ impl Editor {
                         // pi's lastIndexOf from -1 still checks index 0.
                         line.starts_with(target).then_some(0)
                     } else {
-                        line[..floor_boundary(line, to)].rfind(target)
+                        line[..line.floor_char_boundary(to)].rfind(target)
                     }
                 }
             };
@@ -1492,14 +1470,14 @@ impl Editor {
         let line = self.state.lines[target.logical].clone();
         // pi's cursor is a UTF-16 index, which may land inside a surrogate
         // pair until it snaps to the grapheme's start below.
-        let target_units = (to_utf16(&line, target.start) + column).min(utf16_len(&line));
+        let target_units = (to_utf16(&line, target.start) + column).min(yapi_types::js::len(&line));
         self.state.cursor_col = from_utf16(&line, target_units);
 
         let ids = self.valid_ids();
         let mut seg_units = 0;
         for seg in segment(&line, Granularity::Grapheme, &ids) {
             let start_units = seg_units;
-            let len_units = utf16_len(seg.text);
+            let len_units = yapi_types::js::len(seg.text);
             seg_units += len_units;
             if start_units > target_units {
                 break;
@@ -1573,7 +1551,7 @@ impl Editor {
         }
         if delta_col != 0 {
             let line = self.current_line().to_owned();
-            let col = floor_boundary(&line, self.state.cursor_col);
+            let col = line.floor_char_boundary(self.state.cursor_col);
             let ids = self.valid_ids();
             if delta_col > 0 {
                 if col < line.len() {
@@ -1625,7 +1603,7 @@ impl Editor {
         let line = self.current_line().to_owned();
         let target = find_word_backward(
             &line,
-            floor_boundary(&line, self.state.cursor_col),
+            line.floor_char_boundary(self.state.cursor_col),
             &self.valid_ids(),
         );
         self.set_cursor_col(target);
@@ -1816,15 +1794,6 @@ impl Editor {
     fn update_autocomplete(&mut self) {
         if let Some(mode) = self.autocomplete_mode {
             self.request_autocomplete(mode == AutocompleteMode::Force, false);
-        }
-    }
-
-    /// Handles a key while the autocomplete list is open and returns whether
-    /// the list consumed it; used by hosts that route list keys themselves.
-    pub fn autocomplete_event(&mut self, data: &str, keybindings: &Keybindings) -> SelectEvent {
-        match &mut self.autocomplete_list {
-            Some(list) => list.handle_input(data, keybindings),
-            None => SelectEvent::Ignored,
         }
     }
 }

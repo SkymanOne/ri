@@ -19,6 +19,6 @@ pub mod resources;
 pub mod session;
 pub mod settings;
 pub mod system_prompt;
-pub mod time;
+pub use yapi_types::time;
 pub mod tools;
 pub mod trust;

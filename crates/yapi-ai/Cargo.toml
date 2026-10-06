@@ -15,13 +15,12 @@ crc32fast.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 indexmap.workspace = true
+percent-encoding.workspace = true
 regex-lite.workspace = true
 reqwest.workspace = true
 yapi-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha1.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util.workspace = true

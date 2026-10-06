@@ -3,18 +3,12 @@
 //! sign-in. pi's `refreshModelCatalogs` call sites in `interactive-mode.ts`
 //! and `model-selector.ts`.
 
-use std::time::Duration;
-
-use tokio_util::sync::CancellationToken;
-use yapi_ai::model_catalog::RefreshOptions;
+use yapi_ai::model_catalog::{REFRESH_TIMEOUT, RefreshOptions, cancel_after};
 use yapi_core::agent_session::CatalogRefresh;
 
 use super::login::ProviderOption;
 use super::selectors::Selector;
 use super::{App, Event};
-
-/// pi gives each interactive refresh 15 seconds.
-const TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Why a refresh ran, which decides what its result updates.
 pub(super) enum Refresh {
@@ -66,20 +60,14 @@ impl App {
     pub(super) fn refresh_catalogs(&mut self, providers: Option<Vec<String>>, purpose: Refresh) {
         let session = self.session.clone();
         let tx = self.tx.clone();
-        let cancel = CancellationToken::new();
         let options = RefreshOptions {
             providers,
             allow_network: self.model_network,
-            cancel: cancel.clone(),
+            cancel: cancel_after(REFRESH_TIMEOUT),
             ..RefreshOptions::default()
         };
         tokio::spawn(async move {
-            let timer = tokio::spawn(async move {
-                tokio::time::sleep(TIMEOUT).await;
-                cancel.cancel();
-            });
             let result = session.refresh_model_catalogs(options).await;
-            timer.abort();
             let _ = tx.send(Event::Catalogs(Box::new(purpose), result));
         });
     }

@@ -18,6 +18,8 @@ use yapi_core::mcp::config::{
 use yapi_core::mcp::connection::{Connection, State};
 use yapi_core::trust::TrustStore;
 
+use crate::{err, out};
+
 fn help(bold: bool) -> String {
     let usage = if bold {
         "\x1b[1mUsage:\x1b[22m"
@@ -77,15 +79,6 @@ fn help_hint() -> String {
     } else {
         text
     }
-}
-
-fn out(line: &str) {
-    use std::io::Write;
-    let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-fn err(line: &str) {
-    eprintln!("{line}");
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -257,7 +250,7 @@ pub async fn run(args: &[String]) -> u8 {
                 ));
                 return 1;
             };
-            if !uses_oauth(entry) {
+            if !entry.config.transport.uses_oauth() {
                 err(&format!(
                     "MCP server \"{name}\" does not use OAuth. Only HTTP servers without an Authorization header do."
                 ));
@@ -275,24 +268,6 @@ pub async fn run(args: &[String]) -> u8 {
             ));
             1
         }
-    }
-}
-
-/// Whether the server may sign in with OAuth: HTTP without an
-/// `Authorization` header or a `/login` provider.
-fn uses_oauth(entry: &ServerEntry) -> bool {
-    match &entry.config.transport {
-        ServerTransport::Http {
-            headers,
-            auth_provider,
-            ..
-        } => {
-            auth_provider.is_none()
-                && !headers
-                    .keys()
-                    .any(|header| header.eq_ignore_ascii_case("authorization"))
-        }
-        ServerTransport::Stdio { .. } => false,
     }
 }
 

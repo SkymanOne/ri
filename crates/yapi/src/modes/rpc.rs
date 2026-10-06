@@ -16,6 +16,7 @@ use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
 use yapi_core::extensions::{DialogOptions, ExtensionUi, Mode, NotifyKind, Placement, Widget};
 use yapi_core::time::uuid_v4;
+use yapi_types::sync::lock;
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -145,8 +146,8 @@ impl RpcUi {
     }
 
     /// Writes a request and waits for its response; `None` when the request
-    /// is cancelled, times out or the session ends. A timeout is part of the
-    /// request.
+    /// or the response is cancelled, the request times out or the session
+    /// ends. A timeout is part of the request.
     fn ask(
         &self,
         mut request: Map<String, Value>,
@@ -169,7 +170,7 @@ impl RpcUi {
                 }
             };
             tokio::select! {
-                response = rx => response.ok(),
+                response = rx => response.ok().filter(|response| response.cancelled != Some(true)),
                 () = cancel.cancelled() => {
                     lock(&pending).remove(&id);
                     None
@@ -182,17 +183,21 @@ impl RpcUi {
         })
     }
 
+    /// [`RpcUi::ask`] for the response's `value`.
+    fn ask_value(
+        &self,
+        request: Map<String, Value>,
+        dialog: DialogOptions,
+    ) -> BoxFuture<'static, Option<String>> {
+        let answer = self.ask(request, dialog);
+        Box::pin(async move { answer.await.and_then(|response| response.value) })
+    }
+
     fn resolve(&self, response: ExtensionUiResponse) {
         if let Some(tx) = lock(&self.pending).remove(&response.id) {
             let _ = tx.send(response);
         }
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn object(value: Value) -> Map<String, Value> {
@@ -232,16 +237,10 @@ impl ExtensionUi for RpcUi {
         options: Vec<String>,
         dialog: DialogOptions,
     ) -> BoxFuture<'static, Option<String>> {
-        let answer = self.ask(
+        self.ask_value(
             object(json!({"method": "select", "title": title, "options": options})),
             dialog,
-        );
-        Box::pin(async move {
-            answer
-                .await
-                .filter(|response| response.cancelled != Some(true))
-                .and_then(|response| response.value)
-        })
+        )
     }
 
     fn input(
@@ -254,13 +253,7 @@ impl ExtensionUi for RpcUi {
         if let Some(placeholder) = placeholder {
             request.insert("placeholder".into(), json!(placeholder));
         }
-        let answer = self.ask(request, dialog);
-        Box::pin(async move {
-            answer
-                .await
-                .filter(|response| response.cancelled != Some(true))
-                .and_then(|response| response.value)
-        })
+        self.ask_value(request, dialog)
     }
 
     fn confirm(
@@ -276,7 +269,6 @@ impl ExtensionUi for RpcUi {
         Box::pin(async move {
             answer
                 .await
-                .filter(|response| response.cancelled != Some(true))
                 .and_then(|response| response.confirmed)
                 .unwrap_or(false)
         })
@@ -287,13 +279,7 @@ impl ExtensionUi for RpcUi {
         if let Some(prefill) = prefill {
             request.insert("prefill".into(), json!(prefill));
         }
-        let answer = self.ask(request, DialogOptions::default());
-        Box::pin(async move {
-            answer
-                .await
-                .filter(|response| response.cancelled != Some(true))
-                .and_then(|response| response.value)
-        })
+        self.ask_value(request, DialogOptions::default())
     }
 
     fn set_status(&self, key: &str, text: Option<&str>) {
@@ -512,22 +498,17 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
 
 async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
     let session = rpc.session();
+    let steer = matches!(command, RpcCommand::Steer { .. });
     match command {
         RpcCommand::Prompt { .. } | RpcCommand::Unknown => Ok(None),
-        RpcCommand::Steer { message, images } => {
+        RpcCommand::Steer { message, images } | RpcCommand::FollowUp { message, images } => {
+            let behavior = if steer {
+                StreamingBehavior::Steer
+            } else {
+                StreamingBehavior::FollowUp
+            };
             let disposition = session
-                .queue_input(&message, images, StreamingBehavior::Steer, InputSource::Rpc)
-                .await?;
-            data(&json!({ "disposition": value(&disposition)? }))
-        }
-        RpcCommand::FollowUp { message, images } => {
-            let disposition = session
-                .queue_input(
-                    &message,
-                    images,
-                    StreamingBehavior::FollowUp,
-                    InputSource::Rpc,
-                )
+                .queue_input(&message, images, behavior, InputSource::Rpc)
                 .await?;
             data(&json!({ "disposition": value(&disposition)? }))
         }
