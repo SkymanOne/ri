@@ -1,8 +1,7 @@
 name: Bench
 
-# The performance budgets of AGENTS.md on both tier-1 platforms, next to pi on
-# the same runner. Runs on demand: by hand, or for a pushed commit whose
-# message contains [bench].
+# Measures yapi on both tier-1 platforms, next to pi on the same runner. Runs
+# on demand: by hand, or for a pushed commit whose message contains [bench].
 on:
   push:
   workflow_dispatch:

@@ -1,9 +1,8 @@
-//! `cargo xtask bench`: the measures behind the performance budgets of
-//! AGENTS.md for yapi, and optionally pi on the same machine: `--version`
-//! time, print mode's time to the first request byte, interactive first
-//! paint, keystroke-to-paint latency in a pseudo-terminal, memory when idle,
-//! with a large session open, after a session of turns with tool calls and
-//! with JS extensions loaded, and install size.
+//! `cargo xtask bench`: measures yapi, and optionally pi on the same machine:
+//! startup to the interactive first paint, startup in print mode to the
+//! first request byte, keystroke-to-paint latency in a pseudo-terminal,
+//! memory when idle, with a large session open, after a session of turns
+//! with tool calls and with JS extensions loaded, and install size.
 //!
 //! Startup measurements alternate between the programs run by run, so drift
 //! on the machine (thermal throttling, background work) affects both alike.
@@ -349,12 +348,14 @@ fn ready(rows: &[String]) -> bool {
     rows.iter().any(|row| row.contains("claude-sonnet-4-5"))
 }
 
-/// Time from start to the interactive first paint.
+/// Time from starting the process to the interactive first paint, when the
+/// footer shows the model.
 fn first_paint(program: &Program) -> anyhow::Result<Duration> {
+    let started = Instant::now();
     let pty = program.pty(&model_args())?;
-    let paint = pty
-        .wait_for(Duration::from_secs(20), ready)
+    pty.wait_for(Duration::from_secs(20), ready)
         .context("no first paint")?;
+    let paint = started.elapsed();
     pty.finish()?;
     Ok(paint)
 }
@@ -745,10 +746,8 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
     println!();
 
-    let version = alternate(&programs, args.runs, |_, program| {
-        run_once(&program.path, &["--version"], &program.env)
-    })?;
-    rows.push(Row::median("`--version`", Samples::Time, version));
+    let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
+    rows.push(Row::median("Startup, interactive", Samples::Time, paint));
 
     let listeners = programs
         .iter()
@@ -769,13 +768,10 @@ pub fn run(args: Args) -> anyhow::Result<ExitCode> {
         let _ = std::fs::remove_file(program.agent.join("models.json"));
     }
     rows.push(Row::median(
-        "Print mode, start to first request byte",
+        "Startup, print mode (to first request byte)",
         Samples::Time,
         request,
     ));
-
-    let paint = alternate(&programs, args.runs, |_, program| first_paint(program))?;
-    rows.push(Row::median("Interactive first paint", Samples::Time, paint));
 
     let mut keys = Vec::new();
     for program in &programs {
