@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use rquickjs::function::{Rest, This};
 use rquickjs::{
-    CatchResultExt, CaughtError, Context, Function, Object, Persistent, Runtime, Value,
+    CatchResultExt, CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value,
 };
 
 use crate::eval;
@@ -45,6 +45,29 @@ fn string(value: Option<&Value<'_>>) -> Option<String> {
 
 fn done(json: serde_json::Value) {
     crate::push_outcome(Outcome::Done((CALL.get(), json.to_string())));
+}
+
+/// Ends the script with `error`.
+fn fail(error: CaughtError<'_>) {
+    done(serde_json::json!({"ok": false, "error": describe(error)}));
+}
+
+/// Ends the script if `result` is an exception.
+fn check(ctx: &Ctx<'_>, result: rquickjs::Result<()>) {
+    if let Err(error) = result.catch(ctx) {
+        fail(error);
+    }
+}
+
+/// The prelude API's `method`, and the API as its `this`.
+fn method<'js>(
+    ctx: &Ctx<'js>,
+    api: &Persistent<Object<'static>>,
+    name: &str,
+) -> rquickjs::Result<(This<Object<'js>>, Function<'js>)> {
+    let api = api.clone().restore(ctx)?;
+    let method = api.get(name)?;
+    Ok((This(api), method))
 }
 
 /// The prelude's `bridge(kind, a, b, c)`; called with primitives only.
@@ -135,14 +158,9 @@ fn drain() -> Vec<Outcome> {
     if let Some((runtime, context, api)) = script() {
         while let Ok(true) | Err(_) = runtime.execute_pending_job() {}
         context.with(|ctx| {
-            let result = (|| -> rquickjs::Result<()> {
-                let api = api.restore(&ctx)?;
-                let stalled: Function<'_> = api.get("stalled")?;
-                stalled.call::<_, ()>((This(api),))
-            })();
-            if let Err(error) = result.catch(&ctx) {
-                done(serde_json::json!({"ok": false, "error": describe(error)}));
-            }
+            let result =
+                method(&ctx, &api, "stalled").and_then(|(this, stalled)| stalled.call((this,)));
+            check(&ctx, result);
         });
     }
     crate::take_outcomes()
@@ -173,14 +191,10 @@ pub fn start(call: u64, payload: &str) -> Vec<Outcome> {
                 prelude.call((bridge, text("tools"), text("globals"), text("store")))?;
             Ok(Persistent::save(&ctx, api))
         })();
-        result.catch(&ctx).map_err(|error| describe(error))
+        result.catch(&ctx).map_err(fail)
     });
-    let api = match started {
-        Ok(api) => api,
-        Err(error) => {
-            done(serde_json::json!({"ok": false, "error": error}));
-            return crate::take_outcomes();
-        }
+    let Ok(api) = started else {
+        return crate::take_outcomes();
     };
     SCRIPT.with(|script| {
         *script.borrow_mut() = Some(Script {
@@ -192,24 +206,16 @@ pub fn start(call: u64, payload: &str) -> Vec<Outcome> {
     // The prefix shares the first line with the script, so line numbers match
     // the script as written.
     let source = format!("(async (tools, console) => {{{}\n}})", text("code"));
-    context.with(|ctx| {
-        let compiled = eval::<Function<'_>>(&ctx, &source, "codemode.js").catch(&ctx);
-        let result = match compiled {
-            Ok(function) => (|| -> rquickjs::Result<()> {
-                let api = api.restore(&ctx)?;
-                let run: Function<'_> = api.get("run")?;
-                run.call::<_, ()>((This(api), function))
-            })()
-            .catch(&ctx),
-            Err(error) => {
-                done(serde_json::json!({"ok": false, "error": describe(error)}));
-                Ok(())
+    context.with(
+        |ctx| match eval::<Function<'_>>(&ctx, &source, "codemode.js").catch(&ctx) {
+            Ok(function) => {
+                let result =
+                    method(&ctx, &api, "run").and_then(|(this, run)| run.call((this, function)));
+                check(&ctx, result);
             }
-        };
-        if let Err(error) = result {
-            done(serde_json::json!({"ok": false, "error": describe(error)}));
-        }
-    });
+            Err(error) => fail(error),
+        },
+    );
     drain()
 }
 
@@ -219,23 +225,15 @@ pub fn resolve(op: u64, value: &Result<String, String>) -> Option<Vec<Outcome>> 
     let id = OPS.with(|ops| ops.borrow_mut().remove(&op))?;
     let (_, context, api) = script()?;
     context.with(|ctx| {
-        let result = (|| -> rquickjs::Result<()> {
-            let api = api.restore(&ctx)?;
-            let settle: Function<'_> = api.get("settle")?;
-            match value {
-                Ok(json) => {
-                    let wrapper: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
-                    let payload = wrapper["json"].as_str().map(str::to_owned);
-                    settle.call::<_, ()>((This(api), id as f64, true, payload))
-                }
-                Err(message) => {
-                    settle.call::<_, ()>((This(api), id as f64, false, message.clone()))
-                }
+        let result = method(&ctx, &api, "settle").and_then(|(this, settle)| match value {
+            Ok(json) => {
+                let wrapper: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+                let payload = wrapper["json"].as_str().map(str::to_owned);
+                settle.call((this, id as f64, true, payload))
             }
-        })();
-        if let Err(error) = result.catch(&ctx) {
-            done(serde_json::json!({"ok": false, "error": describe(error)}));
-        }
+            Err(message) => settle.call((this, id as f64, false, message.clone())),
+        });
+        check(&ctx, result);
     });
     Some(drain())
 }
