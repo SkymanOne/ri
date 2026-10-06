@@ -10,7 +10,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use futures_util::future::BoxFuture;
@@ -205,6 +206,8 @@ enum Command {
 pub struct Instance {
     commands: mpsc::Sender<Command>,
     interrupt: Arc<AtomicBool>,
+    /// The actor thread; taken when the instance is dropped.
+    thread: Option<JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for Instance {
@@ -249,7 +252,7 @@ impl Instance {
         let sender = commands.clone();
         let interrupt = Arc::new(AtomicBool::new(false));
         let flag = interrupt.clone();
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("yapi-ext-instance".into())
             // Guest code runs on this thread's stack.
             .stack_size(crate::engine::WASM_STACK + (2 << 20))
@@ -269,6 +272,7 @@ impl Instance {
         Ok(Instance {
             commands,
             interrupt,
+            thread: Some(thread),
         })
     }
 
@@ -318,6 +322,35 @@ impl Drop for Instance {
     fn drop(&mut self) {
         self.interrupt.store(true, Ordering::Relaxed);
         let _ = self.commands.send(Command::Stop);
+        if let Some(thread) = self.thread.take() {
+            let mut stopping = yapi_types::sync::lock(&STOPPING);
+            stopping.retain(|thread| !thread.is_finished());
+            stopping.push(thread);
+        }
+    }
+}
+
+/// How long [`join_stopped`] waits, in total, for the threads of dropped
+/// instances.
+const STOP_WAIT: Duration = Duration::from_secs(2);
+
+/// Threads of dropped instances that may still be tearing down their stores.
+static STOPPING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+
+/// Waits for the threads of dropped instances to finish, up to two seconds in
+/// total, and leaves behind those still running then. Call it before the
+/// process exits: exiting while a thread frees an instance's compiled code
+/// can abort the process.
+pub fn join_stopped() {
+    let threads = std::mem::take(&mut *yapi_types::sync::lock(&STOPPING));
+    let deadline = Instant::now() + STOP_WAIT;
+    while threads.iter().any(|thread| !thread.is_finished()) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    for thread in threads {
+        if thread.is_finished() {
+            let _ = thread.join();
+        }
     }
 }
 

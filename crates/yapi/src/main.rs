@@ -76,6 +76,8 @@ fn block_on(future: impl std::future::Future<Output = u8>) -> ExitCode {
     // A stdin read still in progress (RPC mode after a signal) runs on a
     // blocking thread that only returns at end of input; exit without it.
     runtime.shutdown_background();
+    // Exiting while an extension thread frees its wasm code aborts in libgcc.
+    yapi_ext::join_stopped();
     ExitCode::from(code)
 }
 
