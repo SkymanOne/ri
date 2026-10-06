@@ -17,6 +17,8 @@ pub enum ConfigFile {
     Keybindings,
     /// `mcp.json`, global and project scope.
     Mcp,
+    /// `mcp-auth.json`, global scope: OAuth state of MCP servers.
+    McpAuth,
 }
 
 impl ConfigFile {
@@ -28,12 +30,13 @@ impl ConfigFile {
             Self::Models => "models.json",
             Self::Keybindings => "keybindings.json",
             Self::Mcp => "mcp.json",
+            Self::McpAuth => "mcp-auth.json",
         }
     }
 
     /// Whether pi ends the file with a newline.
     pub fn trailing_newline(self) -> bool {
-        matches!(self, Self::Keybindings | Self::Mcp)
+        matches!(self, Self::Keybindings | Self::Mcp | Self::McpAuth)
     }
 
     /// Serializes `document` as pi writes this file: two-space indent, then the
