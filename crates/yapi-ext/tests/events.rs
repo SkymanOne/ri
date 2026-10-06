@@ -255,3 +255,52 @@ async fn message_end_replacements_are_recorded_and_sent() {
         .collect();
     assert_eq!(sent, ["replaced"]);
 }
+
+/// Names a skill, a prompt template and a theme for discovery.
+const DISCOVER: &str = r#"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	pi.on("resources_discover", () => ({
+		skillPaths: ["extra/skills"],
+		promptPaths: ["extra/prompts/review.md"],
+		themePaths: ["extra/themes"],
+	}));
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rediscovered_resources_load_once() {
+    let dir = scratch("events-discover");
+    let skill = dir.join("extra/skills/greeting");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: greeting\ndescription: Greets people\n---\nSay hello.\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("extra/prompts")).unwrap();
+    std::fs::write(dir.join("extra/prompts/review.md"), "Review $1\n").unwrap();
+    std::fs::create_dir_all(dir.join("extra/themes")).unwrap();
+    let host = extensions(&dir, DISCOVER).await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+
+    // pi's RPC session commands bind a session twice, which discovers again.
+    session.bind_extensions(Arc::new(NoUi), Mode::Rpc).await;
+    session.bind_extensions(Arc::new(NoUi), Mode::Rpc).await;
+
+    let resources = session.resources();
+    assert_eq!(resources.skills.len(), 1);
+    assert_eq!(resources.templates.len(), 1);
+    assert_eq!(resources.themes.len(), 1);
+    assert!(
+        resources.skill_diagnostics.is_empty(),
+        "{:?}",
+        resources.skill_diagnostics
+    );
+    assert!(
+        resources.template_diagnostics.is_empty(),
+        "{:?}",
+        resources.template_diagnostics
+    );
+}

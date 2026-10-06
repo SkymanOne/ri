@@ -123,10 +123,15 @@ pub struct Resources {
     pub skills: Vec<Skill>,
     /// Problems found while loading skills.
     pub skill_diagnostics: Vec<crate::resources::Diagnostic>,
+    /// The skill files and directories `skills` came from, each path once.
+    pub skill_sources: Vec<crate::resources::SourceInfo>,
     /// Prompt templates.
     pub templates: Vec<PromptTemplate>,
     /// Problems found while loading prompt templates.
     pub template_diagnostics: Vec<crate::resources::Diagnostic>,
+    /// The template files and directories `templates` came from, each path
+    /// once.
+    pub template_sources: Vec<crate::resources::SourceInfo>,
     /// Replaces the default prompt (`SYSTEM.md`, `--system-prompt`).
     pub custom_prompt: Option<String>,
     /// Appended to the prompt (`APPEND_SYSTEM.md`, `--append-system-prompt`).

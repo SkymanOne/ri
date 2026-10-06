@@ -1000,20 +1000,27 @@ impl AgentSession {
                 }
             }
         }
+        // pi's `extendResources`: each kind extensions name paths for loads
+        // again from its paths, merged with those it had.
         let [skills, prompts, themes] = found;
+        let merged = |known: &mut Vec<SourceInfo>, found: Vec<SourceInfo>| {
+            crate::resources::merge_sources(std::mem::take(known).into_iter().chain(found))
+        };
         let mut resources = write(&self.inner.resources);
         let resources = &mut *resources;
-        crate::resources::extend_skills(
-            &mut resources.skills,
-            &mut resources.skill_diagnostics,
-            &skills,
-        );
-        crate::resources::extend_templates(
-            &mut resources.templates,
-            &mut resources.template_diagnostics,
-            &prompts,
-        );
-        resources.themes.extend(themes);
+        if !skills.is_empty() {
+            resources.skill_sources = merged(&mut resources.skill_sources, skills);
+            (resources.skills, resources.skill_diagnostics) =
+                crate::resources::skills_from(&resources.skill_sources);
+        }
+        if !prompts.is_empty() {
+            resources.template_sources = merged(&mut resources.template_sources, prompts);
+            (resources.templates, resources.template_diagnostics) =
+                crate::resources::templates_from(&resources.template_sources);
+        }
+        if !themes.is_empty() {
+            resources.themes = merged(&mut resources.themes, themes);
+        }
     }
 
     /// Stops extensions before the session ends: pi's `session_shutdown`

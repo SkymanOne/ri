@@ -431,40 +431,18 @@ pub fn skills_from(sources: &[SourceInfo]) -> (Vec<Skill>, Vec<Diagnostic>) {
     (skills, diagnostics)
 }
 
-/// Adds the skills found at `sources` after `skills`, as pi's
-/// `extendResources` loads them again: the first skill of a name wins.
-pub fn extend_skills(
-    skills: &mut Vec<Skill>,
-    diagnostics: &mut Vec<Diagnostic>,
-    sources: &[SourceInfo],
-) {
-    let (found, found_diagnostics) = skills_from(sources);
-    diagnostics.extend(found_diagnostics);
-    let (kept, collisions) = first_by_name(
-        std::mem::take(skills).into_iter().chain(found).collect(),
-        |skill| (&skill.name, &skill.source, &skill.file_path),
-        |skill| Some(std::fs::canonicalize(&skill.file_path).unwrap_or(skill.file_path.clone())),
-    );
-    *skills = kept;
-    diagnostics.extend(collisions);
-}
-
-/// Adds the prompt templates found at `sources` after `templates`; the
-/// first template of a name wins.
-pub fn extend_templates(
-    templates: &mut Vec<PromptTemplate>,
-    diagnostics: &mut Vec<Diagnostic>,
-    sources: &[SourceInfo],
-) {
-    let (found, found_diagnostics) = templates_from(sources);
-    diagnostics.extend(found_diagnostics);
-    let (kept, collisions) = first_by_name(
-        std::mem::take(templates).into_iter().chain(found).collect(),
-        |template| (&template.name, &template.source, &template.file_path),
-        |_| None,
-    );
-    *templates = kept;
-    diagnostics.extend(collisions);
+/// pi's `mergePaths`: `sources` in order, each path once, compared after
+/// resolving symlinks.
+pub fn merge_sources(sources: impl IntoIterator<Item = SourceInfo>) -> Vec<SourceInfo> {
+    let mut seen = HashSet::new();
+    sources
+        .into_iter()
+        .filter(|info| {
+            seen.insert(
+                std::fs::canonicalize(&info.path).unwrap_or_else(|_| PathBuf::from(&info.path)),
+            )
+        })
+        .collect()
 }
 
 fn escape_xml(text: &str) -> String {
