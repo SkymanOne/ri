@@ -273,6 +273,23 @@ fn plain_declaration(name: &str, description: String, parameters: Value) -> Tool
     }
 }
 
+/// pi's `Operation aborted` once `cancel` fired.
+fn check_abort(cancel: &CancellationToken) -> Result<(), String> {
+    if cancel.is_cancelled() {
+        Err("Operation aborted".to_owned())
+    } else {
+        Ok(())
+    }
+}
+
+/// Sleeps until `deadline`; without one, never wakes.
+pub(crate) async fn sleep_until_opt(deadline: Option<std::time::Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
 fn text_result(content: impl Into<String>, details: Option<Value>) -> ToolResult {
     ToolResult {
         content: vec![ContentBlock::text(content)],

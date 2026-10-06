@@ -12,7 +12,7 @@ use super::edit_diff::{
     restore_line_endings, unified_patch,
 };
 use super::mutation::with_file_lock;
-use super::{ToolEnv, declaration, error_code, text_result};
+use super::{ToolEnv, check_abort, declaration, error_code, text_result};
 
 /// The `edit` tool.
 pub struct Edit {
@@ -107,15 +107,8 @@ impl Tool for Edit {
                 );
             }
             let absolute = super::path::resolve_to_cwd(&path, &self.env.cwd);
-            let aborted = || {
-                if cancel.is_cancelled() {
-                    Err("Operation aborted".to_owned())
-                } else {
-                    Ok(())
-                }
-            };
             with_file_lock(&absolute, async {
-                aborted()?;
+                check_abort(&cancel)?;
                 let metadata = tokio::fs::metadata(&absolute).await;
                 let writable = metadata
                     .as_ref()
@@ -126,14 +119,14 @@ impl Tool for Edit {
                         return Err(format!("Could not edit file: {path}. Error code: EACCES."));
                     }
                     Err(err) => {
-                        aborted()?;
+                        check_abort(&cancel)?;
                         return Err(format!("Could not edit file: {path}. {}.", error_code(err)));
                     }
                 }
                 let raw = tokio::fs::read(&absolute)
                     .await
                     .map_err(|err| format!("Could not edit file: {path}. {}.", error_code(&err)))?;
-                aborted()?;
+                check_abort(&cancel)?;
                 let raw = String::from_utf8_lossy(&raw).into_owned();
                 let (bom, content) = match raw.strip_prefix('\u{FEFF}') {
                     Some(rest) => ("\u{FEFF}", rest),
@@ -142,12 +135,12 @@ impl Tool for Edit {
                 let ending = detect_line_ending(content);
                 let normalized = normalize_to_lf(content);
                 let new_content = apply_edits(&normalized, &edits, &path)?;
-                aborted()?;
+                check_abort(&cancel)?;
                 let output = format!("{bom}{}", restore_line_endings(&new_content, ending));
                 tokio::fs::write(&absolute, output)
                     .await
                     .map_err(|err| format!("Could not edit file: {path}. {}.", error_code(&err)))?;
-                aborted()?;
+                check_abort(&cancel)?;
                 let (diff, first_changed) = display_diff(&normalized, &new_content);
                 let patch = unified_patch(&path, &normalized, &new_content);
                 let mut details = json!({"diff": diff, "patch": patch});

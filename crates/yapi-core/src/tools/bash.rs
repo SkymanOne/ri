@@ -17,7 +17,7 @@ use super::truncate::{
     DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, Truncation, format_size, tail_bytes,
     truncate_tail,
 };
-use super::{ToolEnv, declaration, text_result};
+use super::{ToolEnv, declaration, sleep_until_opt, text_result};
 
 const MAX_TIMEOUT_MS: f64 = 2_147_483_647.0;
 const STRUCTURED_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
@@ -574,18 +574,18 @@ impl Tool for Bash {
                         exit_code = status.ok().and_then(exit_code_of);
                         exited_at = Some(Instant::now());
                     }
-                    () = async { tokio::time::sleep_until(grace.unwrap_or_else(|| unreachable!()).into()).await }, if grace.is_some() => {
+                    () = sleep_until_opt(grace) => {
                         break;
                     }
                     () = cancel.cancelled(), if ending.is_none() => {
                         ending = Some(Ending::Aborted);
                         kill_tree(pid);
                     }
-                    () = async { tokio::time::sleep_until(deadline.unwrap_or_else(|| unreachable!()).into()).await }, if deadline.is_some() && ending.is_none() => {
+                    () = sleep_until_opt(deadline), if ending.is_none() => {
                         ending = Some(Ending::TimedOut);
                         kill_tree(pid);
                     }
-                    () = async { tokio::time::sleep_until(next_update.unwrap_or_else(|| unreachable!()).into()).await }, if next_update.is_some() => {
+                    () = sleep_until_opt(next_update) => {
                         dirty = false;
                         last_update = Instant::now();
                         let (truncation, path) = output.snapshot(true);

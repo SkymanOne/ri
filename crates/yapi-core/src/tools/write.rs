@@ -8,7 +8,7 @@ use yapi_types::event::ToolResult;
 use yapi_types::message::ToolDeclaration;
 
 use super::mutation::with_file_lock;
-use super::{ToolEnv, declaration, node_error, text_result};
+use super::{ToolEnv, check_abort, declaration, node_error, text_result};
 
 /// The `write` tool.
 pub struct Write {
@@ -49,23 +49,17 @@ impl Tool for Write {
             let content = args["content"].as_str().unwrap_or_default().to_owned();
             let absolute = super::path::resolve_to_cwd(&path, &self.env.cwd);
             with_file_lock(&absolute, async {
-                if cancel.is_cancelled() {
-                    return Err("Operation aborted".to_owned());
-                }
+                check_abort(&cancel)?;
                 if let Some(dir) = absolute.parent() {
                     tokio::fs::create_dir_all(dir)
                         .await
                         .map_err(|err| node_error(&err, "mkdir", dir))?;
                 }
-                if cancel.is_cancelled() {
-                    return Err("Operation aborted".to_owned());
-                }
+                check_abort(&cancel)?;
                 tokio::fs::write(&absolute, content)
                     .await
                     .map_err(|err| node_error(&err, "open", &absolute))?;
-                if cancel.is_cancelled() {
-                    return Err("Operation aborted".to_owned());
-                }
+                check_abort(&cancel)?;
                 Ok(text_result(format!("Successfully wrote to {path}"), None))
             })
             .await

@@ -166,7 +166,7 @@ pub async fn execute(
                 exited_at = Some(Instant::now());
                 exit_code = status.ok().map(|status| exit_code_of(status).unwrap_or(1));
             }
-            () = async { tokio::time::sleep_until(grace.unwrap_or_else(|| unreachable!()).into()).await }, if grace.is_some() => {
+            () = crate::tools::sleep_until_opt(grace) => {
                 break;
             }
             () = cancel.cancelled(), if !cancelled => {

@@ -9,7 +9,9 @@ use yapi_types::message::ToolDeclaration;
 
 use super::path::resolve_to_cwd;
 use super::truncate::DEFAULT_MAX_BYTES;
-use super::{ToolEnv, capped_output, js_number, node_error, plain_declaration, text_result};
+use super::{
+    ToolEnv, capped_output, check_abort, js_number, node_error, plain_declaration, text_result,
+};
 use yapi_types::collate::locale_compare;
 
 const DEFAULT_LIMIT: f64 = 500.0;
@@ -53,9 +55,7 @@ impl Tool for Ls {
         _updates: UpdateSink,
     ) -> BoxFuture<'_, Result<ToolResult, String>> {
         Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err("Operation aborted".into());
-            }
+            check_abort(&cancel)?;
             self.list(args)
         })
     }
