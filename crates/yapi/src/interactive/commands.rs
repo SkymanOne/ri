@@ -754,20 +754,7 @@ impl super::App {
     fn export(&mut self, text: &str) {
         let path = path_argument(text, "/export");
         let Some(path) = path.clone().filter(|path| path.ends_with(".jsonl")) else {
-            let rgb =
-                |rgb: Option<[f64; 3]>| rgb.map(|[r, g, b]| yapi_tui::color::Color::Rgb(r, g, b));
-            let appearance = match self.colors.background {
-                Some(background) => {
-                    yapi_tui::theme::terminal_appearance(background, self.colors.foreground)
-                }
-                None => yapi_tui::theme::Appearance::Dark,
-            };
-            let theme = crate::export_html::ExportTheme {
-                theme: &self.theme,
-                foreground: rgb(self.colors.foreground),
-                background: rgb(self.colors.background),
-                appearance,
-            };
+            let theme = self.html_theme();
             match crate::export_html::export_session(&self.session, path.as_deref(), &theme) {
                 Ok(target) => self.status(format!("Session exported to: {}", target.display())),
                 Err(error) => self.error(format!("Failed to export session: {error}")),
@@ -792,6 +779,17 @@ impl super::App {
         match written {
             Ok(()) => self.status(format!("Session exported to: {}", target.display())),
             Err(error) => self.error(format!("Failed to export session: {error}")),
+        }
+    }
+
+    /// The theme and terminal colors an HTML export is drawn with.
+    fn html_theme(&self) -> crate::export_html::ExportTheme<'_> {
+        let rgb = |rgb: Option<[f64; 3]>| rgb.map(|[r, g, b]| yapi_tui::color::Color::Rgb(r, g, b));
+        crate::export_html::ExportTheme {
+            theme: &self.theme,
+            foreground: rgb(self.colors.foreground),
+            background: rgb(self.colors.background),
+            appearance: super::appearance(&self.colors),
         }
     }
 
@@ -948,6 +946,30 @@ impl super::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn html_export_reads_colorfgbg_without_a_reported_background() {
+        // COLORFGBG comes from the environment, so a child process checks it.
+        const CHILD: &str = "YAPI_TEST_HTML_THEME_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "interactive::commands::tests::html_export_reads_colorfgbg_without_a_reported_background",
+                ])
+                .env(CHILD, "1")
+                .env("COLORFGBG", "0;15")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let (app, _events) = super::super::tests::app();
+        assert_eq!(
+            app.html_theme().appearance,
+            yapi_tui::theme::Appearance::Light
+        );
+    }
 
     #[test]
     fn reads_path_arguments() {
