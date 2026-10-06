@@ -372,6 +372,17 @@ pub struct ToolCallOutcome {
     pub is_error: bool,
 }
 
+impl ToolCallOutcome {
+    /// `call` failed with `message` before or instead of running.
+    fn error(call: ToolCall, message: &str) -> ToolCallOutcome {
+        ToolCallOutcome {
+            call,
+            result: error_result(message),
+            is_error: true,
+        }
+    }
+}
+
 /// Where a tool call runs: the tools it resolves against, the response and
 /// transcript its hooks see, and its cancellation.
 pub struct ToolCallScope<'a> {
@@ -394,18 +405,15 @@ async fn fail_truncated_calls(
     let mut messages = Vec::new();
     for call in calls {
         emit_start(hooks, call).await;
-        let outcome = ToolCallOutcome {
-            call: call.clone(),
-            result: error_result(&format!(
+        let outcome = ToolCallOutcome::error(
+            call.clone(),
+            &format!(
                 "Tool call \"{}\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.",
                 call.name
-            )),
-            is_error: true,
-        };
+            ),
+        );
         emit_end(hooks, &outcome).await;
-        let message = result_message(&outcome, hooks);
-        emit_message(hooks, &Message::ToolResult(message.clone())).await;
-        messages.push(message);
+        messages.push(emit_result(&outcome, hooks).await);
     }
     messages
 }
@@ -433,7 +441,8 @@ async fn emit_end(hooks: &dyn AgentHooks, outcome: &ToolCallOutcome) {
         .await;
 }
 
-fn result_message(outcome: &ToolCallOutcome, hooks: &dyn AgentHooks) -> ToolResultMessage {
+/// The result message of `outcome`, completed by the hooks and emitted.
+async fn emit_result(outcome: &ToolCallOutcome, hooks: &dyn AgentHooks) -> ToolResultMessage {
     let mut message = ToolResultMessage {
         tool_call_id: outcome.call.id.clone(),
         tool_name: outcome.call.name.clone(),
@@ -445,6 +454,7 @@ fn result_message(outcome: &ToolCallOutcome, hooks: &dyn AgentHooks) -> ToolResu
         nested_calls: None,
     };
     hooks.complete_tool_result(&mut message);
+    emit_message(hooks, &Message::ToolResult(message.clone())).await;
     message
 }
 
@@ -464,15 +474,11 @@ async fn prepare(
     hooks: &dyn AgentHooks,
 ) -> Preparation {
     let immediate = |message: &str, terminate: bool| {
-        let mut result = error_result(message);
+        let mut outcome = ToolCallOutcome::error(call.clone(), message);
         if terminate {
-            result.terminate = Some(true);
+            outcome.result.terminate = Some(true);
         }
-        Err(Box::new(ToolCallOutcome {
-            call: call.clone(),
-            result,
-            is_error: true,
-        }))
+        Err(Box::new(outcome))
     };
     let Some(tool) = scope
         .tools
@@ -640,9 +646,7 @@ async fn execute_tool_calls(
                 Ok(prepared) => run_with_updates(scope, prepared, hooks).await,
             };
             emit_end(hooks, &outcome).await;
-            let message = result_message(&outcome, hooks);
-            emit_message(hooks, &Message::ToolResult(message.clone())).await;
-            messages.push(message);
+            messages.push(emit_result(&outcome, hooks).await);
             outcomes.push(outcome);
             if cancel.is_cancelled() {
                 break;
@@ -666,11 +670,7 @@ async fn execute_tool_calls(
                 Err(outcome) => *outcome,
                 Ok(prepared) => {
                     if cancel.is_cancelled() {
-                        let outcome = ToolCallOutcome {
-                            call: prepared.call,
-                            result: error_result("Operation aborted"),
-                            is_error: true,
-                        };
+                        let outcome = ToolCallOutcome::error(prepared.call, "Operation aborted");
                         emit_end(hooks, &outcome).await;
                         return outcome;
                     }
@@ -682,9 +682,7 @@ async fn execute_tool_calls(
         });
         outcomes = join_all(runs).await;
         for outcome in &outcomes {
-            let message = result_message(outcome, hooks);
-            emit_message(hooks, &Message::ToolResult(message.clone())).await;
-            messages.push(message);
+            messages.push(emit_result(outcome, hooks).await);
         }
     }
     let terminate = !outcomes.is_empty()
