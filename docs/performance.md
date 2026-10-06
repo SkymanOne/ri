@@ -58,7 +58,7 @@ Single samples on the macOS runner reach 82 ms for yapi's print mode startup and
 ## What each measure means
 
 - **Startup, interactive**: time from starting the interactive mode in a 100×40 pseudo-terminal until the footer shows the model.
-- **Startup, print mode**: wall time from starting `-p "hi"` until a local listener standing in for the provider receives the first byte of the request. It covers loading settings, credentials, the model catalog and the session, and building the request.
+- **Startup, print mode (to first request byte)**: wall time from starting `-p "hi"` until a local listener standing in for the provider receives the first byte of the request. It covers loading settings, credentials, the model catalog and the session, and building the request.
 - **Keystroke to paint**: time from writing a key into the pseudo-terminal until the character appears on screen, over 200 keystrokes 20 ms apart, in a session whose transcript renders about 10,000 lines.
 - **Memory**: resident set size (RSS) of the program and its child processes, as `ps` reports it, 2 s after the first paint or, for the session of turns, 2 s after the last answer.
 - **Memory, idle**: an interactive start with no session history and no extensions.
@@ -87,4 +87,6 @@ npm install --prefix pi-install --ignore-scripts @earendil-works/pi-coding-agent
 cargo xtask bench --pi pi-install/node_modules/.bin/pi --pi-install pi-install
 ```
 
-The report is Markdown. Leave out `--pi` to measure yapi alone, and `--pi-install` to skip the install size and the example extensions. The Bench workflow runs the same steps on GitHub's hosted Linux and macOS runners, by hand or for a pushed commit whose message contains `[bench]`.
+The report is Markdown, and its header shows the commit measured. Leave out `--pi` to measure yapi alone, and `--pi-install` to skip the install size and the example extensions.
+
+The Bench workflow runs the same steps on GitHub's hosted Linux and macOS runners. Start it by hand from the repository's Actions tab. Each run uploads its report as an artifact.
