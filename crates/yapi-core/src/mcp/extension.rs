@@ -16,7 +16,9 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio::sync::watch;
+use yapi_types::config::ConfigFile;
 use yapi_types::rpc::SourceInfo;
+use yapi_types::sync::lock;
 
 use super::config::{self, McpExposure, ServerEntry, namespace};
 use super::connection::{Connection, State};
@@ -77,12 +79,6 @@ pub struct McpExtension {
     shared: Arc<Mutex<Shared>>,
 }
 
-fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
-    shared
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 fn first_line(text: &str) -> &str {
     text.split('\n').next().unwrap_or_default()
 }
@@ -97,17 +93,13 @@ fn has_indirect_tools(entry: &ServerEntry) -> bool {
 }
 
 fn truncate(text: &str, max: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= max {
+    if yapi_types::js::len(text) <= max {
         return text.to_owned();
     }
     if max <= 1 {
         return String::new();
     }
-    format!(
-        "{}…",
-        String::from_utf16_lossy(&units[..max - 1]).trim_end()
-    )
+    format!("{}…", yapi_types::js::slice(text, 0, max - 1).trim_end())
 }
 
 /// pi's `renderServersSection`: every enabled server with codemode or
@@ -156,7 +148,7 @@ fn render_servers_section(servers: &[(&ServerEntry, Option<String>)]) -> Option<
         let mut lines = vec![intro.clone()];
         lines.extend(heads[..kept].iter().cloned());
         lines.extend(omitted(listed.len() - kept));
-        lines.join("\n").encode_utf16().count()
+        yapi_types::js::len(&lines.join("\n"))
     };
     let mut kept = listed.len();
     while kept > 0 && size(kept) > MAX_SERVERS_SECTION_CHARS {
@@ -575,7 +567,7 @@ impl McpExtension {
         if shared.servers.is_empty() && shared.config_errors.is_empty() {
             return format!(
                 "No MCP servers configured. Add them to {} or .yapi/mcp.json.",
-                agent_dir.join("mcp.json").display()
+                agent_dir.join(ConfigFile::Mcp.file_name()).display()
             );
         }
         let mut lines: Vec<String> = shared

@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::Value;
 use yapi_types::sync::lock;
 
-use super::client::{ClientOptions, McpClient, RequestOptions, Root, Tool};
+use super::client::{ClientOptions, McpClient, RequestOptions, ResourceKind, Root, Tool};
 use super::config::{ServerEntry, ServerTransport};
 use super::http::{HttpOptions, HttpTransport};
 use super::jsonrpc::{METHOD_NOT_FOUND, McpError};
@@ -515,59 +515,46 @@ impl Connection {
         .await
     }
 
-    /// One page of resources.
+    /// One page of resources or resource templates; no templates for servers
+    /// without the method.
     pub async fn resources_page(
         self: &Arc<Self>,
-        cursor: Option<String>,
-        options: RequestOptions,
-    ) -> Result<(Vec<Value>, Option<String>), McpError> {
-        self.with_client(true, |client| {
-            let (cursor, options) = (cursor.clone(), options.clone());
-            async move { client.list_resources_page(cursor, options).await }
-        })
-        .await
-    }
-
-    /// One page of resource templates; none for servers without the method.
-    pub async fn resource_templates_page(
-        self: &Arc<Self>,
+        kind: ResourceKind,
         cursor: Option<String>,
         options: RequestOptions,
     ) -> Result<(Vec<Value>, Option<String>), McpError> {
         self.with_client(true, |client| {
             let (cursor, options) = (cursor.clone(), options.clone());
             async move {
-                without_templates(
-                    client.list_resource_templates_page(cursor, options).await,
-                    (Vec::new(), None),
-                )
+                let page = client.list_resources_page(kind, cursor, options).await;
+                without_templates(kind, page, (Vec::new(), None))
             }
         })
         .await
     }
 
-    /// Every resource.
+    /// Every resource or resource template; no templates for servers without
+    /// the method.
     pub async fn all_resources(
         self: &Arc<Self>,
+        kind: ResourceKind,
         options: RequestOptions,
     ) -> Result<Vec<Value>, McpError> {
         self.with_client(true, |client| {
             let options = options.clone();
-            async move { client.list_resources(options).await }
+            async move {
+                without_templates(kind, client.list_resources(kind, options).await, Vec::new())
+            }
         })
         .await
     }
 
-    /// Every resource template.
+    /// Every resource template: [`Connection::all_resources`] of templates.
     pub async fn all_resource_templates(
         self: &Arc<Self>,
         options: RequestOptions,
     ) -> Result<Vec<Value>, McpError> {
-        self.with_client(true, |client| {
-            let options = options.clone();
-            async move { without_templates(client.list_resource_templates(options).await, Vec::new()) }
-        })
-        .await
+        self.all_resources(ResourceKind::Templates, options).await
     }
 
     /// Connects again.
@@ -592,9 +579,17 @@ impl Connection {
 }
 
 /// Servers that do not implement `resources/templates/list` have no templates.
-fn without_templates<T>(result: Result<T, McpError>, empty: T) -> Result<T, McpError> {
+fn without_templates<T>(
+    kind: ResourceKind,
+    result: Result<T, McpError>,
+    empty: T,
+) -> Result<T, McpError> {
     match result {
-        Err(McpError::Rpc { code, .. }) if code == METHOD_NOT_FOUND => Ok(empty),
+        Err(McpError::Rpc { code, .. })
+            if kind == ResourceKind::Templates && code == METHOD_NOT_FOUND =>
+        {
+            Ok(empty)
+        }
         other => other,
     }
 }
@@ -603,7 +598,7 @@ fn without_templates<T>(result: Result<T, McpError>, empty: T) -> Result<T, McpE
 /// list empty; the resource tools list on demand.
 async fn fetch_resources(client: &McpClient) -> Vec<Value> {
     client
-        .list_resources(RequestOptions::default())
+        .list_resources(ResourceKind::Resources, RequestOptions::default())
         .await
         .unwrap_or_default()
         .into_iter()

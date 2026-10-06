@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use reqwest::Url;
 use serde_json::{Map, Value};
+use yapi_types::config::ConfigFile;
 
 use crate::config::PROJECT_DIR;
 
@@ -501,10 +502,11 @@ fn read_file(path: &Path, scope: Scope, loaded: &mut LoadedConfig) {
 /// servers are included.
 pub fn load(agent_dir: &Path, cwd: &Path, project_trusted: bool) -> LoadedConfig {
     let mut loaded = LoadedConfig::default();
-    read_file(&agent_dir.join("mcp.json"), Scope::Global, &mut loaded);
+    let name = ConfigFile::Mcp.file_name();
+    read_file(&agent_dir.join(name), Scope::Global, &mut loaded);
     if project_trusted {
         read_file(
-            &cwd.join(PROJECT_DIR).join("mcp.json"),
+            &cwd.join(PROJECT_DIR).join(name),
             Scope::Project,
             &mut loaded,
         );

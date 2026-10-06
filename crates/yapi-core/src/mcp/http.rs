@@ -73,11 +73,10 @@ fn content_type(response: &reqwest::Response) -> Option<String> {
 
 fn describe_failure(status: u16, body: &str) -> String {
     let text = body.trim();
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let snippet = if units.len() > ERROR_MESSAGE_BODY_CHARS {
+    let snippet = if yapi_types::js::len(text) > ERROR_MESSAGE_BODY_CHARS {
         format!(
             "{}...",
-            String::from_utf16_lossy(&units[..ERROR_MESSAGE_BODY_CHARS - 3])
+            yapi_types::js::slice(text, 0, ERROR_MESSAGE_BODY_CHARS - 3)
         )
     } else {
         text.to_owned()
