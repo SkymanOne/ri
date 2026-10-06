@@ -438,6 +438,18 @@ impl FileOperations {
         set.insert(path.to_owned());
     }
 
+    /// Adds the `readFiles` and `modifiedFiles` lists of an earlier summary's
+    /// details.
+    fn add_details(&mut self, details: &Value) {
+        for (key, set) in [
+            ("readFiles", &mut self.read),
+            ("modifiedFiles", &mut self.edited),
+        ] {
+            let paths = details[key].as_array().into_iter().flatten();
+            set.extend(paths.filter_map(Value::as_str).map(str::to_owned));
+        }
+    }
+
     /// Records the file tools a message called.
     pub fn extract(&mut self, message: &Message) {
         match message {
@@ -494,14 +506,14 @@ pub fn format_file_operations(read: &[String], modified: &[String]) -> String {
 const TOOL_RESULT_MAX_CHARS: usize = 2000;
 
 fn truncate_for_summary(text: &str, max: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= max {
+    let length = yapi_types::js::len(text);
+    if length <= max {
         return text.to_owned();
     }
     format!(
         "{}\n\n[... {} more characters truncated]",
-        String::from_utf16_lossy(&units[..max]),
-        units.len() - max
+        yapi_types::js::slice(text, 0, max),
+        length - max
     )
 }
 
@@ -663,16 +675,7 @@ pub fn prepare_compaction(
         && compaction.from_hook != Some(true)
         && let Some(details) = &compaction.details
     {
-        for path in details["readFiles"].as_array().into_iter().flatten() {
-            if let Some(path) = path.as_str() {
-                file_ops.read.insert(path.to_owned());
-            }
-        }
-        for path in details["modifiedFiles"].as_array().into_iter().flatten() {
-            if let Some(path) = path.as_str() {
-                file_ops.edited.insert(path.to_owned());
-            }
-        }
+        file_ops.add_details(details);
     }
     for message in messages_to_summarize.iter().chain(&turn_prefix_messages) {
         file_ops.extract(message);
@@ -736,10 +739,11 @@ pub struct Summary {
     pub usage: Usage,
 }
 
-/// The error for a response that cannot become a checkpoint.
-pub fn summarization_failure(response: &AssistantMessage, label: &str) -> Option<String> {
+/// Why a summary response cannot become a checkpoint, if it cannot: it
+/// failed, hit the token cap or called a tool.
+fn check_summary(response: &AssistantMessage, label: &str) -> Result<(), String> {
     match response.stop_reason {
-        StopReason::Error => Some(format!(
+        StopReason::Error => Err(format!(
             "{label} failed: {}",
             response
                 .error_message
@@ -747,10 +751,17 @@ pub fn summarization_failure(response: &AssistantMessage, label: &str) -> Option
                 .filter(|m| !m.is_empty())
                 .unwrap_or("Unknown error")
         )),
-        StopReason::Length => Some(format!(
+        StopReason::Length => Err(format!(
             "{label} failed: generation hit the token cap and the summary is incomplete"
         )),
-        _ => None,
+        _ if response
+            .content
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolCall(_))) =>
+        {
+            Err(format!("{label} attempted to call a tool"))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -873,16 +884,7 @@ impl Summarizer<'_> {
                 usage: response.usage,
             });
         }
-        if let Some(failure) = summarization_failure(&response, label) {
-            return Err(failure);
-        }
-        if response
-            .content
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolCall(_)))
-        {
-            return Err(format!("{label} attempted to call a tool"));
-        }
+        check_summary(&response, label)?;
         Ok(Summary {
             text: yapi_types::message::blocks_text(&response.content, "\n"),
             usage: response.usage,
@@ -1021,16 +1023,11 @@ const BRANCH_SUMMARY_PROMPT: &str = "Create a structured summary of this convers
 fn branch_entry_message(entry: &FileEntry) -> Option<Message> {
     match entry {
         FileEntry::Message(entry) if matches!(entry.message, Message::ToolResult(_)) => None,
-        FileEntry::Message(_) | FileEntry::CustomMessage(_) | FileEntry::BranchSummary(_) => {
-            entry_messages(entry).into_iter().next()
-        }
-        FileEntry::Compaction(compaction) => Some(Message::CompactionSummary(
-            yapi_types::message::CompactionSummaryMessage {
-                summary: compaction.summary.clone(),
-                tokens_before: compaction.tokens_before,
-                timestamp: crate::time::parse_iso(&compaction.meta.timestamp).unwrap_or_default(),
-            },
-        )),
+        // A compaction's summary comes after the system message it may carry.
+        FileEntry::Message(_)
+        | FileEntry::CustomMessage(_)
+        | FileEntry::BranchSummary(_)
+        | FileEntry::Compaction(_) => entry_messages(entry).pop(),
         _ => None,
     }
 }
@@ -1047,16 +1044,7 @@ pub fn prepare_branch_entries(
             && summary.from_hook != Some(true)
             && let Some(details) = &summary.details
         {
-            for path in details["readFiles"].as_array().into_iter().flatten() {
-                if let Some(path) = path.as_str() {
-                    file_ops.read.insert(path.to_owned());
-                }
-            }
-            for path in details["modifiedFiles"].as_array().into_iter().flatten() {
-                if let Some(path) = path.as_str() {
-                    file_ops.edited.insert(path.to_owned());
-                }
-            }
+            file_ops.add_details(details);
         }
     }
     let mut messages: Vec<Message> = Vec::new();
@@ -1143,16 +1131,7 @@ impl Summarizer<'_> {
         if response.stop_reason == StopReason::Aborted {
             return Ok(BranchSummary::Aborted);
         }
-        if let Some(failure) = summarization_failure(&response, "Branch summarization") {
-            return Err(failure);
-        }
-        if response
-            .content
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolCall(_)))
-        {
-            return Err("Branch summarization attempted to call a tool".into());
-        }
+        check_summary(&response, "Branch summarization")?;
         let (read_files, modified_files) = file_ops.lists();
         let summary = format!(
             "{BRANCH_SUMMARY_PREAMBLE}{}{}",
