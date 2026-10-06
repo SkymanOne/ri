@@ -8,12 +8,14 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::future::LocalBoxFuture;
 use tokio::sync::{mpsc, oneshot};
 use yapi_core::agent_session::{AgentSession, Replacement, SessionChange};
 use yapi_core::extensions::{SessionAction, SessionActions};
 use yapi_core::session::SessionManager;
+use yapi_types::event::AgentEvent;
 use yapi_types::message::Message;
 use yapi_types::session::FileEntry;
 
@@ -203,6 +205,30 @@ pub fn actions(send: impl Fn(ActionRequest) -> bool + Send + Sync + 'static) -> 
     })
 }
 
+/// Forwards `session`'s events while it is the newest session `epoch`
+/// counted, so a replaced session's listeners stay silent.
+pub fn forward_newest(
+    session: &AgentSession,
+    epoch: &Arc<AtomicU64>,
+    forward: impl Fn(&AgentEvent) + Send + Sync + 'static,
+) {
+    let current = epoch.fetch_add(1, Ordering::SeqCst) + 1;
+    let epoch = Arc::clone(epoch);
+    session.subscribe(Box::new(move |event| {
+        if epoch.load(Ordering::SeqCst) == current {
+            forward(event);
+        }
+    }));
+}
+
+/// A session file named by an extension or an RPC client: pi resolves it
+/// against the working directory.
+pub fn session_path(path: &str) -> PathBuf {
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| PathBuf::from(path))
+}
+
 /// The session another replaced and why, as `session_start` reports it.
 pub type Replaced = Option<(Replacement, Option<String>)>;
 
@@ -352,11 +378,8 @@ impl Runtime {
     /// whether an extension cancelled it.
     pub async fn switch_session(&self, path: &str) -> Result<bool, String> {
         let fallback = self.session().cwd().to_path_buf();
-        let resolved = std::env::current_dir()
-            .map(|cwd| cwd.join(path))
-            .unwrap_or_else(|_| PathBuf::from(path));
         self.change(SessionChange::Resume(path.to_owned()), |_| {
-            open_session(&resolved, None, &fallback).map_err(|error| error.to_string())
+            open_session(&session_path(path), None, &fallback).map_err(|error| error.to_string())
         })
         .await
     }

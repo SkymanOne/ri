@@ -2871,18 +2871,22 @@ impl App {
                 self.open_tree(Some(id));
             }
             Ok(outcome) if outcome.cancelled => self.status("Navigation cancelled"),
-            Ok(outcome) => {
-                self.clear_chat();
-                self.render_history();
-                if let Some(text) = outcome.editor_text
-                    && self.editor.text().trim().is_empty()
-                {
-                    self.set_editor_text(&text);
-                }
-                self.status("Navigated to selected point");
-            }
+            Ok(outcome) => self.show_navigation(outcome.editor_text),
             Err(error) => self.error(error),
         }
+    }
+
+    /// Shows the transcript at the tree's new position, offering
+    /// `editor_text` when the editor is empty.
+    fn show_navigation(&mut self, editor_text: Option<String>) {
+        self.clear_chat();
+        self.render_history();
+        if let Some(text) = editor_text
+            && self.editor.text().trim().is_empty()
+        {
+            self.set_editor_text(&text);
+        }
+        self.status("Navigated to selected point");
     }
 
     // Sessions
@@ -3814,8 +3818,7 @@ impl App {
                 });
             }
             SessionAction::Switch { path } => {
-                let cwd = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
-                self.resume(&cwd.join(path), None);
+                self.resume(&crate::runtime::session_path(&path), None);
             }
             SessionAction::Reload => self.reload(),
             SessionAction::Replaced => {}
@@ -3833,14 +3836,7 @@ impl App {
         match result {
             Ok(outcome) if outcome.cancelled => self.answer(Ok(true)),
             Ok(outcome) => {
-                self.clear_chat();
-                self.render_history();
-                if let Some(text) = outcome.editor_text
-                    && self.editor.text().trim().is_empty()
-                {
-                    self.set_editor_text(&text);
-                }
-                self.status("Navigated to selected point");
+                self.show_navigation(outcome.editor_text);
                 self.answer(Ok(false));
             }
             Err(error) => self.answer(Err(error)),

@@ -3,13 +3,13 @@
 
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
 use yapi_core::agent_session::failed;
 use yapi_core::extensions::{Mode, NoUi};
 use yapi_types::message::ContentBlock;
 
-use crate::runtime::{Bind, Runtime, SessionFactory};
+use crate::runtime::{Bind, Runtime, SessionFactory, forward_newest};
 use crate::startup::Startup;
 
 /// Writes one line to stdout, ignoring a closed pipe.
@@ -38,18 +38,14 @@ pub async fn run(startup: Startup, json: bool, factory: SessionFactory) -> u8 {
     // The current session's number; listeners of older ones stay silent.
     let epoch = Arc::new(AtomicU64::new(0));
     let bind: Bind = Box::new(move |session, replaced| {
-        let epoch = Arc::clone(&epoch);
+        if json {
+            forward_newest(&session, &epoch, |event| {
+                if let Ok(line) = yapi_types::json::to_string(event) {
+                    write_line(&line);
+                }
+            });
+        }
         Box::pin(async move {
-            let current = epoch.fetch_add(1, Ordering::SeqCst) + 1;
-            if json {
-                session.subscribe(Box::new(move |event| {
-                    if epoch.load(Ordering::SeqCst) == current
-                        && let Ok(line) = yapi_types::json::to_string(event)
-                    {
-                        write_line(&line);
-                    }
-                }));
-            }
             session
                 .bind_extensions(Arc::new(NoUi), mode, replaced)
                 .await;

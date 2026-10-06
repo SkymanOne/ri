@@ -808,21 +808,17 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let bind: runtime::Bind = {
         let (out, ui) = (out.clone(), Arc::clone(&ui));
         Box::new(move |session, replaced| {
-            let epoch = Arc::clone(&epoch);
-            let (out, ui) = (out.clone(), Arc::clone(&ui));
+            let (out, check) = (out.clone(), Arc::clone(&ui));
+            runtime::forward_newest(&session, &epoch, move |event| {
+                if let Ok(line) = yapi_types::json::to_string(event) {
+                    out.line(line);
+                }
+                if matches!(event, yapi_types::event::AgentEvent::AgentSettled) {
+                    check.check_shutdown();
+                }
+            });
+            let ui = Arc::clone(&ui);
             Box::pin(async move {
-                let current = epoch.fetch_add(1, Ordering::SeqCst) + 1;
-                let check = Arc::clone(&ui);
-                session.subscribe(Box::new(move |event| {
-                    if epoch.load(Ordering::SeqCst) == current
-                        && let Ok(line) = yapi_types::json::to_string(event)
-                    {
-                        out.line(line);
-                    }
-                    if matches!(event, yapi_types::event::AgentEvent::AgentSettled) {
-                        check.check_shutdown();
-                    }
-                }));
                 session
                     .bind_extensions(ui as Arc<dyn ExtensionUi>, Mode::Rpc, replaced)
                     .await;

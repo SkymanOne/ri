@@ -455,7 +455,7 @@ pub trait Extension: Send + Sync {
 
 /// A session change an extension command asks for; one of pi's
 /// `ExtensionCommandContextActions`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum SessionAction {
     /// `newSession`, linked to a parent session file when given.
     New {
