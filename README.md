@@ -19,7 +19,7 @@ yapi is an AI coding assistant for your terminal. Open it in a project, describe
 
 yapi follows Pi `v1.0.0`. [Differences from Pi](https://skymanone.github.io/yapi/compat.html) lists every known difference.
 
-<!-- Terminal screenshot goes here. -->
+![yapi in a terminal, answering a question about this repository](assets/screenshot.png)
 
 ## Getting started
 
