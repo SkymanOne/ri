@@ -42,6 +42,29 @@ Pi extensions run unchanged, but not in Pi's Node.js process. yapi runs them in 
 | Tree label times | Local time | UTC, because yapi carries no time zone database. |
 | Codex transport | WebSocket first, then SSE with a compressed body | SSE with an uncompressed body. Requests and events are the same as Pi's fallback. |
 
-## Not yet ported
+## Open Gaps
 
-Pi features yapi does not have yet are tracked as [issues labelled `pi-compat`](https://github.com/SkymanOne/yapi/issues?q=is%3Aissue+label%3Api-compat). Each issue says what Pi does and what yapi does today.
+Pi features yapi does not have yet, or has only in part. Each row links its issue, and the row goes when the gap closes.
+
+| Area | Pi | yapi today | Issue |
+|---|---|---|---|
+| Extension events | Every event of the extension API | Never sends `before_provider_request`, `user_bash`, `model_select`, `resources_discover`, `session_before_*` or `agent_before_settle`. `session_start` always has the reason `startup`, and `turn_end` handlers cannot stage entries or continue the run. | [#21](https://github.com/SkymanOne/yapi/issues/21) |
+| Extension session actions | `newSession`, `fork`, `navigateTree`, `switchSession`, `reload` and `setTheme` work | The session actions fail and `setTheme` reports failure. | [#22](https://github.com/SkymanOne/yapi/issues/22) |
+| Custom editors and input hooks | `setEditorComponent`, `onTerminalInput` and `addAutocompleteProvider` work | They have no effect. | [#23](https://github.com/SkymanOne/yapi/issues/23) |
+| Extension providers | `registerProvider` accepts a custom `streamSimple`, an OAuth sign-in and `refreshModels` | Only providers configured like `models.json` entries. A model whose API only an extension implements cannot be the session's model. | [#24](https://github.com/SkymanOne/yapi/issues/24) |
+| Documentation for the model | Installs its docs and examples. The system prompt points the model at them, and the header says Pi can explain its own features. | Ships no docs, so the model cannot look up how yapi or its extension API works. | [#25](https://github.com/SkymanOne/yapi/issues/25) |
+| Images sent to models | Resized to fit 2000×2000 (`images.autoResize`). BMP converted. | Sent unresized. A BMP image or one over the size limit is replaced by Pi's omission note. | [#26](https://github.com/SkymanOne/yapi/issues/26) |
+| MCP sign-in | OAuth for HTTP servers and `auth.provider` tokens | `yapi mcp login` and `/mcp login` report that sign-in is not available. | [#27](https://github.com/SkymanOne/yapi/issues/27) |
+| MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
+| Temporary packages | `-e npm:<name>` and `-e git:<url>` install a package for one run | Not supported. | [#29](https://github.com/SkymanOne/yapi/issues/29) |
+| Entry renderers and markdown transformers | `registerEntryRenderer` and `registerMarkdownTransformer` change how entries and markdown render | Recorded but unused. | [#30](https://github.com/SkymanOne/yapi/issues/30) |
+| Markdown | LaTeX as Unicode math, bare URLs as links, highlighted code blocks, Mermaid diagrams | LaTeX as written, bare URLs as plain text, code blocks and Mermaid source in the code block color. | [#31](https://github.com/SkymanOne/yapi/issues/31) |
+| Syntax highlighting in tool rows | `read` results, `write` previews and codemode scripts are highlighted | Shown in the default color. | [#32](https://github.com/SkymanOne/yapi/issues/32) |
+| Cache warming | Refreshes the prompt cache while the model streams (`cacheWarming`) and reports cache misses | Sends no refresh requests. The setting is saved and ignored. | [#33](https://github.com/SkymanOne/yapi/issues/33) |
+| Images in the terminal | Inline images, with the "Show images" and "Image width" settings | Not shown. | [#34](https://github.com/SkymanOne/yapi/issues/34) |
+| Clipboard image paste | `app.clipboard.pasteImage` attaches the clipboard's image | The key does nothing. | [#35](https://github.com/SkymanOne/yapi/issues/35) |
+| Mouse selection | Selects text in fullscreen mode, and `fullscreenCopyOnSelect` | No mouse selection. The setting is saved and ignored. | [#36](https://github.com/SkymanOne/yapi/issues/36) |
+| `/changelog` and update notices | Shows the changelog and notices of new versions and package updates | `/changelog` reports no entries, and no notices are shown. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
+| Codemode | `codemode.mode: "only"` hides direct tools, scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | `only` acts as `on`, scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
+| OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |
+| Private npm registries | npm reads `.npmrc`, including registry credentials | `npm_config_registry` or the public registry, without credentials. | [#40](https://github.com/SkymanOne/yapi/issues/40) |
