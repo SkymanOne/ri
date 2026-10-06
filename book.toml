@@ -11,6 +11,7 @@ build-dir = "target/book"
 create-missing = false
 
 [output.html]
+theme = "docs/theme"
 site-url = "/yapi/"
 git-repository-url = "https://github.com/SkymanOne/yapi"
 edit-url-template = "https://github.com/SkymanOne/yapi/edit/main/{path}"
