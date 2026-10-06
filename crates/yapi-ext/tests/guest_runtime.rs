@@ -277,3 +277,35 @@ export default function (pi) {
         format!("{inactive}|{inactive}")
     );
 }
+
+/// Descriptor reads and writes reach their range of the file: chunked reads,
+/// writes inside and past the end, and truncation.
+#[tokio::test(flavor = "multi_thread")]
+async fn reads_and_writes_descriptor_ranges() {
+    let main = r#"
+import fs from "node:fs";
+import path from "node:path";
+export default function (pi) {
+	const file = path.join(import.meta.dirname, "data.txt");
+	fs.writeFileSync(file, "abcdefgh");
+	const fd = fs.openSync(file, "r+");
+	const chunks = [];
+	const buffer = Buffer.alloc(3);
+	let count;
+	while ((count = fs.readSync(fd, buffer, 0, 3, null)) > 0) chunks.push(buffer.toString("utf8", 0, count));
+	fs.writeSync(fd, "XY", 2);
+	fs.writeSync(fd, Buffer.from("Z"), 0, 1, 10);
+	const written = [...fs.readFileSync(file)].map((byte) => (byte === 0 ? "0" : String.fromCharCode(byte))).join("");
+	fs.ftruncateSync(fd, 4);
+	fs.closeSync(fd);
+	pi.registerCommand("probe", {
+		description: [chunks.join("/"), written, fs.readFileSync(file, "utf8")].join(","),
+		handler: async () => {},
+	});
+}
+"#;
+    assert_eq!(
+        probe("descriptors", main).await,
+        "abc/def/gh,abXYefgh00Z,abXY"
+    );
+}

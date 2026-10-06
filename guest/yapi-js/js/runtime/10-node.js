@@ -223,7 +223,7 @@
 	};
 	// ----- file descriptors -------------------------------------------------------------
 	// The host works on paths, so a descriptor is an open path and a position,
-	// and each read or write goes through the path.
+	// and each read or write reaches its range of the file through the path.
 	const descriptors = new Map();
 	let nextDescriptor = 3;
 	const errno = (code, number, message, syscall, path) => {
@@ -258,7 +258,7 @@
 		length ??= buffer.byteLength - offset;
 		const entry = descriptor(fd, "read");
 		const start = explicit(position) ? Number(position) : entry.position;
-		const chunk = fsSync.readFileSync(entry.path).subarray(start, start + length);
+		const chunk = yapi.base64Decode(call("read", { path: entry.path, position: start, length }).base64);
 		new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(chunk, offset);
 		if (!explicit(position)) entry.position += chunk.length;
 		return chunk.length;
@@ -280,15 +280,8 @@
 			bytes = Buffer.from(data.buffer, data.byteOffset + offset, b ?? data.byteLength - offset);
 			position = c;
 		}
-		const size = fsSync.statSync(entry.path).size;
-		const at = entry.append ? size : explicit(position) ? Number(position) : entry.position;
-		if (at === size) fsSync.appendFileSync(entry.path, bytes);
-		else {
-			const next = Buffer.alloc(Math.max(size, at + bytes.length));
-			next.set(fsSync.readFileSync(entry.path));
-			next.set(bytes, at);
-			fsSync.writeFileSync(entry.path, next);
-		}
+		const at = entry.append ? fsSync.statSync(entry.path).size : explicit(position) ? Number(position) : entry.position;
+		call("write", { path: entry.path, position: at, base64: yapi.base64Encode(bytes) });
 		if (!explicit(position)) entry.position = at + bytes.length;
 		return bytes.length;
 	}
@@ -297,11 +290,7 @@
 		descriptors.delete(fd);
 	}
 	function truncateSync(p, length = 0) {
-		const target = typeof p === "number" ? descriptor(p, "ftruncate").path : absolute(p);
-		const current = fsSync.readFileSync(target);
-		const next = Buffer.alloc(length);
-		next.set(current.subarray(0, length));
-		fsSync.writeFileSync(target, next);
+		call("truncate", { path: typeof p === "number" ? descriptor(p, "ftruncate").path : absolute(p), length });
 	}
 	class FileHandle {
 		constructor(fd) {
