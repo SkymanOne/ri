@@ -34,6 +34,19 @@ for archive in "$dist"/yapi-*.tar.gz; do
 done
 echo "ok: every archive holds yapi and its licenses"
 
+# Without HOME, install.sh has no default directory and must not pick /.local/bin.
+if message=$(env -u HOME YAPI_RELEASES_URL=https://127.0.0.1:9 sh "$root/install.sh" 2>&1); then
+    echo "install.sh without HOME succeeded: $message" >&2
+    exit 1
+fi
+case "$message" in
+    *"HOME is not set"*) echo "ok: install.sh without HOME asks for a directory" ;;
+    *)
+        echo "install.sh without HOME failed with: $message" >&2
+        exit 1
+        ;;
+esac
+
 # GitHub serves the latest release's files under latest/download as well.
 for path in "download/$tag" latest/download; do
     mkdir -p "$work/site/SkymanOne/yapi/releases/$path"

@@ -14,7 +14,7 @@ set -eu
 
 releases="${YAPI_RELEASES_URL:-https://github.com/SkymanOne/yapi/releases}"
 version="${YAPI_VERSION:-latest}"
-dir="${YAPI_INSTALL_DIR:-${HOME:-}/.local/bin}"
+dir="${YAPI_INSTALL_DIR:-}"
 from_source="cargo install --locked --git https://github.com/SkymanOne/yapi yapi"
 
 fail() {
@@ -48,6 +48,10 @@ EOF
         *) fail "unknown option $1" ;;
     esac
 done
+if [ -z "$dir" ]; then
+    [ -n "${HOME:-}" ] || fail "HOME is not set. Choose where to install yapi with --to <dir> or YAPI_INSTALL_DIR."
+    dir="$HOME/.local/bin"
+fi
 
 command -v curl >/dev/null 2>&1 || fail "needs curl"
 command -v tar >/dev/null 2>&1 || fail "needs tar"
