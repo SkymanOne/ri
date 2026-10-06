@@ -76,6 +76,17 @@ pub fn default_registry() -> String {
     }
 }
 
+/// `token` without the `v` node-semver allows before a version, as in
+/// `v1.2.3` or `^v1.2`.
+fn without_v(token: &str) -> String {
+    let version = token.trim_start_matches(['<', '>', '=', '~', '^']);
+    let operator = &token[..token.len() - version.len()];
+    match version.strip_prefix('v') {
+        Some(version) => format!("{operator}{version}"),
+        None => token.to_owned(),
+    }
+}
+
 /// npm range syntax as `semver` requirements: any alternative may match.
 fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
     range
@@ -83,11 +94,12 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
         .map(|alternative| {
             let alternative = alternative.trim();
             let text = if let Some((low, high)) = alternative.split_once(" - ") {
-                format!(">={}, <={}", low.trim(), high.trim())
+                format!(">={}, <={}", without_v(low.trim()), without_v(high.trim()))
             } else {
                 // npm separates comparators with spaces; `semver` with commas.
                 let mut parts: Vec<String> = Vec::new();
                 for token in alternative.split_whitespace() {
+                    let token = without_v(token);
                     match parts.last_mut() {
                         Some(last)
                             if matches!(
@@ -95,7 +107,7 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                                 ">" | ">=" | "<" | "<=" | "=" | "~" | "^"
                             ) =>
                         {
-                            last.push_str(token);
+                            last.push_str(&token);
                         }
                         // A bare version is exact in npm and a caret range in
                         // `semver`. Wildcards such as `1.x` mean the same in both.
@@ -104,7 +116,7 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
                         {
                             parts.push(format!("={token}"));
                         }
-                        _ => parts.push(token.to_owned()),
+                        _ => parts.push(token),
                     }
                 }
                 if parts.is_empty() {
@@ -587,6 +599,18 @@ mod tests {
         assert!(!satisfies("1.2.4", "1.2.3 || 2"));
         assert!(satisfies("1.2.9", "1.2.x"));
         assert!(!satisfies("1.3.0", "1.2.x"));
+    }
+
+    #[test]
+    fn ranges_may_prefix_versions_with_v() {
+        assert!(satisfies("1.2.3", "v1.2.3"));
+        assert!(!satisfies("1.2.4", "v1.2.3"));
+        assert!(satisfies("1.4.0", "^v1.2.3"));
+        assert!(satisfies("1.2.9", "~v1.2.0"));
+        assert!(satisfies("1.5.0", ">=v1.2 <v2"));
+        assert!(satisfies("1.5.0", ">= v1.2 < v2"));
+        assert!(satisfies("1.3.0", "v1.2.0 - v1.4.0"));
+        assert!(satisfies("2.0.0", "v1 || v2.x"));
     }
 
     #[test]
