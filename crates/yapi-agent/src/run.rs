@@ -113,6 +113,9 @@ async fn run_loop(
 ) {
     let mut first_turn = true;
     let mut pending = hooks.steering_messages().await;
+    // A turn's request for one more response, which runs with the current
+    // context when no tool results or queued messages lead to one.
+    let mut explicit_continuation = false;
 
     loop {
         let mut more_tool_calls = true;
@@ -142,6 +145,7 @@ async fn run_loop(
             new_messages.push(Message::Assistant(Box::new(message.clone())));
 
             if matches!(message.stop_reason, StopReason::Error | StopReason::Aborted) {
+                hooks.finish_turn(&message, &[]).await;
                 hooks
                     .on_event(&AgentEvent::TurnEnd {
                         message: Message::Assistant(Box::new(message)),
@@ -176,6 +180,10 @@ async fn run_loop(
                 tool_results = results;
             }
 
+            let decision = hooks.finish_turn(&message, &tool_results).await;
+            if let Some(messages) = decision.messages {
+                context.messages = messages;
+            }
             hooks
                 .on_event(&AgentEvent::TurnEnd {
                     message: Message::Assistant(Box::new(message)),
@@ -183,13 +191,19 @@ async fn run_loop(
                 })
                 .await;
             pending = hooks.steering_messages().await;
+            explicit_continuation = decision.continue_run && !more_tool_calls && pending.is_empty();
         }
 
         let follow_up = hooks.follow_up_messages().await;
-        if follow_up.is_empty() {
-            break;
+        if !follow_up.is_empty() {
+            explicit_continuation = false;
+            pending = follow_up;
+            continue;
         }
-        pending = follow_up;
+        if std::mem::take(&mut explicit_continuation) {
+            continue;
+        }
+        break;
     }
     end(hooks, new_messages).await;
 }

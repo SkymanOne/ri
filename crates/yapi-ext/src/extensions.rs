@@ -1094,6 +1094,12 @@ impl Bridge for SessionBridge {
                     .map(|_| Value::Null)
                     .map_err(|err| err.to_string())
             }),
+            "session.boundaryContext" => {
+                let boundary = yapi_core::agent_session::Boundary::parse(&text(&payload["type"]))
+                    .ok_or("Unknown boundary")?;
+                let drafts = list(&payload["entries"]);
+                session.boundary_context(boundary, drafts)
+            }
             "session.read" => session_read(&session, payload["method"].as_str().unwrap_or_default(), &payload["args"]),
             "tools.getActive" => Ok(to_json(session.active_tool_names())),
             "tools.getAll" => Ok(Value::Array(

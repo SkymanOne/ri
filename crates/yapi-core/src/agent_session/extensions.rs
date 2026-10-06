@@ -63,7 +63,7 @@ fn extension_event(
         AgentEvent::AgentStart => ("agent_start", &[]),
         AgentEvent::AgentEnd { .. } => ("agent_end", &["messages"]),
         AgentEvent::TurnStart => ("turn_start", &[]),
-        AgentEvent::TurnEnd { .. } => ("turn_end", &["message", "toolResults"]),
+        // `turn_end` reaches extensions as a boundary, before the event.
         AgentEvent::MessageStart { .. } => ("message_start", &["message"]),
         AgentEvent::MessageUpdate { .. } => {
             ("message_update", &["message", "assistantMessageEvent"])
@@ -101,10 +101,8 @@ fn extension_event(
     let value = serde_json::to_value(event).ok()?;
     let mut out = serde_json::Map::new();
     out.insert("type".into(), Value::String(kind.to_owned()));
-    if matches!(kind, "turn_start" | "turn_end") {
-        out.insert("turnIndex".into(), Value::from(turn_index));
-    }
     if kind == "turn_start" {
+        out.insert("turnIndex".into(), Value::from(turn_index));
         out.insert("timestamp".into(), Value::from(now_ms()));
     }
     for key in keys {
@@ -372,6 +370,19 @@ impl AgentHooks for Hooks {
                 }
             }
             patch
+        })
+    }
+
+    fn finish_turn<'a>(
+        &'a self,
+        message: &'a yapi_types::message::AssistantMessage,
+        tool_results: &'a [ToolResultMessage],
+    ) -> BoxFuture<'a, yapi_agent::hooks::TurnDecision> {
+        Box::pin(async move {
+            let turn_index = self.turn_index.load(Ordering::SeqCst);
+            self.session
+                .turn_end_boundary(message, tool_results, turn_index, self.cancel.clone())
+                .await
         })
     }
 

@@ -41,11 +41,13 @@ use crate::time::now_ms;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::{BUILTIN_TOOLS, Described, Exposure, RegisteredTool, Runtime, ToolEnv, builtin};
 
+mod boundary;
 mod extensions;
 mod models;
 mod recovery;
 mod stats;
 
+pub use boundary::Boundary;
 use extensions::Hooks;
 pub use models::CatalogRefresh;
 pub use stats::{ContextUsage, SessionStats, UsageTotals};
@@ -231,6 +233,8 @@ struct Inner {
     announcements: Mutex<VecDeque<Value>>,
     /// Held while announcements are delivered.
     announcing: tokio::sync::Mutex<()>,
+    /// How the last turn ended, as pi's boundary events report it.
+    outcome: Mutex<&'static str>,
 }
 
 /// Counts an operation in [`Inner::compacting`] while alive.
@@ -415,6 +419,7 @@ impl AgentSession {
                 retry_cancel: Mutex::new(None),
                 announcements: Mutex::new(VecDeque::new()),
                 announcing: tokio::sync::Mutex::new(()),
+                outcome: Mutex::new("completed"),
                 nested: crate::nested::NestedCalls::default(),
             }),
         }
@@ -1232,7 +1237,7 @@ impl AgentSession {
                 self.run_agent(None, &cancel).await;
                 continue;
             }
-            if cancel.is_cancelled() || !self.has_queued() {
+            if cancel.is_cancelled() || !self.before_settle(&cancel).await {
                 break;
             }
             self.run_agent(None, &cancel).await;

@@ -61,6 +61,15 @@ pub struct ResultPatch {
     pub terminate: Option<bool>,
 }
 
+/// What the session decides as a turn ends; pi's `AgentTurnDecision`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TurnDecision {
+    /// Ensures one more provider request when nothing else would make one.
+    pub continue_run: bool,
+    /// The transcript to continue from, when the session changed it.
+    pub messages: Option<Vec<Message>>,
+}
+
 /// Hooks into the agent loop. Every method has a no-op default.
 ///
 /// The loop awaits each hook before it continues, so a hook sees a consistent
@@ -97,6 +106,17 @@ pub trait AgentHooks: Send + Sync {
         _call: AfterToolCall<'a>,
     ) -> BoxFuture<'a, Option<ResultPatch>> {
         Box::pin(async { None })
+    }
+
+    /// A turn finished: its assistant message and tool results are emitted
+    /// and `turn_end` is next; pi's `finishTurn`. The decision is ignored
+    /// after a failed or aborted response.
+    fn finish_turn<'a>(
+        &'a self,
+        _message: &'a AssistantMessage,
+        _tool_results: &'a [ToolResultMessage],
+    ) -> BoxFuture<'a, TurnDecision> {
+        Box::pin(async { TurnDecision::default() })
     }
 
     /// Completes a tool result message before it is emitted, for example

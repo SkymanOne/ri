@@ -865,6 +865,27 @@
 				if (messages !== event.messages) result = { messages };
 				break;
 			}
+			case "turn_end":
+			case "agent_before_settle": {
+				// pi's `emitBoundary` for this extension's handlers: each sees the
+				// entries and continuation the earlier ones staged, and the context
+				// they would make, built when read.
+				let entries = event.entries;
+				let shouldContinue = event.continue;
+				for (const handler of handlers) {
+					const staged = entries;
+					const boundaryEvent = { ...event, entries: staged, continue: shouldContinue };
+					Object.defineProperty(boundaryEvent, "context", {
+						enumerable: true,
+						get: () => yapi.request("session.boundaryContext", { type: event.type, entries: plain(staged) }),
+					});
+					const handlerResult = await guard(() => handler(boundaryEvent, ctx));
+					if (handlerResult?.entries !== undefined) entries = handlerResult.entries;
+					if (handlerResult?.continue !== undefined) shouldContinue = handlerResult.continue;
+				}
+				result = { entries, continue: shouldContinue };
+				break;
+			}
 			case "before_provider_request": {
 				let payload = event.payload;
 				for (const handler of handlers) {
