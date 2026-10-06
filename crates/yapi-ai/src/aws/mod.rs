@@ -235,7 +235,7 @@ fn resolve_profile<'a>(
     visited: Vec<String>,
     assume_role_source: bool,
     cancel: &'a CancellationToken,
-) -> crate::auth::BoxFuture<'a, Chained> {
+) -> futures_util::future::BoxFuture<'a, Chained> {
     Box::pin(async move {
         let empty = Section::new();
         let data = profiles.profiles.get(name).unwrap_or(&empty);

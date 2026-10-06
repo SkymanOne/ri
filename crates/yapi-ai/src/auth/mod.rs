@@ -20,18 +20,14 @@ pub mod radius;
 pub mod store;
 pub mod xai;
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
 pub use store::{CredentialKind, CredentialStore};
-
-/// A boxed future, for trait methods.
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Why a sign-in, refresh or credential change failed.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
