@@ -21,9 +21,14 @@ pub fn fixtures() -> PathBuf {
     repo().join("tests/fixtures")
 }
 
-/// A new empty directory for one test.
+/// A new empty directory for one test, in the system's temporary directory:
+/// tests set `HOME` to such a directory, so an ancestor in the real home
+/// (whose `.agents/skills` asks for project trust, as in pi) would change
+/// what yapi does.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let dir = std::env::temp_dir()
+        .join(format!("yapi-tests-{}", std::process::id()))
+        .join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
