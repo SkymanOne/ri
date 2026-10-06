@@ -400,7 +400,6 @@
 	const theme = new Theme(null);
 	globalThis.__yapi_theme = theme;
 
-	// ----- contexts --------------------------------------------------------------------------------------
 	// ----- components ---------------------------------------------------------------------------------------
 	// Components live here, by handle; the host renders them through
 	// `yapi.render` and delivers keys through `yapi.input`.
@@ -470,6 +469,7 @@
 		}
 	};
 
+	// ----- contexts --------------------------------------------------------------------------------------
 	function createUi(data) {
 		const request = (kind, payload) => yapi.request(`ui.${kind}`, payload);
 		const shown = !!(data.hasUI && data.components);

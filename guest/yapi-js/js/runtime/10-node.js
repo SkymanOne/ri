@@ -1528,5 +1528,8 @@
 	};
 })();
 
+// The names an ES module wrapper of `object` exports: its keys that are
+// identifiers, except `default`.
+globalThis.__yapi.exportNames = (object) => Object.keys(object).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
 // The names an ES module wrapper of builtin `name` exports.
-globalThis.__yapi.builtinExports = (name) => Object.keys(globalThis.__yapi_builtins[name] ?? {}).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
+globalThis.__yapi.builtinExports = (name) => globalThis.__yapi.exportNames(globalThis.__yapi_builtins[name] ?? {});

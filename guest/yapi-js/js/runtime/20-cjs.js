@@ -63,5 +63,5 @@
 globalThis.__yapi.cjsExports = (path) => {
 	const exports = globalThis.__yapi_cjs(path);
 	if (exports === null || (typeof exports !== "object" && typeof exports !== "function")) return [];
-	return Object.keys(exports).filter((key) => key !== "default" && /^[A-Za-z_$][\w$]*$/.test(key));
+	return globalThis.__yapi.exportNames(exports);
 };
