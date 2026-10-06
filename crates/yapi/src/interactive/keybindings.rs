@@ -290,12 +290,7 @@ pub fn migrate(raw: &Map<String, Value>) -> (Map<String, Value>, bool) {
 }
 
 fn read_object(path: &Path) -> Option<Map<String, Value>> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    match serde_json::from_str(text).ok()? {
-        Value::Object(map) => Some(map),
-        _ => None,
-    }
+    yapi_types::json::parse(&std::fs::read_to_string(path).ok()?).ok()
 }
 
 /// pi's startup migration: rewrites a `keybindings.json` that uses legacy
@@ -400,6 +395,18 @@ mod tests {
             ["tui.editor.cursorUp", "app.interrupt", "app.clear", "zeta"]
         );
         assert_eq!(config["app.clear"], "ctrl+x");
+    }
+
+    #[test]
+    fn reads_objects_after_a_byte_order_mark() {
+        let dir = std::env::temp_dir().join(format!("yapi-keybindings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("keybindings.json");
+        std::fs::write(&path, "\u{feff}{\"app.clear\": \"ctrl+x\"}").unwrap();
+        assert_eq!(read_object(&path).unwrap()["app.clear"], "ctrl+x");
+        std::fs::write(&path, "[]").unwrap();
+        assert!(read_object(&path).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
