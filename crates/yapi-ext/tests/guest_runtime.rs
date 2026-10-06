@@ -166,3 +166,14 @@ export default function (pi) {
 "#;
     assert_eq!(probe("process", main).await, "true,true,true,false,1,0,1");
 }
+
+/// The host cannot have the runtime evaluate source text.
+#[tokio::test(flavor = "multi_thread")]
+async fn evaluates_no_source_text() {
+    let (instance, _) = load("eval", "export default function () {}\n").await;
+    let error = instance
+        .call("eval", &json!({"source": "globalThis.evaluated = true"}))
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Unknown dispatch kind: eval");
+}

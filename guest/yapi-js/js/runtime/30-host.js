@@ -963,9 +963,6 @@
 			views[slot] = { handle, component };
 			return { handle };
 		},
-		async eval(payload) {
-			return plain(await (0, eval)(payload.source));
-		},
 	};
 
 	yapi.dispatch = (id, kind, payloadText) => {
