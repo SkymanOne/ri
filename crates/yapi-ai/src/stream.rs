@@ -79,25 +79,20 @@ pub struct StreamOptions {
     pub hooks: RequestHooks,
 }
 
-/// Replaces a request body before it is sent.
-pub type PayloadHook = std::sync::Arc<
-    dyn Fn(serde_json::Value) -> BoxFuture<'static, serde_json::Value> + Send + Sync,
->;
+/// Request headers; `None` removes a header the provider would send.
+pub type RequestHeaders = IndexMap<String, Option<String>>;
 
-/// Replaces a request's headers; `None` removes one.
-pub type HeadersHook = std::sync::Arc<
-    dyn Fn(IndexMap<String, Option<String>>) -> BoxFuture<'static, IndexMap<String, Option<String>>>
-        + Send
-        + Sync,
->;
+/// A session's callback into its requests.
+pub type Hook<A, R> = std::sync::Arc<dyn Fn(A) -> BoxFuture<'static, R> + Send + Sync>;
 
-/// Sees a response's status and headers before its body is read.
-pub type ResponseHook =
-    std::sync::Arc<dyn Fn(u16, IndexMap<String, String>) -> BoxFuture<'static, ()> + Send + Sync>;
-
-/// Sees each event a provider streams, as parsed, before it is normalized.
-pub type StreamEventHook =
-    std::sync::Arc<dyn Fn(serde_json::Value) -> BoxFuture<'static, ()> + Send + Sync>;
+/// A provider's answer, before its body is read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderResponse {
+    /// The HTTP status.
+    pub status: u16,
+    /// The response headers.
+    pub headers: IndexMap<String, String>,
+}
 
 /// What a session observes of its requests: pi-ai's `onPayload`,
 /// `onResponse` and `onProviderStreamEvent` options, and pi's
@@ -106,14 +101,14 @@ pub type StreamEventHook =
 pub struct RequestHooks {
     /// Sees each request body, as the wire API would send it, and returns
     /// the body to send.
-    pub payload: Option<PayloadHook>,
+    pub payload: Option<Hook<serde_json::Value, serde_json::Value>>,
     /// Sees the headers of each request, credentials' included, and returns
-    /// the headers to send.
-    pub headers: Option<HeadersHook>,
+    /// the headers to send; `None` removes one.
+    pub headers: Option<Hook<RequestHeaders, RequestHeaders>>,
     /// Sees each successful response.
-    pub response: Option<ResponseHook>,
-    /// Sees each streamed event.
-    pub stream_event: Option<StreamEventHook>,
+    pub response: Option<Hook<ProviderResponse, ()>>,
+    /// Sees each streamed event, as parsed, before it is normalized.
+    pub stream_event: Option<Hook<serde_json::Value, ()>>,
 }
 
 impl RequestHooks {
@@ -143,7 +138,11 @@ impl RequestHooks {
                     Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
                 })
                 .collect();
-            hook(response.status().as_u16(), headers).await;
+            hook(ProviderResponse {
+                status: response.status().as_u16(),
+                headers,
+            })
+            .await;
         }
     }
 

@@ -473,17 +473,12 @@ impl AgentSession {
     }
 
     /// The extensions with handlers for pi events of type `kind`.
-    fn handlers_of(&self, kind: &str) -> Vec<&Arc<dyn Extension>> {
+    pub(super) fn handlers_of(&self, kind: &str) -> Vec<&Arc<dyn Extension>> {
         self.inner
             .extensions
             .iter()
             .filter(|extension| extension.handles(kind))
             .collect()
-    }
-
-    /// [`AgentSession::handlers_of`], owned.
-    pub(super) fn extensions_handling(&self, kind: &str) -> Vec<Arc<dyn Extension>> {
-        self.handlers_of(kind).into_iter().cloned().collect()
     }
 
     /// Whether any extension handles pi events of type `kind`.
@@ -567,21 +562,34 @@ impl AgentSession {
         payload: Value,
         cancel: CancellationToken,
     ) -> Value {
-        let handlers = self.handlers_of("before_provider_request");
+        self.chain("before_provider_request", "payload", payload, cancel)
+            .await
+    }
+
+    /// Passes `value` through the extensions handling `kind` as the event's
+    /// `field`, each seeing the `field` the previous one returned.
+    async fn chain(
+        &self,
+        kind: &str,
+        field: &str,
+        value: Value,
+        cancel: CancellationToken,
+    ) -> Value {
+        let handlers = self.handlers_of(kind);
         if handlers.is_empty() {
-            return payload;
+            return value;
         }
         let ctx = self.extension_context(cancel);
-        let mut payload = payload;
+        let mut value = value;
         for extension in handlers {
-            let event = serde_json::json!({"type": "before_provider_request", "payload": payload});
+            let event = serde_json::json!({"type": kind, field: value});
             if let Some(result) = extension.handle(&ctx, &event).await
-                && let Some(next) = result.get("payload")
+                && let Some(next) = result.get(field)
             {
-                payload = next.clone();
+                value = next.clone();
             }
         }
-        payload
+        value
     }
 
     /// pi's `emitContext`: `context` handlers see the conversation without
@@ -639,38 +647,33 @@ impl AgentSession {
     /// them in place; a null value removes a header.
     pub(super) async fn before_provider_headers(
         &self,
-        headers: indexmap::IndexMap<String, Option<String>>,
+        headers: yapi_ai::stream::RequestHeaders,
         cancel: CancellationToken,
-    ) -> indexmap::IndexMap<String, Option<String>> {
-        let handlers = self.handlers_of("before_provider_headers");
-        if handlers.is_empty() {
-            return headers;
+    ) -> yapi_ai::stream::RequestHeaders {
+        let value = serde_json::to_value(&headers).unwrap_or_default();
+        let value = self
+            .chain("before_provider_headers", "headers", value, cancel)
+            .await;
+        match value.as_object() {
+            Some(headers) => headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().map(str::to_owned)))
+                .collect(),
+            None => headers,
         }
-        let ctx = self.extension_context(cancel);
-        let mut headers = headers;
-        for extension in handlers {
-            let event = serde_json::json!({"type": "before_provider_headers", "headers": headers});
-            if let Some(result) = extension.handle(&ctx, &event).await
-                && let Some(next) = result["headers"].as_object()
-            {
-                headers = next
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.as_str().map(str::to_owned)))
-                    .collect();
-            }
-        }
-        headers
     }
 
-    /// pi's `after_provider_response`: a provider answered with `status`
-    /// and `headers`.
+    /// pi's `after_provider_response`: a provider answered.
     pub(super) async fn after_provider_response(
         &self,
-        status: u16,
-        headers: indexmap::IndexMap<String, String>,
+        response: yapi_ai::stream::ProviderResponse,
         cancel: CancellationToken,
     ) {
-        let event = serde_json::json!({"type": "after_provider_response", "status": status, "headers": headers});
+        let event = serde_json::json!({
+            "type": "after_provider_response",
+            "status": response.status,
+            "headers": response.headers,
+        });
         self.emit_extension_event(&event, cancel).await;
     }
 
@@ -883,7 +886,7 @@ impl AgentSession {
     /// prompt templates and themes extensions name, each with its extension
     /// as source.
     async fn discover_resources(&self, reason: &str) {
-        let handlers = self.extensions_handling("resources_discover");
+        let handlers = self.handlers_of("resources_discover");
         if handlers.is_empty() {
             return;
         }

@@ -20,10 +20,7 @@ use yapi_agent::{
 };
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
-use yapi_ai::stream::{
-    HeadersHook, PayloadHook, RequestHooks, ResponseHook, StreamEventHook, StreamOptions,
-    ThinkingBudgets,
-};
+use yapi_ai::stream::{Hook, RequestHeaders, RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
@@ -711,7 +708,7 @@ impl AgentSession {
         command: &str,
         exclude_from_context: bool,
     ) -> Result<UserBash, String> {
-        let handlers = self.extensions_handling("user_bash");
+        let handlers = self.handlers_of("user_bash");
         if handlers.is_empty() {
             return Ok(UserBash::Local);
         }
@@ -731,7 +728,7 @@ impl AgentSession {
             }
             if !result["operations"].is_null() {
                 return Ok(UserBash::Operations(BashOperations {
-                    extension,
+                    extension: Arc::clone(extension),
                     handle: result["operations"].clone(),
                 }));
             }
@@ -1000,11 +997,11 @@ impl AgentSession {
             Some(index) => (&rest[..index], rest[index..].trim()),
             None => (rest, ""),
         };
-        let Some(skill) = self
-            .resources()
+        let Some(skill) = read(&self.inner.resources)
             .skills
-            .into_iter()
+            .iter()
             .find(|skill| skill.name == name)
+            .cloned()
         else {
             return text.to_owned();
         };
@@ -1306,54 +1303,68 @@ impl AgentSession {
 
     /// What extensions see of the run's provider requests to `model`.
     fn request_hooks(&self, model: &Model, cancel: &CancellationToken) -> RequestHooks {
-        let wants = |kind: &str| self.has_handlers(kind);
-        let (session, cancel) = (self.clone(), cancel.clone());
-        let payload: Option<PayloadHook> = wants("before_provider_request").then(|| {
-            let (session, cancel) = (session.clone(), cancel.clone());
-            Arc::new(move |payload| {
-                let (session, cancel) = (session.clone(), cancel.clone());
-                Box::pin(async move { session.before_provider_request(payload, cancel).await })
-                    as BoxFuture<'static, Value>
-            }) as PayloadHook
-        });
-        let response: Option<ResponseHook> = wants("after_provider_response").then(|| {
-            let (session, cancel) = (session.clone(), cancel.clone());
-            Arc::new(move |status, headers| {
-                let (session, cancel) = (session.clone(), cancel.clone());
-                Box::pin(async move {
-                    session
-                        .after_provider_response(status, headers, cancel)
-                        .await
-                }) as BoxFuture<'static, ()>
-            }) as ResponseHook
-        });
-        let stream_event: Option<StreamEventHook> = wants("provider_stream_event").then(|| {
-            let (session, cancel) = (session.clone(), cancel.clone());
-            let model = model.clone();
-            Arc::new(move |data| {
-                let (session, cancel, model) = (session.clone(), cancel.clone(), model.clone());
-                Box::pin(async move { session.provider_stream_event(&model, data, cancel).await })
-                    as BoxFuture<'static, ()>
-            }) as StreamEventHook
-        });
+        let model = model.clone();
         RequestHooks {
-            payload,
-            headers: self.headers_hook(&cancel),
-            response,
-            stream_event,
+            payload: self.hook(
+                "before_provider_request",
+                cancel,
+                |session, payload, cancel| {
+                    Box::pin(async move { session.before_provider_request(payload, cancel).await })
+                },
+            ),
+            headers: self.headers_hook(cancel),
+            response: self.hook(
+                "after_provider_response",
+                cancel,
+                |session, response, cancel| {
+                    Box::pin(async move { session.after_provider_response(response, cancel).await })
+                },
+            ),
+            stream_event: self.hook(
+                "provider_stream_event",
+                cancel,
+                move |session, data, cancel| {
+                    let model = model.clone();
+                    Box::pin(
+                        async move { session.provider_stream_event(&model, data, cancel).await },
+                    )
+                },
+            ),
         }
     }
 
     /// pi's `before_provider_headers` for every provider request, compaction
     /// and branch summaries included.
-    pub(super) fn headers_hook(&self, cancel: &CancellationToken) -> Option<HeadersHook> {
-        if !self.has_handlers("before_provider_headers") {
+    pub(super) fn headers_hook(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Option<Hook<RequestHeaders, RequestHeaders>> {
+        self.hook(
+            "before_provider_headers",
+            cancel,
+            |session, headers, cancel| {
+                Box::pin(async move { session.before_provider_headers(headers, cancel).await })
+            },
+        )
+    }
+
+    /// A request hook that runs `event` on this session, when extensions
+    /// handle events of type `kind`.
+    fn hook<A: 'static, R: 'static>(
+        &self,
+        kind: &str,
+        cancel: &CancellationToken,
+        event: impl Fn(AgentSession, A, CancellationToken) -> BoxFuture<'static, R>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Option<Hook<A, R>> {
+        if !self.has_handlers(kind) {
             return None;
         }
         let (session, cancel) = (self.clone(), cancel.clone());
-        Some(Arc::new(move |headers| {
-            let (session, cancel) = (session.clone(), cancel.clone());
-            Box::pin(async move { session.before_provider_headers(headers, cancel).await })
+        Some(Arc::new(move |argument| {
+            event(session.clone(), argument, cancel.clone())
         }))
     }
 

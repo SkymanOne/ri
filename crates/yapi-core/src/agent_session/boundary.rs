@@ -187,7 +187,7 @@ impl AgentSession {
         let mut entries: Vec<Value> = Vec::new();
         let mut proceed = false;
         let mut valid = true;
-        for extension in self.extensions_handling(boundary.kind()) {
+        for extension in self.handlers_of(boundary.kind()) {
             let mut event = base.clone();
             event["entries"] = Value::Array(entries.clone());
             event["continue"] = proceed.into();
