@@ -90,7 +90,6 @@ opt-level = 3
 [profile.dev.package.wasmparser]
 opt-level = 3
 
-# Binary size budget: see AGENTS.md.
 [profile.release]
 codegen-units = 1
 lto = true

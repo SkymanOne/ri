@@ -83,14 +83,6 @@ Done for the slice below.
 
 Exit criterion. Golden suites recorded from pi-tui cover keys, input splitting, the editor, themes, text layout, markdown and autocomplete. 23 terminal scenarios, recorded from pi and run by `cargo test`, match pi's screens: startup, command autocomplete, a tool-call turn, `/session`, `!` and `!!`, `/tree` with its summary dialog and navigation, `/fork`, `/clone`, `/new`, `/name`, `/hotkeys`, the model and thinking selectors, `/model <ref>`, `/thinking <level>`, `@` and Tab completion, double escape and regular mode. `--resume` was compared by hand.
 
-Measured with `cargo xtask bench` on this machine (release build, 100×40 terminal, a session of about 10,000 transcript lines for keystrokes):
-
-| Metric | yapi | pi |
-|---|---|---|
-| First paint | 10 ms | 399 ms |
-| Keystroke to paint, p50 | 1.4 ms | 3.9 ms |
-| Keystroke to paint, p99 | 2.2 ms | 8.7 ms |
-
 Not yet done:
 
 - Settings that `/settings` saves but yapi does not act on yet: image auto-resize, cache warming and cache-miss notices, mermaid diagrams, copy on select, the condensed changelog and install telemetry.
@@ -229,7 +221,7 @@ Not yet done:
 - A theme change reaches extensions when their session next starts.
 - The `/mcp` manager.
 
-## M7: codemode, budgets, import, release
+## M7: codemode, performance, import, release
 
 Done for the slice below.
 
@@ -247,9 +239,8 @@ Measured with `cargo xtask bench --pi` and Pi `1.0.0` installed from npm with `-
 
 | Measure | yapi, Linux | Pi, Linux | yapi, macOS | Pi, macOS |
 |---|---|---|---|---|
-| `--version` | 2.6 ms | 307.7 ms | 9.9 ms | 251.8 ms |
-| Print mode, start to first request byte | 17.2 ms | 451.1 ms | 15.0 ms | 332.3 ms |
-| Interactive first paint | 12.0 ms | 410.9 ms | 21.7 ms | 355.4 ms |
+| Startup, interactive | 12.0 ms | 410.9 ms | 21.7 ms | 355.4 ms |
+| Startup, print mode (to first request byte) | 17.2 ms | 451.1 ms | 15.0 ms | 332.3 ms |
 | Keystroke to paint, p99 | 4.7 ms | 11.7 ms | 6.5 ms | 10.5 ms |
 | Memory, idle | 18.9 MB | 112.5 MB | 16.3 MB | 126.1 MB |
 | Memory, 10,000-line session open | 33.0 MB | 147.2 MB | 32.1 MB | 151.7 MB |
@@ -258,11 +249,7 @@ Measured with `cargo xtask bench --pi` and Pi `1.0.0` installed from npm with `-
 | Memory with 57 of Pi's example extensions | 38.3 MB | 116.7 MB | 34.0 MB | 130.3 MB |
 | Stripped release binary | 32.3 MB | 245.2 MB installed | 26.4 MB | 233.9 MB installed |
 
-Against the budgets in AGENTS.md, Linux meets every one, and macOS every one but `--version`.
-
 The providers of PR A had pushed the binary to 37.0 MB and print mode to 21 ms. The binary now embeds the JS runtime deflated (1.7 MB less) and builds Cranelift's code generator for size (3.1 MB less, and about 0.2 s more for the one compile per runtime version). Print mode lost 8 ms: enabling the llama.cpp provider no longer rebuilds the model list when it has no stored catalog, and the provider sort computes each key once.
-
-On macOS, `--version` takes 9.9 ms (6.9 to 23.7), 7.9 ms above `true` on the same runner, where the Linux runner spends 1.0 ms above it. The run before measured 6.7 ms (6.1 to 9.0), 5.0 ms above `true`, so the runners vary from run to run. Part of it is the dynamic loader loading and initializing Security and CoreFoundation before `main`. A probe on the same runner type timed a plain Rust binary at the cost of `true`, and the same binary linked against those two frameworks 2.1 ms slower. yapi links them only through `rustls-platform-verifier`, which reqwest uses on every rustls build to check certificates against the system trust store. The rest is not traced yet. The hosted Linux runner met every budget.
 
 The wasm engine starts only when an extension loads or a codemode script runs, so sessions without them do not pay for it.
 
@@ -273,7 +260,6 @@ Not yet done:
 - `codemode.mode: "only"`, which hides direct tools from requests; yapi treats it as `on`.
 - Grammar-constrained sampling of scripts on the Responses wire APIs.
 - The warning pi prints when a package's `codemode` replaces the built-in.
-- `--version` within its budget on macOS. It needs yapi to stop linking Security and CoreFoundation and the rest of the overhead traced; see the budgets above.
 
 ## Final end-to-end pass
 

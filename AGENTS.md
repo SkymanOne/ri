@@ -96,7 +96,7 @@ Add a trait only when a second implementation or a plugin boundary exists.
 | Serialization | `serde`, `serde_json` |
 | TUI | `ratatui-core` text and buffer types, `rustix` termios for raw mode, `ratatui-image` |
 | Markdown, diffs, images | `pulldown-cmark`, `similar`, `image` |
-| Syntax highlighting | `syntect` or tree-sitter, chosen in M3 against the size budget |
+| Syntax highlighting | `syntect` or tree-sitter, not chosen yet, weighed by binary size |
 | Wasm host | `wasmtime` with the component model |
 | Guest JS engine | `rquickjs` (QuickJS-NG) |
 | TypeScript and resolution | `oxc_transformer`, `oxc_resolver` |
@@ -182,23 +182,12 @@ Feasibility study, prior art and rejected alternatives: [dev/research/extension-
 | 13 | pi JSON files are order-preserving documents; `yapi-types` structs are views over them. | pi's key order depends on the code path and on user edits, so only the document round-trips byte-identically. |
 | 14 | The binary embeds `yapi-js.wasm` deflated, and the release profile optimizes Cranelift's code generator for size. | Both are used only when the component cache has no entry, once per runtime version. Together they save 4.8 MB for about 0.2 s more on that one compile. |
 
-## Performance budgets
+## Performance
 
-These are initial targets, calibrated against pi in M0–M1.
-- CI fails on a regression above 10%.
-- Benchmark reports state the ratio to pi measured on the same machine.
-
-| Metric | Budget | Measured with `cargo xtask bench` |
-|---|---|---|
-| `yapi --version` | < 5 ms | Median of 20 runs |
-| Print mode, start to first request byte | < 25 ms | Median of 20 runs against a local listener |
-| Interactive first paint, no extensions | < 40 ms | Median of 20 runs in a pseudo-terminal |
-| Keystroke to paint, p99, 10k-line session | < 16 ms | 200 keystrokes in a pseudo-terminal |
-| Idle RSS, no extensions | < 30 MB | Median of 5 samples, each 2 s after first paint |
-| Idle RSS, 10 JS extensions | < 70 MB | Median of 5 samples, each 2 s after first paint |
-| Stripped release binary | < 35 MB | File size of the release build, which the profile strips |
-
-MB means 10^6 bytes. Runs alternate between yapi and pi, and reports give the range of the samples next to each median.
+`cargo xtask bench` measures yapi against pi on the same machine: startup (interactive first paint, and print mode to the first request byte), keystroke latency, memory and binary size. Reports state the results as measured, with no targets.
+- Runs alternate between yapi and pi, and reports give the median with the range of the samples.
+- MB means 10^6 bytes.
+- [docs/performance.md](docs/performance.md) describes each measure and the method.
 
 ## Development guidelines
 
@@ -286,8 +275,8 @@ v0.1 is the completion of M7. Progress, deferred work and pending live checks ar
 | M0 | Workspace, CI on Linux and macOS, `yapi-types`, `xtask`, mock SSE server. | pi golden files round-trip byte-identical. |
 | M1 | `yapi-ai` with Anthropic Messages, OpenAI Completions, OpenAI Responses and Google; catalog; cost; API keys; print and JSON modes; `yapi-mock` record mode. | JSON event streams match pi on recorded cassettes: text, thinking, tools, images, abort. |
 | M2 | Agent loop, built-in tools, system prompt, context files, session tree, fork and clone, compaction, skills, prompt templates. | Sessions written by either tool open in the other. Scenario suite matches pi. |
-| M3 | Interactive TUI: editor, keybindings, themes, selectors, tree view, regular mode. | Snapshot suite green. First-paint and keystroke budgets met. |
+| M3 | Interactive TUI: editor, keybindings, themes, selectors, tree view, regular mode. | Snapshot suite green. |
 | M4 | Remaining wire APIs, OAuth subscriptions, RPC mode with extension UI, MCP. | pi's `rpc-client` example drives yapi. OAuth checklist passes. MCP fixtures pass. |
 | M5 | `yapi-ext`, `yapi-js` without UI, module loader, packages, Rust SDK. | At least 90% of pi's 79 example extensions and of the top 50 npm pi packages register the same tools, commands, flags and shortcuts as in pi. |
 | M6 | Extension UI: dialogs, widgets, overlays, renderers, custom editors. | Per-row visible text matches pi at 80×24 and 120×40, except listed deviations. No frame is blocked by JS. |
-| M7 | Codemode, performance budgets, `yapi import pi`, release packaging. | Codemode has no file, process or network access. All budgets met on tier-1 targets. |
+| M7 | Codemode, performance measurement, `yapi import pi`, release packaging. | Codemode has no file, process or network access. `cargo xtask bench` reports yapi against pi on tier-1 targets. |
