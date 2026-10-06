@@ -78,6 +78,39 @@ const DOUBLE_PRESS: Duration = Duration::from_millis(500);
 const COLOR_QUERY_TIMEOUT: Duration = Duration::from_millis(100);
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 const STDIN_POLL: Duration = Duration::from_millis(50);
+/// The app's actions that keys trigger from the editor, in the order pi
+/// registers their handlers.
+const APP_KEYS: &[&str] = &[
+    "app.clear",
+    "app.suspend",
+    "app.thinking.cycle",
+    "app.model.cycleForward",
+    "app.model.cycleBackward",
+    "app.model.select",
+    "app.tools.expand",
+    "app.thinking.toggle",
+    "app.editor.external",
+    "app.message.copy",
+    "app.message.followUp",
+    "app.message.dequeue",
+    "app.session.new",
+    "app.session.tree",
+    "app.session.fork",
+    "app.session.resume",
+];
+/// Fullscreen scrolling keys, in the order pi-tui checks them.
+const VIEWPORT_KEYS: &[&str] = &[
+    "tui.altScreen.pageUp",
+    "tui.altScreen.pageDown",
+    "tui.altScreen.halfPageUp",
+    "tui.altScreen.halfPageDown",
+    "tui.altScreen.lineUp",
+    "tui.altScreen.lineDown",
+    "tui.altScreen.previousPrompt",
+    "tui.altScreen.nextPrompt",
+    "tui.altScreen.top",
+    "tui.altScreen.bottom",
+];
 
 /// Events the loop handles. Session events carry the epoch of the session
 /// that sent them, so a replaced session's late events are dropped.
@@ -2036,10 +2069,22 @@ impl App {
             self.quit = true;
             return true;
         }
-        if !(keys.matches(data, "tui.editor.historyPrevious")
-            || keys.matches(data, "tui.editor.historyNext"))
-        {
-            if keys.matches(data, "app.clear") {
+        let history = keys.matches(data, "tui.editor.historyPrevious")
+            || keys.matches(data, "tui.editor.historyNext");
+        let Some(&action) = APP_KEYS
+            .iter()
+            .find(|action| !history && keys.matches(data, action))
+        else {
+            return match self.editor.handle_input(data, &self.keys) {
+                EditorEvent::Submit(text) => {
+                    self.on_submit(text);
+                    true
+                }
+                EditorEvent::None => false,
+            };
+        };
+        match action {
+            "app.clear" => {
                 if self
                     .last_clear
                     .is_some_and(|at| at.elapsed() < DOUBLE_PRESS)
@@ -2049,35 +2094,17 @@ impl App {
                     self.editor.set_text("");
                     self.last_clear = Some(Instant::now());
                 }
-                return true;
             }
-            if keys.matches(data, "app.suspend") {
-                self.suspend(terminal);
-                return true;
-            }
-            if keys.matches(data, "app.thinking.cycle") {
-                match self.session.cycle_thinking_level() {
-                    Some(level) => self.status(format!("Thinking level: {}", level.as_str())),
-                    None => self.status("Current model does not support thinking"),
-                }
-                return true;
-            }
-            if keys.matches(data, "app.model.cycleForward")
-                || keys.matches(data, "app.model.cycleBackward")
-            {
-                let forward = keys.matches(data, "app.model.cycleForward");
-                self.cycle_model(forward);
-                return true;
-            }
-            if keys.matches(data, "app.model.select") {
-                self.open_model_selector("");
-                return true;
-            }
-            if keys.matches(data, "app.tools.expand") {
-                self.toggle_tools();
-                return true;
-            }
-            if keys.matches(data, "app.thinking.toggle") {
+            "app.suspend" => self.suspend(terminal),
+            "app.thinking.cycle" => match self.session.cycle_thinking_level() {
+                Some(level) => self.status(format!("Thinking level: {}", level.as_str())),
+                None => self.status("Current model does not support thinking"),
+            },
+            "app.model.cycleForward" => self.cycle_model(true),
+            "app.model.cycleBackward" => self.cycle_model(false),
+            "app.model.select" => self.open_model_selector(""),
+            "app.tools.expand" => self.toggle_tools(),
+            "app.thinking.toggle" => {
                 self.hide_thinking = !self.hide_thinking;
                 let _ = self
                     .session
@@ -2088,17 +2115,10 @@ impl App {
                 } else {
                     "Thinking blocks: visible"
                 });
-                return true;
             }
-            if keys.matches(data, "app.editor.external") {
-                self.external_editor(terminal);
-                return true;
-            }
-            if keys.matches(data, "app.message.copy") {
-                self.copy_last();
-                return true;
-            }
-            if keys.matches(data, "app.message.followUp") {
+            "app.editor.external" => self.external_editor(terminal),
+            "app.message.copy" => self.copy_last(),
+            "app.message.followUp" => {
                 let text = self.editor.expanded_text().trim().to_owned();
                 if text.is_empty() {
                     return true;
@@ -2116,9 +2136,8 @@ impl App {
                     self.editor.set_text("");
                     self.on_submit(text);
                 }
-                return true;
             }
-            if keys.matches(data, "app.message.dequeue") {
+            "app.message.dequeue" => {
                 let count = self.restore_queue(false);
                 if count == 0 {
                     self.status("No queued messages to restore");
@@ -2128,32 +2147,14 @@ impl App {
                         if count > 1 { "s" } else { "" }
                     ));
                 }
-                return true;
             }
-            if keys.matches(data, "app.session.new") {
-                self.new_session();
-                return true;
-            }
-            if keys.matches(data, "app.session.tree") {
-                self.open_tree(None);
-                return true;
-            }
-            if keys.matches(data, "app.session.fork") {
-                self.open_fork();
-                return true;
-            }
-            if keys.matches(data, "app.session.resume") {
-                self.open_resume();
-                return true;
-            }
+            "app.session.new" => self.new_session(),
+            "app.session.tree" => self.open_tree(None),
+            "app.session.fork" => self.open_fork(),
+            "app.session.resume" => self.open_resume(),
+            _ => {}
         }
-        match self.editor.handle_input(data, &self.keys) {
-            EditorEvent::Submit(text) => {
-                self.on_submit(text);
-                true
-            }
-            EditorEvent::None => false,
-        }
+        true
     }
 
     fn toggle_tools(&mut self) {
@@ -2231,29 +2232,24 @@ impl App {
             }
             return true;
         }
-        let keys = &self.keys;
-        if keys.matches(data, "tui.altScreen.pageUp") {
-            self.alt.page(-1);
-        } else if keys.matches(data, "tui.altScreen.pageDown") {
-            self.alt.page(1);
-        } else if keys.matches(data, "tui.altScreen.halfPageUp") {
-            self.alt.half_page(-1);
-        } else if keys.matches(data, "tui.altScreen.halfPageDown") {
-            self.alt.half_page(1);
-        } else if keys.matches(data, "tui.altScreen.lineUp") {
-            self.alt.scroll_by(-1);
-        } else if keys.matches(data, "tui.altScreen.lineDown") {
-            self.alt.scroll_by(1);
-        } else if keys.matches(data, "tui.altScreen.previousPrompt") {
-            self.scroll_to_prompt(false);
-        } else if keys.matches(data, "tui.altScreen.nextPrompt") {
-            self.scroll_to_prompt(true);
-        } else if keys.matches(data, "tui.altScreen.top") {
-            self.alt.top();
-        } else if keys.matches(data, "tui.altScreen.bottom") {
-            self.alt.bottom();
-        } else {
+        let Some(&action) = VIEWPORT_KEYS
+            .iter()
+            .find(|action| self.keys.matches(data, action))
+        else {
             return false;
+        };
+        match action {
+            "tui.altScreen.pageUp" => self.alt.page(-1),
+            "tui.altScreen.pageDown" => self.alt.page(1),
+            "tui.altScreen.halfPageUp" => self.alt.half_page(-1),
+            "tui.altScreen.halfPageDown" => self.alt.half_page(1),
+            "tui.altScreen.lineUp" => self.alt.scroll_by(-1),
+            "tui.altScreen.lineDown" => self.alt.scroll_by(1),
+            "tui.altScreen.previousPrompt" => self.scroll_to_prompt(false),
+            "tui.altScreen.nextPrompt" => self.scroll_to_prompt(true),
+            "tui.altScreen.top" => self.alt.top(),
+            "tui.altScreen.bottom" => self.alt.bottom(),
+            _ => {}
         }
         true
     }
