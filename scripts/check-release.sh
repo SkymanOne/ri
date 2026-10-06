@@ -1,8 +1,9 @@
 #!/bin/sh
 # Checks that every archive in <dist-dir> carries the licenses next to the
-# binary, then installs this system's release archive as users would: with
-# install.sh, as the latest release and as release <tag>, and with
-# cargo-binstall when it is on PATH. Each must install yapi and nothing else.
+# binary and that yapi-docs.tar.gz holds yapi's and pi's docs, then installs
+# this system's release archive as users would: with install.sh, as the
+# latest release and as release <tag>, and with cargo-binstall when it is on
+# PATH. Each must install yapi and nothing else.
 # The archives are served over HTTPS from 127.0.0.1 in the layout of GitHub's
 # release downloads, with a throwaway certificate authority.
 #
@@ -26,6 +27,7 @@ cleanup() {
 trap cleanup EXIT
 
 for archive in "$dist"/yapi-*.tar.gz; do
+    [ "$archive" != "$dist/yapi-docs.tar.gz" ] || continue
     files=$(tar -tzf "$archive" | LC_ALL=C sort | tr '\n' ' ')
     if [ "$files" != "LICENSE-APACHE LICENSE-MIT THIRD-PARTY-NOTICES yapi " ]; then
         echo "$archive holds $files" >&2
@@ -33,6 +35,18 @@ for archive in "$dist"/yapi-*.tar.gz; do
     fi
 done
 echo "ok: every archive holds yapi and its licenses"
+docs=$(tar -tzf "$dist/yapi-docs.tar.gz")
+for file in .version index.md compat.md pi/LICENSE pi/README.md pi/docs/extensions.md pi/examples/extensions/hello.ts; do
+    if ! printf '%s\n' "$docs" | grep -qx "$file"; then
+        echo "yapi-docs.tar.gz lacks $file" >&2
+        exit 1
+    fi
+done
+if printf '%s\n' "$docs" | grep -q '^pi/examples/plugins/'; then
+    echo "yapi-docs.tar.gz holds pi's plugin example" >&2
+    exit 1
+fi
+echo "ok: the docs archive holds yapi's and pi's docs"
 
 # Without HOME, install.sh has no default directory and must not pick /.local/bin.
 if message=$(env -u HOME YAPI_RELEASES_URL=https://127.0.0.1:9 sh "$root/install.sh" 2>&1); then
