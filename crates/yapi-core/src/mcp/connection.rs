@@ -549,14 +549,6 @@ impl Connection {
         .await
     }
 
-    /// Every resource template: [`Connection::all_resources`] of templates.
-    pub async fn all_resource_templates(
-        self: &Arc<Self>,
-        options: RequestOptions,
-    ) -> Result<Vec<Value>, McpError> {
-        self.all_resources(ResourceKind::Templates, options).await
-    }
-
     /// Connects again.
     pub async fn reconnect(self: &Arc<Self>) -> Result<(), McpError> {
         let _opening = self.opening.lock().await;
