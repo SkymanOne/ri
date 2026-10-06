@@ -6,12 +6,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use futures_util::future::BoxFuture;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_types::sync::lock;
 
 use super::jsonrpc::{INTERNAL_ERROR, Incoming, McpError, classify};
+use super::oauth::is_insufficient_scope;
+use super::sign_in::McpAuth;
 use super::transport::{Event, Events, MAX_MESSAGE_BYTES};
 
 const MAX_ERROR_BODY_BYTES: usize = 8 * 1024;
@@ -20,6 +23,35 @@ const RECONNECT_INITIAL_DELAY_MS: u64 = 1_000;
 const RECONNECT_MAX_DELAY_MS: u64 = 30_000;
 const RECONNECT_MAX_RETRIES: u32 = 5;
 
+/// The current token of a pi provider (`/login`), by provider id.
+pub type ProviderToken = Arc<dyn Fn(String) -> BoxFuture<'static, Option<String>> + Send + Sync>;
+
+/// Where a server's bearer token comes from; pi's `AuthProvider`.
+#[derive(Clone)]
+pub enum HttpAuth {
+    /// OAuth credentials, refreshed after a 401.
+    OAuth(Arc<McpAuth>),
+    /// The token of a provider (`auth.provider`), read for every request.
+    Provider {
+        /// The provider id.
+        provider: String,
+        /// Reads the token; without it, none is sent.
+        token: Option<ProviderToken>,
+    },
+}
+
+impl HttpAuth {
+    async fn token(&self) -> Result<Option<String>, McpError> {
+        match self {
+            HttpAuth::OAuth(auth) => auth.token().await,
+            HttpAuth::Provider { provider, token } => Ok(match token {
+                Some(token) => token(provider.clone()).await,
+                None => None,
+            }),
+        }
+    }
+}
+
 /// How to reach a streamable HTTP server.
 #[derive(Clone, Default)]
 pub struct HttpOptions {
@@ -27,6 +59,8 @@ pub struct HttpOptions {
     pub url: String,
     /// Headers sent with every request.
     pub headers: Vec<(String, String)>,
+    /// Supplies the bearer token.
+    pub auth: Option<HttpAuth>,
 }
 
 /// A streamable HTTP connection. Cheap to clone; clones share it.
@@ -240,17 +274,17 @@ impl HttpTransport {
             return Err(McpError::closed());
         }
         let body = yapi_types::json::stringify(message);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
         let response = self
-            .authorized(reqwest::Method::POST, Some(body), |headers| {
-                headers.insert(
-                    reqwest::header::ACCEPT,
-                    HeaderValue::from_static("application/json, text/event-stream"),
-                );
-                headers.insert(
-                    reqwest::header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/json"),
-                );
-            })
+            .authorized(reqwest::Method::POST, Some(body), headers)
             .await?;
         let response = self.check(response).await?;
         self.capture_session(&response);
@@ -313,17 +347,30 @@ impl HttpTransport {
         }
         self.inner.cancel.cancel();
         if self.inner.started.load(Ordering::SeqCst) && self.session_id().is_some() {
-            let headers = self.headers(|_| {});
-            let request = yapi_ai::http::client()
-                .delete(&self.inner.options.url)
-                .headers(headers)
-                .send();
+            let request = async {
+                // Without a token, the session expires on the server.
+                let Ok(token) = self.token().await else {
+                    return;
+                };
+                let _ = yapi_ai::http::client()
+                    .delete(&self.inner.options.url)
+                    .headers(self.headers(&HeaderMap::new(), token.as_deref()))
+                    .send()
+                    .await;
+            };
             let _ = tokio::time::timeout(Duration::from_secs(1), request).await;
         }
         self.emit(Event::Closed);
     }
 
-    fn headers(&self, extra: impl FnOnce(&mut HeaderMap)) -> HeaderMap {
+    async fn token(&self) -> Result<Option<String>, McpError> {
+        match &self.inner.options.auth {
+            Some(auth) => auth.token().await,
+            None => Ok(None),
+        }
+    }
+
+    fn headers(&self, extra: &HeaderMap, token: Option<&str>) -> HeaderMap {
         let mut headers = HeaderMap::new();
         for (name, value) in &self.inner.options.headers {
             if let (Ok(name), Ok(value)) = (
@@ -333,7 +380,9 @@ impl HttpTransport {
                 headers.insert(name, value);
             }
         }
-        extra(&mut headers);
+        for (name, value) in extra {
+            headers.insert(name, value.clone());
+        }
         if let Some(session) = self.session_id()
             && let Ok(value) = HeaderValue::from_str(&session)
         {
@@ -344,25 +393,54 @@ impl HttpTransport {
         {
             headers.insert("mcp-protocol-version", value);
         }
+        if let Some(token) = token.filter(|token| !token.is_empty())
+            && let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}"))
+        {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
         headers
     }
 
+    /// Sends a request with the auth headers. A 401, or a 403 asking for more
+    /// scope, goes to the OAuth credentials once, and the request is retried
+    /// with whatever they left behind.
     async fn authorized(
         &self,
         method: reqwest::Method,
         body: Option<String>,
-        extra: impl FnOnce(&mut HeaderMap),
+        extra: HeaderMap,
     ) -> Result<reqwest::Response, McpError> {
-        let headers = self.headers(extra);
-        let mut request = yapi_ai::http::client()
-            .request(method, &self.inner.options.url)
-            .headers(headers);
-        if let Some(body) = body {
-            request = request.body(body);
-        }
-        tokio::select! {
-            () = self.inner.cancel.cancelled() => Err(McpError::closed()),
-            response = request.send() => response.map_err(fetch_failed),
+        let mut attempt = 0;
+        loop {
+            let token = self.token().await?;
+            let mut request = yapi_ai::http::client()
+                .request(method.clone(), &self.inner.options.url)
+                .headers(self.headers(&extra, token.as_deref()));
+            if let Some(body) = &body {
+                request = request.body(body.clone());
+            }
+            let response = tokio::select! {
+                () = self.inner.cancel.cancelled() => Err(McpError::closed()),
+                response = request.send() => response.map_err(fetch_failed),
+            }?;
+            let Some(HttpAuth::OAuth(auth)) = &self.inner.options.auth else {
+                return Ok(response);
+            };
+            let challenge = response
+                .headers()
+                .get(reqwest::header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            let status = response.status().as_u16();
+            let unauthorized =
+                status == 401 || (status == 403 && is_insufficient_scope(challenge.as_deref()));
+            if attempt > 0 || !unauthorized {
+                return Ok(response);
+            }
+            drop(response);
+            auth.on_unauthorized(challenge.as_deref(), token.as_deref())
+                .await?;
+            attempt += 1;
         }
     }
 
@@ -578,19 +656,17 @@ impl HttpTransport {
         &self,
         last_event_id: Option<String>,
     ) -> Result<Option<reqwest::Response>, McpError> {
-        let response = self
-            .authorized(reqwest::Method::GET, None, |headers| {
-                headers.insert(
-                    reqwest::header::ACCEPT,
-                    HeaderValue::from_static("text/event-stream"),
-                );
-                if let Some(id) = last_event_id
-                    && let Ok(value) = HeaderValue::from_str(&id)
-                {
-                    headers.insert("last-event-id", value);
-                }
-            })
-            .await?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("text/event-stream"),
+        );
+        if let Some(id) = last_event_id
+            && let Ok(value) = HeaderValue::from_str(&id)
+        {
+            headers.insert("last-event-id", value);
+        }
+        let response = self.authorized(reqwest::Method::GET, None, headers).await?;
         if response.status().as_u16() == 405 {
             return Ok(None);
         }

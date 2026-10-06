@@ -1,6 +1,6 @@
 //! One configured server's connection: lazy connects and reconnects, its
-//! tools and resources, and its state for `/mcp`. Port of
-//! `extensions/mcp/runtime.ts` in pi `v1.0.0`, without OAuth sign-in.
+//! tools and resources, its credentials, and its state for `/mcp`. Port of
+//! `extensions/mcp/runtime.ts` in pi `v1.0.0`.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,8 +12,10 @@ use yapi_types::sync::lock;
 
 use super::client::{ClientOptions, McpClient, RequestOptions, ResourceKind, Root, Tool};
 use super::config::{ServerEntry, ServerTransport};
-use super::http::{HttpOptions, HttpTransport};
+use super::http::{HttpAuth, HttpOptions, HttpTransport, ProviderToken};
 use super::jsonrpc::{METHOD_NOT_FOUND, McpError};
+use super::oauth::Challenge;
+use super::sign_in::{CredentialStore, McpAuth, SignInPrompt};
 use super::stdio::{StdioOptions, StdioTransport};
 use super::tools::is_app_resource;
 use super::transport::Transport;
@@ -86,10 +88,15 @@ pub struct Connection {
     closed: AtomicBool,
     on_tools: ToolsListener,
     readable_resources: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    auth: Option<HttpAuth>,
+    credentials: CredentialStore,
+    /// The stored tokens when the server came to need a sign-in, to notice
+    /// sign-ins of another process, such as `yapi mcp login`.
+    tokens_at_sign_in: Mutex<Option<String>>,
 }
 
 /// pi's `resolveConfigValueOrThrow`: environment references and `!command`.
-async fn resolve_value(value: &str, description: &str) -> Result<String, McpError> {
+pub(super) async fn resolve_value(value: &str, description: &str) -> Result<String, McpError> {
     if let Some(resolved) = yapi_ai::credentials::resolve(value, None, false).await {
         return Ok(resolved);
     }
@@ -122,14 +129,41 @@ fn file_url(path: &Path) -> String {
 impl Connection {
     /// A connection for `entry`, not yet connected. `on_tools` learns of tool
     /// and resource changes; `readable_resources` tells whether the resource
-    /// tools reach a server.
+    /// tools reach a server; `provider_token` reads the token of servers with
+    /// `auth.provider`. OAuth credentials are kept in `agent_dir`.
     pub fn new(
         entry: ServerEntry,
         cwd: PathBuf,
         agent_dir: PathBuf,
         on_tools: ToolsListener,
         readable_resources: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+        provider_token: Option<ProviderToken>,
     ) -> Arc<Connection> {
+        let credentials = CredentialStore::new(&agent_dir);
+        let auth = match &entry.config.transport {
+            transport @ ServerTransport::Http {
+                url,
+                auth_provider,
+                oauth,
+                ..
+            } => {
+                if transport.uses_oauth() {
+                    Some(HttpAuth::OAuth(Arc::new(McpAuth::new(
+                        &entry.name,
+                        url,
+                        &credentials,
+                        oauth.clone().unwrap_or_default(),
+                    ))))
+                } else {
+                    // Read on every request, so the provider's refreshes apply; MCP stores no copy.
+                    auth_provider.clone().map(|provider| HttpAuth::Provider {
+                        provider,
+                        token: provider_token,
+                    })
+                }
+            }
+            ServerTransport::Stdio { .. } => None,
+        };
         Arc::new(Connection {
             entry,
             cwd,
@@ -147,7 +181,113 @@ impl Connection {
             closed: AtomicBool::new(false),
             on_tools,
             readable_resources,
+            auth,
+            credentials,
+            tokens_at_sign_in: Mutex::new(None),
         })
+    }
+
+    /// The server URL when the server signs in with OAuth.
+    pub fn oauth_url(&self) -> Option<&str> {
+        match &self.entry.config.transport {
+            transport @ ServerTransport::Http { url, .. } if transport.uses_oauth() => Some(url),
+            _ => None,
+        }
+    }
+
+    fn oauth(&self) -> Option<&Arc<McpAuth>> {
+        match &self.auth {
+            Some(HttpAuth::OAuth(auth)) => Some(auth),
+            _ => None,
+        }
+    }
+
+    /// The server's last OAuth challenge.
+    pub fn challenge(&self) -> Option<Challenge> {
+        self.oauth().and_then(|auth| auth.challenge())
+    }
+
+    /// Signs in to an OAuth server; the caller reconnects afterwards.
+    pub async fn sign_in(&self, prompt: &SignInPrompt) -> Result<(), yapi_ai::auth::AuthError> {
+        match self.oauth() {
+            Some(auth) => auth.sign_in(prompt).await,
+            None => Err(yapi_ai::auth::AuthError::Failed(format!(
+                "MCP server \"{}\" does not use OAuth.",
+                self.entry.name
+            ))),
+        }
+    }
+
+    /// Removes the server's stored OAuth credentials; whether any were
+    /// stored.
+    pub async fn remove_credentials(&self) -> Result<bool, McpError> {
+        match self.oauth_url() {
+            Some(url) => self.credentials.remove(&self.entry.name, url).await,
+            None => Ok(false),
+        }
+    }
+
+    /// Disconnects after the stored credentials were removed.
+    pub async fn sign_out(&self) {
+        let _opening = self.opening.lock().await;
+        let client = lock(&self.client).take();
+        if let Some(client) = client {
+            client.close().await;
+        }
+        if !self.closed.load(Ordering::SeqCst) {
+            self.mark_needs_auth().await;
+        }
+    }
+
+    /// Whether the server needs a sign-in and its stored credentials changed
+    /// since it came to, as when another process signed in.
+    pub async fn signed_in_elsewhere(&self) -> bool {
+        let Some(before) = lock(&self.tokens_at_sign_in).clone() else {
+            return false;
+        };
+        self.snapshot().state == State::NeedsAuth && self.stored_tokens().await != before
+    }
+
+    async fn stored_tokens(&self) -> String {
+        let tokens = match self.oauth_url() {
+            Some(url) => self
+                .credentials
+                .tokens(&self.entry.name, url)
+                .await
+                .ok()
+                .flatten(),
+            None => None,
+        };
+        yapi_types::json::stringify(&tokens.unwrap_or(Value::Null))
+    }
+
+    /// OAuth servers that still reject requests after a refresh need the user
+    /// to sign in again.
+    fn needs_sign_in(&self, error: &McpError) -> bool {
+        matches!(error, McpError::SignInRequired)
+            || (self.auth.is_some() && matches!(error, McpError::AuthRequired { .. }))
+    }
+
+    fn sign_in_required_message(&self) -> String {
+        let command = match &self.entry.config.transport {
+            ServerTransport::Http {
+                auth_provider: Some(provider),
+                ..
+            } => format!("/login {provider}"),
+            _ => "/mcp".to_owned(),
+        };
+        format!(
+            "MCP server \"{}\" requires sign-in. Run {command} to sign in.",
+            self.entry.name
+        )
+    }
+
+    async fn mark_needs_auth(&self) {
+        self.set_state(State::NeedsAuth, None);
+        if lock(&self.tokens_at_sign_in).is_none() {
+            let tokens = self.stored_tokens().await;
+            lock(&self.tokens_at_sign_in).get_or_insert(tokens);
+        }
     }
 
     /// The server's name.
@@ -209,6 +349,10 @@ impl Connection {
                 Ok(client) => return Ok(client),
                 Err(failure) => {
                     let (error, stderr) = *failure;
+                    if self.needs_sign_in(&error) && !self.closed.load(Ordering::SeqCst) {
+                        self.mark_needs_auth().await;
+                        return Err(McpError::Other(self.sign_in_required_message()));
+                    }
                     let delay = http.then(|| CONNECT_RETRY_DELAYS.get(attempt)).flatten();
                     attempt += 1;
                     match delay {
@@ -236,6 +380,7 @@ impl Connection {
                 Ok(Transport::Http(HttpTransport::new(HttpOptions {
                     url: url.clone(),
                     headers: resolved,
+                    auth: self.auth.clone(),
                 })))
             }
             ServerTransport::Stdio {
@@ -364,6 +509,7 @@ impl Connection {
             snapshot.state = State::Connected;
             snapshot.error = None;
         }
+        *lock(&self.tokens_at_sign_in) = None;
         (self.on_tools)(self);
         Ok(client)
     }
@@ -399,6 +545,9 @@ impl Connection {
         let mut snapshot = lock(&self.snapshot);
         snapshot.state = state;
         snapshot.error = error;
+        if state != State::NeedsAuth {
+            *lock(&self.tokens_at_sign_in) = None;
+        }
     }
 
     /// The transport dropped; the next call reconnects.
@@ -482,6 +631,20 @@ impl Connection {
                         *current = None;
                     }
                 }
+                Err(error) if self.needs_sign_in(&error) => {
+                    {
+                        let mut current = lock(&self.client);
+                        if current
+                            .as_ref()
+                            .is_some_and(|current| current.same(&client))
+                        {
+                            *current = None;
+                        }
+                    }
+                    client.close().await;
+                    self.mark_needs_auth().await;
+                    return Err(McpError::Other(self.sign_in_required_message()));
+                }
                 Err(error) => return Err(error),
             }
             attempt += 1;
@@ -559,13 +722,17 @@ impl Connection {
         self.open().await.map(|_| ())
     }
 
-    /// Shuts the connection down for good.
+    /// Shuts the connection down for good. A refresh in flight is awaited:
+    /// the server may already have rotated the refresh token.
     pub async fn close(&self) {
         self.closed.store(true, Ordering::SeqCst);
         self.set_state(State::Closed, None);
         let client = lock(&self.client).take();
         if let Some(client) = client {
             client.close().await;
+        }
+        if let Some(auth) = self.oauth() {
+            auth.settled().await;
         }
     }
 }

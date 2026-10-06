@@ -614,6 +614,7 @@ async fn report(entry: ServerEntry, cwd: &Path, agent_dir: &Path) -> Report {
         agent_dir.to_path_buf(),
         Arc::new(|_: &Arc<Connection>| {}),
         Arc::new(|_: &str| false),
+        None,
     );
     let connected = connection.client().await.is_ok();
     let snapshot = connection.snapshot();

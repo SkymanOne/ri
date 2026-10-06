@@ -1,0 +1,63 @@
+{
+  "mcp__demo|http://127.0.0.1:51736/mcp": {
+    "serverUrl": "http://127.0.0.1:51736/mcp",
+    "discovery": {
+      "authorizationServerUrl": "http://127.0.0.1:51736",
+      "authorizationServerMetadata": {
+        "issuer": "http://127.0.0.1:51736",
+        "authorization_endpoint": "http://127.0.0.1:51736/authorize",
+        "token_endpoint": "http://127.0.0.1:51736/token",
+        "registration_endpoint": "http://127.0.0.1:51736/register",
+        "response_types_supported": [
+          "code"
+        ],
+        "grant_types_supported": [
+          "authorization_code",
+          "refresh_token"
+        ],
+        "token_endpoint_auth_methods_supported": [
+          "none"
+        ],
+        "code_challenge_methods_supported": [
+          "S256"
+        ]
+      },
+      "resourceMetadata": {
+        "resource": "http://127.0.0.1:51736/mcp",
+        "authorization_servers": [
+          "http://127.0.0.1:51736"
+        ],
+        "scopes_supported": [
+          "mcp:read"
+        ]
+      },
+      "resourceMetadataUrl": "http://127.0.0.1:51736/.well-known/oauth-protected-resource/mcp"
+    },
+    "clientInformation": {
+      "client_name": "pi",
+      "redirect_uris": [
+        "http://127.0.0.1:51738/callback"
+      ],
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "response_types": [
+        "code"
+      ],
+      "token_endpoint_auth_method": "none",
+      "scope": "mcp:read",
+      "client_id": "client-1"
+    },
+    "oauthState": "ab1048f3a44ce41324531315e60d4c5f998656d843e9b2bee82c4142c37bad44",
+    "codeVerifier": "-zXbTVicEo4JN-0GzasxHtOuV2pF9unYNZ6L4is45rQ",
+    "tokens": {
+      "access_token": "access-1",
+      "token_type": "Bearer",
+      "expires_in": 3600,
+      "scope": "mcp:read",
+      "refresh_token": "refresh-1"
+    },
+    "tokensExpireAt": 1791300556078
+  }
+}

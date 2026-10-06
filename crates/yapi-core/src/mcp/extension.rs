@@ -22,6 +22,7 @@ use yapi_types::sync::lock;
 
 use super::config::{self, McpExposure, ServerEntry, namespace};
 use super::connection::{Connection, State};
+use super::http::ProviderToken;
 use super::tools::{
     LIST_MCP_RESOURCE_TEMPLATES_TOOL, LIST_MCP_RESOURCES_TOOL, McpTool, READ_MCP_RESOURCE_TOOL,
     resource_tools, tool_name,
@@ -507,12 +508,22 @@ impl McpExtension {
                 .iter()
                 .any(|connection| connection.name() == name)
         });
+        let session = ctx.session.clone();
+        // pi's `getApiKeyForProvider`, for servers with `auth.provider`.
+        let provider_token: ProviderToken = Arc::new(move |provider: String| {
+            let session = session.clone();
+            Box::pin(async move {
+                let registry = session.upgrade()?.registry();
+                registry.provider_token(&provider).await
+            })
+        });
         let connection = Connection::new(
             entry,
             ctx.cwd.clone(),
             ctx.agent_dir.clone(),
             on_tools,
             readable,
+            Some(provider_token),
         );
         {
             let mut shared = lock(&self.shared);

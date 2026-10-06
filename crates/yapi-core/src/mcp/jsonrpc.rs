@@ -49,6 +49,10 @@ pub enum McpError {
     /// The server no longer knows the session (404 with a session id).
     #[error("MCP session expired")]
     SessionExpired,
+    /// The stored OAuth credentials cannot be used or refreshed; the user has
+    /// to sign in (again).
+    #[error("MCP OAuth authorization requires user interaction")]
+    SignInRequired,
     /// The request could not reach the server.
     #[error("{0}")]
     Network(String),
