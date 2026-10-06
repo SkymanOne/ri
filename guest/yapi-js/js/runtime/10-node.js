@@ -1033,31 +1033,19 @@
 	builtins.tty = { isatty: () => false };
 	builtins.string_decoder = {
 		StringDecoder: class StringDecoder {
+			#utf8;
 			constructor(encoding = "utf8") {
 				this.encoding = encoding;
-				this.pending = new Uint8Array();
+				// UTF-8 keeps a sequence split between writes for the next one.
+				if (/^utf-?8$/i.test(encoding)) this.#utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 			}
 			write(buffer) {
-				const bytes = new Uint8Array(this.pending.length + buffer.length);
-				bytes.set(this.pending);
-				bytes.set(buffer, this.pending.length);
-				let end = bytes.length;
-				// Keep an incomplete UTF-8 sequence for the next write.
-				for (let back = 1; back <= 3 && back <= bytes.length; back++) {
-					const byte = bytes[bytes.length - back];
-					if ((byte & 0xc0) === 0x80) continue;
-					const need = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-					if (need > back) end = bytes.length - back;
-					break;
-				}
-				this.pending = bytes.slice(end);
-				return Buffer.from(bytes.subarray(0, end)).toString(this.encoding);
+				if (typeof buffer === "string") return buffer;
+				return this.#utf8 ? this.#utf8.decode(buffer, { stream: true }) : Buffer.from(buffer).toString(this.encoding);
 			}
 			end(buffer) {
 				const text = buffer ? this.write(buffer) : "";
-				const rest = Buffer.from(this.pending).toString(this.encoding);
-				this.pending = new Uint8Array();
-				return text + rest;
+				return this.#utf8 ? text + this.#utf8.decode() : text;
 			}
 		},
 	};

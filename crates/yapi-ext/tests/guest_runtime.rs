@@ -101,3 +101,46 @@ export default async function (pi) {
         "a=1&a=2|function|function|true|function|function|function|0|function|function|function|true|false|true|loaded|Cannot find module 'test'|Cannot find module 'sqlite'"
     );
 }
+
+/// UTF-8 split across chunks decodes whole, inputs too large for a call's
+/// arguments convert, and base64 and lone surrogates follow Node.
+#[tokio::test(flavor = "multi_thread")]
+async fn decodes_streams_and_large_inputs_as_node_does() {
+    let main = r#"
+import { StringDecoder } from "node:string_decoder";
+export default function (pi) {
+	const smile = new TextEncoder().encode("😀");
+	const decoder = new TextDecoder();
+	const streamed = decoder.decode(smile.subarray(0, 2), { stream: true }) + decoder.decode(smile.subarray(2, 3), { stream: true }) + decoder.decode(smile.subarray(3));
+	const cut = new TextDecoder();
+	const flushed = cut.decode(smile.subarray(0, 2), { stream: true }) + cut.decode();
+	const utf8 = new StringDecoder("utf8");
+	const euro = utf8.write(Buffer.from([0xe2, 0x82])) + utf8.write(Buffer.from([0xac]));
+	const large = "\xe9".repeat(200000);
+	pi.registerCommand("probe", {
+		description: JSON.stringify([
+			streamed,
+			flushed,
+			euro,
+			new StringDecoder("hex").write(Buffer.from([0xc3])),
+			Buffer.from(large, "latin1").toString("latin1") === large,
+			atob(btoa(large)) === large,
+			new TextDecoder("latin1").decode(Buffer.alloc(200000, 0xe9)) === large,
+			[...Buffer.from("a\ud800b")],
+			new TextDecoder().decode(Buffer.from([0xef, 0xbb, 0xbf, 0x41])),
+			Buffer.from([0xef, 0xbb, 0xbf, 0x41]).toString(),
+			new TextDecoder().decode(new Uint8Array([0xed, 0xa0, 0x80])),
+			[...Buffer.from("QQ==QQ==", "base64")],
+			[...Buffer.from(" Q Q\nQ", "base64")],
+			Buffer.from([255, 239]).toString("base64url"),
+			[...Buffer.from("_-8", "base64")],
+		]),
+		handler: async () => {},
+	});
+}
+"#;
+    assert_eq!(
+        probe("encodings", main).await,
+        r#"["😀","�","€","c3",true,true,true,[97,239,191,189,98],"A","﻿A","���",[65],[65,4],"_-8",[255,239]]"#
+    );
+}

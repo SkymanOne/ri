@@ -11,6 +11,7 @@ wit_bindgen::generate!({ path: "../../wit/since_v0.1.0", world: "extension" });
 
 mod builtins;
 mod codemode;
+mod encoding;
 mod fs;
 
 use std::cell::{Cell, RefCell};
@@ -180,6 +181,26 @@ fn install_natives(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
                 }
             },
         )?,
+    )?;
+    native.set(
+        "utf8Encode",
+        Function::new(ctx.clone(), encoding::utf8_encode)?,
+    )?;
+    native.set(
+        "utf8Decode",
+        Function::new(ctx.clone(), encoding::utf8_decode)?,
+    )?;
+    native.set(
+        "latin1Decode",
+        Function::new(ctx.clone(), encoding::latin1_decode)?,
+    )?;
+    native.set(
+        "base64Encode",
+        Function::new(ctx.clone(), encoding::base64_encode)?,
+    )?;
+    native.set(
+        "base64Decode",
+        Function::new(ctx.clone(), encoding::base64_decode)?,
     )?;
     native.set("compile", Function::new(ctx.clone(), compile)?)?;
     ctx.globals().set("__yapi_native", native)?;
