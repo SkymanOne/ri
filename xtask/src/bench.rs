@@ -151,7 +151,7 @@ fn write_session(path: &Path, cwd: &Path, lines: usize) -> anyhow::Result<()> {
         let assistant = json!({"type": "message", "id": format!("a{index:07}"), "parentId": format!("u{index:07}"),
             "timestamp": "2026-01-01T00:00:00.000Z",
             "message": {"role": "assistant", "content": [{"type": "text", "text": body}],
-                "api": "anthropic-messages", "provider": "anthropic", "model": "claude-sonnet-4-5",
+                "api": "anthropic-messages", "provider": "anthropic", "model": MODEL,
                 "usage": {"input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 2,
                     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}},
                 "stopReason": "stop", "timestamp": 0}});
@@ -305,13 +305,7 @@ async fn first_request(
     use tokio::io::AsyncReadExt as _;
     let started = Instant::now();
     let mut child = tokio::process::Command::new(&program.path)
-        .args([
-            "-p",
-            "--no-session",
-            "--model",
-            "anthropic/claude-sonnet-4-5",
-            "hi",
-        ])
+        .args(model_args(&["-p", "--no-session", "hi"]))
         .current_dir(&program.cwd)
         .env_clear()
         .envs(program.env.iter().map(|(key, value)| (*key, value)))
@@ -373,21 +367,25 @@ export default function (pi: ExtensionAPI) {{
     Ok(())
 }
 
-const MODEL: [&str; 3] = ["--model", "anthropic/claude-sonnet-4-5", "--no-session"];
+/// The model of every run, which the footer shows from the first paint.
+const MODEL: &str = "claude-sonnet-4-5";
 
-fn model_args() -> Vec<String> {
-    MODEL.iter().map(|arg| (*arg).to_owned()).collect()
+/// `--model` with [`MODEL`], then `rest`.
+fn model_args(rest: &[&str]) -> Vec<String> {
+    let mut args = vec!["--model".to_owned(), format!("anthropic/{MODEL}")];
+    args.extend(rest.iter().map(|arg| (*arg).to_owned()));
+    args
 }
 
 fn ready(rows: &[String]) -> bool {
-    rows.iter().any(|row| row.contains("claude-sonnet-4-5"))
+    rows.iter().any(|row| row.contains(MODEL))
 }
 
 /// Time from starting the process to the interactive first paint, when the
 /// footer shows the model.
 fn first_paint(program: &Program) -> anyhow::Result<Duration> {
     let started = Instant::now();
-    let pty = program.pty(&model_args())?;
+    let pty = program.pty(&model_args(&["--no-session"]))?;
     pty.wait_for(Duration::from_secs(20), ready)
         .context("no first paint")?;
     let paint = started.elapsed();
@@ -426,7 +424,7 @@ fn memory(
 
 /// The memory of an interactive run 2 s after first paint.
 fn idle_rss(program: &Program) -> anyhow::Result<u64> {
-    memory(program, &model_args(), |_| Ok(()))
+    memory(program, &model_args(&["--no-session"]), |_| Ok(()))
 }
 
 /// Arguments that open a fresh copy of a session of about `lines` transcript
@@ -434,10 +432,7 @@ fn idle_rss(program: &Program) -> anyhow::Result<u64> {
 fn large_session(program: &Program, root: &Path, lines: usize) -> anyhow::Result<Vec<String>> {
     let session = root.join(format!("{}-session.jsonl", program.name));
     write_session(&session, &program.cwd, lines)?;
-    let mut args = model_args();
-    args.truncate(2);
-    args.extend(["--session".to_owned(), session.display().to_string()]);
-    Ok(args)
+    Ok(model_args(&["--session", &session.display().to_string()]))
 }
 
 /// Turns in the active-session measure.
@@ -460,7 +455,7 @@ fn conversation() -> anyhow::Result<Cassette> {
     };
     let start = |id: String| {
         json!({"type": "message_start", "message": {"id": id, "type": "message", "role": "assistant",
-            "model": "claude-sonnet-4-5", "content": [], "stop_reason": null, "stop_sequence": null,
+            "model": MODEL, "content": [], "stop_reason": null, "stop_sequence": null,
             "usage": {"input_tokens": 1000, "output_tokens": 1}}})
     };
     let end = |reason: &str| {
@@ -555,9 +550,8 @@ fn active_rss(program: &Program, runtime: &tokio::runtime::Runtime) -> anyhow::R
         &models,
         json!({"providers": {"anthropic": {"baseUrl": server.url()}}}).to_string(),
     )?;
-    let mut args = model_args();
-    args.truncate(2);
-    let bytes = memory(program, &args, work);
+    // Without `--no-session`: the turns are saved to a session file.
+    let bytes = memory(program, &model_args(&[]), work);
     std::fs::remove_file(&models)?;
     let bytes = bytes?;
     server
