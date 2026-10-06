@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use serde_json::json;
 use yapi_mock::pty::Pty;
-use yapi_mock::{Cassette, MockServer};
+use yapi_mock::{Cassette, MockServer, scenario};
 
 /// Measure yapi (and pi with `--pi`).
 #[derive(clap::Args)]
@@ -60,6 +60,13 @@ impl Program {
     /// The program with `args` in a 100x40 terminal that answers queries.
     fn pty(&self, args: &[String]) -> std::io::Result<Pty> {
         Pty::spawn(&self.path, args, &self.cwd, &self.env, (100, 40), true)
+    }
+
+    /// Points the anthropic provider, the only one the bench uses, at `url`
+    /// with a `models.json` in the agent directory.
+    fn point_provider(&self, url: &str) -> std::io::Result<()> {
+        let models = json!({"providers": {"anthropic": {"baseUrl": url}}});
+        std::fs::write(self.agent.join("models.json"), models.to_string())
     }
 }
 
@@ -294,11 +301,8 @@ async fn first_request(
 ) -> anyhow::Result<Duration> {
     use tokio::io::AsyncReadExt as _;
     let started = Instant::now();
-    let mut child = tokio::process::Command::new(&program.path)
-        .args(model_args(&["-p", "--no-session", "hi"]))
-        .current_dir(&program.cwd)
-        .env_clear()
-        .envs(program.env.iter().map(|(key, value)| (*key, value)))
+    let print = model_args(&["-p", "--no-session", "hi"]);
+    let mut child = scenario::command(&program.path, &print, &program.cwd, &program.env)
         // Print mode reads piped stdin into the prompt.
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -535,14 +539,10 @@ fn active_rss(program: &Program, runtime: &tokio::runtime::Runtime) -> anyhow::R
         std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
         conversation()?,
     ))?;
-    let models = program.agent.join("models.json");
-    std::fs::write(
-        &models,
-        json!({"providers": {"anthropic": {"baseUrl": server.url()}}}).to_string(),
-    )?;
+    program.point_provider(&server.url())?;
     // Without `--no-session`: the turns are saved to a session file.
     let bytes = memory(program, &model_args(&[]), work);
-    std::fs::remove_file(&models)?;
+    std::fs::remove_file(program.agent.join("models.json"))?;
     let bytes = bytes?;
     server
         .finish()
@@ -724,18 +724,10 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     for (name, path, dir_var) in targets {
         let agent = root.join(format!("{name}-agent"));
         std::fs::create_dir_all(&agent)?;
-        let env = vec![
-            ("PATH", std::env::var_os("PATH").unwrap_or_default()),
-            (dir_var, agent.clone().into_os_string()),
-            ("HOME", root.clone().into_os_string()),
-            ("PI_OFFLINE", "1".into()),
-            ("PI_SKIP_VERSION_CHECK", "1".into()),
-            ("ANTHROPIC_API_KEY", "mock".into()),
-        ];
         programs.push(Program {
             name,
             path,
-            env,
+            env: scenario::clean_env(dir_var, &agent, root),
             cwd: cwd.clone(),
             agent,
         });
@@ -801,11 +793,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let mut listeners = Vec::new();
     for program in &programs {
         let listener = runtime.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
-        let url = format!("http://{}", listener.local_addr()?);
-        std::fs::write(
-            program.agent.join("models.json"),
-            json!({"providers": {"anthropic": {"baseUrl": url}}}).to_string(),
-        )?;
+        program.point_provider(&format!("http://{}", listener.local_addr()?))?;
         listeners.push(listener);
     }
     let request = alternate(&programs, args.runs, |index, program| {
