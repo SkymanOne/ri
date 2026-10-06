@@ -13,10 +13,10 @@ use yapi_types::message::{ContentBlock, ImageContent};
 use yapi_types::models::ImageResize;
 
 /// pi's note for an image that cannot be decoded for conversion.
-pub const CONVERT_FAILED: &str =
+const CONVERT_FAILED: &str =
     "[Image omitted: could not be converted to a supported inline image format.]";
 /// pi's note for an image no encoding fits within the size limit.
-pub const RESIZE_FAILED: &str =
+const RESIZE_FAILED: &str =
     "[Image omitted: could not be resized below the inline image size limit.]";
 
 /// pi's default limit: 4.5 MB of base64, below Anthropic's 5 MB.
@@ -62,11 +62,7 @@ pub fn process(
     let (image, note) = if auto_resize {
         resize(&bytes, mime_type, limits).ok_or(RESIZE_FAILED)?
     } else {
-        let image = ImageContent {
-            data: STANDARD.encode(&bytes),
-            mime_type: mime_type.to_owned(),
-        };
-        (image, None)
+        (inline(&bytes, mime_type), None)
     };
     let mut hints = Vec::new();
     if let Some(from) = converted_from.filter(|from| !from.is_empty() && *from != image.mime_type) {
@@ -155,11 +151,7 @@ fn resize(
         && original_height <= max_height
         && base64_len(bytes.len()) < max_bytes
     {
-        let image = ImageContent {
-            data: STANDARD.encode(bytes),
-            mime_type: mime_type.to_owned(),
-        };
-        return Some((image, None));
+        return Some((inline(bytes, mime_type), None));
     }
     let scale = |value: u32, max: u32, other: u32| {
         yapi_types::js::round(f64::from(value) * f64::from(max) / f64::from(other)) as u32
@@ -173,14 +165,13 @@ fn resize(
         width = scale(width, max_height, height);
         height = max_height;
     }
-    let mut qualities = vec![limits.jpeg_quality.unwrap_or(80)];
-    for quality in [85, 70, 55, 40] {
-        if !qualities.contains(&quality) {
-            qualities.push(quality);
-        }
-    }
-    let formats: Vec<_> = std::iter::once(ImageOutputFormat::Png)
-        .chain(qualities.into_iter().map(ImageOutputFormat::Jpeg))
+    let quality = limits.jpeg_quality.unwrap_or(80);
+    let fallbacks = [85, 70, 55, 40]
+        .into_iter()
+        .filter(|other| *other != quality);
+    let formats: Vec<_> = [ImageOutputFormat::Png, ImageOutputFormat::Jpeg(quality)]
+        .into_iter()
+        .chain(fallbacks.map(ImageOutputFormat::Jpeg))
         .collect();
     loop {
         // pi's Photon fails to encode an empty image.
@@ -204,25 +195,23 @@ fn resize(
                     "[Image: original {original_width}x{original_height}, displayed at {width}x{height}. Multiply coordinates by {} to map to original image.]",
                     yapi_types::js::to_fixed(f64::from(original_width) / f64::from(width), 2)
                 );
-                let image = ImageContent {
-                    data: STANDARD.encode(encoded),
-                    mime_type: mime_type.to_owned(),
-                };
-                return Some((image, Some(note)));
+                return Some((inline(&encoded, mime_type), Some(note)));
             }
         }
-        let shrink = |value: u32| {
-            if value == 1 {
-                1
-            } else {
-                ((f64::from(value) * 0.75).floor() as u32).max(1)
-            }
-        };
+        let shrink = |value: u32| ((f64::from(value) * 0.75).floor() as u32).max(1);
         let next = (shrink(width), shrink(height));
         if next == (width, height) {
             return None;
         }
         (width, height) = next;
+    }
+}
+
+/// `bytes` as an image block.
+fn inline(bytes: &[u8], mime_type: &str) -> ImageContent {
+    ImageContent {
+        data: STANDARD.encode(bytes),
+        mime_type: mime_type.to_owned(),
     }
 }
 
@@ -264,7 +253,8 @@ fn exif_orientation(bytes: &[u8]) -> u16 {
     } else {
         None
     };
-    tiff.map_or(1, |start| tiff_orientation(bytes, start))
+    tiff.and_then(|start| tiff_orientation(bytes, start))
+        .unwrap_or(1)
 }
 
 fn has_exif_header(bytes: &[u8], offset: usize) -> bool {
@@ -283,17 +273,14 @@ fn jpeg_tiff_offset(bytes: &[u8]) -> Option<usize> {
             continue;
         }
         if marker == 0xe1 {
-            if offset + 4 >= bytes.len() || offset + 10 > bytes.len() {
+            if offset + 10 > bytes.len() {
                 return None;
             }
             if has_exif_header(bytes, offset + 4) {
                 return Some(offset + 10);
             }
         }
-        if offset + 4 > bytes.len() {
-            return None;
-        }
-        let length = usize::from(u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]));
+        let length = usize::from(u16::from_be_bytes(array(bytes, offset + 2)?));
         offset += 2 + length;
     }
     None
@@ -302,12 +289,7 @@ fn jpeg_tiff_offset(bytes: &[u8]) -> Option<usize> {
 fn webp_tiff_offset(bytes: &[u8]) -> Option<usize> {
     let mut offset = 12;
     while offset + 8 <= bytes.len() {
-        let size = u32::from_le_bytes([
-            bytes[offset + 4],
-            bytes[offset + 5],
-            bytes[offset + 6],
-            bytes[offset + 7],
-        ]) as usize;
+        let size = u32::from_le_bytes(array(bytes, offset + 4)?) as usize;
         let data = offset + 8;
         if &bytes[offset..offset + 4] == b"EXIF" {
             if data.saturating_add(size) > bytes.len() {
@@ -326,45 +308,40 @@ fn webp_tiff_offset(bytes: &[u8]) -> Option<usize> {
     None
 }
 
-fn tiff_orientation(bytes: &[u8], start: usize) -> u16 {
-    if start + 8 > bytes.len() {
-        return 1;
-    }
-    let little_endian = bytes[start..start + 2] == [0x49, 0x49];
+/// The orientation tag of the TIFF header at `start`, if it has a valid one.
+fn tiff_orientation(bytes: &[u8], start: usize) -> Option<u16> {
+    let little_endian = array::<8>(bytes, start)?[..2] == *b"II";
     let read16 = |at: usize| {
-        let pair = [bytes[at], bytes[at + 1]];
-        if little_endian {
+        let pair = array(bytes, at)?;
+        Some(if little_endian {
             u16::from_le_bytes(pair)
         } else {
             u16::from_be_bytes(pair)
-        }
+        })
     };
-    let quad = [
-        bytes[start + 4],
-        bytes[start + 5],
-        bytes[start + 6],
-        bytes[start + 7],
-    ];
-    let ifd = if little_endian {
-        u32::from_le_bytes(quad)
-    } else {
-        u32::from_be_bytes(quad)
+    let read32 = |at: usize| {
+        let quad = array(bytes, at)?;
+        Some(if little_endian {
+            u32::from_le_bytes(quad)
+        } else {
+            u32::from_be_bytes(quad)
+        })
     };
-    let ifd = start.saturating_add(ifd as usize);
-    if ifd.saturating_add(2) > bytes.len() {
-        return 1;
-    }
-    for entry in 0..usize::from(read16(ifd)) {
+    let ifd = start.checked_add(read32(start + 4)? as usize)?;
+    for entry in 0..usize::from(read16(ifd)?) {
         let at = ifd + 2 + entry * 12;
-        if at + 12 > bytes.len() {
-            return 1;
-        }
-        if read16(at) == 0x0112 {
-            let value = read16(at + 8);
-            return if (1..=8).contains(&value) { value } else { 1 };
+        // pi reads an entry only when all 12 bytes are there.
+        array::<12>(bytes, at)?;
+        if read16(at)? == 0x0112 {
+            return read16(at + 8).filter(|value| (1..=8).contains(value));
         }
     }
-    1
+    None
+}
+
+/// The `N` bytes at `at`, if there are that many.
+pub(crate) fn array<const N: usize>(bytes: &[u8], at: usize) -> Option<[u8; N]> {
+    bytes.get(at..at.checked_add(N)?)?.try_into().ok()
 }
 
 #[cfg(test)]

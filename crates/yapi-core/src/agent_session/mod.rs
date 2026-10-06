@@ -439,11 +439,7 @@ impl AgentSession {
     /// The `images.autoResize` setting and the current model's resize
     /// profile, for images entering the conversation.
     fn image_options(&self) -> (bool, Option<yapi_types::models::ImageResize>) {
-        let auto_resize = self
-            .settings()
-            .images
-            .and_then(|images| images.auto_resize)
-            .unwrap_or(true);
+        let auto_resize = lock(&self.inner.settings).settings().image_auto_resize();
         let limits = lock(&self.inner.state)
             .model
             .as_ref()
@@ -1178,10 +1174,7 @@ impl AgentSession {
             thinking_level: Some(thinking_level),
             session_id: Some(session_id.clone()),
             session_file,
-            auto_resize_images: settings
-                .images
-                .as_ref()
-                .and_then(|images| images.auto_resize),
+            auto_resize_images: settings.image_auto_resize(),
         };
         let apis = self.inner.apis.clone();
         let config = LoopConfig {

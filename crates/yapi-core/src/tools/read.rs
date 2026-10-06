@@ -84,7 +84,7 @@ impl Read {
                 .model
                 .as_ref()
                 .and_then(|model| model.image_resize().cloned());
-            let auto_resize = runtime.auto_resize_images.unwrap_or(true);
+            let auto_resize = runtime.auto_resize_images;
             let processed = tokio::task::spawn_blocking(move || {
                 crate::images::process(&bytes, mime_type, auto_resize, limits.as_ref())
             })
@@ -200,14 +200,10 @@ fn is_bmp(bytes: &[u8]) -> bool {
     if bytes.len() < 26 {
         return false;
     }
-    let u16_at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+    // Bytes past the end read as zero, as in pi.
+    let u16_at = |at: usize| crate::images::array(bytes, at).map_or(0, u16::from_le_bytes);
     let u32_at = |at: usize| {
-        u64::from(u32::from_le_bytes([
-            bytes[at],
-            bytes[at + 1],
-            bytes[at + 2],
-            bytes[at + 3],
-        ]))
+        crate::images::array(bytes, at).map_or(0, |quad| u64::from(u32::from_le_bytes(quad)))
     };
     let (file_size, pixel_offset, header_size) = (u32_at(2), u32_at(10), u32_at(14));
     if (file_size != 0 && file_size < 26)
