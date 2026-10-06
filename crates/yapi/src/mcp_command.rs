@@ -278,10 +278,8 @@ pub async fn run(args: &[String]) -> u8 {
             }
             let timeout = parsed
                 .value("timeout")
-                .map_or(Some(DEFAULT_LOGIN_TIMEOUT_SECONDS), |text| {
-                    js_number(text).as_f64()
-                })
-                .filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+                .map_or(DEFAULT_LOGIN_TIMEOUT_SECONDS, yapi_types::json::js_number);
+            let timeout = Some(timeout).filter(|seconds| seconds.is_finite() && *seconds > 0.0);
             let Some(timeout) = timeout else {
                 err("--timeout must be a positive number of seconds.");
                 return 1;
@@ -497,7 +495,10 @@ fn add(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> 
             oauth.insert("clientSecret".into(), json!(secret));
         }
         if let Some(port) = parsed.value("oauth-callback-port") {
-            oauth.insert("callbackPort".into(), js_number(port));
+            oauth.insert(
+                "callbackPort".into(),
+                yapi_types::json::number(yapi_types::json::js_number(port)),
+            );
         }
         if let Some(client_name) = parsed.value("oauth-client-name") {
             oauth.insert("clientName".into(), json!(client_name));
@@ -581,49 +582,6 @@ fn add(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> 
     };
     out(&format!("Check it with: {APP_NAME} mcp list{sign_in}"));
     0
-}
-
-/// `Number(text)` as JSON: an integer when it is one, else a float, else
-/// `null` for `NaN`.
-fn js_number(text: &str) -> Value {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return json!(0);
-    }
-    // `0x`, `0o` and `0b` integers, without a sign.
-    for (prefix, radix) in [("0x", 16), ("0o", 8), ("0b", 2)] {
-        if let Some(digits) = trimmed
-            .get(..2)
-            .filter(|start| start.eq_ignore_ascii_case(prefix))
-            .and_then(|_| trimmed.get(2..))
-        {
-            let value = digits.chars().try_fold(0.0_f64, |value, c| {
-                c.to_digit(radix)
-                    .map(|digit| value * f64::from(radix) + f64::from(digit))
-            });
-            return match value {
-                Some(value) if !digits.is_empty() => js_integer(value),
-                _ => Value::Null,
-            };
-        }
-    }
-    match trimmed.parse::<f64>() {
-        Ok(number) if number.fract() == 0.0 && number.abs() < 9_007_199_254_740_992.0 => {
-            json!(number as i64)
-        }
-        Ok(number) if number.is_finite() => json!(number),
-        _ => Value::Null,
-    }
-}
-
-fn js_integer(value: f64) -> Value {
-    if value < 9_007_199_254_740_992.0 {
-        json!(value as i64)
-    } else if value.is_finite() {
-        json!(value)
-    } else {
-        Value::Null
-    }
 }
 
 fn remove(args: &[String], project_config: &Path, cwd: &Path, agent_dir: &Path) -> u8 {
@@ -916,19 +874,5 @@ mod tests {
                 .as_deref(),
             Some("--env needs a value.")
         );
-    }
-
-    #[test]
-    fn numbers_follow_javascript() {
-        assert_eq!(js_number("8080"), json!(8080));
-        assert_eq!(js_number("1.5"), json!(1.5));
-        assert_eq!(js_number("x"), Value::Null);
-        // `Number()`'s radix prefixes.
-        assert_eq!(js_number("0x1F90"), json!(8080));
-        assert_eq!(js_number(" 0o17 "), json!(15));
-        assert_eq!(js_number("0B101"), json!(5));
-        assert_eq!(js_number("0x"), Value::Null);
-        assert_eq!(js_number("-0x10"), Value::Null);
-        assert_eq!(js_number("0x+1"), Value::Null);
     }
 }

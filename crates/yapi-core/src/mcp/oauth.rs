@@ -224,8 +224,7 @@ fn parse_authorization_server_metadata(value: &Value) -> Result<Object, OAuthErr
 fn js_number(value: &Value) -> Option<f64> {
     match value {
         Value::Number(number) => number.as_f64(),
-        Value::String(text) if text.trim().is_empty() => Some(0.0),
-        Value::String(text) => text.trim().parse().ok(),
+        Value::String(text) => Some(yapi_types::json::js_number(text)),
         Value::Bool(flag) => Some(f64::from(u8::from(*flag))),
         _ => None,
     }
