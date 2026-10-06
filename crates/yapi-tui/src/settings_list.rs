@@ -292,7 +292,6 @@ mod tests {
             crate::keys::Keys::default(),
             crate::keybindings::tui_definitions(),
             &crate::keybindings::UserBindings::new(),
-            &[],
         );
         assert_eq!(
             text(&mut list, 40),

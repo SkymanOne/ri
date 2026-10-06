@@ -2,7 +2,9 @@
 //!
 //! Port of `packages/tui/src/keybindings.ts` in pi `v1.0.0`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
+
+use indexmap::IndexMap;
 
 use crate::keys::Keys;
 
@@ -12,17 +14,21 @@ pub struct Definition {
     /// Action id, such as `"tui.editor.undo"`.
     pub id: &'static str,
     /// Key ids bound when the user does not rebind the action.
-    pub default_keys: Vec<&'static str>,
+    pub default_keys: &'static [&'static str],
     /// Description shown in `/hotkeys`.
     pub description: &'static str,
 }
 
 impl Definition {
     /// A definition from its parts.
-    pub fn new(id: &'static str, default_keys: &[&'static str], description: &'static str) -> Self {
+    pub fn new(
+        id: &'static str,
+        default_keys: &'static [&'static str],
+        description: &'static str,
+    ) -> Self {
         Definition {
             id,
-            default_keys: default_keys.to_vec(),
+            default_keys,
             description,
         }
     }
@@ -217,8 +223,9 @@ pub struct Conflict {
     pub actions: Vec<String>,
 }
 
-/// User bindings: action id to key ids. An empty list unbinds the action.
-pub type UserBindings = BTreeMap<String, Vec<String>>;
+/// User bindings in file order: action id to key ids. An empty list unbinds
+/// the action.
+pub type UserBindings = IndexMap<String, Vec<String>>;
 
 fn dedup(keys: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut seen = Vec::new();
@@ -241,20 +248,14 @@ pub struct Keybindings {
 
 impl Keybindings {
     /// Bindings for `definitions`, with `user` replacing an action's defaults
-    /// wherever it names that action. `user_order` lists the user's action ids
-    /// in file order, for conflict reporting.
-    pub fn new(
-        keys: Keys,
-        definitions: Vec<Definition>,
-        user: &UserBindings,
-        user_order: &[String],
-    ) -> Keybindings {
+    /// wherever it names that action.
+    pub fn new(keys: Keys, definitions: Vec<Definition>, user: &UserBindings) -> Keybindings {
         let mut claims: Vec<(String, Vec<String>)> = Vec::new();
-        for id in user_order {
+        for (id, bound) in user {
             if !definitions.iter().any(|definition| definition.id == id) {
                 continue;
             }
-            for key in dedup(user.get(id).cloned().unwrap_or_default()) {
+            for key in dedup(bound.iter().cloned()) {
                 match claims.iter_mut().find(|(claimed, _)| *claimed == key) {
                     Some((_, actions)) if !actions.contains(id) => actions.push(id.clone()),
                     Some(_) => {}
@@ -322,9 +323,8 @@ impl Keybindings {
 mod tests {
     use super::*;
 
-    fn user(entries: &[(&str, &[&str])]) -> (UserBindings, Vec<String>) {
-        let order = entries.iter().map(|(id, _)| (*id).to_owned()).collect();
-        let map = entries
+    fn user(entries: &[(&str, &[&str])]) -> UserBindings {
+        entries
             .iter()
             .map(|(id, keys)| {
                 (
@@ -332,18 +332,17 @@ mod tests {
                     keys.iter().map(|key| (*key).to_owned()).collect(),
                 )
             })
-            .collect();
-        (map, order)
+            .collect()
     }
 
     #[test]
     fn user_bindings_replace_defaults() {
-        let (map, order) = user(&[
+        let map = user(&[
             ("tui.editor.cursorUp", &["up", "ctrl+p", "up"]),
             ("tui.editor.undo", &[]),
             ("unknown.action", &["ctrl+q"]),
         ]);
-        let bindings = Keybindings::new(Keys::default(), tui_definitions(), &map, &order);
+        let bindings = Keybindings::new(Keys::default(), tui_definitions(), &map);
         assert_eq!(bindings.keys("tui.editor.cursorUp"), ["up", "ctrl+p"]);
         assert!(bindings.matches("\x10", "tui.editor.cursorUp"));
         assert!(bindings.keys("tui.editor.undo").is_empty());
@@ -355,11 +354,11 @@ mod tests {
 
     #[test]
     fn reports_conflicts() {
-        let (map, order) = user(&[
+        let map = user(&[
             ("tui.editor.yank", &["ctrl+y"]),
             ("tui.editor.undo", &["ctrl+y", "ctrl+z"]),
         ]);
-        let bindings = Keybindings::new(Keys::default(), tui_definitions(), &map, &order);
+        let bindings = Keybindings::new(Keys::default(), tui_definitions(), &map);
         assert_eq!(
             bindings.conflicts(),
             [Conflict {

@@ -182,16 +182,15 @@ impl MainScreen {
         let mut top = prev_top;
         let mut hardware_row = self.hardware_cursor_row;
 
-        if self.previous.is_empty() && !width_changed && !height_changed {
-            self.full_render(&mut out, lines, false, cursor, width, height);
-            return out;
-        }
-        if width_changed || height_changed {
-            self.full_render(&mut out, lines, true, cursor, width, height);
-            return out;
-        }
-        if self.clear_on_shrink && lines.len() < self.max_lines_rendered {
-            self.full_render(&mut out, lines, true, cursor, width, height);
+        // The first frame draws without clearing; a resize, or a shrink with
+        // `clearOnShrink`, redraws everything.
+        let first_frame = self.previous.is_empty() && !width_changed && !height_changed;
+        if first_frame
+            || width_changed
+            || height_changed
+            || (self.clear_on_shrink && lines.len() < self.max_lines_rendered)
+        {
+            self.full_render(&mut out, lines, !first_frame, cursor, width, height);
             return out;
         }
 
@@ -335,47 +334,6 @@ impl MainScreen {
         );
         out.push_str("\r\n");
         out
-    }
-}
-
-impl AltScreen {
-    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
-    /// last column, scrolled to `top`, while the scrollbar shows.
-    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], top: usize, width: usize) -> bool {
-        let (track, content) = (self.viewport, self.transcript_len);
-        let visible = match self.scrollbar {
-            Scrollbar::Always => track > 0,
-            Scrollbar::Auto => content > track && self.scrollbar_deadline().is_some(),
-            Scrollbar::Hidden => false,
-        };
-        if !visible || width == 0 || content == 0 {
-            if self.scrollbar_deadline().is_none() {
-                self.scrollbar_until = None;
-            }
-            return false;
-        }
-        let round = |value: f64| value.round() as usize;
-        let thumb = (track * track)
-            .checked_div(content)
-            .map_or(track, |_| round((track * track) as f64 / content as f64))
-            .min(track)
-            .max(2.min(track));
-        let max_top = content.saturating_sub(track);
-        let offset = if max_top == 0 {
-            0
-        } else {
-            round(top.min(max_top) as f64 / max_top as f64 * (track - thumb) as f64)
-        };
-        let keep_background = self.scrollbar != Scrollbar::Always;
-        for (row, line) in rows.iter_mut().take(track).enumerate() {
-            let (glyph, style) = if row >= offset && row < offset + thumb {
-                ("┃", self.scrollbar_thumb)
-            } else {
-                ("│", self.scrollbar_track)
-            };
-            *line = replace_last_cell(line, width, glyph, style, keep_background);
-        }
-        true
     }
 }
 
@@ -730,6 +688,45 @@ impl AltScreen {
         self.previous_size = (width, height);
         self.previous_cursor = cursor;
         out
+    }
+
+    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
+    /// last column, scrolled to `top`, while the scrollbar shows.
+    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], top: usize, width: usize) -> bool {
+        let (track, content) = (self.viewport, self.transcript_len);
+        let visible = match self.scrollbar {
+            Scrollbar::Always => track > 0,
+            Scrollbar::Auto => content > track && self.scrollbar_deadline().is_some(),
+            Scrollbar::Hidden => false,
+        };
+        if !visible || width == 0 || content == 0 {
+            if self.scrollbar_deadline().is_none() {
+                self.scrollbar_until = None;
+            }
+            return false;
+        }
+        let round = |value: f64| value.round() as usize;
+        let thumb = (track * track)
+            .checked_div(content)
+            .map_or(track, |_| round((track * track) as f64 / content as f64))
+            .min(track)
+            .max(2.min(track));
+        let max_top = content.saturating_sub(track);
+        let offset = if max_top == 0 {
+            0
+        } else {
+            round(top.min(max_top) as f64 / max_top as f64 * (track - thumb) as f64)
+        };
+        let keep_background = self.scrollbar != Scrollbar::Always;
+        for (row, line) in rows.iter_mut().take(track).enumerate() {
+            let (glyph, style) = if row >= offset && row < offset + thumb {
+                ("┃", self.scrollbar_thumb)
+            } else {
+                ("│", self.scrollbar_track)
+            };
+            *line = replace_last_cell(line, width, glyph, style, keep_background);
+        }
+        true
     }
 }
 

@@ -316,12 +316,8 @@ mod tests {
 
     #[test]
     fn wraps_selection_and_filters() {
-        let keybindings = Keybindings::new(
-            Keys::default(),
-            tui_definitions(),
-            &UserBindings::new(),
-            &[],
-        );
+        let keybindings =
+            Keybindings::new(Keys::default(), tui_definitions(), &UserBindings::new());
         let mut list = SelectList::new(
             items(3),
             5,

@@ -6,6 +6,7 @@
 //! autocomplete. Cursor columns are byte offsets into the current line.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
@@ -93,34 +94,19 @@ struct LayoutLine {
     cursor: Option<usize>,
 }
 
-/// A chunk of a wrapped line.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TextChunk {
-    /// The chunk's text.
-    pub text: String,
-    /// Byte offset of the chunk in the line.
-    pub start: usize,
-    /// Byte offset just past the chunk.
-    pub end: usize,
-}
-
-/// Wraps `line` into chunks of at most `max_width` columns, breaking after
-/// whitespace or beside CJK characters where possible. Paste markers with an
-/// id in `valid_ids` stay whole unless wider than a line.
-pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<TextChunk> {
+/// Wraps `line` into chunks of at most `max_width` columns, as byte ranges,
+/// breaking after whitespace or beside CJK characters where possible. Paste
+/// markers with an id in `valid_ids` stay whole unless wider than a line.
+#[allow(
+    clippy::single_range_in_vec_init,
+    reason = "a line that fits is one chunk"
+)]
+pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Range<usize>> {
     if line.is_empty() || max_width == 0 {
-        return vec![TextChunk {
-            text: String::new(),
-            start: 0,
-            end: 0,
-        }];
+        return vec![0..0];
     }
     if visible_width(line) <= max_width {
-        return vec![TextChunk {
-            text: line.to_owned(),
-            start: 0,
-            end: line.len(),
-        }];
+        return vec![0..line.len()];
     }
     let segments = segment(line, Granularity::Grapheme, valid_ids);
     let mut chunks = Vec::new();
@@ -134,20 +120,12 @@ pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Te
         if current_width + width > max_width {
             match wrap_at {
                 Some((index, wrap_width)) if current_width - wrap_width + width <= max_width => {
-                    chunks.push(TextChunk {
-                        text: line[chunk_start..index].to_owned(),
-                        start: chunk_start,
-                        end: index,
-                    });
+                    chunks.push(chunk_start..index);
                     chunk_start = index;
                     current_width -= wrap_width;
                 }
                 _ if chunk_start < seg.index => {
-                    chunks.push(TextChunk {
-                        text: line[chunk_start..seg.index].to_owned(),
-                        start: chunk_start,
-                        end: seg.index,
-                    });
+                    chunks.push(chunk_start..seg.index);
                     chunk_start = seg.index;
                     current_width = 0;
                 }
@@ -161,15 +139,11 @@ pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Te
         if width > max_width && marker {
             let sub = word_wrap_line(seg.text, max_width, &[]);
             for chunk in &sub[..sub.len() - 1] {
-                chunks.push(TextChunk {
-                    text: chunk.text.clone(),
-                    start: seg.index + chunk.start,
-                    end: seg.index + chunk.end,
-                });
+                chunks.push(seg.index + chunk.start..seg.index + chunk.end);
             }
             let last = &sub[sub.len() - 1];
             chunk_start = seg.index + last.start;
-            current_width = visible_width(&last.text);
+            current_width = visible_width(&seg.text[last.clone()]);
             wrap_at = None;
             continue;
         }
@@ -187,11 +161,7 @@ pub fn word_wrap_line(line: &str, max_width: usize, valid_ids: &[u32]) -> Vec<Te
             }
         }
     }
-    chunks.push(TextChunk {
-        text: line[chunk_start..].to_owned(),
-        start: chunk_start,
-        end: line.len(),
-    });
+    chunks.push(chunk_start..line.len());
     chunks
 }
 
@@ -625,10 +595,10 @@ impl Editor {
                     (col >= chunk.start).then(|| col - chunk.start)
                 } else {
                     (col >= chunk.start && col < chunk.end)
-                        .then(|| (col - chunk.start).min(chunk.text.len()))
+                        .then(|| (col - chunk.start).min(chunk.len()))
                 };
                 out.push(LayoutLine {
-                    text: chunk.text,
+                    text: line[chunk].to_owned(),
                     cursor,
                 });
             }
@@ -1394,7 +1364,7 @@ impl Editor {
                 out.push(VisualLine {
                     logical,
                     start: chunk.start,
-                    len: chunk.end - chunk.start,
+                    len: chunk.len(),
                 });
             }
         }
@@ -1808,18 +1778,13 @@ mod tests {
     fn wide_characters_wider_than_the_line_take_a_chunk_each() {
         let chunks: Vec<String> = word_wrap_line("日本", 1, &[])
             .into_iter()
-            .map(|chunk| chunk.text)
+            .map(|chunk| "日本"[chunk].to_owned())
             .collect();
         assert_eq!(chunks, ["日", "本"]);
     }
 
     fn bindings() -> Keybindings {
-        Keybindings::new(
-            Keys::default(),
-            tui_definitions(),
-            &UserBindings::new(),
-            &[],
-        )
+        Keybindings::new(Keys::default(), tui_definitions(), &UserBindings::new())
     }
 
     fn typed(editor: &mut Editor, keys: &[&str]) -> Vec<EditorEvent> {

@@ -332,7 +332,19 @@ pub fn text(
     if is_blank(content) {
         return Vec::new();
     }
-    let px = px.min(width.saturating_sub(1) / 2);
+    padded(content, width, px.min(width.saturating_sub(1) / 2), py, bg)
+}
+
+/// The layout pi-tui's `Text` and `Markdown` share: `content` wrapped
+/// within `px` columns of padding on each side, every row padded to `width`
+/// (over `bg` when given), and `py` blank rows above and below.
+pub(crate) fn padded(
+    content: &[Line<'_>],
+    width: usize,
+    px: usize,
+    py: usize,
+    bg: Option<Style>,
+) -> Vec<StyledLine> {
     let content_width = width.saturating_sub(px * 2).max(1);
     let finish = |line: StyledLine| -> StyledLine {
         let mut line = indent(line, px);

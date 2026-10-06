@@ -527,32 +527,27 @@ struct Renderer<'t> {
 
 impl Renderer<'_> {
     fn inlines(&self, inlines: &[Inline], text_style: Style) -> Vec<Span<'static>> {
+        let under = |children: &[Inline], style: Style| {
+            crate::lines::under(self.inlines(children, text_style), style)
+        };
         let mut out = Vec::new();
         for inline in inlines {
             match inline {
                 Inline::Text(text) => out.push(Span::styled(text.clone(), text_style)),
                 Inline::Code(code) => out.push(Span::styled(code.clone(), self.theme.code)),
-                Inline::Strong(children) => out.extend(crate::lines::under(
-                    self.inlines(children, text_style),
-                    Style::new().add_modifier(Modifier::BOLD),
-                )),
-                Inline::Emphasis(children) => out.extend(crate::lines::under(
-                    self.inlines(children, text_style),
-                    Style::new().add_modifier(Modifier::ITALIC),
-                )),
-                Inline::Strike(children) => out.extend(crate::lines::under(
-                    self.inlines(children, text_style),
-                    Style::new().add_modifier(Modifier::CROSSED_OUT),
-                )),
+                Inline::Strong(children) => out.extend(under(children, Modifier::BOLD.into())),
+                Inline::Emphasis(children) => out.extend(under(children, Modifier::ITALIC.into())),
+                Inline::Strike(children) => {
+                    out.extend(under(children, Modifier::CROSSED_OUT.into()));
+                }
                 Inline::Link {
                     children,
                     text,
                     href,
                 } => {
-                    let link = self.theme.link.add_modifier(Modifier::UNDERLINED);
-                    out.extend(crate::lines::under(
-                        self.inlines(children, text_style),
-                        link,
+                    out.extend(under(
+                        children,
+                        self.theme.link.add_modifier(Modifier::UNDERLINED),
                     ));
                     let bare = href.strip_prefix("mailto:").unwrap_or(href);
                     if text != href && text != bare {
@@ -962,18 +957,8 @@ pub fn render(
             rendered.push(Line::default());
         }
     }
-    let finish = |line: StyledLine| -> StyledLine {
-        let mut spans = vec![Span::raw(" ".repeat(px))];
-        spans.extend(line.spans);
-        spans.push(Span::raw(" ".repeat(px)));
-        crate::lines::fill(Line::from(spans), width, options.background)
-    };
-    let mut out: Vec<StyledLine> = (0..py).map(|_| finish(Line::default())).collect();
-    for line in rendered {
-        out.extend(wrap(&line, content_width).into_iter().map(&finish));
-    }
-    out.extend((0..py).map(|_| finish(Line::default())));
-    out
+    // Unlike `Text`, pi-tui's `Markdown` keeps its padding at any width.
+    crate::lines::padded(&rendered, width, px, py, options.background)
 }
 
 #[cfg(test)]

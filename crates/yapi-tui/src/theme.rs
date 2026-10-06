@@ -527,15 +527,10 @@ impl Theme {
 
     /// The editor border color for a thinking level.
     pub fn thinking_border(&self, level: &str) -> Style {
-        self.fg(match level {
-            "minimal" => "thinkingMinimal",
-            "low" => "thinkingLow",
-            "medium" => "thinkingMedium",
-            "high" => "thinkingHigh",
-            "xhigh" => "thinkingXhigh",
-            "max" => "thinkingMax",
-            _ => "thinkingOff",
-        })
+        let token = THINKING
+            .into_iter()
+            .find(|token| token["thinking".len()..].to_ascii_lowercase() == level);
+        self.fg(token.unwrap_or("thinkingOff"))
     }
 }
 
