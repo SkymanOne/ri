@@ -141,8 +141,9 @@ chmod 755 "$dir/.yapi.$$"
 mv -f "$dir/.yapi.$$" "$dir/yapi"
 echo "Installed yapi $installed to $dir/yapi"
 
-# The docs the model reads about yapi and pi, unpacked next to the old copy
-# and swapped in. yapi downloads them on its first run when this step fails.
+# The docs the model reads about yapi and pi, unpacked next to the old copy,
+# which they then replace. yapi downloads them on its first run when this
+# step fails.
 if [ -n "$docs" ]; then
     agent="${YAPI_CODING_AGENT_DIR:-}"
     case "$agent" in
@@ -160,13 +161,11 @@ if [ -n "$docs" ]; then
     elif ! mkdir -p "$agent/.docs.$$" || ! tar -xzf "$work/$docs_name" -C "$agent/.docs.$$"; then
         rm -rf "$agent/.docs.$$"
         problem="could not unpack $docs_name into $agent"
+    elif ! rm -rf "$agent/docs" || ! mv "$agent/.docs.$$" "$agent/docs"; then
+        rm -rf "$agent/.docs.$$"
+        problem="could not move the docs into $agent/docs"
     else
         problem=
-        if [ -e "$agent/docs" ]; then
-            mv "$agent/docs" "$agent/.docs-old.$$"
-        fi
-        mv "$agent/.docs.$$" "$agent/docs"
-        rm -rf "$agent/.docs-old.$$"
         echo "Installed the docs for the model to $agent/docs"
     fi
     if [ -n "$problem" ]; then

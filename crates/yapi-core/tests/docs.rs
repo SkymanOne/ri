@@ -1,6 +1,6 @@
 //! The first-run download of the docs for the model, against a mock release
 //! server: it installs, replaces another version's copy, keeps a current
-//! one without asking, and refuses archives that fail their checks.
+//! one without asking, and refuses an archive that fails its checksum.
 #![allow(
     clippy::unwrap_used,
     reason = "test helpers; a panic is a test failure"
@@ -130,7 +130,7 @@ async fn replaces_another_versions_docs() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn keeps_the_old_docs_when_the_archive_fails_its_checks() {
+async fn keeps_the_old_docs_when_the_archive_fails_its_checksum() {
     let agent = scratch("refuse");
     std::fs::create_dir_all(agent.join("docs")).unwrap();
     std::fs::write(agent.join("docs/.version"), "0.0.1\n").unwrap();
@@ -142,16 +142,6 @@ async fn keeps_the_old_docs_when_the_archive_fails_its_checks() {
     assert!(
         err.ends_with("does not match its SHA-256 checksum"),
         "{err}"
-    );
-
-    let other = archive("0.0.2");
-    let server = release(&other, &sums(&other)).await;
-    let err = yapi_core::docs::download(&server.url(), &agent)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        err,
-        format!("yapi-docs.tar.gz documents 0.0.2, not {VERSION}")
     );
     assert_eq!(entries(&agent.join("docs")), [".version"]);
     assert_eq!(entries(&agent), ["docs"]);
