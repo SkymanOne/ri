@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_ai::api::Apis;
@@ -26,7 +27,8 @@ use crate::session::{ProjectedEntry, Projection, entry_messages};
 use crate::time::{now_ms, uuid_v7};
 
 /// When and how much to compact.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompactionSettings {
     /// Automatic compaction is on.
     pub enabled: bool,
@@ -409,7 +411,7 @@ fn find_cut_point(
 }
 
 /// Files read and changed by tool calls, for the summary.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct FileOperations {
     /// Read paths.
     pub read: BTreeSet<String>,
@@ -588,8 +590,10 @@ const UPDATE_SUMMARIZATION_INSTRUCTIONS: &str = "Update the existing structured 
 
 const TURN_PREFIX_SUMMARIZATION_PROMPT: &str = "The messages above are earlier context from an ongoing conversation. Later messages are stored separately and do not need to be reconstructed.\n\nCreate a concise checkpoint of the user's request and the progress shown above. This checkpoint will be placed before the later messages so the conversation can continue with the necessary context.\n\n## Original Request\n[What did the user ask for?]\n\n## Progress So Far\n- [Key decisions and work completed in these messages]\n\n## Context Needed to Continue\n- [Information from these messages needed to understand the later work]\n\nOnly summarize information explicitly present above. Do not infer or recreate later messages.";
 
-/// What compaction will summarize and keep.
-#[derive(Clone, Debug)]
+/// What compaction will summarize and keep; serializes as pi's
+/// `CompactionPreparation`.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Preparation {
     /// First entry kept verbatim.
     pub first_kept_entry_id: String,
@@ -602,6 +606,7 @@ pub struct Preparation {
     /// Estimated context tokens before compaction.
     pub tokens_before: u64,
     /// The previous compaction's summary, to update.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_summary: Option<String>,
     /// Files touched by the summarized messages.
     pub file_ops: FileOperations,

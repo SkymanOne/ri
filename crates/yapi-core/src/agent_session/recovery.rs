@@ -372,7 +372,7 @@ impl AgentSession {
         if self.has_handlers("session_before_compact") {
             let event = serde_json::json!({
                 "type": "session_before_compact",
-                "preparation": preparation_json(preparation),
+                "preparation": preparation,
                 "branchEntries": self.with_session(|session| serde_json::to_value(session.branch_path(None)).unwrap_or_default()),
                 "customInstructions": custom_instructions,
                 "reason": reason,
@@ -649,27 +649,4 @@ struct Compacted {
     outcome: Result<CompactionResult, String>,
     from_extension: bool,
     refused: bool,
-}
-
-/// pi's `CompactionPreparation` as extensions receive it.
-fn preparation_json(preparation: &Preparation) -> serde_json::Value {
-    let preparation = serde_json::json!({
-        "firstKeptEntryId": preparation.first_kept_entry_id,
-        "messagesToSummarize": preparation.messages_to_summarize,
-        "turnPrefixMessages": preparation.turn_prefix_messages,
-        "isSplitTurn": preparation.is_split_turn,
-        "tokensBefore": preparation.tokens_before,
-        "previousSummary": preparation.previous_summary,
-        "fileOps": {
-            "read": preparation.file_ops.read,
-            "written": preparation.file_ops.written,
-            "edited": preparation.file_ops.edited,
-        },
-        "settings": {
-            "enabled": preparation.settings.enabled,
-            "reserveTokens": preparation.settings.reserve_tokens,
-            "keepRecentTokens": preparation.settings.keep_recent_tokens,
-        },
-    });
-    defined(preparation, &["previousSummary"])
 }
