@@ -12,7 +12,7 @@ use yapi_types::auth::OAuthCredential;
 use super::device::{Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthAuth,
-    OAuthProvider, form, json_body, send,
+    OAuthProvider, json_body, post_form, send,
 };
 
 /// Public client id, base64 in pi's source.
@@ -347,12 +347,11 @@ impl CopilotOAuth {
         let domain = enterprise.clone().unwrap_or_else(|| "github.com".into());
         let cancel = interaction.cancel();
 
-        let request = crate::http::client()
-            .post(format!("{}/login/device/code", self.github(&domain)))
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("User-Agent", USER_AGENT)
-            .body(form(&[("client_id", CLIENT_ID), ("scope", "read:user")]));
+        let request = post_form(
+            format!("{}/login/device/code", self.github(&domain)),
+            &[("client_id", CLIENT_ID), ("scope", "read:user")],
+        )
+        .header("User-Agent", USER_AGENT);
         let device = fetch_json(request, cancel).await?;
         if !device.is_object() {
             return Err(AuthError::failed("Invalid device code response"));
@@ -385,18 +384,16 @@ impl CopilotOAuth {
         });
 
         let token_url = format!("{}/login/oauth/access_token", self.github(&domain));
-        let body = form(&[
-            ("client_id", CLIENT_ID),
-            ("device_code", device_code),
-            ("grant_type", super::device::DEVICE_CODE_GRANT),
-        ]);
         let github_token = poll_device_code(interval, Some(expires_in), true, cancel, || {
-            let request = crate::http::client()
-                .post(&token_url)
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("User-Agent", USER_AGENT)
-                .body(body.clone());
+            let request = post_form(
+                &token_url,
+                &[
+                    ("client_id", CLIENT_ID),
+                    ("device_code", device_code),
+                    ("grant_type", super::device::DEVICE_CODE_GRANT),
+                ],
+            )
+            .header("User-Agent", USER_AGENT);
             async move {
                 let raw = fetch_json(request, cancel).await?;
                 if let Some(token) = raw.get("access_token").and_then(Value::as_str) {

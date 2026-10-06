@@ -11,7 +11,7 @@ use super::callback::{Reply, Server, error_page, query, success_page};
 use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider, form,
-    now_ms, pkce, send,
+    now_ms, pkce, post_form, send,
 };
 
 const CALLBACK_HOST: &str = "127.0.0.1";
@@ -104,11 +104,7 @@ impl RadiusOAuth {
         fields: &[(&str, &str)],
         cancel: &CancellationToken,
     ) -> Result<Result<OAuthCredential, OAuthFailure>, AuthError> {
-        let request = crate::http::client()
-            .post(self.url("/v1/oauth/token"))
-            .header("accept", "application/json")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(form(fields));
+        let request = post_form(self.url("/v1/oauth/token"), fields);
         let response = send(request, cancel).await?;
         if !response.status().is_success() {
             return Ok(Err(oauth_failure(
@@ -231,11 +227,10 @@ impl RadiusOAuth {
 
     async fn login_device(&self, interaction: &Interaction) -> Result<OAuthCredential, AuthError> {
         let cancel = interaction.cancel();
-        let request = crate::http::client()
-            .post(self.url("/v1/oauth/device"))
-            .header("accept", "application/json")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(form(&[("client_id", CLIENT_ID), ("scope", SCOPE)]));
+        let request = post_form(
+            self.url("/v1/oauth/device"),
+            &[("client_id", CLIENT_ID), ("scope", SCOPE)],
+        );
         let response = send(request, cancel).await?;
         if !response.status().is_success() {
             let failure = oauth_failure(response, "Radius OAuth device authorization failed").await;

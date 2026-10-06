@@ -11,7 +11,7 @@ use super::anthropic::expiry;
 use super::callback::{Reply, Server, error_page, query, success_page};
 use super::{
     AuthError, AuthEvent, AuthPrompt, BoxFuture, Interaction, LoginOptions, OAuthProvider,
-    callback_host, error_text, form, json_body, pkce, send,
+    callback_host, error_text, form, json_body, pkce, post_form, send,
 };
 
 /// Every sign-in registers a new client under this id; the callback carries the issued one.
@@ -125,14 +125,10 @@ fn credential(token: &Value, client_id: &str) -> Result<OAuthCredential, AuthErr
 impl ChatGptOAuth {
     async fn request_token(
         &self,
-        body: String,
+        fields: &[(&str, &str)],
         cancel: &CancellationToken,
     ) -> Result<Value, AuthError> {
-        let request = crate::http::client()
-            .post(&self.token_url)
-            .header("accept", "application/json")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(body);
+        let request = post_form(&self.token_url, fields);
         let response = send(request, cancel).await?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -287,14 +283,14 @@ impl ChatGptOAuth {
         });
         let token = self
             .request_token(
-                form(&[
+                &[
                     ("grant_type", "authorization_code"),
                     ("client_id", &authorization.client_id),
                     ("code", &authorization.code),
                     ("code_verifier", &pkce.verifier),
                     ("redirect_uri", &self.redirect_uri),
                     ("resource", RESOURCE),
-                ]),
+                ],
                 interaction.cancel(),
             )
             .await?;
@@ -357,12 +353,12 @@ impl OAuthProvider for ChatGptOAuth {
                 })?;
             let token = self
                 .request_token(
-                    form(&[
+                    &[
                         ("grant_type", "refresh_token"),
                         ("client_id", client_id),
                         ("refresh_token", &credential.refresh),
                         ("resource", RESOURCE),
-                    ]),
+                    ],
                     cancel,
                 )
                 .await?;

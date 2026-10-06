@@ -8,10 +8,10 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, post_form, trusted_url};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, trusted_url};
 use super::{
     AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
-    json_body, now_ms, send,
+    json_body, now_ms, post_form, send,
 };
 
 const CLIENT_ID: &str = "17e5f671-d194-4dfb-9706-5516cb48c098";
@@ -19,6 +19,7 @@ const DEFAULT_OAUTH_HOST: &str = "https://auth.kimi.com";
 const DEVICE_CODE_TIMEOUT_SECONDS: f64 = 15.0 * 60.0;
 const DEFAULT_POLL_INTERVAL_SECONDS: f64 = 5.0;
 const REFRESH_MAX_RETRIES: u32 = 3;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Kimi Code sign-in.
 #[derive(Clone, Debug, Default)]
@@ -69,9 +70,10 @@ impl KimiOAuth {
         let cancel = interaction.cancel();
         let response = send(
             post_form(
-                &format!("{host}/api/oauth/device_authorization"),
+                format!("{host}/api/oauth/device_authorization"),
                 &[("client_id", CLIENT_ID)],
-            ),
+            )
+            .timeout(REQUEST_TIMEOUT),
             cancel,
         )
         .await?;
@@ -121,7 +123,8 @@ impl KimiOAuth {
                     ("device_code", device_code),
                     ("grant_type", DEVICE_CODE_GRANT),
                 ],
-            );
+            )
+            .timeout(REQUEST_TIMEOUT);
             async move {
                 let response = send(request, cancel).await?;
                 let status = response.status().as_u16();
@@ -187,7 +190,8 @@ impl KimiOAuth {
                     ("grant_type", "refresh_token"),
                     ("refresh_token", refresh),
                 ],
-            );
+            )
+            .timeout(REQUEST_TIMEOUT);
             let response = match send(request, cancel).await {
                 Ok(response) => response,
                 Err(AuthError::Cancelled) => return Err(AuthError::Cancelled),

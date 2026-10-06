@@ -7,7 +7,7 @@ use yapi_types::auth::OAuthCredential;
 
 use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code};
 use super::{
-    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, form, now_ms, send,
+    AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, now_ms, send,
 };
 
 const CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
@@ -41,17 +41,13 @@ struct Answer {
     body: Value,
 }
 
-async fn post_form(
+/// POSTs `fields` as a form; the answer, with a non-object JSON body as `{}`.
+async fn request(
     url: &str,
     fields: &[(&str, &str)],
     cancel: &CancellationToken,
 ) -> Result<Answer, AuthError> {
-    let request = crate::http::client()
-        .post(url)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form(fields));
-    let response = send(request, cancel).await?;
+    let response = send(super::post_form(url, fields), cancel).await?;
     let status = response.status().as_u16();
     let bytes = response.bytes().await.unwrap_or_default();
     let body = match serde_json::from_slice::<Value>(&bytes) {
@@ -131,7 +127,7 @@ fn credential(body: &Value, previous_refresh: Option<&str>) -> Result<OAuthCrede
 impl XaiOAuth {
     async fn login_xai(&self, interaction: &Interaction) -> Result<OAuthCredential, AuthError> {
         let cancel = interaction.cancel();
-        let answer = post_form(
+        let answer = request(
             &self.device_code_url,
             &[
                 ("client_id", CLIENT_ID),
@@ -165,7 +161,7 @@ impl XaiOAuth {
         poll_device_code(interval, Some(expires_in), true, cancel, || {
             let device_code = device_code.clone();
             async move {
-                let answer = post_form(
+                let answer = request(
                     &self.token_url,
                     &[
                         ("grant_type", DEVICE_CODE_GRANT),
@@ -200,7 +196,7 @@ impl XaiOAuth {
         refresh: &str,
         cancel: &CancellationToken,
     ) -> Result<OAuthCredential, AuthError> {
-        let answer = post_form(
+        let answer = request(
             &self.token_url,
             &[
                 ("grant_type", "refresh_token"),

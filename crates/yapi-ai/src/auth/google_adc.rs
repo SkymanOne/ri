@@ -14,7 +14,7 @@ use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{AuthError, form, now_ms};
+use super::{AuthError, now_ms};
 
 /// The scope Vertex AI requests.
 pub const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
@@ -133,13 +133,13 @@ fn fetch<'a>(
     Box::pin(async move {
         match credentials["type"].as_str().unwrap_or_default() {
             "authorized_user" => {
-                let body = form(&[
+                let fields = [
                     ("refresh_token", field(credentials, "refresh_token")?),
                     ("client_id", field(credentials, "client_id")?),
                     ("client_secret", field(credentials, "client_secret")?),
                     ("grant_type", "refresh_token"),
-                ]);
-                oauth_token(oauth2_token_url, body, cancel).await
+                ];
+                oauth_token(oauth2_token_url, &fields, cancel).await
             }
             "service_account" => {
                 let token_uri = credentials["token_uri"]
@@ -151,8 +151,8 @@ fn fetch<'a>(
                     field(credentials, "private_key")?,
                     token_uri,
                 )?;
-                let body = form(&[("grant_type", JWT_BEARER), ("assertion", &assertion)]);
-                oauth_token(token_uri, body, cancel).await
+                let fields = [("grant_type", JWT_BEARER), ("assertion", &assertion)];
+                oauth_token(token_uri, &fields, cancel).await
             }
             "impersonated_service_account" => {
                 let source = &credentials["source_credentials"];
@@ -255,14 +255,10 @@ fn token_error(status: u16, body: &Value) -> String {
 /// An `access_token` and `expires_in` from an OAuth token endpoint.
 async fn oauth_token(
     url: &str,
-    body: String,
+    fields: &[(&str, &str)],
     cancel: &CancellationToken,
 ) -> Result<(String, u64), String> {
-    let request = crate::http::client()
-        .post(url)
-        .header("content-type", "application/x-www-form-urlencoded")
-        .header("accept", "application/json")
-        .body(body);
+    let request = super::post_form(url, fields);
     let (status, body) = post(request, cancel).await?;
     if !(200..300).contains(&status) {
         return Err(token_error(status, &body));
@@ -386,7 +382,7 @@ async fn external_account(
         ));
     }
     let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let (sts_token, expires_at_ms) = oauth_token(token_url, form(&borrowed), cancel).await?;
+    let (sts_token, expires_at_ms) = oauth_token(token_url, &borrowed, cancel).await?;
     match credentials["service_account_impersonation_url"].as_str() {
         Some(url) if !url.is_empty() => impersonate(url, &sts_token, json!([]), cancel).await,
         _ => Ok((sts_token, expires_at_ms)),

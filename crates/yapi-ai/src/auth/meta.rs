@@ -9,10 +9,10 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use yapi_types::auth::OAuthCredential;
 
-use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, post_form, trusted_url};
+use super::device::{DEVICE_CODE_GRANT, Poll, poll_device_code, positive, trusted_url};
 use super::{
     AuthError, AuthEvent, BoxFuture, Interaction, LoginOptions, OAuthProvider, json_body, now_ms,
-    send,
+    post_form, send,
 };
 
 const CLIENT_ID: &str = "1031625952748946";
@@ -102,7 +102,8 @@ impl MetaOAuth {
     async fn login_meta(&self, interaction: &Interaction) -> Result<OAuthCredential, AuthError> {
         let cancel = interaction.cancel();
         let response = send(
-            post_form(&self.device_authorization_url, &[("client_id", CLIENT_ID)]),
+            post_form(&self.device_authorization_url, &[("client_id", CLIENT_ID)])
+                .timeout(REQUEST_TIMEOUT),
             cancel,
         )
         .await?;
@@ -142,7 +143,8 @@ impl MetaOAuth {
                     ("device_code", device_code),
                     ("client_id", CLIENT_ID),
                 ],
-            );
+            )
+            .timeout(REQUEST_TIMEOUT);
             async move {
                 let response = send(request, cancel).await?;
                 let status = response.status().as_u16();
