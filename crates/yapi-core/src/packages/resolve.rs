@@ -93,6 +93,34 @@ impl ResolvedPaths {
         }
     }
 
+    fn of_mut(&mut self, kind: ResourceType) -> &mut Vec<Resolved> {
+        match kind {
+            ResourceType::Extensions => &mut self.extensions,
+            ResourceType::Skills => &mut self.skills,
+            ResourceType::Prompts => &mut self.prompts,
+            ResourceType::Themes => &mut self.themes,
+        }
+    }
+
+    /// Adds the resource at `path` with `metadata` unless it is listed.
+    fn add(&mut self, kind: ResourceType, path: &Path, metadata: &SourceInfo, enabled: bool) {
+        let path = path.to_string_lossy().into_owned();
+        if path.is_empty() {
+            return;
+        }
+        let list = self.of_mut(kind);
+        if list.iter().any(|resource| resource.info.path == path) {
+            return;
+        }
+        list.push(Resolved {
+            info: SourceInfo {
+                path,
+                ..metadata.clone()
+            },
+            enabled,
+        });
+    }
+
     /// The enabled resources of `kind`, in order.
     pub fn enabled(&self, kind: ResourceType) -> impl Iterator<Item = &SourceInfo> {
         self.of(kind)
@@ -637,31 +665,6 @@ fn manifest_files(entries: &[String], root: &Path, kind: ResourceType) -> Vec<Pa
     collect_files_from_paths(&resolved, kind)
 }
 
-#[derive(Default)]
-struct Accumulator {
-    lists: [Vec<Resolved>; 4],
-}
-
-impl Accumulator {
-    fn add(&mut self, kind: ResourceType, path: &Path, metadata: &SourceInfo, enabled: bool) {
-        let path = path.to_string_lossy().into_owned();
-        if path.is_empty() {
-            return;
-        }
-        let list = &mut self.lists[kind as usize];
-        if list.iter().any(|resource| resource.info.path == path) {
-            return;
-        }
-        list.push(Resolved {
-            info: SourceInfo {
-                path,
-                ..metadata.clone()
-            },
-            enabled,
-        });
-    }
-}
-
 fn metadata(source: &str, scope: &str, origin: &str, base_dir: Option<&Path>) -> SourceInfo {
     SourceInfo {
         path: String::new(),
@@ -675,7 +678,7 @@ fn metadata(source: &str, scope: &str, origin: &str, base_dir: Option<&Path>) ->
 /// pi's `collectPackageResources`; whether the package provided anything.
 fn collect_package_resources(
     root: &Path,
-    acc: &mut Accumulator,
+    acc: &mut ResolvedPaths,
     filter: Option<&FilteredPackage>,
     meta: &SourceInfo,
 ) -> bool {
@@ -739,7 +742,7 @@ fn default_resources(
     root: &Path,
     manifest: Option<&Manifest>,
     kind: ResourceType,
-    acc: &mut Accumulator,
+    acc: &mut ResolvedPaths,
     meta: &SourceInfo,
 ) {
     if let Some(entries) = manifest.and_then(|manifest| manifest.get(kind)) {
@@ -789,7 +792,7 @@ fn manifest_entries(
     entries: &[String],
     root: &Path,
     kind: ResourceType,
-    acc: &mut Accumulator,
+    acc: &mut ResolvedPaths,
     meta: &SourceInfo,
 ) {
     let all = manifest_files(entries, root, kind);
@@ -811,7 +814,7 @@ fn manifest_entries(
 fn local_entries(
     entries: &[String],
     kind: ResourceType,
-    acc: &mut Accumulator,
+    acc: &mut ResolvedPaths,
     meta: &SourceInfo,
     base: &Path,
 ) {
@@ -851,7 +854,7 @@ fn ancestor_agents_skill_dirs(start: &Path) -> Vec<PathBuf> {
 /// pi's `addAutoDiscoveredResources`: the project's resources when it is
 /// trusted, then the user's; for each scope its extensions, skills, `.agents`
 /// skills, prompts and themes.
-fn auto_discovered(input: &ResolveInput<'_>, acc: &mut Accumulator) {
+fn auto_discovered(input: &ResolveInput<'_>, acc: &mut ResolvedPaths) {
     let user_agents = input.home.join(".agents").join("skills");
     let project_agents: Vec<PathBuf> = if input.project_trusted {
         ancestor_agents_skill_dirs(&input.cwd)
@@ -924,7 +927,7 @@ fn precedence(info: &SourceInfo) -> u8 {
 /// and a folder gives what its manifest or resource folders list. pi takes a
 /// folder with neither as one extension only when it is a `local` path.
 fn collect_package(
-    acc: &mut Accumulator,
+    acc: &mut ResolvedPaths,
     root: &Path,
     filter: Option<&FilteredPackage>,
     local: bool,
@@ -954,7 +957,7 @@ pub fn package_resources(
     filter: Option<&FilteredPackage>,
     local: bool,
 ) -> ResolvedPaths {
-    let mut acc = Accumulator::default();
+    let mut acc = ResolvedPaths::default();
     collect_package(
         &mut acc,
         root,
@@ -962,19 +965,13 @@ pub fn package_resources(
         local,
         metadata("local", "user", "package", None),
     );
-    let [extensions, skills, prompts, themes] = acc.lists;
-    ResolvedPaths {
-        extensions,
-        skills,
-        prompts,
-        themes,
-    }
+    acc
 }
 
 /// pi's `resolve`: packages, then settings entries, then discovered files,
 /// then built-in extensions; ordered by precedence without repeats.
 pub fn resolve(input: &ResolveInput<'_>) -> ResolvedPaths {
-    let mut acc = Accumulator::default();
+    let mut acc = ResolvedPaths::default();
     for package in &input.packages {
         collect_package(
             &mut acc,
@@ -1030,25 +1027,17 @@ pub fn resolve(input: &ResolveInput<'_>) -> ResolvedPaths {
             project.unwrap_or_else(|| is_enabled_by_overrides(&path, user_ext, &input.agent_dir));
         acc.add(ResourceType::Extensions, &path, &meta, enabled);
     }
-    let finish = |list: Vec<Resolved>| {
-        let mut list = list;
+    for kind in ResourceType::ALL {
+        let list = acc.of_mut(kind);
         list.sort_by_key(|resource| precedence(&resource.info));
         let mut seen = HashSet::new();
-        list.into_iter()
-            .filter(|resource| {
-                let canonical = std::fs::canonicalize(&resource.info.path)
-                    .unwrap_or_else(|_| PathBuf::from(&resource.info.path));
-                seen.insert(canonical)
-            })
-            .collect()
-    };
-    let [extensions, skills, prompts, themes] = acc.lists;
-    ResolvedPaths {
-        extensions: finish(extensions),
-        skills: finish(skills),
-        prompts: finish(prompts),
-        themes: finish(themes),
+        list.retain(|resource| {
+            let canonical = std::fs::canonicalize(&resource.info.path)
+                .unwrap_or_else(|_| PathBuf::from(&resource.info.path));
+            seen.insert(canonical)
+        });
     }
+    acc
 }
 
 /// The `extensions`, `skills`, `prompts` and `themes` lists of a settings

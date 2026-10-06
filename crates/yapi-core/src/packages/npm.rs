@@ -177,31 +177,29 @@ impl Npm {
         Ok(response)
     }
 
-    async fn packument(&mut self, name: &str) -> Result<Value, NpmError> {
-        if let Some(found) = self.packuments.get(name) {
-            return Ok(found.clone());
+    async fn packument(&mut self, name: &str) -> Result<&Value, NpmError> {
+        if !self.packuments.contains_key(name) {
+            let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
+            let body = self
+                .get(&url, PACKUMENT_ACCEPT)
+                .await?
+                .bytes()
+                .await
+                .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
+            let packument: Value = serde_json::from_slice(&body)
+                .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
+            self.packuments.insert(name.to_owned(), packument);
         }
-        let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
-        let body = self
-            .get(&url, PACKUMENT_ACCEPT)
-            .await?
-            .bytes()
-            .await
-            .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
-        let packument: Value = serde_json::from_slice(&body)
-            .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
-        self.packuments.insert(name.to_owned(), packument.clone());
-        Ok(packument)
+        // Present: found or inserted above.
+        Ok(&self.packuments[name])
     }
 
     /// The manifest of the version of `name` that `range` selects: a dist-tag,
     /// else the latest tag when it matches, else the highest match.
     async fn pick(&mut self, name: &str, range: &str) -> Result<Value, NpmError> {
         let packument = self.packument(name).await?;
-        let versions = packument["versions"]
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let no_versions = Map::new();
+        let versions = packument["versions"].as_object().unwrap_or(&no_versions);
         let range = if range.is_empty() { "latest" } else { range };
         let no_match = || NpmError::NoMatch {
             name: name.to_owned(),
@@ -360,21 +358,18 @@ impl Installer<'_> {
     /// Installs the production and optional dependencies of the package in
     /// `dir`. Optional ones that fail or name a platform are skipped.
     async fn dependencies(&mut self, dir: &Path, manifest: &Value) -> Result<(), NpmError> {
-        let required = manifest["dependencies"]
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let none = Map::new();
+        let required = manifest["dependencies"].as_object().unwrap_or(&none);
         let optional = manifest["optionalDependencies"]
             .as_object()
-            .cloned()
-            .unwrap_or_default();
-        for (name, range) in &required {
+            .unwrap_or(&none);
+        for (name, range) in required {
             if optional.contains_key(name) {
                 continue;
             }
             self.place(dir, name, range.as_str().unwrap_or("*")).await?;
         }
-        for (name, range) in &optional {
+        for (name, range) in optional {
             let _ = self.place(dir, name, range.as_str().unwrap_or("*")).await;
         }
         Ok(())
