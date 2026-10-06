@@ -898,10 +898,7 @@ async fn connect(
     let (params, url) = match flavor {
         Flavor::OpenAi => {
             let params = build_params(model, &normalized, options, &compat, max_tokens, effort)?;
-            headers.set("authorization", Some(format!("Bearer {api_key}")));
-            headers.set("content-type", Some("application/json"));
-            headers.set("accept", Some("application/json"));
-            headers.extend_model(model.headers.as_ref());
+            headers = super::openai_headers(&api_key, model.headers.as_ref());
             if model.provider == "github-copilot" {
                 for (key, value) in super::copilot_headers(messages) {
                     headers.set(key, Some(value));

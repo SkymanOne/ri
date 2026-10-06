@@ -191,6 +191,33 @@ fn retryable(failure: &Failure, headers: &HeaderMap) -> bool {
     }
 }
 
+/// POSTs `body` with `headers`, each attempt limited to `timeout_ms`, retrying
+/// as [`send`] does.
+pub(crate) async fn post(
+    url: &str,
+    headers: &Headers,
+    body: &str,
+    timeout_ms: Option<u64>,
+    max_retries: u32,
+    max_retry_delay_ms: Option<u64>,
+    cancel: &CancellationToken,
+) -> Result<reqwest::Response, Failure> {
+    let options = StreamOptions {
+        max_retries,
+        max_retry_delay_ms,
+        cancel: cancel.clone(),
+        ..StreamOptions::default()
+    };
+    let build = || {
+        let request = headers.apply(client().post(url).body(body.to_owned()));
+        match timeout_ms {
+            Some(timeout) => request.timeout(Duration::from_millis(timeout)),
+            None => request,
+        }
+    };
+    send(build, &options).await
+}
+
 /// Sends a request built by `build`, retrying retryable failures up to
 /// `options.max_retries` times with pi's backoff and honoring `retry-after`.
 pub async fn send(

@@ -15,6 +15,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use yapi_types::message::{Content, ContentBlock, Message};
 
+use crate::http::Headers;
 use crate::stream::{EventStream, Provider, Request, new_output, now_ms, send_error};
 
 /// The built-in wire APIs. Each streams from a task that runs its module's
@@ -125,6 +126,20 @@ pub fn failed_stream(
     let (sender, stream) = EventStream::channel();
     send_error(&sender, new_output(model, now_ms()), cancel, message);
     stream
+}
+
+/// The OpenAI SDK's request headers: the bearer `api_key`, JSON in and out, then
+/// the model's configured headers.
+pub(crate) fn openai_headers(
+    api_key: &str,
+    model_headers: Option<&IndexMap<String, String>>,
+) -> Headers {
+    let mut headers = Headers::default();
+    headers.set("authorization", Some(format!("Bearer {api_key}")));
+    headers.set("content-type", Some("application/json"));
+    headers.set("accept", Some("application/json"));
+    headers.extend_model(model_headers);
+    headers
 }
 
 /// GitHub Copilot's per-request headers: whether the user or the agent

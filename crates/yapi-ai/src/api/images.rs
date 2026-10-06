@@ -10,8 +10,8 @@ use yapi_types::message::{Cost, ImageContent, TextContent, Usage};
 use yapi_types::model::ImageModel;
 use yapi_types::models::InputKind;
 
-use crate::http::{self, Failure, Headers};
-use crate::stream::{StreamOptions, now_ms};
+use crate::http::{self, Failure};
+use crate::stream::now_ms;
 
 /// Options of one image request.
 #[derive(Clone, Debug, Default)]
@@ -129,26 +129,19 @@ async fn openrouter(
     };
     let body = yapi_types::json::stringify(&params(model, context));
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
-    let mut headers = Headers::default();
-    headers.set("Authorization", Some(format!("Bearer {api_key}")));
-    headers.set("Content-Type", Some("application/json"));
-    headers.set("Accept", Some("application/json"));
-    headers.extend_model(model.headers.as_ref());
+    let mut headers = super::openai_headers(api_key, model.headers.as_ref());
     headers.extend(&options.headers);
-    let retry = StreamOptions {
-        max_retries: options.max_retries.unwrap_or(0),
-        max_retry_delay_ms: options.max_retry_delay_ms,
-        cancel: options.cancel.clone(),
-        ..StreamOptions::default()
-    };
-    let build = || {
-        let mut request = headers.apply(http::client().post(&url).body(body.clone()));
-        if let Some(timeout) = options.timeout_ms {
-            request = request.timeout(std::time::Duration::from_millis(timeout));
-        }
-        request
-    };
-    let response = match http::send(build, &retry).await {
+    let response = http::post(
+        &url,
+        &headers,
+        &body,
+        options.timeout_ms,
+        options.max_retries.unwrap_or(0),
+        options.max_retry_delay_ms,
+        &options.cancel,
+    )
+    .await;
+    let response = match response {
         Ok(response) => response,
         Err(Failure::Status { status, body }) => {
             return Err(http::openai_status_message(status, &body, None));

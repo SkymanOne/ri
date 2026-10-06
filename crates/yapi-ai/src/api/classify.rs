@@ -18,7 +18,7 @@ use yapi_types::message::{Cost, Usage};
 use yapi_types::model::ClassifierModel;
 
 use crate::http::{self, Failure, Headers};
-use crate::stream::{StreamOptions, now_ms};
+use crate::stream::now_ms;
 
 /// Options of one classification.
 #[derive(Clone, Debug, Default)]
@@ -95,21 +95,17 @@ pub(crate) async fn post_json(
     prefix: &str,
     options: &ClassifyOptions,
 ) -> Result<Value, String> {
-    let retry = StreamOptions {
-        max_retries: options.max_retries.unwrap_or(2),
-        max_retry_delay_ms: options.max_retry_delay_ms,
-        cancel: options.cancel.clone(),
-        ..StreamOptions::default()
-    };
-    let text = yapi_types::json::stringify(body);
-    let build = || {
-        let mut request = headers.apply(http::client().post(url).body(text.clone()));
-        if let Some(timeout) = options.timeout_ms {
-            request = request.timeout(std::time::Duration::from_millis(timeout));
-        }
-        request
-    };
-    let response = match http::send(build, &retry).await {
+    let response = http::post(
+        url,
+        headers,
+        &yapi_types::json::stringify(body),
+        options.timeout_ms,
+        options.max_retries.unwrap_or(2),
+        options.max_retry_delay_ms,
+        &options.cancel,
+    )
+    .await;
+    let response = match response {
         Ok(response) => response,
         Err(Failure::Status { status, body }) => {
             let body = body.trim();

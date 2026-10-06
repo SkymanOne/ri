@@ -13,7 +13,7 @@ use yapi_types::model::{Model, OpenAiCompletionsCompat};
 
 use super::sanitize_id_part;
 use crate::cost::calculate_cost;
-use crate::http::{self, Failure, Headers, SseReader};
+use crate::http::{self, Failure, SseReader};
 use crate::json_parse::parse_streaming_json;
 use crate::schema;
 use crate::stream::{
@@ -1035,11 +1035,7 @@ async fn connect(
         effort,
     )?;
 
-    let mut headers = Headers::default();
-    headers.set("authorization", Some(format!("Bearer {api_key}")));
-    headers.set("content-type", Some("application/json"));
-    headers.set("accept", Some("application/json"));
-    headers.extend_model(model.headers.as_ref());
+    let mut headers = super::openai_headers(&api_key, model.headers.as_ref());
     if model.provider == "github-copilot" {
         for (key, value) in super::copilot_headers(messages) {
             headers.set(key, Some(value));
