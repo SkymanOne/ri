@@ -32,7 +32,7 @@ use yapi_types::model::Model;
 use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
-use yapi_types::sync::lock;
+use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{
     BranchSummary, CompactionSettings, Preparation, RetryPolicy, Summarizer, SummaryRetry,
@@ -989,12 +989,11 @@ impl AgentSession {
 
     /// Models with credentials, in catalog order.
     pub fn available_models(&self) -> Vec<Model> {
-        let registry = self
-            .inner
-            .registry
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        registry.available().into_iter().cloned().collect()
+        read(&self.inner.registry)
+            .available()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Runs a user `!` command in the session's directory, streaming output to
@@ -1608,14 +1607,12 @@ impl AgentSession {
         let Some(model) = model else {
             return;
         };
-        if let Ok(mut runtime) = self.inner.runtime.write() {
-            *runtime = Runtime {
-                model: Some(model.clone()),
-                thinking_level: Some(thinking_level),
-                session_id: Some(session_id.clone()),
-                session_file,
-            };
-        }
+        *write(&self.inner.runtime) = Runtime {
+            model: Some(model.clone()),
+            thinking_level: Some(thinking_level),
+            session_id: Some(session_id.clone()),
+            session_file,
+        };
         let settings = lock(&self.inner.settings).settings().clone();
         let apis = self.inner.apis.clone();
         let config = LoopConfig {
@@ -2352,11 +2349,7 @@ impl AgentSession {
 
     /// The model registry; credentials it reads stay current with `auth.json`.
     pub fn registry(&self) -> Arc<ModelRegistry> {
-        self.inner
-            .registry
-            .read()
-            .map(|registry| Arc::clone(&registry))
-            .unwrap_or_default()
+        Arc::clone(&read(&self.inner.registry))
     }
 
     /// The session header line as JSON mode prints it.
@@ -2387,20 +2380,20 @@ impl AgentSession {
         let targets = registry.catalog_targets().await;
         let refreshed = yapi_ai::model_catalog::refresh(&targets, &store, &options).await;
         // Apply to the registry current now; credentials may have changed.
-        if let Ok(mut slot) = self.inner.registry.write() {
-            let mut next = (**slot).clone();
-            next.apply_catalogs(refreshed.models);
-            *slot = Arc::new(next);
-        }
+        let mut slot = write(&self.inner.registry);
+        let mut next = (**slot).clone();
+        next.apply_catalogs(refreshed.models);
+        *slot = Arc::new(next);
+        drop(slot);
         CatalogRefresh {
             errors: refreshed.errors,
             aborted: refreshed.aborted,
         }
     }
 
-    /// Model registry access.
+    /// Model registry access; always `Some`.
     pub fn with_registry<T>(&self, f: impl FnOnce(&ModelRegistry) -> T) -> Option<T> {
-        self.inner.registry.read().ok().map(|registry| f(&registry))
+        Some(f(&read(&self.inner.registry)))
     }
 
     /// Sets the active tools; unknown and hidden names are ignored.
@@ -3367,5 +3360,51 @@ mod tests {
             parse_skill_block("<skill name=\"a\" location=\"b\">\nx\n</skill> trailing").is_none()
         );
         assert!(parse_skill_block("hello").is_none());
+    }
+
+    #[test]
+    fn a_poisoned_registry_keeps_its_credentials() {
+        let model: Model = serde_json::from_value(serde_json::json!({
+            "id": "m", "name": "M", "api": "faux", "provider": "p", "baseUrl": "",
+            "reasoning": false, "input": ["text"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 1000, "maxTokens": 100,
+        }))
+        .expect("a model");
+        let mut registry = ModelRegistry::builtin();
+        registry.register_provider("p", vec![model.clone()]);
+        registry.set_runtime_key("p", "key".into());
+        let session = AgentSession::new(SessionConfig {
+            cwd: PathBuf::from("/work"),
+            agent_dir: PathBuf::from("/agent"),
+            settings: SettingsManager::in_memory(),
+            registry,
+            apis: Apis::default(),
+            session: SessionManager::in_memory(Path::new("/work")),
+            model: Some(model),
+            thinking_level: ThinkingLevel::Off,
+            tools: Vec::new(),
+            extensions: Vec::new(),
+            include_extension_tools: false,
+            allowed_tools: None,
+            excluded_tools: Vec::new(),
+            resources: Resources::default(),
+        });
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _slot = session.inner.registry.write();
+            panic!("poison the registry");
+        }));
+        assert!(session.inner.registry.is_poisoned());
+        assert!(session.registry().has_auth("p"));
+        assert!(
+            session
+                .available_models()
+                .iter()
+                .any(|model| model.provider == "p")
+        );
+        assert_eq!(
+            session.with_registry(|registry| registry.has_auth("p")),
+            Some(true)
+        );
     }
 }

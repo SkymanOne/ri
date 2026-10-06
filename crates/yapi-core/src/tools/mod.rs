@@ -75,7 +75,7 @@ pub struct ToolEnv {
 impl ToolEnv {
     /// A snapshot of the session state.
     pub fn runtime(&self) -> Runtime {
-        self.runtime.read().map(|r| r.clone()).unwrap_or_default()
+        yapi_types::sync::read(&self.runtime).clone()
     }
 }
 
