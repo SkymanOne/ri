@@ -1,0 +1,6 @@
+{
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "MCP server \"web\" failed to connect: fetch failed\n",
+  "requests": []
+}
