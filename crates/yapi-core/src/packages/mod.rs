@@ -8,7 +8,6 @@
 
 pub mod npm;
 pub mod resolve;
-pub mod resources;
 pub mod source;
 
 use std::path::{Path, PathBuf};
@@ -18,7 +17,6 @@ use yapi_types::settings::FilteredPackage;
 
 use crate::config::PROJECT_DIR;
 use crate::settings::{Scope, SettingsError, SettingsManager};
-pub use resources::{PackageResources, package_resources};
 pub use source::{Source, parse};
 
 /// Why a package operation failed; the message is pi's where pi has one.
@@ -435,8 +433,14 @@ impl PackageManager {
                     let extensions = installed_path
                         .as_deref()
                         .map(|root| {
-                            package_resources(root, filters.as_ref(), source::is_local(&source))
-                                .extensions
+                            resolve::package_resources(
+                                root,
+                                filters.as_ref(),
+                                source::is_local(&source),
+                            )
+                            .enabled(resolve::ResourceType::Extensions)
+                            .map(|info| PathBuf::from(&info.path))
+                            .collect()
                         })
                         .unwrap_or_default();
                     Some(Configured {

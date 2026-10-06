@@ -861,12 +861,16 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
     // and a directory brings its manifest's or conventional resources.
     let mut sources: Vec<SourceInfo> = Vec::new();
     for path in &requested {
-        let found = yapi_core::packages::package_resources(&resolve_to_cwd(path, &cwd), None, true);
-        let cli = |path: &PathBuf| yapi_core::resources::cli_source(path);
-        sources.extend(found.extensions.iter().map(cli));
-        skills.extend(found.skills.iter().map(cli));
-        prompts.extend(found.prompts.iter().map(cli));
-        themes.extend(found.themes.iter().map(cli));
+        let found = yapi_core::packages::resolve::package_resources(
+            &resolve_to_cwd(path, &cwd),
+            None,
+            true,
+        );
+        let cli = |info: &SourceInfo| yapi_core::resources::cli_source(Path::new(&info.path));
+        sources.extend(found.enabled(ResourceType::Extensions).map(cli));
+        skills.extend(found.enabled(ResourceType::Skills).map(cli));
+        prompts.extend(found.enabled(ResourceType::Prompts).map(cli));
+        themes.extend(found.enabled(ResourceType::Themes).map(cli));
     }
     let mut packages = yapi_core::packages::PackageManager::new(
         cwd.clone(),

@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use yapi_core::packages::resolve::{
-    PackageInput, ResolveInput, ResolvedPaths, ResourceType, package_inputs, resolve,
-    settings_lists,
+    PackageInput, ResolveInput, ResolvedPaths, ResourceType, package_inputs, package_resources,
+    resolve, settings_lists,
 };
 use yapi_core::packages::source::{Source, local_path};
 
@@ -148,7 +148,110 @@ fn ignores_manifest_lists_with_non_strings() {
         r#"{"pi": {"extensions": ["./a.ts", 1], "prompts": ["./prompts/p.md"]}}"#,
     )
     .unwrap();
-    let resources = yapi_core::packages::package_resources(&root, None, true);
-    assert!(resources.extensions.is_empty(), "{resources:?}");
-    assert_eq!(resources.prompts, [root.join("prompts/p.md")]);
+    let resources = package_resources(&root, None, true);
+    assert!(enabled(&resources, ResourceType::Extensions).is_empty());
+    assert_eq!(
+        enabled(&resources, ResourceType::Prompts),
+        [root.join("prompts/p.md")]
+    );
+}
+
+/// The enabled resources of `kind`, as paths.
+fn enabled(resolved: &ResolvedPaths, kind: ResourceType) -> Vec<PathBuf> {
+    resolved
+        .enabled(kind)
+        .map(|info| PathBuf::from(&info.path))
+        .collect()
+}
+
+fn write(root: &Path, files: &[(&str, &str)]) {
+    let _ = std::fs::remove_dir_all(root);
+    for (name, text) in files {
+        let path = root.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+}
+
+#[test]
+fn package_resources_follow_manifests_conventional_dirs_and_filters() {
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let root = tmp.join("package-manifest");
+    write(
+        &root,
+        &[
+            (
+                "package.json",
+                r#"{"pi": {"extensions": ["./src/*.ts", "!src/skip.ts", "packages/*/extensions"], "skills": ["./skills"]}}"#,
+            ),
+            ("src/a.ts", ""),
+            ("src/skip.ts", ""),
+            ("packages/x/extensions/tool/index.ts", ""),
+            ("skills/x/SKILL.md", ""),
+            ("prompts/p.md", ""),
+        ],
+    );
+    let resources = package_resources(&root, None, false);
+    // A glob that matches a folder takes the extensions in it.
+    assert_eq!(
+        enabled(&resources, ResourceType::Extensions),
+        [
+            root.join("src/a.ts"),
+            root.join("packages/x/extensions/tool/index.ts")
+        ]
+    );
+    assert_eq!(
+        enabled(&resources, ResourceType::Skills),
+        [root.join("skills/x/SKILL.md")]
+    );
+    // Only the types the manifest lists.
+    assert!(enabled(&resources, ResourceType::Prompts).is_empty());
+
+    let plain = tmp.join("package-conventional");
+    write(
+        &plain,
+        &[
+            ("extensions/a.ts", ""),
+            ("extensions/b.js", ""),
+            ("prompts/p.md", ""),
+        ],
+    );
+    let resources = package_resources(&plain, None, false);
+    assert_eq!(enabled(&resources, ResourceType::Extensions).len(), 2);
+    assert_eq!(
+        enabled(&resources, ResourceType::Prompts),
+        [plain.join("prompts/p.md")]
+    );
+    let filtered = yapi_types::settings::FilteredPackage {
+        source: String::new(),
+        autoload: None,
+        extensions: Some(vec!["extensions/a.ts".into()]),
+        skills: None,
+        prompts: Some(Vec::new()),
+        themes: None,
+    };
+    let resources = package_resources(&plain, Some(&filtered), false);
+    assert_eq!(
+        enabled(&resources, ResourceType::Extensions),
+        [plain.join("extensions/a.ts")]
+    );
+    assert!(enabled(&resources, ResourceType::Prompts).is_empty());
+
+    // A folder with neither is one extension only as a local path.
+    let bare = tmp.join("package-bare");
+    write(&bare, &[("index.ts", "")]);
+    assert_eq!(
+        enabled(
+            &package_resources(&bare, None, true),
+            ResourceType::Extensions
+        ),
+        [bare.join("index.ts")]
+    );
+    assert!(
+        enabled(
+            &package_resources(&bare, None, false),
+            ResourceType::Extensions
+        )
+        .is_empty()
+    );
 }
