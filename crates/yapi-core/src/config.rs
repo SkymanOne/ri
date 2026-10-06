@@ -70,17 +70,6 @@ pub fn docs_dir(agent_dir: &Path) -> PathBuf {
     agent_dir.join("docs")
 }
 
-/// pi's `getDocsPath` in the local docs: pi's docs, which describe yapi's
-/// features and extension API under pi's names.
-pub fn pi_docs_dir(agent_dir: &Path) -> PathBuf {
-    docs_dir(agent_dir).join("pi").join("docs")
-}
-
-/// pi's `getExamplesPath` in the local docs: pi's examples.
-pub fn pi_examples_dir(agent_dir: &Path) -> PathBuf {
-    docs_dir(agent_dir).join("pi").join("examples")
-}
-
 /// Executables the agent installs for its tools, prepended to `PATH` for commands.
 pub fn bin_dir(agent_dir: &Path) -> PathBuf {
     agent_dir.join("bin")

@@ -39,10 +39,8 @@ impl Locations {
         if dir.join(VERSION_FILE).is_file() {
             Locations {
                 main: dir.join("index.md").display().to_string(),
-                pi_docs: crate::config::pi_docs_dir(agent_dir).display().to_string(),
-                pi_examples: crate::config::pi_examples_dir(agent_dir)
-                    .display()
-                    .to_string(),
+                pi_docs: dir.join("pi").join("docs").display().to_string(),
+                pi_examples: dir.join("pi").join("examples").display().to_string(),
             }
         } else {
             Locations {
@@ -52,11 +50,6 @@ impl Locations {
             }
         }
     }
-}
-
-/// Whether `YAPI_NO_DOCS` turns the download off.
-pub fn opted_out() -> bool {
-    crate::config::env_flag("YAPI_NO_DOCS")
 }
 
 /// Downloads this version's docs from the release in `releases` into

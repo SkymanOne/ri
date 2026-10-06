@@ -234,7 +234,10 @@ async fn run(parsed: &mut args::Args) -> u8 {
     let metadata_to_stderr = parsed.print || parsed.mode.is_some();
     // install.sh puts the docs for the model in place. Other installs fetch
     // them here, in the background. Debug builds name no released version.
-    if !cfg!(debug_assertions) && model_network(parsed) && !yapi_core::docs::opted_out() {
+    if !cfg!(debug_assertions)
+        && model_network(parsed)
+        && !yapi_core::config::env_flag("YAPI_NO_DOCS")
+    {
         let agent_dir = yapi_core::config::agent_dir();
         tokio::spawn(async move {
             // The model reads the published docs until a later start succeeds.
