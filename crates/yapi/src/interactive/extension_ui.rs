@@ -118,11 +118,9 @@ impl ExtensionUi for InteractiveUi {
 
     fn extension_error(&self, path: &str, _event: &str, error: &str, stack: Option<&str>) {
         let message = format!("Extension \"{path}\" error: {error}");
-        let _ = self.tx.send(Event::ExtensionError(
-            self.epoch,
-            message,
-            stack.map(str::to_owned),
-        ));
+        let _ = self
+            .tx
+            .send(Event::ExtensionError(message, stack.map(str::to_owned)));
     }
 
     fn select(

@@ -812,7 +812,11 @@ impl super::App {
             }
             match SessionManager::open(&destination, Some(&dir), None) {
                 Ok(manager) => match app.replace_session(manager, Replacement::Resume) {
-                    Ok(()) => app.status(format!("Session imported from: {path}")),
+                    Ok(()) => {
+                        app.once_bound(move |app| {
+                            app.status(format!("Session imported from: {path}"))
+                        });
+                    }
                     Err(error) => app.fatal("Failed to import session", &error),
                 },
                 Err(error) => app.fatal("Failed to import session", &error.to_string()),
@@ -879,7 +883,11 @@ impl super::App {
         {
             self.error(format!("models.json error: {error}"));
         }
-        self.status("Reloaded keybindings, extensions, skills, prompts, themes, and context files");
+        self.once_bound(|app| {
+            app.status(
+                "Reloaded keybindings, extensions, skills, prompts, themes, and context files",
+            );
+        });
     }
 
     fn debug(&mut self) {

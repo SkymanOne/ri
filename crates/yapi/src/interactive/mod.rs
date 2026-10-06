@@ -117,6 +117,9 @@ const VIEWPORT_KEYS: &[&str] = &[
     "tui.altScreen.bottom",
 ];
 
+/// Work to finish on the loop.
+type Then = Box<dyn FnOnce(&mut App) + Send>;
+
 /// Events the loop handles. Session events carry the epoch of the session
 /// that sent them, so a replaced session's late events are dropped.
 enum Event {
@@ -129,8 +132,9 @@ enum Event {
     TreeDone(u64, String, Box<Result<TreeOutcome, String>>),
     Fd(Option<PathBuf>),
     Notify(u64, String, NotifyKind),
-    /// An extension error line and the error's stack.
-    ExtensionError(u64, String, Option<String>),
+    /// An extension error line and the error's stack, shown whichever
+    /// session's extension failed, as pi shows a replaced runner's errors.
+    ExtensionError(String, Option<String>),
     /// Extension completions arrived; the editor asks again.
     RefreshCompletions(u64),
     /// A request from the sign-in with this id.
@@ -157,7 +161,7 @@ enum Event {
         yapi_core::agent_session::CatalogRefresh,
     ),
     /// Work to finish on the loop for the session with this epoch.
-    Then(u64, Box<dyn FnOnce(&mut App) + Send>),
+    Then(u64, Then),
     /// A component an extension built for a transcript item, answering the
     /// request with this sequence number.
     Component(
@@ -428,6 +432,8 @@ struct App {
     /// they replace (if any) shuts down for a reason, with the replacement's
     /// session file.
     binding: Option<Option<(AgentSession, Replacement, Option<String>)>>,
+    /// What to show once the replacement session's extensions have started.
+    on_bound: Vec<Then>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
     /// Images attached to the first of `initial`.
@@ -2050,10 +2056,7 @@ impl App {
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            let then: Box<dyn FnOnce(&mut App) + Send> = match session
-                .user_bash(&command, exclude)
-                .await
-            {
+            let then: Then = match session.user_bash(&command, exclude).await {
                 Err(_) => return,
                 Ok(UserBash::Done(result)) => {
                     Box::new(move |app| app.show_bash_result(&command, exclude, result))
@@ -2932,10 +2935,10 @@ impl App {
                 .map_err(|error| error.to_string())
                 .and_then(|manager| app.replace_session(manager, Replacement::New));
             match result {
-                Ok(()) => {
+                Ok(()) => app.once_bound(|app| {
                     let notice = lines::styled("✓ New session started", app.theme.fg("accent"));
                     app.text_item(vec![notice], true, (1, 1));
-                }
+                }),
                 Err(error) => app.fatal("Failed to create session", &error),
             }
         });
@@ -2953,7 +2956,7 @@ impl App {
                 Ok(fork.text)
             });
             match result {
-                Ok(text) => {
+                Ok(text) => app.once_bound(move |app| {
                     if at {
                         app.set_editor_text("");
                         app.status("Cloned to new session");
@@ -2961,7 +2964,7 @@ impl App {
                         app.set_editor_text(text.as_deref().unwrap_or_default());
                         app.status("Forked to new session");
                     }
-                }
+                }),
                 Err(error) => app.error(error),
             }
         });
@@ -3002,10 +3005,18 @@ impl App {
             }
         };
         match self.replace_session(manager, Replacement::Resume) {
-            Ok(()) if cwd_override.is_some() => self.status("Resumed session in current cwd"),
-            Ok(()) => self.status("Resumed session"),
+            Ok(()) if cwd_override.is_some() => {
+                self.once_bound(|app| app.status("Resumed session in current cwd"));
+            }
+            Ok(()) => self.once_bound(|app| app.status("Resumed session")),
             Err(error) => self.fatal("Failed to resume session", &error),
         }
+    }
+
+    /// Runs `then` once the replacement session's extensions have started,
+    /// as pi reports a session change after rebinding.
+    pub(super) fn once_bound(&mut self, then: impl FnOnce(&mut App) + Send + 'static) {
+        self.on_bound.push(Box::new(then));
     }
 
     /// pi's fatal runtime error: shown, then the app exits with status 1.
@@ -3684,6 +3695,7 @@ impl App {
             model_network: options.model_network,
             next_refresh: 0,
             binding: None,
+            on_bound: Vec::new(),
             overlay: None,
             overlays_below: Vec::new(),
             show_header,
@@ -3806,11 +3818,14 @@ impl App {
                 self.editor.refresh_autocomplete();
                 self.answer_suggestions();
             }
-            Event::ExtensionError(epoch, message, stack) if epoch == self.epoch => {
+            Event::ExtensionError(message, stack) => {
                 self.extension_error(message, stack.as_deref());
             }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
             Event::Bound => {
+                for then in std::mem::take(&mut self.on_bound) {
+                    then(self);
+                }
                 // Extensions may have added skills, prompt templates and themes.
                 self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
                 self.install_autocomplete();
