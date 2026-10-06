@@ -170,10 +170,8 @@ pub async fn execute(
             }
         }
     }
-    if !output.pending.is_empty() {
-        let rest = String::from_utf8_lossy(&std::mem::take(&mut output.pending)).into_owned();
-        output.text(&rest, &mut on_chunk);
-    }
+    // pi never flushes its decoder, so an incomplete UTF-8 sequence at the
+    // end of the output is dropped.
     Ok(output.finish(exit_code, cancelled))
 }
 
@@ -252,5 +250,25 @@ mod tests {
             .unwrap_or_default();
         assert!(result.cancelled);
         assert_eq!(result.exit_code, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn drops_an_incomplete_character_at_the_end() {
+        let dir = std::env::temp_dir();
+        let mut seen = String::new();
+        // The first two bytes of "€".
+        let result = execute(
+            "printf 'ok \\342\\202'",
+            &dir,
+            None,
+            &dir,
+            CancellationToken::new(),
+            |chunk| seen.push_str(chunk),
+        )
+        .await
+        .unwrap_or_default();
+        assert_eq!(result.output, "ok ");
+        assert_eq!(seen, "ok ");
     }
 }
