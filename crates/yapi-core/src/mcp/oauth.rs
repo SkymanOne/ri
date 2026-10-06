@@ -694,17 +694,14 @@ impl TokenRequest<'_> {
             .unwrap_or_default();
         let client_id = text(self.client, "client_id").unwrap_or_default();
         let secret = truthy(self.client, "client_secret");
-        let mut request = yapi_ai::http::client()
-            .post(url)
-            .header("Accept", "application/json")
-            .header("content-type", "application/x-www-form-urlencoded");
+        let mut basic = None;
         match select_client_auth(self.client, &supported) {
             ClientAuth::Basic => {
                 let secret =
                     secret.ok_or_else(|| other("client_secret_basic requires a client secret"))?;
                 let credentials = base64::engine::general_purpose::STANDARD
                     .encode(format!("{client_id}:{secret}"));
-                request = request.header("Authorization", format!("Basic {credentials}"));
+                basic = Some(format!("Basic {credentials}"));
             }
             method => {
                 set(&mut params, "client_id", client_id);
@@ -715,10 +712,15 @@ impl TokenRequest<'_> {
                 }
             }
         }
-        let body = url::form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(&params)
-            .finish();
-        let response = self.fetch.send(request.body(body)).await?;
+        let fields: Vec<(&str, &str)> = params
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        let mut request = yapi_ai::auth::post_form(url, &fields);
+        if let Some(basic) = basic {
+            request = request.header("Authorization", basic);
+        }
+        let response = self.fetch.send(request).await?;
         let status = response.status();
         let body = response
             .text()

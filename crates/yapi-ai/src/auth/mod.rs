@@ -368,10 +368,7 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
 }
 
 /// A POST of `fields` as a form that accepts JSON, without a timeout.
-pub(crate) fn post_form(
-    url: impl reqwest::IntoUrl,
-    fields: &[(&str, &str)],
-) -> reqwest::RequestBuilder {
+pub fn post_form(url: impl reqwest::IntoUrl, fields: &[(&str, &str)]) -> reqwest::RequestBuilder {
     crate::http::client()
         .post(url)
         .header("Content-Type", "application/x-www-form-urlencoded")
