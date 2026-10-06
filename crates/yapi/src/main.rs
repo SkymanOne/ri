@@ -397,7 +397,7 @@ fn start(
 fn ask_project_trust(parsed: &mut args::Args) -> anyhow::Result<()> {
     let agent_dir = yapi_core::config::agent_dir();
     let cwd = std::env::current_dir()?;
-    let settings = yapi_core::settings::SettingsManager::load(&agent_dir, &cwd, false)?;
+    let settings = yapi_core::settings::SettingsManager::load(&agent_dir, &cwd, false);
     let view = settings.settings();
     let store = yapi_core::trust::TrustStore::new(&agent_dir);
     if !yapi_core::trust::needs_prompt(

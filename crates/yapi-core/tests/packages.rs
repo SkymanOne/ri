@@ -125,7 +125,7 @@ fn manager(dir: &Path, url: &str) -> PackageManager {
     let cwd = dir.join("project");
     let agent = dir.join("agent");
     std::fs::create_dir_all(&cwd).unwrap();
-    let settings = SettingsManager::load(&agent, &cwd, false).unwrap();
+    let settings = SettingsManager::load(&agent, &cwd, false);
     PackageManager::new(cwd, agent, settings, format!("{url}/"))
 }
 

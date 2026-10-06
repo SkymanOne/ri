@@ -277,7 +277,7 @@ pub fn load_settings(
     ask: bool,
 ) -> anyhow::Result<(SettingsManager, bool)> {
     use std::io::IsTerminal;
-    let global = SettingsManager::load(agent_dir, cwd, false)?;
+    let global = SettingsManager::load(agent_dir, cwd, false);
     let view = global.settings();
     let store = TrustStore::new(agent_dir);
     let default = view.default_project_trust;
@@ -292,7 +292,7 @@ pub fn load_settings(
         resolve_trusted(cwd, &store, override_, default)
     };
     let settings = if trusted {
-        SettingsManager::load(agent_dir, cwd, true)?
+        SettingsManager::load(agent_dir, cwd, true)
     } else {
         global
     };

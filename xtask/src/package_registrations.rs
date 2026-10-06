@@ -129,7 +129,7 @@ async fn load(
         agent.join("settings.json"),
         json!({"packages": [format!("npm:{name}@{version}")]}).to_string(),
     )?;
-    let settings = SettingsManager::load(&agent, &cwd, false)?;
+    let settings = SettingsManager::load(&agent, &cwd, false);
     let mut packages =
         PackageManager::new(cwd.clone(), agent.clone(), settings, default_registry());
     let mut install_errors = Vec::new();
