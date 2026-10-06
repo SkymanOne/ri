@@ -53,10 +53,15 @@ fn creates_a_package_from_the_template() {
     assert!(output.status.success(), "{output:?}");
     let project = dir.join("my-ext");
     let template = common::repo().join("crates/yapi/templates/extension");
-    // The template's files, without the one only `cargo generate` reads.
+    // Cargo reads every manifest in a git dependency's repository, and fails
+    // on a placeholder in a package name.
+    assert!(!template.join("Cargo.toml").exists());
+    // The template's files, without the one only `cargo generate` reads, and
+    // without cargo-generate's `.liquid` suffix.
     let expected: Vec<String> = files(&template)
         .into_iter()
         .filter(|path| path != "cargo-generate.toml")
+        .map(|path| path.strip_suffix(".liquid").unwrap_or(&path).to_owned())
         .collect();
     assert_eq!(files(&project), expected);
     for path in &expected {

@@ -5,15 +5,18 @@ use std::path::{Path, PathBuf};
 
 use crate::{err, out};
 
-/// The template's files, by path in the project, with cargo-generate's
-/// `{{project-name}}` and `{{crate_name}}` placeholders.
+/// The template's files, by path in the template, with cargo-generate's
+/// `{{project-name}}` and `{{crate_name}}` placeholders. As in cargo-generate,
+/// a `.liquid` suffix is dropped from the path in the project. The manifest has
+/// it so that Cargo, which reads every `Cargo.toml` in a git dependency's
+/// repository, never sees the placeholder in a package name.
 macro_rules! template {
     ($($path:literal),* $(,)?) => {
         [$(($path, include_str!(concat!("../templates/extension/", $path)))),*]
     };
 }
 const FILES: [(&str, &str); 7] = template![
-    "Cargo.toml",
+    "Cargo.toml.liquid",
     ".cargo/config.toml",
     ".gitignore",
     "README.md",
@@ -35,7 +38,7 @@ fn valid_name(name: &str) -> bool {
 fn create(dir: &Path, name: &str) -> std::io::Result<()> {
     let crate_name = name.replace('-', "_");
     for (path, contents) in FILES {
-        let path = dir.join(path);
+        let path = dir.join(path.strip_suffix(".liquid").unwrap_or(path));
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
