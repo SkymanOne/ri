@@ -860,9 +860,8 @@ fn max_attempts(options: &StreamOptions) -> u32 {
 fn retry_delay(attempt: u32, throttled: bool) -> Duration {
     let base: u64 = if throttled { 500 } else { 100 };
     let ceiling = (base << attempt.min(16)).min(20_000);
-    let mut bytes = [0u8; 8];
-    let _ = getrandom::fill(&mut bytes);
-    let fraction = (u64::from_le_bytes(bytes) % 10_000) as f64 / 10_000.0;
+    let random = u64::from_le_bytes(yapi_types::time::random_bytes());
+    let fraction = (random % 10_000) as f64 / 10_000.0;
     Duration::from_millis((ceiling as f64 * fraction) as u64)
 }
 

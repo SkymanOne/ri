@@ -86,7 +86,8 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-fn random_bytes<const N: usize>() -> [u8; N] {
+/// `N` bytes from the OS generator; zeros on a platform without one.
+pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     let _ = getrandom::fill(&mut bytes);
     bytes

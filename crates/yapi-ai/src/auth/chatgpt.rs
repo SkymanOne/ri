@@ -222,8 +222,8 @@ impl ChatGptOAuth {
             })?;
         let host_id = format!("urn:uuid:{}", device_id.to_ascii_lowercase());
         let pkce = pkce::generate();
-        let state = pkce::random_base64url(32);
-        let nonce = pkce::random_base64url(32);
+        let state = pkce::random_base64url();
+        let nonce = pkce::random_base64url();
         let mut server = match self.start_server(state.clone(), interaction.cancel()).await {
             Ok(server) => Some(server),
             Err(err) => {
