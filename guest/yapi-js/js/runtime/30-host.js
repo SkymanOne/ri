@@ -642,7 +642,10 @@
 			theme,
 			getAllThemes: () => request("getAllThemes", {}) ?? [],
 			getTheme: () => undefined,
-			setTheme: () => ({ success: false, error: "Themes cannot be changed from yapi extensions yet" }),
+			setTheme: (theme) =>
+				typeof theme === "string"
+					? yapi.request("ui.setTheme", { name: theme })
+					: { success: false, error: "yapi sets themes by name, not Theme objects" },
 			getToolsExpanded: () => !!request("getToolsExpanded", {}),
 			setToolsExpanded: (expanded) => request("setToolsExpanded", { expanded }),
 		};

@@ -71,6 +71,9 @@ pub(super) enum Request {
     Suggest(Value, oneshot::Sender<Value>),
     Render,
     ToolsExpanded(bool),
+    /// Switch to the named theme, which loads; `None` falls back to the
+    /// system theme, as pi does when a theme fails to load.
+    Theme(Option<String>),
     Shutdown,
 }
 
@@ -86,7 +89,12 @@ pub(super) struct Shared {
     /// The extension shortcuts, and the decoder their keys match with.
     pub shortcuts: Vec<ShortcutBinding>,
     pub keys: yapi_tui::keys::Keys,
+    /// Loads a theme by name: why it cannot be used.
+    pub check_theme: Option<CheckTheme>,
 }
+
+/// Loads a theme by name: why it cannot be used.
+pub(super) type CheckTheme = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
 /// The extension UI of one session.
 pub(super) struct InteractiveUi {
@@ -320,6 +328,15 @@ impl ExtensionUi for InteractiveUi {
 
     fn theme(&self) -> Value {
         lock(&self.shared).theme.clone()
+    }
+
+    /// pi's `setTheme` with a name: the theme applies and is saved, or the
+    /// system theme applies and the error says why.
+    fn set_theme(&self, name: &str) -> Result<(), String> {
+        let check = lock(&self.shared).check_theme.clone();
+        let checked = check.map_or(Ok(()), |check| check(name));
+        self.send(Request::Theme(checked.is_ok().then(|| name.to_owned())));
+        checked
     }
 
     fn footer_data(&self) -> Value {
@@ -864,6 +881,18 @@ impl super::App {
                 if !self.running {
                     self.quit = true;
                 }
+            }
+            Request::Theme(name) => {
+                if let Some(name) = &name
+                    && self.session.settings().theme.as_deref() != Some(name.as_str())
+                {
+                    let _ = self
+                        .session
+                        .set_global_setting("theme", Some(Value::String(name.clone())));
+                }
+                self.theme_override = None;
+                let name = name.unwrap_or_else(|| yapi_tui::theme::SYSTEM_THEME_NAME.to_owned());
+                self.use_theme(Some(&name));
             }
             Request::ToolsExpanded(expanded) => {
                 if expanded != self.expanded {

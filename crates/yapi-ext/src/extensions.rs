@@ -1315,6 +1315,12 @@ impl SessionBridge {
             "ui.editorShortcut" => return Value::Bool(ui.editor_shortcut(&text(&payload["data"]))),
             "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),
+            "ui.setTheme" => {
+                return match ui.set_theme(&text(&payload["name"])) {
+                    Ok(()) => json!({"success": true}),
+                    Err(error) => json!({"success": false, "error": error}),
+                };
+            }
             "ui.getToolsExpanded" => return Value::Bool(ui.tools_expanded()),
             "ui.setToolsExpanded" => ui.set_tools_expanded(payload["expanded"] == true),
             "ui.theme" => return ui.theme(),

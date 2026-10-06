@@ -319,6 +319,10 @@ impl ExtensionUi for RpcUi {
     fn theme(&self) -> Value {
         lock(&self.theme).clone()
     }
+
+    fn set_theme(&self, _name: &str) -> Result<(), String> {
+        Err("Theme switching not supported in RPC mode".into())
+    }
 }
 
 impl Rpc {

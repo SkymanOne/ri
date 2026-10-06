@@ -345,6 +345,12 @@ pub trait ExtensionUi: Send + Sync {
         Value::Null
     }
 
+    /// Switches to theme `name`, as `/settings` does; the error says why
+    /// it could not.
+    fn set_theme(&self, _name: &str) -> Result<(), String> {
+        Err("UI not available".into())
+    }
+
     /// A handler of extension `path` failed on `event`, with the error's
     /// stack when the runtime gave one; print mode's report by default.
     fn extension_error(&self, path: &str, _event: &str, error: &str, _stack: Option<&str>) {

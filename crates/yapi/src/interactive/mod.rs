@@ -538,52 +538,55 @@ fn load_theme(
     colors: &yapi_tui::terminal::TerminalColors,
     mode: ColorMode,
 ) -> (Theme, Option<String>) {
-    let appearance = appearance(colors);
-    let system = || {
-        Theme::system(
-            &SystemThemeInput {
-                foreground: colors.foreground,
-                background: colors.background,
-                palette: colors.palette.clone(),
-                saturation: 1.0,
-                appearance_hint: Some(appearance),
-            },
-            mode,
-        )
+    let Some(name) = resolve_theme_setting(setting, appearance(colors)) else {
+        return (system_theme(colors, mode), None);
     };
-    let Some(name) = resolve_theme_setting(setting, appearance) else {
-        return (system(), None);
-    };
-    if name == yapi_tui::theme::SYSTEM_THEME_NAME {
-        return (system(), None);
-    }
-    // pi's order: registered theme files, built-in themes, then the agent
-    // directory's `themes`.
-    let registered = files.path(&name).map(Path::to_path_buf);
-    if registered.is_none()
-        && let Some(theme) = Theme::builtin(&name, mode)
-    {
-        return (theme, None);
-    }
-    let path = registered.unwrap_or_else(|| agent_dir.join("themes").join(format!("{name}.json")));
-    match std::fs::read_to_string(&path) {
+    match theme_named(&name, files, agent_dir, colors, mode) {
+        Ok(theme) => (theme, None),
         // pi names the theme in its errors when it loads the active one.
-        Ok(text) => match Theme::from_json(&name, &text, mode) {
-            Ok(theme) => (theme, None),
-            Err(error) => (
-                system(),
-                Some(format!(
-                    "Failed to load theme \"{name}\": {error}\nFell back to the system theme."
-                )),
-            ),
-        },
-        Err(_) => (
-            system(),
+        Err(error) => (
+            system_theme(colors, mode),
             Some(format!(
-                "Failed to load theme \"{name}\": Theme not found: {name}\nFell back to the system theme."
+                "Failed to load theme \"{name}\": {error}\nFell back to the system theme."
             )),
         ),
     }
+}
+
+fn system_theme(colors: &yapi_tui::terminal::TerminalColors, mode: ColorMode) -> Theme {
+    Theme::system(
+        &SystemThemeInput {
+            foreground: colors.foreground,
+            background: colors.background,
+            palette: colors.palette.clone(),
+            saturation: 1.0,
+            appearance_hint: Some(appearance(colors)),
+        },
+        mode,
+    )
+}
+
+/// pi's `loadTheme`: the theme called `name`, from the registered theme
+/// files, the built-in themes, then the agent directory's `themes`.
+fn theme_named(
+    name: &str,
+    files: &themes::ThemeFiles,
+    agent_dir: &Path,
+    colors: &yapi_tui::terminal::TerminalColors,
+    mode: ColorMode,
+) -> Result<Theme, String> {
+    if name == yapi_tui::theme::SYSTEM_THEME_NAME {
+        return Ok(system_theme(colors, mode));
+    }
+    let registered = files.path(name).map(Path::to_path_buf);
+    if registered.is_none()
+        && let Some(theme) = Theme::builtin(name, mode)
+    {
+        return Ok(theme);
+    }
+    let path = registered.unwrap_or_else(|| agent_dir.join("themes").join(format!("{name}.json")));
+    let text = std::fs::read_to_string(&path).map_err(|_| format!("Theme not found: {name}"))?;
+    Theme::from_json(name, &text, mode).map_err(|error| error.to_string())
 }
 
 /// Forwards a session's events to the loop, tagged with `epoch`.
@@ -3729,6 +3732,7 @@ impl App {
             return;
         };
         self.ext.set_theme(&self.theme);
+        self.share_themes();
         let ui = extension_ui::InteractiveUi {
             tx: self.tx.clone(),
             epoch: self.epoch,
@@ -3748,6 +3752,15 @@ impl App {
                 .await;
             let _ = tx.send(Event::Bound);
         });
+    }
+
+    /// Lets extensions set themes by name from the session's theme files.
+    fn share_themes(&self) {
+        let (files, agent_dir) = (self.theme_files.clone(), self.agent_dir.clone());
+        let (colors, mode) = (self.colors.clone(), self.color_mode);
+        yapi_types::sync::lock(&self.ext.shared).check_theme = Some(Arc::new(move |name| {
+            theme_named(name, &files, &agent_dir, &colors, mode).map(|_| ())
+        }));
     }
 
     /// Handles everything but input.
@@ -3828,6 +3841,7 @@ impl App {
                 }
                 // Extensions may have added skills, prompt templates and themes.
                 self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
+                self.share_themes();
                 self.install_autocomplete();
                 // Items shown before the extensions started get their components.
                 self.redraw_transcript();
