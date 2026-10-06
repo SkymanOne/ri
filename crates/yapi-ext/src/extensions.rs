@@ -514,6 +514,37 @@ impl Extension for JsExtension {
             .is_some_and(|events| events.iter().any(|event| event == kind))
     }
 
+    fn run_bash<'a>(
+        &'a self,
+        handle: &'a Value,
+        command: &'a str,
+        cwd: &'a std::path::Path,
+        output: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'a, Result<Option<i32>, String>> {
+        Box::pin(async move {
+            let id = handle["id"].as_u64().unwrap_or_default();
+            let bridge = &self.shared.bridge;
+            lock(&bridge.bash).insert(id, output);
+            let payload = json!({"id": id, "command": command, "cwd": cwd});
+            let run = self.shared.instance.call("bash", &payload);
+            tokio::pin!(run);
+            let result = tokio::select! {
+                result = &mut run => result,
+                () = cancel.cancelled() => {
+                    // The operations see their signal abort and finish.
+                    let _ = self.shared.instance.call("bashAbort", &json!({"id": id})).await;
+                    run.await
+                }
+            };
+            lock(&bridge.bash).remove(&id);
+            let result = result.map_err(|err| err.to_string())?;
+            Ok(result["exitCode"]
+                .as_i64()
+                .and_then(|code| i32::try_from(code).ok()))
+        })
+    }
+
     fn handle<'a>(&'a self, ctx: &'a Context, event: &'a Value) -> BoxFuture<'a, Option<Value>> {
         Box::pin(async move {
             let kind = event["type"].as_str().unwrap_or_default();
@@ -533,6 +564,12 @@ impl Extension for JsExtension {
                 // A failing `tool_call` handler blocks the call, as in pi.
                 Err(err) if kind == "tool_call" => {
                     Some(json!({"block": true, "reason": err.to_string()}))
+                }
+                // A failing `user_bash` handler stops the command, as in pi.
+                Err(err) if kind == "user_bash" => {
+                    ctx.ui
+                        .extension_error(&self.path_text(), kind, &err.to_string(), None);
+                    Some(json!({"error": err.to_string()}))
                 }
                 Err(err) => {
                     ctx.ui
@@ -674,6 +711,11 @@ struct SessionBridge {
     session: Mutex<WeakSession>,
     /// Update sinks and cancellation of running extension tools, by call id.
     updates: Mutex<HashMap<String, (UpdateSink, CancellationToken)>>,
+    /// Custom components shown as blocking dialogs, by handle.
+    prompts: Mutex<std::collections::HashSet<u64>>,
+    /// Where the output of `!` commands that bash operations run goes, by
+    /// their operations' id.
+    bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
     owner: OnceLock<Weak<ExtensionHost>>,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
     codemode: Arc<crate::codemode::Runner>,
@@ -695,6 +737,8 @@ impl SessionBridge {
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
+            bash: Mutex::default(),
+            prompts: Mutex::default(),
             owner: OnceLock::new(),
         })
     }
@@ -857,6 +901,8 @@ impl SessionBridge {
             "ui.getEditorText" => return Value::String(ui.editor_text()),
             "ui.custom" => {
                 if let Some(component) = self.component(&payload["handle"]) {
+                    session.ui_prompt_opened("custom", None);
+                    lock(&self.prompts).insert(payload["handle"].as_u64().unwrap_or_default());
                     let options = CustomOptions {
                         overlay: payload["overlay"] == true,
                         overlay_options: payload["overlayOptions"].clone(),
@@ -866,6 +912,9 @@ impl SessionBridge {
             }
             "ui.close" => {
                 if let Some(component) = self.component(&payload["handle"]) {
+                    if lock(&self.prompts).remove(&payload["handle"].as_u64().unwrap_or_default()) {
+                        session.ui_prompt_closed();
+                    }
                     ui.close(component);
                 }
             }
@@ -982,6 +1031,19 @@ fn session_read(session: &AgentSession, method: &str, args: &Value) -> Result<Va
 
 impl Bridge for SessionBridge {
     fn request(&self, kind: &str, payload: &Value) -> Result<Value, String> {
+        if kind == "bash.data" {
+            let sink = lock(&self.bash)
+                .get(&payload["id"].as_u64().unwrap_or_default())
+                .cloned();
+            if let (Some(sink), Some(data)) = (sink, payload["data"].as_str()) {
+                use base64::Engine as _;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data)
+                    .map_err(|err| err.to_string())?;
+                let _ = sink.send(bytes);
+            }
+            return Ok(Value::Null);
+        }
         if kind == "tool.update" {
             let sink = lock(&self.updates)
                 .get(payload["toolCallId"].as_str().unwrap_or_default())
@@ -1040,6 +1102,12 @@ impl Bridge for SessionBridge {
                     .map(|_| Value::Null)
                     .map_err(|err| err.to_string())
             }),
+            "session.boundaryContext" => {
+                let boundary = yapi_core::agent_session::Boundary::parse(&text(&payload["type"]))
+                    .ok_or("Unknown boundary")?;
+                let drafts = list(&payload["entries"]);
+                session.boundary_context(boundary, drafts)
+            }
             "session.read" => session_read(&session, payload["method"].as_str().unwrap_or_default(), &payload["args"]),
             "tools.getActive" => Ok(to_json(session.active_tool_names())),
             "tools.getAll" => Ok(Value::Array(
@@ -1241,7 +1309,10 @@ impl Bridge for SessionBridge {
                     if !registry.has_auth(&model.provider) {
                         return Ok(Value::Bool(false));
                     }
-                    Ok(Value::Bool(session.set_model(model).is_ok()))
+                    let set = session.set_model(model).is_ok();
+                    // pi's `setModel` returns once `model_select` handlers ran.
+                    session.flush_announcements().await;
+                    Ok(Value::Bool(set))
                 }
                 "models.apiKey" => {
                     let registry = session.registry();
@@ -1267,44 +1338,30 @@ impl Bridge for SessionBridge {
                     .compact(payload["customInstructions"].as_str())
                     .await
                     .map(to_json),
-                "ui.select" => {
+                "ui.select" | "ui.confirm" | "ui.input" | "ui.editor" => {
                     let (ui, _) = session.extension_binding();
-                    let options = list(&payload["options"]).iter().map(text).collect();
-                    Ok(to_json(
-                        ui.select(&text(&payload["title"]), options, dialog(&payload))
-                            .await,
-                    ))
-                }
-                "ui.confirm" => {
-                    let (ui, _) = session.extension_binding();
-                    Ok(Value::Bool(
-                        ui.confirm(
-                            &text(&payload["title"]),
-                            &text(&payload["message"]),
-                            dialog(&payload),
-                        )
-                        .await,
-                    ))
-                }
-                "ui.input" => {
-                    let (ui, _) = session.extension_binding();
-                    let placeholder = payload["placeholder"].as_str().map(str::to_owned);
-                    Ok(to_json(
-                        ui.input(
-                            &text(&payload["title"]),
-                            placeholder.as_deref(),
-                            dialog(&payload),
-                        )
-                        .await,
-                    ))
-                }
-                "ui.editor" => {
-                    let (ui, _) = session.extension_binding();
-                    let prefill = payload["prefill"].as_str().map(str::to_owned);
-                    Ok(to_json(
-                        ui.editor(&text(&payload["title"]), prefill.as_deref())
-                            .await,
-                    ))
+                    let title = text(&payload["title"]);
+                    let dialog_kind = &kind["ui.".len()..];
+                    session.ui_prompt_opened(dialog_kind, Some(&title));
+                    let answer = match dialog_kind {
+                        "select" => {
+                            let options = list(&payload["options"]).iter().map(text).collect();
+                            to_json(ui.select(&title, options, dialog(&payload)).await)
+                        }
+                        "confirm" => Value::Bool(
+                            ui.confirm(&title, &text(&payload["message"]), dialog(&payload))
+                                .await,
+                        ),
+                        "input" => to_json(
+                            ui.input(&title, payload["placeholder"].as_str(), dialog(&payload))
+                                .await,
+                        ),
+                        _ => to_json(ui.editor(&title, payload["prefill"].as_str()).await),
+                    };
+                    session.ui_prompt_closed();
+                    // pi's handlers hear of it before the dialog's caller resumes.
+                    session.flush_announcements().await;
+                    Ok(answer)
                 }
                 other => Err(format!("{other} is not available in yapi extensions yet")),
             }

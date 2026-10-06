@@ -20,6 +20,7 @@ use crate::compaction::{
 use crate::session::build_projection;
 use crate::time::parse_iso;
 
+use super::extensions::defined;
 use super::{AgentSession, Compacting};
 
 /// What the compaction check decided.
@@ -312,11 +313,8 @@ impl AgentSession {
                     .await
             }
             CompactionCheck::OverflowFailed(error_message) => {
-                self.emit_compaction_end(
-                    CompactionReason::Overflow,
-                    Err(Some(error_message)),
-                    false,
-                );
+                self.compaction_failed(CompactionReason::Overflow, Some(error_message), false)
+                    .await;
                 false
             }
             CompactionCheck::Overflow { will_retry } => {
@@ -347,54 +345,141 @@ impl AgentSession {
             auth: self.registry().auth(model).await,
             thinking_level,
             retry: self.retry_policy(),
+            hooks: yapi_ai::stream::RequestHooks {
+                headers: self.headers_hook(&cancel),
+                ..Default::default()
+            },
             cancel,
             on_retry: Box::new(move |retry| self.emit_summary_retry(retry, source, reason)),
         }
     }
 
-    /// What manual and automatic compaction share: summarizes `preparation`
-    /// and records the compaction with the estimate after it, unless `cancel`
-    /// fired meanwhile.
+    /// What manual and automatic compaction share: pi's
+    /// `session_before_compact` event, which may cancel the compaction or
+    /// supply its summary; otherwise a summary of `preparation`. The
+    /// compaction is recorded with the estimate after it and reported as
+    /// `session_compact`, unless `cancel` fired meanwhile.
     async fn run_compaction(
         &self,
         model: &Model,
         preparation: &Preparation,
         custom_instructions: Option<&str>,
-        reason: CompactionReason,
+        (reason, will_retry): (CompactionReason, bool),
         cancel: &CancellationToken,
-    ) -> Result<CompactionResult, String> {
-        let summarizer = self
-            .summarizer(
-                model,
-                self.thinking_level(),
-                SummarySource::Compaction,
-                Some(reason),
-                cancel.clone(),
-            )
-            .await;
-        let mut result = summarizer.compact(preparation, custom_instructions).await?;
-        // As pi, a summary cut short by an abort is not recorded.
-        if cancel.is_cancelled() {
-            return Err("Compaction cancelled".to_owned());
+    ) -> Compacted {
+        let mut from_extension = false;
+        let mut supplied = None;
+        if self.has_handlers("session_before_compact") {
+            let event = serde_json::json!({
+                "type": "session_before_compact",
+                "preparation": preparation,
+                "branchEntries": self.with_session(|session| serde_json::to_value(session.branch_path(None)).unwrap_or_default()),
+                "customInstructions": custom_instructions,
+                "reason": reason,
+                "willRetry": will_retry,
+            });
+            let event = defined(event, &["customInstructions"]);
+            let result = self.emit_extension_event(&event, cancel.clone()).await;
+            if result
+                .as_ref()
+                .is_some_and(|result| result["cancel"] == true)
+            {
+                return Compacted {
+                    outcome: Err("Compaction cancelled".into()),
+                    from_extension,
+                    refused: true,
+                };
+            }
+            supplied = result.and_then(|result| {
+                serde_json::from_value::<CompactionResult>(result["compaction"].clone()).ok()
+            });
+            from_extension = supplied.is_some();
         }
-        let estimate = self.with_session(|session| {
-            let _ = session.append_compaction(
-                result.summary.clone(),
-                Some(result.first_kept_entry_id.clone()),
-                result.tokens_before,
-                result.details.clone(),
-                Some(false),
-                result.usage.clone(),
-            );
-            session
-                .build_context()
-                .messages
-                .iter()
-                .map(estimate_tokens)
-                .sum()
+        let outcome = async {
+            let mut result = match supplied {
+                Some(result) => result,
+                None => {
+                    let summarizer = self
+                        .summarizer(
+                            model,
+                            self.thinking_level(),
+                            SummarySource::Compaction,
+                            Some(reason),
+                            cancel.clone(),
+                        )
+                        .await;
+                    summarizer.compact(preparation, custom_instructions).await?
+                }
+            };
+            // As pi, a summary cut short by an abort is not recorded.
+            if cancel.is_cancelled() {
+                return Err("Compaction cancelled".to_owned());
+            }
+            let (entry, estimate) = self.with_session(|session| {
+                let id = session
+                    .append_compaction(
+                        result.summary.clone(),
+                        Some(result.first_kept_entry_id.clone()),
+                        result.tokens_before,
+                        result.details.clone(),
+                        Some(from_extension),
+                        result.usage.clone(),
+                    )
+                    .ok();
+                let estimate = session
+                    .build_context()
+                    .messages
+                    .iter()
+                    .map(estimate_tokens)
+                    .sum();
+                (id.and_then(|id| session.entry(&id).cloned()), estimate)
+            });
+            result.estimated_tokens_after = Some(estimate);
+            if let Some(entry) = entry {
+                let event = serde_json::json!({
+                    "type": "session_compact",
+                    "compactionEntry": entry,
+                    "fromExtension": from_extension,
+                    "reason": reason,
+                    "willRetry": will_retry,
+                });
+                self.emit_extension_event(&event, CancellationToken::new())
+                    .await;
+            }
+            Ok(result)
+        }
+        .await;
+        Compacted {
+            outcome,
+            from_extension,
+            refused: false,
+        }
+    }
+
+    /// pi's `compaction_end` for a compaction that did not happen, then its
+    /// `session_compact_failed` event for extensions.
+    async fn compaction_failed(
+        &self,
+        reason: CompactionReason,
+        error_message: Option<String>,
+        from_extension: bool,
+    ) {
+        let aborted = error_message.is_none();
+        self.emit_compaction_end(reason, Err(error_message.clone()), false);
+        if !self.has_handlers("session_compact_failed") {
+            return;
+        }
+        let event = serde_json::json!({
+            "type": "session_compact_failed",
+            "reason": reason,
+            "errorMessage": error_message,
+            "aborted": aborted,
+            "willRetry": false,
+            "fromExtension": from_extension,
         });
-        result.estimated_tokens_after = Some(estimate);
-        Ok(result)
+        let event = defined(event, &["errorMessage"]);
+        self.emit_extension_event(&event, CancellationToken::new())
+            .await;
     }
 
     /// pi's `compaction_end` event: with the result, or aborted (`Err(None)`),
@@ -463,24 +548,26 @@ impl AgentSession {
         };
         self.emit(&AgentEvent::CompactionStart { reason });
         let compacting = Compacting::start(&self.inner.compacting);
-        let outcome = self
-            .run_compaction(&model, &preparation, None, reason, cancel)
+        let compacted = self
+            .run_compaction(&model, &preparation, None, (reason, will_retry), cancel)
             .await;
         drop(compacting);
         self.inner.idle.notify_waiters();
-        match outcome {
+        match compacted.outcome {
             Ok(result) => {
                 self.emit_compaction_end(reason, Ok(result), will_retry);
                 will_retry || self.has_queued()
             }
             Err(message) => {
-                let error_message = (!cancel.is_cancelled()).then(|| match reason {
+                let aborted = cancel.is_cancelled() || compacted.refused;
+                let error_message = (!aborted).then(|| match reason {
                     CompactionReason::Overflow => {
                         format!("Context overflow recovery failed: {message}")
                     }
                     _ => format!("Auto-compaction failed: {message}"),
                 });
-                self.emit_compaction_end(reason, Err(error_message), false);
+                self.compaction_failed(reason, error_message, compacted.from_extension)
+                    .await;
                 false
             }
         }
@@ -517,37 +604,49 @@ impl AgentSession {
                     None => Err("Nothing to compact (session too small)".to_owned()),
                 }
             })?;
-            self.run_compaction(
-                &model,
-                &preparation,
-                custom_instructions,
-                CompactionReason::Manual,
-                &cancel,
-            )
-            .await
+            Ok(self
+                .run_compaction(
+                    &model,
+                    &preparation,
+                    custom_instructions,
+                    (CompactionReason::Manual, false),
+                    &cancel,
+                )
+                .await)
         }
         .await;
+        let compacted = outcome.unwrap_or_else(|error| Compacted {
+            outcome: Err(error),
+            from_extension: false,
+            refused: false,
+        });
         *lock(&self.inner.cancel) = None;
         self.inner.manual_compaction.store(false, Ordering::SeqCst);
         drop(compacting);
         // Waiters for idle run once this returns, after its own outcome.
         self.inner.idle.notify_waiters();
         let reason = CompactionReason::Manual;
-        if cancel.is_cancelled() {
-            self.emit_compaction_end(reason, Err(None), false);
-            // pi reports the summarizer's error, such as an aborted request.
-            return Err(outcome
-                .err()
-                .unwrap_or_else(|| "Compaction cancelled".into()));
+        match compacted.outcome {
+            Ok(result) => {
+                self.emit_compaction_end(reason, Ok(result.clone()), false);
+                Ok(result)
+            }
+            Err(message) => {
+                let aborted = cancel.is_cancelled() || compacted.refused;
+                let error_message = (!aborted).then(|| format!("Compaction failed: {message}"));
+                self.compaction_failed(reason, error_message, compacted.from_extension)
+                    .await;
+                // pi reports the summarizer's error, such as an aborted request.
+                Err(message)
+            }
         }
-        match &outcome {
-            Ok(result) => self.emit_compaction_end(reason, Ok(result.clone()), false),
-            Err(message) => self.emit_compaction_end(
-                reason,
-                Err(Some(format!("Compaction failed: {message}"))),
-                false,
-            ),
-        }
-        outcome
     }
+}
+
+/// A compaction's outcome, whether an extension supplied its summary, and
+/// whether an extension cancelled it.
+struct Compacted {
+    outcome: Result<CompactionResult, String>,
+    from_extension: bool,
+    refused: bool,
 }

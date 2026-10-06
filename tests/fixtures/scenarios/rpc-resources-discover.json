@@ -1,0 +1,63 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "get_commands",
+      "success": true,
+      "data": {
+        "commands": [
+          {
+            "name": "llama",
+            "description": "Manage llama.cpp router models",
+            "source": "extension",
+            "sourceInfo": {
+              "path": "builtin:llama.cpp",
+              "source": "builtin",
+              "scope": "temporary",
+              "origin": "top-level"
+            }
+          },
+          {
+            "name": "mcp",
+            "description": "Manage MCP servers: sign in, reconnect, enable or disable, and change exposure",
+            "source": "extension",
+            "sourceInfo": {
+              "path": "builtin:mcp",
+              "source": "builtin",
+              "scope": "temporary",
+              "origin": "top-level"
+            }
+          },
+          {
+            "name": "review",
+            "description": "Review the change",
+            "source": "prompt",
+            "sourceInfo": {
+              "path": "<cwd>/extra/prompts/review.md",
+              "source": "extension:discover",
+              "scope": "temporary",
+              "origin": "top-level",
+              "baseDir": "<cwd>"
+            }
+          },
+          {
+            "name": "skill:greeting",
+            "description": "Greets people warmly",
+            "source": "skill",
+            "sourceInfo": {
+              "path": "<cwd>/extra/skills/greeting/SKILL.md",
+              "source": "extension:discover",
+              "scope": "temporary",
+              "origin": "top-level",
+              "baseDir": "<cwd>"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

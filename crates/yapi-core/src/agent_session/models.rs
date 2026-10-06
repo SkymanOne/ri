@@ -26,7 +26,7 @@ impl AgentSession {
         if !self.registry().has_auth(&model.provider) {
             return Err(format!("No API key for {}/{}", model.provider, model.id));
         }
-        self.apply_model(model, None);
+        self.apply_model(model, None, "set");
         Ok(())
     }
 
@@ -113,8 +113,9 @@ impl AgentSession {
 
     /// Records `model` and applies the thinking level for it: `explicit`,
     /// else its level in settings, else the default level, else the current
-    /// one.
-    fn apply_model(&self, model: Model, explicit: Option<ThinkingLevel>) {
+    /// one. Extensions hear of a new model as pi's `model_select` from
+    /// `source`.
+    fn apply_model(&self, model: Model, explicit: Option<ThinkingLevel>, source: &str) {
         let settings = self.settings();
         let level = explicit
             .or_else(|| {
@@ -126,14 +127,26 @@ impl AgentSession {
             })
             .or_else(|| lock(&self.inner.settings).default_thinking_level())
             .unwrap_or_else(|| self.thinking_level());
-        {
+        let previous = {
             let mut state = lock(&self.inner.state);
             let _ = state
                 .session
                 .append_model_change(&model.provider, &model.id);
-            state.model = Some(model);
-        }
+            state.model.replace(model.clone())
+        };
         self.set_thinking_level(level);
+        if previous
+            .as_ref()
+            .is_none_or(|previous| !previous.is(&model.provider, &model.id))
+        {
+            let event = serde_json::json!({
+                "type": "model_select",
+                "model": model,
+                "previousModel": previous,
+                "source": source,
+            });
+            self.announce(super::extensions::defined(event, &["previousModel"]));
+        }
     }
 
     /// pi's `cycleModel`, forward or backward, over the scoped models that
@@ -174,7 +187,7 @@ impl AgentSession {
             (index + models.len() - 1) % models.len()
         };
         let (model, level) = models[next].clone();
-        self.apply_model(model.clone(), level);
+        self.apply_model(model.clone(), level, "cycle");
         Some((model, is_scoped))
     }
 
@@ -189,10 +202,15 @@ impl AgentSession {
         if level == state.thinking_level {
             return;
         }
-        state.thinking_level = level;
+        let previous = std::mem::replace(&mut state.thinking_level, level);
         let _ = state.session.append_thinking_level_change(level.as_str());
         drop(state);
         self.emit(&AgentEvent::ThinkingLevelChanged { level });
+        self.announce(serde_json::json!({
+            "type": "thinking_level_select",
+            "level": level,
+            "previousLevel": previous,
+        }));
     }
 
     /// The thinking levels the current model supports; all of them without a

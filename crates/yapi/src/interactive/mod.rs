@@ -36,8 +36,11 @@ use std::time::{Duration, Instant};
 use ratatui_core::text::{Line, Span};
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use yapi_core::agent_session::{AgentSession, TreeNavigation, TreeOutcome};
+use yapi_core::agent_session::{
+    AgentSession, Replacement, SessionChange, TreeNavigation, TreeOutcome, UserBash,
+};
 use yapi_core::bash_executor::BashResult;
+use yapi_core::extensions::BashOperations;
 use yapi_core::extensions::{Mode, NotifyKind};
 use yapi_core::session::SessionManager;
 use yapi_tui::autocomplete::AutocompleteProvider;
@@ -153,6 +156,8 @@ enum Event {
         Box<catalogs::Refresh>,
         yapi_core::agent_session::CatalogRefresh,
     ),
+    /// Work to finish on the loop for the session with this epoch.
+    Then(u64, Box<dyn FnOnce(&mut App) + Send>),
     /// A component an extension built for a transcript item, answering the
     /// request with this sequence number.
     Component(
@@ -420,8 +425,9 @@ struct App {
     /// The last selector catalog refresh id.
     next_refresh: u64,
     /// The current session's extensions wait to start, after the session
-    /// they replace (if any) shuts down.
-    binding: Option<Option<AgentSession>>,
+    /// they replace (if any) shuts down for a reason, with the replacement's
+    /// session file.
+    binding: Option<Option<(AgentSession, Replacement, Option<String>)>>,
     /// Messages to send once extensions have started.
     initial: Vec<String>,
     /// Images attached to the first of `initial`.
@@ -1060,7 +1066,7 @@ impl App {
                 .collect();
             header.extend(header::listing(
                 &self.theme,
-                self.session.resources(),
+                &self.session.resources(),
                 &extensions,
                 &self.cwd,
                 self.home.as_deref(),
@@ -2033,22 +2039,67 @@ impl App {
         self.start_prompt(text, Vec::new());
     }
 
+    /// pi's `!` command: `user_bash` handlers may run it or say how, and
+    /// a handler's failure, which is already shown, stops it.
     fn run_bash(&mut self, command: String, exclude: bool) {
-        self.next_bash += 1;
-        let id = self.next_bash;
-        let view = BashView::new(id, &command, exclude);
+        if !self.session.has_handlers("user_bash") {
+            self.start_bash(command, exclude, None);
+            return;
+        }
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        let epoch = self.epoch;
+        tokio::spawn(async move {
+            let then: Box<dyn FnOnce(&mut App) + Send> = match session
+                .user_bash(&command, exclude)
+                .await
+            {
+                Err(_) => return,
+                Ok(UserBash::Done(result)) => {
+                    Box::new(move |app| app.show_bash_result(&command, exclude, result))
+                }
+                Ok(UserBash::Operations(operations)) => {
+                    Box::new(move |app| app.start_bash(command, exclude, Some(operations)))
+                }
+                Ok(UserBash::Local) => Box::new(move |app| app.start_bash(command, exclude, None)),
+            };
+            let _ = tx.send(Event::Then(epoch, then));
+        });
+    }
+
+    /// Shows a `!` command's view, where it waits for the current response
+    /// when one streams.
+    fn add_bash_view(&mut self, view: BashView) {
         if self.running {
             self.pending_bash.push(view);
         } else {
             self.push(Item::Bash(Box::new(view)));
         }
+    }
+
+    /// Shows and records the result an extension's `user_bash` handler gave.
+    fn show_bash_result(&mut self, command: &str, exclude: bool, result: BashResult) {
+        self.next_bash += 1;
+        let mut view = BashView::new(self.next_bash, command, exclude);
+        if !result.output.is_empty() {
+            view.append(&result.output);
+        }
+        self.session.record_bash(command, &result, Some(exclude));
+        view.finish(result);
+        self.add_bash_view(view);
+    }
+
+    fn start_bash(&mut self, command: String, exclude: bool, operations: Option<BashOperations>) {
+        self.next_bash += 1;
+        let id = self.next_bash;
+        self.add_bash_view(BashView::new(id, &command, exclude));
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
             let chunks = tx.clone();
             let result = session
-                .execute_bash(&command, Some(exclude), None, move |chunk| {
+                .execute_bash(&command, Some(exclude), None, operations, move |chunk| {
                     let _ = chunks.send(Event::BashChunk(epoch, id, chunk.to_owned()));
                 })
                 .await;
@@ -2822,8 +2873,13 @@ impl App {
     // Sessions
 
     /// Builds a session around `manager` and shows it in place of the current
-    /// one.
-    fn replace_session(&mut self, manager: SessionManager) -> Result<(), String> {
+    /// one, which it replaces for `reason`.
+    fn replace_session(
+        &mut self,
+        manager: SessionManager,
+        reason: Replacement,
+    ) -> Result<(), String> {
+        let target = crate::runtime::file_of(&manager);
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
         self.session.abort();
         self.session.abort_bash();
@@ -2831,7 +2887,7 @@ impl App {
         let old = std::mem::replace(&mut self.session, session);
         subscribe(&self.session, &self.tx, self.epoch);
         self.reset_extension_ui();
-        self.binding = Some(Some(old));
+        self.binding = Some(Some((old, reason, target)));
         self.cwd = self.session.cwd().to_path_buf();
         self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
         self.branch = footer::git_branch(&self.cwd);
@@ -2847,43 +2903,80 @@ impl App {
         Ok(())
     }
 
+    /// Runs `then` unless an extension cancels `change`: at once when no
+    /// extension handles its event, otherwise once pi's cancellable
+    /// `session_before_*` event answers that none did.
+    pub(super) fn unless_cancelled(
+        &mut self,
+        change: SessionChange,
+        then: impl FnOnce(&mut App) + Send + 'static,
+    ) {
+        if !self.session.has_handlers(change.event()) {
+            then(self);
+            return;
+        }
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        let epoch = self.epoch;
+        tokio::spawn(async move {
+            if !session.cancels(&change).await {
+                let _ = tx.send(Event::Then(epoch, Box::new(then)));
+            }
+        });
+    }
+
     fn new_session(&mut self) {
         self.indicator = None;
-        let result = crate::runtime::new_session(&self.session, None)
-            .map_err(|error| error.to_string())
-            .and_then(|manager| self.replace_session(manager));
-        match result {
-            Ok(()) => {
-                let notice = lines::styled("✓ New session started", self.theme.fg("accent"));
-                self.text_item(vec![notice], true, (1, 1));
+        self.unless_cancelled(SessionChange::New, |app| {
+            let result = crate::runtime::new_session(&app.session, None)
+                .map_err(|error| error.to_string())
+                .and_then(|manager| app.replace_session(manager, Replacement::New));
+            match result {
+                Ok(()) => {
+                    let notice = lines::styled("✓ New session started", app.theme.fg("accent"));
+                    app.text_item(vec![notice], true, (1, 1));
+                }
+                Err(error) => app.fatal("Failed to create session", &error),
             }
-            Err(error) => self.fatal("Failed to create session", &error),
-        }
+        });
     }
 
     /// pi's `runtimeHost.fork`: `at` keeps the entry (`/clone`), otherwise the
     /// branch ends before the user message (`/fork`).
     fn fork(&mut self, id: &str, at: bool) {
-        let result = crate::runtime::plan_fork(&self.session, id, at).and_then(|fork| {
-            let manager = fork.build(&self.session)?;
-            self.replace_session(manager)?;
-            Ok(fork.text)
-        });
-        match result {
-            Ok(text) => {
-                if at {
-                    self.set_editor_text("");
-                    self.status("Cloned to new session");
-                } else {
-                    self.set_editor_text(text.as_deref().unwrap_or_default());
-                    self.status("Forked to new session");
+        let entry_id = id.to_owned();
+        let id = id.to_owned();
+        self.unless_cancelled(SessionChange::Fork { entry_id, at }, move |app| {
+            let result = crate::runtime::plan_fork(&app.session, &id, at).and_then(|fork| {
+                let manager = fork.build(&app.session)?;
+                app.replace_session(manager, Replacement::Fork)?;
+                Ok(fork.text)
+            });
+            match result {
+                Ok(text) => {
+                    if at {
+                        app.set_editor_text("");
+                        app.status("Cloned to new session");
+                    } else {
+                        app.set_editor_text(text.as_deref().unwrap_or_default());
+                        app.status("Forked to new session");
+                    }
                 }
+                Err(error) => app.error(error),
             }
-            Err(error) => self.error(error),
-        }
+        });
     }
 
+    /// pi's `switchSession` to `path`, in `cwd_override` when given.
     fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
+        let target = path.display().to_string();
+        let path = path.to_path_buf();
+        self.unless_cancelled(SessionChange::Resume(target), move |app| {
+            app.open_resumed(&path, cwd_override);
+        });
+    }
+
+    fn open_resumed(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
         let fallback = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
         let manager = match crate::runtime::open_session(path, cwd_override.as_deref(), &fallback) {
             Ok(manager) => manager,
@@ -2908,7 +3001,7 @@ impl App {
                 return;
             }
         };
-        match self.replace_session(manager) {
+        match self.replace_session(manager, Replacement::Resume) {
             Ok(()) if cwd_override.is_some() => self.status("Resumed session in current cwd"),
             Ok(()) => self.status("Resumed session"),
             Err(error) => self.fatal("Failed to resume session", &error),
@@ -3632,10 +3725,15 @@ impl App {
         let session = self.session.clone();
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            if let Some(old) = old {
-                old.shutdown().await;
+            let mut replaced = None;
+            if let Some((old, reason, target)) = old {
+                let previous = old.with_session(|manager| crate::runtime::file_of(manager));
+                old.shutdown_for(reason, target).await;
+                replaced = Some((reason, previous));
             }
-            session.bind_extensions(Arc::new(ui), Mode::Tui).await;
+            session
+                .bind_extensions(Arc::new(ui), Mode::Tui, replaced)
+                .await;
             let _ = tx.send(Event::Bound);
         });
     }
@@ -3713,6 +3811,9 @@ impl App {
             }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
             Event::Bound => {
+                // Extensions may have added skills, prompt templates and themes.
+                self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
+                self.install_autocomplete();
                 // Items shown before the extensions started get their components.
                 self.redraw_transcript();
                 let mut initial = std::mem::take(&mut self.initial).into_iter();
@@ -3732,6 +3833,7 @@ impl App {
             Event::Component(epoch, slot, sequence, component) if epoch == self.epoch => {
                 self.on_component(*slot, sequence, component);
             }
+            Event::Then(epoch, then) if epoch == self.epoch => then(self),
             _ => {}
         }
     }

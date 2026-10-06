@@ -431,6 +431,20 @@ pub fn skills_from(sources: &[SourceInfo]) -> (Vec<Skill>, Vec<Diagnostic>) {
     (skills, diagnostics)
 }
 
+/// pi's `mergePaths`: `sources` in order, each path once, compared after
+/// resolving symlinks.
+pub fn merge_sources(sources: impl IntoIterator<Item = SourceInfo>) -> Vec<SourceInfo> {
+    let mut seen = HashSet::new();
+    sources
+        .into_iter()
+        .filter(|info| {
+            seen.insert(
+                std::fs::canonicalize(&info.path).unwrap_or_else(|_| PathBuf::from(&info.path)),
+            )
+        })
+        .collect()
+}
+
 fn escape_xml(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

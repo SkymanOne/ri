@@ -293,6 +293,9 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             "{}/v1/messages?beta=true",
             model.base_url.trim_end_matches('/')
         );
+        let mut params = options.hooks.payload(params).await;
+        // pi streams whatever the payload hook returns.
+        params["stream"] = Value::Bool(true);
         let body = yapi_types::json::stringify(&params);
         if let Some(config) = &federation {
             let token = federation::token(config, false, &options.cancel).await?;
@@ -323,6 +326,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         Err(message) => return send_error(&sender, output, &options.cancel, message),
     };
 
+    options.hooks.response(&response).await;
     sender.send(StreamEvent::Start(output.clone()));
     let mut state = StreamState {
         output,
@@ -418,6 +422,7 @@ impl StreamState {
                 Some("message_stop") => saw_stop = true,
                 _ => {}
             }
+            options.hooks.stream_event(&event).await;
             self.handle(&event, model, sender)?;
         }
         if saw_start && !saw_stop {

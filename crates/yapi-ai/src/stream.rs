@@ -1,5 +1,6 @@
 //! Streaming one assistant message from a provider.
 
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -74,6 +75,94 @@ pub struct StreamOptions {
     /// Provider settings from the credential, such as a Cloudflare account id
     /// or an AWS profile, read ahead of the process environment.
     pub env: Option<ProviderEnv>,
+    /// Observers of the request.
+    pub hooks: RequestHooks,
+}
+
+/// Request headers; `None` removes a header the provider would send.
+pub type RequestHeaders = IndexMap<String, Option<String>>;
+
+/// A session's callback into its requests.
+pub type Hook<A, R> = std::sync::Arc<dyn Fn(A) -> BoxFuture<'static, R> + Send + Sync>;
+
+/// A provider's answer, before its body is read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderResponse {
+    /// The HTTP status.
+    pub status: u16,
+    /// The response headers.
+    pub headers: IndexMap<String, String>,
+}
+
+/// What a session observes of its requests: pi-ai's `onPayload`,
+/// `onResponse` and `onProviderStreamEvent` options, and pi's
+/// `transformHeaders`.
+#[derive(Clone, Default)]
+pub struct RequestHooks {
+    /// Sees each request body, as the wire API would send it, and returns
+    /// the body to send.
+    pub payload: Option<Hook<serde_json::Value, serde_json::Value>>,
+    /// Sees the headers of each request, credentials' included, and returns
+    /// the headers to send; `None` removes one.
+    pub headers: Option<Hook<RequestHeaders, RequestHeaders>>,
+    /// Sees each successful response.
+    pub response: Option<Hook<ProviderResponse, ()>>,
+    /// Sees each streamed event, as parsed, before it is normalized.
+    pub stream_event: Option<Hook<serde_json::Value, ()>>,
+}
+
+impl RequestHooks {
+    /// The body to send in place of `payload`.
+    pub async fn payload(&self, payload: serde_json::Value) -> serde_json::Value {
+        match &self.payload {
+            Some(hook) => hook(payload).await,
+            None => payload,
+        }
+    }
+
+    /// Passes `request`'s headers through the headers hook. Call it once
+    /// credentials are applied.
+    pub async fn prepare(request: &mut Request) {
+        if let Some(hook) = request.options.hooks.headers.clone() {
+            request.options.headers = hook(std::mem::take(&mut request.options.headers)).await;
+        }
+    }
+
+    /// Reports a successful `response`.
+    pub async fn response(&self, response: &reqwest::Response) {
+        if let Some(hook) = &self.response {
+            let headers = response
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+                })
+                .collect();
+            hook(ProviderResponse {
+                status: response.status().as_u16(),
+                headers,
+            })
+            .await;
+        }
+    }
+
+    /// Reports a streamed event.
+    pub async fn stream_event(&self, data: &serde_json::Value) {
+        if let Some(hook) = &self.stream_event {
+            hook(data.clone()).await;
+        }
+    }
+}
+
+impl std::fmt::Debug for RequestHooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestHooks")
+            .field("payload", &self.payload.is_some())
+            .field("headers", &self.headers.is_some())
+            .field("response", &self.response.is_some())
+            .field("stream_event", &self.stream_event.is_some())
+            .finish()
+    }
 }
 
 impl StreamOptions {

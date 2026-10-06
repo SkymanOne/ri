@@ -1,0 +1,26 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "[Skills]",
+    "  greeting",
+    "",
+    "[Prompts]",
+    "  /review",
+    "",
+    "[Extensions]",
+    "  discover.ts",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "/rev",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "→ review      [t] Review the change",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

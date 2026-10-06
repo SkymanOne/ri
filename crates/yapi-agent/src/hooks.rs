@@ -14,8 +14,9 @@ pub struct BeforeToolCall<'a> {
     pub assistant_message: &'a AssistantMessage,
     /// The call as the model made it.
     pub tool_call: &'a ToolCall,
-    /// Validated arguments.
-    pub args: &'a Value,
+    /// Validated arguments, which the hook may change; the tool runs with
+    /// them as they are when it returns.
+    pub args: &'a mut Value,
     /// The transcript so far.
     pub messages: &'a [Message],
     /// The tool call that made this call, for calls a tool made.
@@ -61,6 +62,15 @@ pub struct ResultPatch {
     pub terminate: Option<bool>,
 }
 
+/// What the session decides as a turn ends; pi's `AgentTurnDecision`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TurnDecision {
+    /// Ensures one more provider request when nothing else would make one.
+    pub continue_run: bool,
+    /// The transcript to continue from, when the session changed it.
+    pub messages: Option<Vec<Message>>,
+}
+
 /// Hooks into the agent loop. Every method has a no-op default.
 ///
 /// The loop awaits each hook before it continues, so a hook sees a consistent
@@ -97,6 +107,24 @@ pub trait AgentHooks: Send + Sync {
         _call: AfterToolCall<'a>,
     ) -> BoxFuture<'a, Option<ResultPatch>> {
         Box::pin(async { None })
+    }
+
+    /// A turn finished: its assistant message and tool results are emitted
+    /// and `turn_end` is next; pi's `finishTurn`. The decision is ignored
+    /// after a failed or aborted response.
+    fn finish_turn<'a>(
+        &'a self,
+        _message: &'a AssistantMessage,
+        _tool_results: &'a [ToolResultMessage],
+    ) -> BoxFuture<'a, TurnDecision> {
+        Box::pin(async { TurnDecision::default() })
+    }
+
+    /// The message to record in place of `message` once it is complete, before
+    /// its `message_end` is emitted; pi's `message_end` replacement. Must
+    /// keep the message's role.
+    fn finish_message(&self, message: Message) -> BoxFuture<'_, Message> {
+        Box::pin(async { message })
     }
 
     /// Completes a tool result message before it is emitted, for example

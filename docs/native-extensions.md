@@ -141,7 +141,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Api::register_tool` | Offer a tool to the model. `Tool` sets a label, prompt snippet and prompt guidelines. |
 | `Api::register_command` | Handle `/name args` |
 | `Api::register_flag` | Accept `--name` on the command line, read later with `get_flag` |
-| `Api::on` | Handle a Pi event such as `session_start` or `tool_call`. The return value is the handler's result in Pi, for example `{"block": true, "reason": "..."}`. |
+| `Api::on` | Handle a Pi event such as `session_start` or `tool_call`. The return value is the handler's result in Pi, for example `{"block": true, "reason": "..."}`. A handler gets a copy of the event, so a `tool_call` handler changes the call's arguments by returning them as `input` instead of editing them. |
 | `notify` | Show a notification |
 | `send_message`, `append_entry` | Add a custom message or entry to the session |
 | `exec` | Run a process and wait for it |

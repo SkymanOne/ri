@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
+use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -19,7 +20,7 @@ use yapi_agent::{
 };
 use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
-use yapi_ai::stream::{StreamOptions, ThinkingBudgets};
+use yapi_ai::stream::{Hook, RequestHeaders, RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
@@ -29,10 +30,10 @@ use yapi_types::model::Model;
 use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
-use yapi_types::sync::{lock, write};
+use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
-use crate::extensions::{Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
+use crate::extensions::{BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
 use crate::settings::SettingsManager;
@@ -41,11 +42,13 @@ use crate::time::now_ms;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::{BUILTIN_TOOLS, Described, Exposure, RegisteredTool, Runtime, ToolEnv, builtin};
 
+mod boundary;
 mod extensions;
 mod models;
 mod recovery;
 mod stats;
 
+pub use boundary::Boundary;
 use extensions::Hooks;
 pub use models::CatalogRefresh;
 pub use stats::{ContextUsage, SessionStats, UsageTotals};
@@ -72,6 +75,85 @@ impl InputSource {
     }
 }
 
+/// Why a session takes over from another: pi's `session_start` and
+/// `session_shutdown` reasons other than `startup` and `quit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Replacement {
+    /// `/new` or `newSession`.
+    New,
+    /// `/resume` or `switchSession`.
+    Resume,
+    /// `/fork`, `/clone` or `fork`.
+    Fork,
+    /// `/reload` or `reload`.
+    Reload,
+}
+
+impl Replacement {
+    /// The reason as pi's events name it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Replacement::New => "new",
+            Replacement::Resume => "resume",
+            Replacement::Fork => "fork",
+            Replacement::Reload => "reload",
+        }
+    }
+
+    /// The other session's file as pi's `session_start` and
+    /// `session_shutdown` report it: not on reload.
+    fn reported(self, file: Option<String>) -> Option<String> {
+        file.filter(|_| self != Replacement::Reload)
+    }
+}
+
+/// A session change extensions may cancel, as pi's `session_before_switch`
+/// and `session_before_fork` report it.
+#[derive(Clone, Debug)]
+pub enum SessionChange {
+    /// A new session.
+    New,
+    /// A switch to this session file.
+    Resume(String),
+    /// A fork at an entry, keeping the entry when `at` (`/clone`) or ending
+    /// the fork before it.
+    Fork {
+        /// The entry.
+        entry_id: String,
+        /// Keep the entry.
+        at: bool,
+    },
+}
+
+impl SessionChange {
+    /// The pi event that may cancel the change.
+    pub fn event(&self) -> &'static str {
+        match self {
+            SessionChange::Fork { .. } => "session_before_fork",
+            _ => "session_before_switch",
+        }
+    }
+
+    /// Why the replacement session starts.
+    pub fn reason(&self) -> Replacement {
+        match self {
+            SessionChange::New => Replacement::New,
+            SessionChange::Resume(_) => Replacement::Resume,
+            SessionChange::Fork { .. } => Replacement::Fork,
+        }
+    }
+}
+
+/// What `user_bash` handlers decided for a `!` command.
+pub enum UserBash {
+    /// Run it with the session's shell.
+    Local,
+    /// Run it through an extension's operations.
+    Operations(BashOperations),
+    /// An extension ran it; its result, not yet recorded.
+    Done(crate::bash_executor::BashResult),
+}
+
 /// Receives every session event.
 pub type Listener = Box<dyn Fn(&AgentEvent) + Send + Sync>;
 
@@ -84,10 +166,15 @@ pub struct Resources {
     pub skills: Vec<Skill>,
     /// Problems found while loading skills.
     pub skill_diagnostics: Vec<crate::resources::Diagnostic>,
+    /// The skill files and directories `skills` came from, each path once.
+    pub skill_sources: Vec<crate::resources::SourceInfo>,
     /// Prompt templates.
     pub templates: Vec<PromptTemplate>,
     /// Problems found while loading prompt templates.
     pub template_diagnostics: Vec<crate::resources::Diagnostic>,
+    /// The template files and directories `templates` came from, each path
+    /// once.
+    pub template_sources: Vec<crate::resources::SourceInfo>,
     /// Replaces the default prompt (`SYSTEM.md`, `--system-prompt`).
     pub custom_prompt: Option<String>,
     /// Appended to the prompt (`APPEND_SYSTEM.md`, `--append-system-prompt`).
@@ -162,7 +249,7 @@ struct Inner {
     next_turn: Mutex<Vec<Message>>,
     /// Extension messages sent during a turn, appended when it ends.
     pending_custom: Mutex<Vec<Message>>,
-    resources: Resources,
+    resources: RwLock<Resources>,
     runtime: Arc<RwLock<Runtime>>,
     listeners: Mutex<Vec<Listener>>,
     steering: Mutex<VecDeque<Message>>,
@@ -188,7 +275,19 @@ struct Inner {
     retry_cancel: Mutex<Option<CancellationToken>>,
     /// Calls tools made through [`AgentSession::execute_tool`].
     nested: crate::nested::NestedCalls,
+    /// Events for extensions that are delivered in the background, in order.
+    announcements: Mutex<VecDeque<Value>>,
+    /// Held while announcements are delivered.
+    announcing: tokio::sync::Mutex<()>,
+    /// How the last turn ended, as pi's boundary events report it.
+    outcome: Mutex<&'static str>,
+    /// Blocking extension dialogs open, and the kind and title of the
+    /// outermost.
+    ui_prompts: Mutex<(usize, Option<UiPrompt>)>,
 }
+
+/// A blocking extension dialog's kind and title.
+type UiPrompt = (String, Option<String>);
 
 /// Counts an operation in [`Inner::compacting`] while alive.
 struct Compacting<'a>(&'a AtomicUsize);
@@ -353,7 +452,7 @@ impl AgentSession {
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),
                 pending_custom: Mutex::new(Vec::new()),
-                resources,
+                resources: RwLock::new(resources),
                 runtime,
                 listeners: Mutex::new(Vec::new()),
                 steering: Mutex::new(VecDeque::new()),
@@ -369,6 +468,10 @@ impl AgentSession {
                 compacting: AtomicUsize::new(0),
                 manual_compaction: std::sync::atomic::AtomicBool::new(false),
                 retry_cancel: Mutex::new(None),
+                announcements: Mutex::new(VecDeque::new()),
+                announcing: tokio::sync::Mutex::new(()),
+                outcome: Mutex::new("completed"),
+                ui_prompts: Mutex::new((0, None)),
                 nested: crate::nested::NestedCalls::default(),
             }),
         }
@@ -434,13 +537,16 @@ impl AgentSession {
             })
     }
 
-    /// Names the session.
+    /// Names the session; extensions hear of it as pi's
+    /// `session_info_changed`.
     pub fn set_name(&self, name: &str) {
         let name = self.with_session(|session| {
             let _ = session.append_session_info(name);
             session.name()
         });
-        self.emit(&AgentEvent::SessionInfoChanged { name });
+        self.emit(&AgentEvent::SessionInfoChanged { name: name.clone() });
+        let event = serde_json::json!({"type": "session_info_changed", "name": name});
+        self.announce(extensions::defined(event, &["name"]));
     }
 
     /// A snapshot of the merged settings.
@@ -485,9 +591,10 @@ impl AgentSession {
             .map_err(|err| err.to_string())
     }
 
-    /// The prompt resources the session was built with.
-    pub fn resources(&self) -> &Resources {
-        &self.inner.resources
+    /// The prompt resources: those the session was built with, and those
+    /// its extensions discovered.
+    pub fn resources(&self) -> Resources {
+        read(&self.inner.resources).clone()
     }
 
     /// Empties the steering and follow-up queues and returns their texts.
@@ -574,16 +681,18 @@ impl AgentSession {
         }
     }
 
-    /// Runs a user `!` command in the session's directory, streaming output to
-    /// `on_chunk` and as `bash_execution_update` events tagged `id`, and
-    /// records it. `exclude_from_context` (`!!`) keeps the output from the
-    /// model; it is recorded as given. While a run streams, the record waits
-    /// for its end.
+    /// Runs a user `!` command in the session's directory, with the
+    /// session's shell or through an extension's `operations`, streaming
+    /// output to `on_chunk` and as `bash_execution_update` events tagged
+    /// `id`, and records it. `exclude_from_context` (`!!`) keeps the output
+    /// from the model; it is recorded as given. While a run streams, the
+    /// record waits for its end.
     pub async fn execute_bash(
         &self,
         command: &str,
         exclude_from_context: Option<bool>,
         id: Option<String>,
+        operations: Option<BashOperations>,
         mut on_chunk: impl FnMut(&str),
     ) -> Result<crate::bash_executor::BashResult, String> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -596,28 +705,91 @@ impl AgentSession {
             _ => command.to_owned(),
         };
         let cwd = self.with_session(|session| session.cwd().to_path_buf());
-        let result = crate::bash_executor::execute(
-            &resolved,
-            &cwd,
-            settings.shell_path.as_deref(),
-            &crate::config::bin_dir(&self.inner.agent_dir),
-            cancel.clone(),
-            |delta| {
-                on_chunk(delta);
-                self.emit(&AgentEvent::BashExecutionUpdate {
-                    id: id.clone(),
-                    delta: delta.to_owned(),
-                });
-            },
-        )
-        .await;
+        let on_chunk = |delta: &str| {
+            on_chunk(delta);
+            self.emit(&AgentEvent::BashExecutionUpdate {
+                id: id.clone(),
+                delta: delta.to_owned(),
+            });
+        };
+        let result = match &operations {
+            None => {
+                crate::bash_executor::execute(
+                    &resolved,
+                    &cwd,
+                    settings.shell_path.as_deref(),
+                    &crate::config::bin_dir(&self.inner.agent_dir),
+                    cancel.clone(),
+                    on_chunk,
+                )
+                .await
+            }
+            Some(operations) => {
+                let run = |output| {
+                    operations.extension.run_bash(
+                        &operations.handle,
+                        &resolved,
+                        &cwd,
+                        output,
+                        cancel.clone(),
+                    )
+                };
+                crate::bash_executor::execute_with(run, &cancel, on_chunk).await
+            }
+        };
         lock(&self.inner.bash).retain(|(running, _)| *running != token);
         let result = result?;
         self.record_bash(command, &result, exclude_from_context);
         Ok(result)
     }
 
-    fn record_bash(
+    /// pi's `user_bash` event for a `!` command: whether an extension ran
+    /// it, runs it through its operations, or leaves it to the session's
+    /// shell. Fails with the error of a handler, which extension error
+    /// reporting has already shown.
+    pub async fn user_bash(
+        &self,
+        command: &str,
+        exclude_from_context: bool,
+    ) -> Result<UserBash, String> {
+        let handlers = self.handlers_of("user_bash");
+        if handlers.is_empty() {
+            return Ok(UserBash::Local);
+        }
+        let event = serde_json::json!({
+            "type": "user_bash",
+            "command": command,
+            "excludeFromContext": exclude_from_context,
+            "cwd": self.with_session(|session| session.cwd().to_path_buf()),
+        });
+        let ctx = self.extension_context(CancellationToken::new());
+        for extension in handlers {
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            if let Some(error) = result["error"].as_str() {
+                return Err(error.to_owned());
+            }
+            if !result["operations"].is_null() {
+                return Ok(UserBash::Operations(BashOperations {
+                    extension: Arc::clone(extension),
+                    handle: result["operations"].clone(),
+                }));
+            }
+            if let Ok(done) = serde_json::from_value(result["result"].clone()) {
+                return Ok(UserBash::Done(done));
+            }
+            let error = "Invalid user_bash handler result: return undefined for local execution or exactly one valid { operations } or { result } object";
+            ctx.ui
+                .extension_error(&extension.source().path, "user_bash", error, None);
+            return Err(error.to_owned());
+        }
+        Ok(UserBash::Local)
+    }
+
+    /// pi's `recordBashResult`: records a `!` command's result, after the
+    /// current run when one streams.
+    pub fn record_bash(
         &self,
         command: &str,
         result: &crate::bash_executor::BashResult,
@@ -857,7 +1029,7 @@ impl AgentSession {
 
     fn expand(&self, text: &str) -> String {
         let text = self.expand_skill(text);
-        expand_prompt_template(&text, &self.inner.resources.templates)
+        expand_prompt_template(&text, &read(&self.inner.resources).templates)
     }
 
     /// `/skill:name args` becomes the skill's content with the arguments.
@@ -869,12 +1041,11 @@ impl AgentSession {
             Some(index) => (&rest[..index], rest[index..].trim()),
             None => (rest, ""),
         };
-        let Some(skill) = self
-            .inner
-            .resources
+        let Some(skill) = read(&self.inner.resources)
             .skills
             .iter()
             .find(|skill| skill.name == name)
+            .cloned()
         else {
             return text.to_owned();
         };
@@ -895,14 +1066,15 @@ impl AgentSession {
     }
 
     fn prompt_options(&self, active: &[String]) -> PromptOptions {
+        let resources = self.resources();
         let mut options = PromptOptions {
-            custom_prompt: self.inner.resources.custom_prompt.clone(),
+            custom_prompt: resources.custom_prompt,
             selected_tools: active.to_vec(),
-            append: self.inner.resources.append_prompt.clone(),
+            append: resources.append_prompt,
             cwd: self.inner.cwd.clone(),
             docs: self.inner.docs.clone(),
-            context_files: self.inner.resources.context_files.clone(),
-            skills: self.inner.resources.skills.clone(),
+            context_files: resources.context_files,
+            skills: resources.skills,
             sections: lock(&self.inner.run_sections).clone(),
             ..PromptOptions::default()
         };
@@ -1117,7 +1289,7 @@ impl AgentSession {
                 self.run_agent(None, &cancel).await;
                 continue;
             }
-            if cancel.is_cancelled() || !self.has_queued() {
+            if cancel.is_cancelled() || !self.before_settle(&cancel).await {
                 break;
             }
             self.run_agent(None, &cancel).await;
@@ -1143,7 +1315,12 @@ impl AgentSession {
         !lock(&self.inner.steering).is_empty() || !lock(&self.inner.follow_up).is_empty()
     }
 
-    fn stream_options(&self, session_id: String, cancel: &CancellationToken) -> StreamOptions {
+    fn stream_options(
+        &self,
+        model: &Model,
+        session_id: String,
+        cancel: &CancellationToken,
+    ) -> StreamOptions {
         let settings = lock(&self.inner.settings).settings().clone();
         let budgets = settings.thinking_budgets.as_ref();
         let provider = settings
@@ -1163,8 +1340,96 @@ impl AgentSession {
                 .and_then(|provider| provider.max_retries)
                 .unwrap_or(0),
             cancel: cancel.clone(),
+            hooks: self.request_hooks(model, cancel),
             ..StreamOptions::default()
         }
+    }
+
+    /// What extensions see of the run's provider requests to `model`: pi's
+    /// `before_provider_request`, whose handlers each return the body the
+    /// next one sees, `before_provider_headers`, `after_provider_response`
+    /// and `provider_stream_event`.
+    fn request_hooks(&self, model: &Model, cancel: &CancellationToken) -> RequestHooks {
+        let model = model.clone();
+        RequestHooks {
+            payload: self.hook(
+                "before_provider_request",
+                cancel,
+                |session, payload, cancel| {
+                    Box::pin(async move {
+                        session
+                            .chain("before_provider_request", "payload", payload, cancel)
+                            .await
+                    })
+                },
+            ),
+            headers: self.headers_hook(cancel),
+            response: self.hook(
+                "after_provider_response",
+                cancel,
+                |session, response: yapi_ai::stream::ProviderResponse, cancel| {
+                    let event = serde_json::json!({
+                        "type": "after_provider_response",
+                        "status": response.status,
+                        "headers": response.headers,
+                    });
+                    Box::pin(async move {
+                        session.emit_extension_event(&event, cancel).await;
+                    })
+                },
+            ),
+            stream_event: self.hook(
+                "provider_stream_event",
+                cancel,
+                move |session, data, cancel| {
+                    let event = serde_json::json!({
+                        "data": data,
+                        "type": "provider_stream_event",
+                        "provider": model.provider,
+                        "api": model.api,
+                        "model": model.id,
+                    });
+                    Box::pin(async move {
+                        session.emit_extension_event(&event, cancel).await;
+                    })
+                },
+            ),
+        }
+    }
+
+    /// pi's `before_provider_headers` for every provider request, compaction
+    /// and branch summaries included.
+    pub(super) fn headers_hook(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Option<Hook<RequestHeaders, RequestHeaders>> {
+        self.hook(
+            "before_provider_headers",
+            cancel,
+            |session, headers, cancel| {
+                Box::pin(async move { session.before_provider_headers(headers, cancel).await })
+            },
+        )
+    }
+
+    /// A request hook that runs `event` on this session, when extensions
+    /// handle events of type `kind`.
+    fn hook<A: 'static, R: 'static>(
+        &self,
+        kind: &str,
+        cancel: &CancellationToken,
+        event: impl Fn(AgentSession, A, CancellationToken) -> BoxFuture<'static, R>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Option<Hook<A, R>> {
+        if !self.has_handlers(kind) {
+            return None;
+        }
+        let (session, cancel) = (self.clone(), cancel.clone());
+        Some(Arc::new(move |argument| {
+            event(session.clone(), argument, cancel.clone())
+        }))
     }
 
     /// One agent run: with `prompts`, or continuing the transcript (or running
@@ -1194,10 +1459,10 @@ impl AgentSession {
         };
         let apis = self.inner.apis.clone();
         let config = LoopConfig {
+            options: self.stream_options(&model, session_id, cancel),
             model,
             thinking_level,
             stream: Arc::new(move |request| apis.stream(request)),
-            options: self.stream_options(session_id, cancel),
             tool_execution: ExecutionMode::Parallel,
         };
         let mut context = AgentContext {
@@ -1269,12 +1534,66 @@ impl AgentSession {
         let Some(target) = target else {
             return Err(format!("Entry {target_id} not found"));
         };
-        let (entries, _common) = self.with_session(|session| {
+        let (entries, common) = self.with_session(|session| {
             crate::compaction::collect_branch_entries(session, old_leaf.as_deref(), target_id)
         });
+        let mut options = options;
         let mut summary = None;
+        let mut from_extension = false;
+        if self.has_handlers("session_before_tree") {
+            let mut preparation = serde_json::json!({
+                "targetId": target_id,
+                "oldLeafId": old_leaf,
+                "commonAncestorId": common,
+                "entriesToSummarize": entries,
+                "userWantsSummary": options.summarize,
+            });
+            if let Some(instructions) = &options.custom_instructions {
+                preparation["customInstructions"] = instructions.clone().into();
+            }
+            if options.replace_instructions {
+                preparation["replaceInstructions"] = true.into();
+            }
+            if let Some(label) = &options.label {
+                preparation["label"] = label.clone().into();
+            }
+            let event =
+                serde_json::json!({"type": "session_before_tree", "preparation": preparation});
+            if let Some(result) = self
+                .emit_extension_event(&event, CancellationToken::new())
+                .await
+            {
+                if result["cancel"] == true {
+                    return Ok(TreeOutcome {
+                        cancelled: true,
+                        ..TreeOutcome::default()
+                    });
+                }
+                if options.summarize
+                    && let Some(text) = result["summary"]["summary"]
+                        .as_str()
+                        .filter(|text| !text.is_empty())
+                {
+                    let details = Some(result["summary"]["details"].clone())
+                        .filter(|details| !details.is_null());
+                    let usage = serde_json::from_value(result["summary"]["usage"].clone()).ok();
+                    summary = Some((text.to_owned(), details, usage));
+                    from_extension = true;
+                }
+                if let Some(instructions) = result["customInstructions"].as_str() {
+                    options.custom_instructions = Some(instructions.to_owned());
+                }
+                if let Some(replace) = result["replaceInstructions"].as_bool() {
+                    options.replace_instructions = replace;
+                }
+                if let Some(label) = result["label"].as_str() {
+                    options.label = Some(label.to_owned());
+                }
+            }
+        }
         if options.summarize
             && !entries.is_empty()
+            && summary.is_none()
             && let Some(model) = &model
         {
             let cancel = CancellationToken::new();
@@ -1321,7 +1640,9 @@ impl AgentSession {
                 } => {
                     summary = Some((
                         text,
-                        serde_json::json!({"readFiles": read_files, "modifiedFiles": modified_files}),
+                        Some(
+                            serde_json::json!({"readFiles": read_files, "modifiedFiles": modified_files}),
+                        ),
                         usage,
                     ));
                 }
@@ -1345,8 +1666,8 @@ impl AgentSession {
                         .branch_with_summary(
                             new_leaf.as_deref(),
                             text,
-                            Some(details),
-                            Some(false),
+                            details,
+                            Some(from_extension),
                             usage,
                         )
                         .map_err(|err| err.to_string())?;
@@ -1380,6 +1701,7 @@ impl AgentSession {
         });
         if let Some(entry) = &summary_entry {
             event["summaryEntry"] = serde_json::to_value(entry).unwrap_or_default();
+            event["fromExtension"] = from_extension.into();
         }
         self.emit_extension_event(&event, CancellationToken::new())
             .await;

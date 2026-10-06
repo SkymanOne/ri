@@ -21,7 +21,7 @@ use yapi_types::sync::lock;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncBufReadExt;
-use yapi_core::agent_session::{AgentSession, InputSource};
+use yapi_core::agent_session::{AgentSession, InputSource, Replacement, SessionChange, UserBash};
 use yapi_core::session::SessionManager;
 use yapi_types::message::Message;
 use yapi_types::rpc::{
@@ -327,8 +327,8 @@ impl Rpc {
     }
 
     /// Streams `session`'s events, makes it current and starts its
-    /// extensions.
-    async fn bind(&self, session: AgentSession) {
+    /// extensions, telling them the session it replaced, if any.
+    async fn bind(&self, session: AgentSession, replaced: Option<(Replacement, Option<String>)>) {
         let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let current = Arc::clone(&self.epoch);
         let out = self.out.clone();
@@ -345,24 +345,43 @@ impl Rpc {
         }));
         *self.session.borrow_mut() = session.clone();
         session
-            .bind_extensions(Arc::clone(&self.ui) as Arc<dyn ExtensionUi>, Mode::Rpc)
+            .bind_extensions(
+                Arc::clone(&self.ui) as Arc<dyn ExtensionUi>,
+                Mode::Rpc,
+                replaced,
+            )
             .await;
     }
 
-    /// pi's runtime teardown: the current run settles and is persisted, and
-    /// extensions stop, before the session is replaced.
-    async fn settle(&self) {
-        let session = self.session();
-        session.abort();
-        session.abort_bash();
-        session.wait_for_idle().await;
-        session.shutdown().await;
-    }
-
-    async fn replace(&self, manager: SessionManager) -> Result<(), String> {
+    /// pi's runtime replacement, unless an extension cancels `change`, which
+    /// this answers: `build` makes the session file, the current run
+    /// settles and is persisted, the current session's extensions stop, and
+    /// a session built around the file takes over.
+    async fn replace(
+        &self,
+        change: SessionChange,
+        build: impl FnOnce(&AgentSession) -> Result<SessionManager, String>,
+    ) -> Result<bool, String> {
+        let current = self.session();
+        if current.cancels(&change).await {
+            return Ok(true);
+        }
+        let reason = change.reason();
+        let previous = current.with_session(|manager| runtime::file_of(manager));
+        let manager = build(&current)?;
+        current.abort();
+        current.abort_bash();
+        current.wait_for_idle().await;
+        current
+            .shutdown_for(reason, runtime::file_of(&manager))
+            .await;
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
-        self.bind(session).await;
-        Ok(())
+        // pi's runtime rebinds the replacement, and then its RPC command
+        // handler binds it again, so extensions see `session_start` twice.
+        self.bind(session.clone(), Some((reason, previous.clone())))
+            .await;
+        self.bind(session, Some((reason, previous))).await;
+        Ok(false)
     }
 
     fn reply(&self, id: Option<&Value>, command: Option<&str>, reply: Reply) {
@@ -491,7 +510,14 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
             "Unknown command: {}",
             name.as_deref().unwrap_or("undefined")
         )),
-        command => handle(&rpc, id.as_ref(), command).await,
+        command => {
+            let session = rpc.session();
+            let reply = handle(&rpc, id.as_ref(), command).await;
+            // Extensions hear of model, thinking level and name changes
+            // before the response, as pi's handlers run first.
+            session.flush_announcements().await;
+            reply
+        }
     };
     rpc.reply(id.as_ref(), name.as_deref(), reply);
 }
@@ -522,11 +548,12 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             data(&json!({"steering": steering, "followUp": follow_up}))
         }
         RpcCommand::NewSession { parent_session } => {
-            rpc.settle().await;
-            let manager = runtime::new_session(&session, parent_session)
-                .map_err(|error| error.to_string())?;
-            rpc.replace(manager).await?;
-            data(&json!({"cancelled": false}))
+            let cancelled = rpc
+                .replace(SessionChange::New, |current| {
+                    runtime::new_session(current, parent_session).map_err(|error| error.to_string())
+                })
+                .await?;
+            data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::GetState => data(&state(&session)),
         RpcCommand::SetModel { provider, model_id } => {
@@ -590,9 +617,20 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             command,
             exclude_from_context,
         } => {
+            let operations = match session
+                .user_bash(&command, exclude_from_context.unwrap_or(false))
+                .await?
+            {
+                UserBash::Done(result) => {
+                    session.record_bash(&command, &result, exclude_from_context);
+                    return data(&result);
+                }
+                UserBash::Operations(operations) => Some(operations),
+                UserBash::Local => None,
+            };
             let tag = id.and_then(Value::as_str).map(str::to_owned);
             let result = session
-                .execute_bash(&command, exclude_from_context, tag, |_| {})
+                .execute_bash(&command, exclude_from_context, tag, operations, |_| {})
                 .await?;
             data(&result)
         }
@@ -624,26 +662,45 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             let path = std::env::current_dir()
                 .map(|cwd| cwd.join(&session_path))
                 .unwrap_or_else(|_| std::path::PathBuf::from(&session_path));
-            let manager =
-                runtime::open_session(&path, None, &fallback).map_err(|error| error.to_string())?;
-            rpc.settle().await;
-            rpc.replace(manager).await?;
-            data(&json!({"cancelled": false}))
+            let cancelled = rpc
+                .replace(SessionChange::Resume(session_path), |_| {
+                    runtime::open_session(&path, None, &fallback).map_err(|error| error.to_string())
+                })
+                .await?;
+            data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::Fork { entry_id } => {
-            let fork = runtime::plan_fork(&session, &entry_id, false)?;
-            rpc.settle().await;
-            rpc.replace(fork.build(&session)?).await?;
-            data(&json!({"text": fork.text, "cancelled": false}))
+            let mut text = None;
+            let change = SessionChange::Fork {
+                entry_id: entry_id.clone(),
+                at: false,
+            };
+            let cancelled = rpc
+                .replace(change, |current| {
+                    let fork = runtime::plan_fork(current, &entry_id, false)?;
+                    text = fork.text.clone();
+                    fork.build(current)
+                })
+                .await?;
+            if cancelled {
+                return data(&json!({"cancelled": true}));
+            }
+            data(&json!({"text": text, "cancelled": false}))
         }
         RpcCommand::Clone => {
             let leaf = session
                 .with_session(|manager| manager.leaf_id().map(str::to_owned))
                 .ok_or("Cannot clone session: no current entry selected")?;
-            let fork = runtime::plan_fork(&session, &leaf, true)?;
-            rpc.settle().await;
-            rpc.replace(fork.build(&session)?).await?;
-            data(&json!({"cancelled": false}))
+            let change = SessionChange::Fork {
+                entry_id: leaf.clone(),
+                at: true,
+            };
+            let cancelled = rpc
+                .replace(change, |current| {
+                    runtime::plan_fork(current, &leaf, true)?.build(current)
+                })
+                .await?;
+            data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::GetForkMessages => {
             let messages: Vec<ForkMessage> = session
@@ -830,7 +887,7 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let local = tokio::task::LocalSet::new();
     let code = local
         .run_until(async {
-            rpc.bind(session).await;
+            rpc.bind(session, None).await;
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
             let signal = termination();

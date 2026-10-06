@@ -15,6 +15,11 @@ use yapi_types::session::FileEntry;
 /// process.
 pub type SessionFactory = Box<dyn Fn(SessionManager) -> anyhow::Result<AgentSession>>;
 
+/// A session's file as pi's events report it; `None` in memory.
+pub fn file_of(manager: &SessionManager) -> Option<String> {
+    manager.file().map(|file| file.display().to_string())
+}
+
 /// The file for pi's `newSession`: a new one beside the current session's, or
 /// in memory when the current one is, linked to `parent` when given.
 pub fn new_session(

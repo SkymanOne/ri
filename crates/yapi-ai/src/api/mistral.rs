@@ -641,6 +641,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             max_tokens,
             level,
         )?;
+        let payload = options.hooks.payload(payload).await;
         let payload = yapi_types::json::stringify(&payload);
 
         let mut headers = Headers::default();
@@ -698,6 +699,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             return send_error(&sender, output, &options.cancel, message);
         }
     };
+    options.hooks.response(&response).await;
 
     sender.send(StreamEvent::Start(output.clone()));
     let mut state = State {
@@ -713,6 +715,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             Ok(Some(chunk)) => chunk,
             Ok(None) => match parser.finish() {
                 Ok(Some(Parsed::Event(event))) => {
+                    options.hooks.stream_event(&event).await;
                     state.handle(&event, &model, &sender);
                     break 'stream Ok(());
                 }
@@ -727,7 +730,10 @@ pub(super) async fn run(request: Request, sender: EventSender) {
             Ok(events) => {
                 for event in events {
                     match event {
-                        Parsed::Event(event) => state.handle(&event, &model, &sender),
+                        Parsed::Event(event) => {
+                            options.hooks.stream_event(&event).await;
+                            state.handle(&event, &model, &sender);
+                        }
                         Parsed::Done => break 'stream Ok(()),
                     }
                 }

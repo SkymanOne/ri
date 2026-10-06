@@ -50,6 +50,7 @@ pub enum SessionError {
 
 type Result<T> = std::result::Result<T, SessionError>;
 
+#[derive(Clone)]
 struct Entry {
     doc: Value,
     view: Option<FileEntry>,
@@ -275,6 +276,16 @@ impl SessionManager {
         let mut manager = SessionManager::blank(cwd, dir, true);
         manager.new_session(id, None);
         Ok(manager)
+    }
+
+    /// A copy at the same leaf that is never written, to try appends on.
+    pub fn preview(&self) -> SessionManager {
+        let mut copy = SessionManager::blank(&self.cwd, &self.dir, false);
+        copy.session_id.clone_from(&self.session_id);
+        copy.entries = self.entries.clone();
+        copy.index();
+        copy.leaf.clone_from(&self.leaf);
+        copy
     }
 
     /// A session that is never written.

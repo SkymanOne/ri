@@ -632,17 +632,12 @@ fn build(
     // command-line paths; a path counts once.
     let resolved = yapi_core::packages::resolve_resources(&cwd, &agent_dir, &settings, &BUILTINS);
     let merge = |cli: &[SourceInfo], kind: ResourceType, skip: bool, extra: Vec<SourceInfo>| {
-        let mut seen = std::collections::HashSet::new();
-        cli.iter()
-            .cloned()
-            .chain(resolved.enabled(kind).filter(|_| !skip).cloned())
-            .chain(extra)
-            .filter(|info| {
-                seen.insert(
-                    std::fs::canonicalize(&info.path).unwrap_or_else(|_| PathBuf::from(&info.path)),
-                )
-            })
-            .collect::<Vec<SourceInfo>>()
+        yapi_core::resources::merge_sources(
+            cli.iter()
+                .cloned()
+                .chain(resolved.enabled(kind).filter(|_| !skip).cloned())
+                .chain(extra),
+        )
     };
     let skill_sources = merge(
         &extensions.skills,
@@ -706,8 +701,10 @@ fn build(
         },
         skills,
         skill_diagnostics,
+        skill_sources,
         templates,
         template_diagnostics,
+        template_sources,
         custom_prompt: args
             .system_prompt
             .as_deref()

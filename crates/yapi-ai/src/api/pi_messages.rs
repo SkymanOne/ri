@@ -332,7 +332,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         ));
     };
     let url = format!("{}/messages", model.base_url.trim_end_matches('/'));
-    let body = yapi_types::json::stringify(&payload(&model, &request));
+    let body = yapi_types::json::stringify(&options.hooks.payload(payload(&model, &request)).await);
     let mut builder = http::client()
         .post(&url)
         .header("authorization", format!("Bearer {api_key}"))
@@ -363,6 +363,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
         }
         return send_error(&sender, output, &options.cancel, message);
     }
+    options.hooks.response(&response).await;
     let mut converter = Converter {
         partial: new_output(&model, now_ms()),
         tool_json: Vec::new(),
@@ -396,6 +397,7 @@ pub(super) async fn run(request: Request, sender: EventSender) {
                 Ok(event) => event,
                 Err(err) => return fail(err.to_string()),
             };
+            options.hooks.stream_event(&event).await;
             if let Some(update) = converter.apply(&event) {
                 let terminal = matches!(update, StreamEvent::Done(_) | StreamEvent::Error(_));
                 sender.send(update);

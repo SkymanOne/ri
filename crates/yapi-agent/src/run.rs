@@ -59,13 +59,14 @@ pub async fn run(
     hooks: &dyn AgentHooks,
 ) -> Vec<Message> {
     let initial = declare_tool_changes(&context.messages, &context.tools, prompts);
-    let mut new_messages = initial.clone();
-    context.messages.extend(initial.iter().cloned());
+    let mut new_messages = Vec::new();
 
     hooks.on_event(&AgentEvent::AgentStart).await;
     hooks.on_event(&AgentEvent::TurnStart).await;
     for message in initial {
-        emit_message(hooks, &message).await;
+        let message = emit_message(hooks, message).await;
+        context.messages.push(message.clone());
+        new_messages.push(message);
     }
     run_loop(context, &mut new_messages, config, hooks).await;
     new_messages
@@ -92,17 +93,25 @@ pub async fn run_continue(
     Ok(new_messages)
 }
 
-async fn emit_message(hooks: &dyn AgentHooks, message: &Message) {
+/// Emits `message`'s start and end; the message as the hooks finished it.
+async fn emit_message(hooks: &dyn AgentHooks, message: Message) -> Message {
     hooks
         .on_event(&AgentEvent::MessageStart {
             message: message.clone(),
         })
         .await;
+    end_message(hooks, message).await
+}
+
+/// Lets the hooks finish `message`, then emits its end.
+async fn end_message(hooks: &dyn AgentHooks, message: Message) -> Message {
+    let message = hooks.finish_message(message).await;
     hooks
         .on_event(&AgentEvent::MessageEnd {
             message: message.clone(),
         })
         .await;
+    message
 }
 
 async fn run_loop(
@@ -113,6 +122,9 @@ async fn run_loop(
 ) {
     let mut first_turn = true;
     let mut pending = hooks.steering_messages().await;
+    // A turn's request for one more response, which runs with the current
+    // context when no tool results or queued messages lead to one.
+    let mut explicit_continuation = false;
 
     loop {
         let mut more_tool_calls = true;
@@ -133,7 +145,7 @@ async fn run_loop(
                 &context.tools,
                 std::mem::take(&mut pending),
             ) {
-                emit_message(hooks, &message).await;
+                let message = emit_message(hooks, message).await;
                 context.messages.push(message.clone());
                 new_messages.push(message);
             }
@@ -142,6 +154,7 @@ async fn run_loop(
             new_messages.push(Message::Assistant(Box::new(message.clone())));
 
             if matches!(message.stop_reason, StopReason::Error | StopReason::Aborted) {
+                hooks.finish_turn(&message, &[]).await;
                 hooks
                     .on_event(&AgentEvent::TurnEnd {
                         message: Message::Assistant(Box::new(message)),
@@ -176,6 +189,10 @@ async fn run_loop(
                 tool_results = results;
             }
 
+            let decision = hooks.finish_turn(&message, &tool_results).await;
+            if let Some(messages) = decision.messages {
+                context.messages = messages;
+            }
             hooks
                 .on_event(&AgentEvent::TurnEnd {
                     message: Message::Assistant(Box::new(message)),
@@ -183,13 +200,19 @@ async fn run_loop(
                 })
                 .await;
             pending = hooks.steering_messages().await;
+            explicit_continuation = decision.continue_run && !more_tool_calls && pending.is_empty();
         }
 
         let follow_up = hooks.follow_up_messages().await;
-        if follow_up.is_empty() {
-            break;
+        if !follow_up.is_empty() {
+            explicit_continuation = false;
+            pending = follow_up;
+            continue;
         }
-        pending = follow_up;
+        if std::mem::take(&mut explicit_continuation) {
+            continue;
+        }
+        break;
     }
     end(hooks, new_messages).await;
 }
@@ -289,7 +312,10 @@ async fn stream_response(
         },
     };
     let mut stream = match auth.apply(&mut request) {
-        Ok(()) => (config.stream)(request),
+        Ok(()) => {
+            yapi_ai::stream::RequestHooks::prepare(&mut request).await;
+            (config.stream)(request)
+        }
         Err(message) => {
             yapi_ai::api::failed_stream(&request.model, &request.options.cancel, message)
         }
@@ -339,7 +365,6 @@ async fn complete(
     started: bool,
 ) -> AssistantMessage {
     let wrapped = Message::Assistant(Box::new(message.clone()));
-    context.messages.push(wrapped.clone());
     if !started {
         hooks
             .on_event(&AgentEvent::MessageStart {
@@ -347,10 +372,12 @@ async fn complete(
             })
             .await;
     }
-    hooks
-        .on_event(&AgentEvent::MessageEnd { message: wrapped })
-        .await;
-    message
+    let finished = end_message(hooks, wrapped).await;
+    context.messages.push(finished.clone());
+    match finished {
+        Message::Assistant(finished) => *finished,
+        _ => message,
+    }
 }
 
 fn error_result(message: &str) -> ToolResult {
@@ -454,8 +481,10 @@ async fn emit_result(outcome: &ToolCallOutcome, hooks: &dyn AgentHooks) -> ToolR
         nested_calls: None,
     };
     hooks.complete_tool_result(&mut message);
-    emit_message(hooks, &Message::ToolResult(message.clone())).await;
-    message
+    match emit_message(hooks, Message::ToolResult(message.clone())).await {
+        Message::ToolResult(finished) => finished,
+        _ => message,
+    }
 }
 
 /// A call ready to run.
@@ -491,7 +520,7 @@ async fn prepare(
         arguments: tool.prepare_arguments(call.arguments.clone()),
         ..call.clone()
     };
-    let args = match validate_tool_arguments(tool.declaration(), &prepared_call) {
+    let mut args = match validate_tool_arguments(tool.declaration(), &prepared_call) {
         Ok(args) => args,
         Err(message) => return immediate(&message, false),
     };
@@ -499,7 +528,7 @@ async fn prepare(
         .before_tool_call(BeforeToolCall {
             assistant_message: scope.assistant,
             tool_call: call,
-            args: &args,
+            args: &mut args,
             messages: scope.messages,
             parent_tool_call_id: scope.parent,
         })

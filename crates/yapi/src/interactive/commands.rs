@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
-use yapi_core::agent_session::AgentSession;
+use yapi_core::agent_session::{AgentSession, Replacement, SessionChange};
 use yapi_core::session::SessionManager;
 use yapi_tui::autocomplete::{CombinedProvider, SlashCommand};
 use yapi_tui::fuzzy::fuzzy_filter;
@@ -802,18 +802,22 @@ impl super::App {
                 destination = dir.join(format!("{stem}-{suffix}{extension}"));
                 suffix += 1;
             }
-            if let Err(error) = std::fs::copy(&source, &destination) {
-                self.fatal("Failed to import session", &error.to_string());
+        }
+        let target = destination.display().to_string();
+        let path = path.to_owned();
+        self.unless_cancelled(SessionChange::Resume(target), move |app| {
+            if !already && let Err(error) = std::fs::copy(&source, &destination) {
+                app.fatal("Failed to import session", &error.to_string());
                 return;
             }
-        }
-        match SessionManager::open(&destination, Some(&dir), None) {
-            Ok(manager) => match self.replace_session(manager) {
-                Ok(()) => self.status(format!("Session imported from: {path}")),
-                Err(error) => self.fatal("Failed to import session", &error),
-            },
-            Err(error) => self.fatal("Failed to import session", &error.to_string()),
-        }
+            match SessionManager::open(&destination, Some(&dir), None) {
+                Ok(manager) => match app.replace_session(manager, Replacement::Resume) {
+                    Ok(()) => app.status(format!("Session imported from: {path}")),
+                    Err(error) => app.fatal("Failed to import session", &error),
+                },
+                Err(error) => app.fatal("Failed to import session", &error.to_string()),
+            }
+        });
     }
 
     fn name(&mut self, name: &str) {
@@ -854,7 +858,7 @@ impl super::App {
         // pi reloads the session in place, keeping its model and level.
         let previous = self.session.clone();
         let manager = self.session.take_session();
-        let replaced = self.replace_session(manager);
+        let replaced = self.replace_session(manager, Replacement::Reload);
         if let Err(error) = replaced {
             self.error(format!("Reload failed: {error}"));
             return;

@@ -15,15 +15,16 @@ use yapi_types::message::{
     Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
 };
 use yapi_types::model::Model;
+use yapi_types::rpc::SourceInfo;
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::QueueMode;
-use yapi_types::sync::lock;
+use yapi_types::sync::{lock, write};
 
 use crate::extensions::{Context, Extension, ExtensionUi, Mode, ToolRenderers};
 use crate::messages::convert_to_llm;
 use crate::time::now_ms;
 
-use super::{AgentSession, InputSource, drain};
+use super::{AgentSession, InputSource, Replacement, SessionChange, drain};
 
 fn behavior_name(behavior: StreamingBehavior) -> &'static str {
     match behavior {
@@ -41,6 +42,20 @@ pub(super) struct Hooks {
     pub(super) turn_index: std::sync::atomic::AtomicU64,
 }
 
+fn ui_prompt_event(kind_of_event: &str, kind: &str, title: Option<String>) -> Value {
+    let event = serde_json::json!({"type": kind_of_event, "reason": "ui_prompt", "kind": kind, "title": title});
+    defined(event, &["title"])
+}
+
+/// `event` without the fields in `keys` that are null, which pi leaves
+/// undefined.
+pub(super) fn defined(mut event: Value, keys: &[&str]) -> Value {
+    if let Some(object) = event.as_object_mut() {
+        object.retain(|key, value| !(value.is_null() && keys.contains(&key.as_str())));
+    }
+    event
+}
+
 /// A loop event as pi's extension event (`_emitExtensionEvent` in pi's agent
 /// session), when `wanted` takes its type; `None` for events extensions do
 /// not see.
@@ -53,12 +68,12 @@ fn extension_event(
         AgentEvent::AgentStart => ("agent_start", &[]),
         AgentEvent::AgentEnd { .. } => ("agent_end", &["messages"]),
         AgentEvent::TurnStart => ("turn_start", &[]),
-        AgentEvent::TurnEnd { .. } => ("turn_end", &["message", "toolResults"]),
+        // `turn_end` reaches extensions as a boundary, before the event.
         AgentEvent::MessageStart { .. } => ("message_start", &["message"]),
         AgentEvent::MessageUpdate { .. } => {
             ("message_update", &["message", "assistantMessageEvent"])
         }
-        AgentEvent::MessageEnd { .. } => ("message_end", &["message"]),
+        // `message_end` reaches extensions as the message is finished.
         AgentEvent::ToolExecutionStart { .. } => (
             "tool_execution_start",
             &["toolCallId", "toolName", "args", "parentToolCallId"],
@@ -91,10 +106,8 @@ fn extension_event(
     let value = serde_json::to_value(event).ok()?;
     let mut out = serde_json::Map::new();
     out.insert("type".into(), Value::String(kind.to_owned()));
-    if matches!(kind, "turn_start" | "turn_end") {
-        out.insert("turnIndex".into(), Value::from(turn_index));
-    }
     if kind == "turn_start" {
+        out.insert("turnIndex".into(), Value::from(turn_index));
         out.insert("timestamp".into(), Value::from(now_ms()));
     }
     for key in keys {
@@ -228,20 +241,10 @@ impl AgentHooks for Hooks {
 
     fn transform_context(&self, messages: Vec<Message>) -> BoxFuture<'_, Vec<Message>> {
         Box::pin(async move {
-            let mut messages = messages;
             let session = &self.session;
-            let handlers = session.handlers_of("context");
-            if !handlers.is_empty() {
-                let ctx = session.extension_context(self.cancel.clone());
-                for extension in handlers {
-                    let event = serde_json::json!({"type": "context", "messages": messages});
-                    if let Some(result) = extension.handle(&ctx, &event).await
-                        && let Ok(next) = serde_json::from_value(result["messages"].clone())
-                    {
-                        messages = next;
-                    }
-                }
-            }
+            let mut messages = session
+                .context_handlers(messages, self.cancel.clone())
+                .await;
             let forced = lock(&session.inner.forced_prompt).clone();
             if let Some(forced) = forced {
                 // pi's forced prompt projection: one system message with the
@@ -302,7 +305,7 @@ impl AgentHooks for Hooks {
             let ctx = self.session.extension_context(self.cancel.clone());
             for extension in &self.session.inner.extensions {
                 if let Some(reason) = extension
-                    .tool_call(&ctx, &call.tool_call.name, call.args)
+                    .tool_call(&ctx, &call.tool_call.name, &*call.args)
                     .await
                 {
                     return Some(yapi_agent::hooks::Block {
@@ -320,16 +323,23 @@ impl AgentHooks for Hooks {
                 event["parentToolCallId"] = Value::String(parent.to_owned());
             }
             event["input"] = call.args.clone();
+            // Handlers change the call's arguments by editing `event.input`,
+            // which later handlers see, as in pi.
             for extension in self.session.handlers_of("tool_call") {
-                if let Some(result) = extension.handle(&ctx, &event).await
-                    && result["block"] == true
-                {
+                let Some(result) = extension.handle(&ctx, &event).await else {
+                    continue;
+                };
+                if let Some(input) = result.get("input").filter(|input| input.is_object()) {
+                    event["input"] = input.clone();
+                }
+                if result["block"] == true {
                     return Some(yapi_agent::hooks::Block {
                         reason: result["reason"].as_str().map(str::to_owned),
-                        terminate: false,
+                        terminate: result["terminate"] == true,
                     });
                 }
             }
+            *call.args = event["input"].take();
             None
         })
     }
@@ -362,6 +372,27 @@ impl AgentHooks for Hooks {
                 }
             }
             patch
+        })
+    }
+
+    fn finish_turn<'a>(
+        &'a self,
+        message: &'a yapi_types::message::AssistantMessage,
+        tool_results: &'a [ToolResultMessage],
+    ) -> BoxFuture<'a, yapi_agent::hooks::TurnDecision> {
+        Box::pin(async move {
+            let turn_index = self.turn_index.load(Ordering::SeqCst);
+            self.session
+                .turn_end_boundary(message, tool_results, turn_index, self.cancel.clone())
+                .await
+        })
+    }
+
+    fn finish_message(&self, message: Message) -> BoxFuture<'_, Message> {
+        Box::pin(async move {
+            self.session
+                .message_end_handlers(message, self.cancel.clone())
+                .await
         })
     }
 
@@ -457,7 +488,7 @@ impl AgentSession {
     }
 
     /// The extensions with handlers for pi events of type `kind`.
-    fn handlers_of(&self, kind: &str) -> Vec<&Arc<dyn Extension>> {
+    pub(super) fn handlers_of(&self, kind: &str) -> Vec<&Arc<dyn Extension>> {
         self.inner
             .extensions
             .iter()
@@ -474,16 +505,268 @@ impl AgentSession {
     }
 
     /// Delivers pi event `event` to every extension that handles it, in
-    /// order, for events whose results pi ignores.
-    pub async fn emit_extension_event(&self, event: &Value, cancel: CancellationToken) {
+    /// order, as pi's runner `emit` does. Only a `session_before_*` event has
+    /// a result: the last one a handler gave, or the first that cancels,
+    /// which stops delivery.
+    pub async fn emit_extension_event(
+        &self,
+        event: &Value,
+        cancel: CancellationToken,
+    ) -> Option<Value> {
         let kind = event["type"].as_str().unwrap_or_default();
         let handlers = self.handlers_of(kind);
         if handlers.is_empty() {
-            return;
+            return None;
         }
         let ctx = self.extension_context(cancel);
+        let before = kind.starts_with("session_before_");
+        let mut result = None;
         for extension in handlers {
-            extension.handle(&ctx, event).await;
+            if let Some(next) = extension.handle(&ctx, event).await
+                && before
+            {
+                let cancelled = next["cancel"] == true;
+                result = Some(next);
+                if cancelled {
+                    break;
+                }
+            }
+        }
+        result
+    }
+
+    /// pi's `session_before_switch` or `session_before_fork`: whether an
+    /// extension cancels `change`.
+    pub async fn cancels(&self, change: &SessionChange) -> bool {
+        let event = match change {
+            SessionChange::New => {
+                serde_json::json!({"type": change.event(), "reason": change.reason().as_str()})
+            }
+            SessionChange::Resume(target) => serde_json::json!({
+                "type": change.event(),
+                "reason": change.reason().as_str(),
+                "targetSessionFile": target,
+            }),
+            SessionChange::Fork { entry_id, at } => serde_json::json!({
+                "type": change.event(),
+                "entryId": entry_id,
+                "position": if *at { "at" } else { "before" },
+            }),
+        };
+        let result = self
+            .emit_extension_event(&event, CancellationToken::new())
+            .await;
+        result.is_some_and(|result| result["cancel"] == true)
+    }
+
+    /// pi's `message_end`: the message as handlers replaced it, each seeing
+    /// the previous one's. A replacement of another role is reported and
+    /// skipped, and a missing content of a user, assistant, tool result or
+    /// custom message becomes empty.
+    async fn message_end_handlers(&self, message: Message, cancel: CancellationToken) -> Message {
+        let handlers = self.handlers_of("message_end");
+        if handlers.is_empty() {
+            return message;
+        }
+        let ctx = self.extension_context(cancel);
+        let report = |extension: &Arc<dyn Extension>, error: &str| {
+            ctx.ui
+                .extension_error(&extension.source().path, "message_end", error, None);
+        };
+        let mut current = serde_json::json!(message);
+        let mut replaced_by = None;
+        for extension in handlers {
+            let event = serde_json::json!({"type": "message_end", "message": current});
+            let Some(next) = extension
+                .handle(&ctx, &event)
+                .await
+                .and_then(|mut result| result.get_mut("message").map(Value::take))
+                .filter(|next| !next.is_null())
+            else {
+                continue;
+            };
+            if next["role"] != current["role"] {
+                report(
+                    extension,
+                    "message_end handlers must return a message with the same role",
+                );
+                continue;
+            }
+            current = next;
+            replaced_by = Some(extension);
+        }
+        let Some(extension) = replaced_by else {
+            return message;
+        };
+        if matches!(
+            current["role"].as_str(),
+            Some("user" | "assistant" | "toolResult" | "custom")
+        ) && current["content"].is_null()
+        {
+            current["content"] = Value::Array(Vec::new());
+        }
+        serde_json::from_value(current).unwrap_or_else(|error| {
+            report(extension, &error.to_string());
+            message
+        })
+    }
+
+    /// Passes `value` through the extensions handling `kind` as the event's
+    /// `field`, each seeing the `field` the previous one returned.
+    pub(super) async fn chain(
+        &self,
+        kind: &str,
+        field: &str,
+        value: Value,
+        cancel: CancellationToken,
+    ) -> Value {
+        let handlers = self.handlers_of(kind);
+        if handlers.is_empty() {
+            return value;
+        }
+        let ctx = self.extension_context(cancel);
+        let mut value = value;
+        for extension in handlers {
+            let event = serde_json::json!({"type": kind, field: value});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Some(next) = result.get(field)
+            {
+                value = next.clone();
+            }
+        }
+        value
+    }
+
+    /// pi's `emitContext`: `context` handlers see the conversation without
+    /// system messages, which come back as the current prompt when they
+    /// change it; `context_with_system` handlers then see and return the
+    /// whole transcript.
+    async fn context_handlers(
+        &self,
+        messages: Vec<Message>,
+        cancel: CancellationToken,
+    ) -> Vec<Message> {
+        let mut messages = messages;
+        let ctx = self.extension_context(cancel);
+        for extension in self.handlers_of("context") {
+            let visible: Vec<Message> = messages
+                .iter()
+                .filter(|message| !matches!(message, Message::System(_)))
+                .cloned()
+                .collect();
+            let event = serde_json::json!({"type": "context", "messages": visible});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Ok(returned) =
+                    serde_json::from_value::<Vec<Message>>(result["messages"].clone())
+                && returned != visible
+            {
+                let head = yapi_ai::transcript::current_system_message(&messages);
+                messages = head
+                    .map(Message::System)
+                    .into_iter()
+                    .chain(returned)
+                    .collect();
+            }
+        }
+        for extension in self.handlers_of("context_with_system") {
+            let had_head = matches!(messages.first(), Some(Message::System(_)));
+            let event = serde_json::json!({"type": "context_with_system", "messages": messages});
+            if let Some(result) = extension.handle(&ctx, &event).await
+                && let Ok(returned) = serde_json::from_value(result["messages"].clone())
+            {
+                messages = returned;
+            }
+            if had_head && !matches!(messages.first(), Some(Message::System(_))) {
+                ctx.ui.extension_error(
+                    &extension.source().path,
+                    "context_with_system",
+                    "Handler removed the leading system message; the request has no prompt or initial tool declarations. Keep it at index 0 or replace a dropped prefix with getCurrentSystemMessage().",
+                    None,
+                );
+            }
+        }
+        messages
+    }
+
+    /// pi's `before_provider_headers`: the headers after handlers changed
+    /// them in place; a null value removes a header.
+    pub(super) async fn before_provider_headers(
+        &self,
+        headers: yapi_ai::stream::RequestHeaders,
+        cancel: CancellationToken,
+    ) -> yapi_ai::stream::RequestHeaders {
+        let value = serde_json::to_value(&headers).unwrap_or_default();
+        let value = self
+            .chain("before_provider_headers", "headers", value, cancel)
+            .await;
+        match value.as_object() {
+            Some(headers) => headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().map(str::to_owned)))
+                .collect(),
+            None => headers,
+        }
+    }
+
+    /// A blocking extension dialog of `kind` (`select`, `confirm`, `input`,
+    /// `editor` or `custom`) with `title` opens; extensions hear of the
+    /// outermost as pi's `ui_prompt_start`.
+    pub fn ui_prompt_opened(&self, kind: &str, title: Option<&str>) {
+        let title = title.filter(|title| !title.is_empty()).map(str::to_owned);
+        {
+            let mut prompts = lock(&self.inner.ui_prompts);
+            prompts.0 += 1;
+            if prompts.0 > 1 {
+                return;
+            }
+            prompts.1 = Some((kind.to_owned(), title.clone()));
+        }
+        self.announce(ui_prompt_event("ui_prompt_start", kind, title));
+    }
+
+    /// A blocking extension dialog closed; when it was the outermost,
+    /// extensions hear of it as pi's `ui_prompt_end`.
+    pub fn ui_prompt_closed(&self) {
+        let (kind, title) = {
+            let mut prompts = lock(&self.inner.ui_prompts);
+            prompts.0 = prompts.0.saturating_sub(1);
+            if prompts.0 > 0 {
+                return;
+            }
+            match prompts.1.take() {
+                Some(prompt) => prompt,
+                None => return,
+            }
+        };
+        self.announce(ui_prompt_event("ui_prompt_end", &kind, title));
+    }
+
+    /// Delivers `event` to extensions in the background, after the events
+    /// announced before it, as pi's runner delivers events it does not wait
+    /// for. Outside a tokio runtime it waits for the next
+    /// [`AgentSession::flush_announcements`].
+    pub(super) fn announce(&self, event: Value) {
+        let kind = event["type"].as_str().unwrap_or_default();
+        if !self.has_handlers(kind) {
+            return;
+        }
+        lock(&self.inner.announcements).push_back(event);
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let session = self.clone();
+            runtime.spawn(async move { session.flush_announcements().await });
+        }
+    }
+
+    /// Waits until the events announced so far have reached extensions.
+    pub async fn flush_announcements(&self) {
+        let _turn = self.inner.announcing.lock().await;
+        loop {
+            let next = lock(&self.inner.announcements).pop_front();
+            let Some(event) = next else {
+                return;
+            };
+            self.emit_extension_event(&event, CancellationToken::new())
+                .await;
         }
     }
 
@@ -580,21 +863,128 @@ impl AgentSession {
     }
 
     /// Gives extensions their UI and mode and starts them: pi's
-    /// `bindExtensions`, which emits `session_start`.
-    pub async fn bind_extensions(&self, ui: Arc<dyn ExtensionUi>, mode: Mode) {
+    /// `bindExtensions`, which emits `session_start` with the reason this
+    /// session replaced another and that session's file, or `startup` when
+    /// `replaced` is `None`.
+    pub async fn bind_extensions(
+        &self,
+        ui: Arc<dyn ExtensionUi>,
+        mode: Mode,
+        replaced: Option<(Replacement, Option<String>)>,
+    ) {
         *lock(&self.inner.binding) = (ui, mode);
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;
         }
-        let event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        let mut event = serde_json::json!({"type": "session_start", "reason": "startup"});
+        let mut reload = false;
+        if let Some((reason, previous)) = replaced {
+            event["reason"] = reason.as_str().into();
+            if let Some(previous) = reason.reported(previous) {
+                event["previousSessionFile"] = previous.into();
+            }
+            reload = reason == Replacement::Reload;
+        }
         self.emit_extension_event(&event, CancellationToken::new())
+            .await;
+        self.discover_resources(if reload { "reload" } else { "startup" })
             .await;
     }
 
-    /// Stops extensions before the session ends or is replaced.
+    /// pi's `resources_discover`, after `session_start`: adds the skills,
+    /// prompt templates and themes extensions name, each with its extension
+    /// as source.
+    async fn discover_resources(&self, reason: &str) {
+        let handlers = self.handlers_of("resources_discover");
+        if handlers.is_empty() {
+            return;
+        }
+        let event = serde_json::json!({"type": "resources_discover", "cwd": self.inner.cwd, "reason": reason});
+        let ctx = self.extension_context(CancellationToken::new());
+        let mut found: [Vec<SourceInfo>; 3] = Default::default();
+        for extension in handlers {
+            let Some(result) = extension.handle(&ctx, &event).await else {
+                continue;
+            };
+            let origin = extension.source().path;
+            let synthetic = origin.starts_with("builtin:") || origin.starts_with('<');
+            let source = if synthetic {
+                format!("extension:{}", origin.replace(['<', '>'], ""))
+            } else {
+                let name = std::path::Path::new(&origin)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let name = name
+                    .strip_suffix(".ts")
+                    .or_else(|| name.strip_suffix(".js"))
+                    .unwrap_or(&name);
+                format!("extension:{name}")
+            };
+            let base_dir = (!synthetic)
+                .then(|| std::path::Path::new(&origin).parent())
+                .flatten()
+                .map(|dir| dir.display().to_string());
+            for (kind, paths) in ["skillPaths", "promptPaths", "themePaths"]
+                .iter()
+                .zip(found.iter_mut())
+            {
+                for path in result[*kind].as_array().into_iter().flatten() {
+                    let Some(path) = path.as_str() else { continue };
+                    let path = crate::tools::path::resolve_to_cwd(path.trim(), &self.inner.cwd);
+                    paths.push(SourceInfo {
+                        path: path.display().to_string(),
+                        source: source.clone(),
+                        scope: "temporary".into(),
+                        origin: "top-level".into(),
+                        base_dir: base_dir.clone(),
+                    });
+                }
+            }
+        }
+        // pi's `extendResources`: each kind extensions name paths for loads
+        // again from its paths, merged with those it had.
+        let [skills, prompts, themes] = found;
+        let merged = |known: &mut Vec<SourceInfo>, found: Vec<SourceInfo>| {
+            crate::resources::merge_sources(std::mem::take(known).into_iter().chain(found))
+        };
+        let mut resources = write(&self.inner.resources);
+        let resources = &mut *resources;
+        if !skills.is_empty() {
+            resources.skill_sources = merged(&mut resources.skill_sources, skills);
+            (resources.skills, resources.skill_diagnostics) =
+                crate::resources::skills_from(&resources.skill_sources);
+        }
+        if !prompts.is_empty() {
+            resources.template_sources = merged(&mut resources.template_sources, prompts);
+            (resources.templates, resources.template_diagnostics) =
+                crate::resources::templates_from(&resources.template_sources);
+        }
+        if !themes.is_empty() {
+            resources.themes = merged(&mut resources.themes, themes);
+        }
+    }
+
+    /// Stops extensions before the session ends: pi's `session_shutdown`
+    /// with the reason `quit`.
     pub async fn shutdown(&self) {
-        let event = serde_json::json!({"type": "session_shutdown"});
+        self.stop_extensions(serde_json::json!({"type": "session_shutdown", "reason": "quit"}))
+            .await;
+    }
+
+    /// Stops extensions before a session replaces this one for `reason`;
+    /// `target` is the replacement's session file, which pi does not report
+    /// on reload.
+    pub async fn shutdown_for(&self, reason: Replacement, target: Option<String>) {
+        let mut event = serde_json::json!({"type": "session_shutdown", "reason": reason.as_str()});
+        if let Some(target) = reason.reported(target) {
+            event["targetSessionFile"] = target.into();
+        }
+        self.stop_extensions(event).await;
+    }
+
+    async fn stop_extensions(&self, event: Value) {
         self.emit_extension_event(&event, CancellationToken::new())
             .await;
         let ctx = self.extension_context(CancellationToken::new());

@@ -715,6 +715,7 @@ async fn consume(
             let data = data.trim();
             let json: Value = serde_json::from_str(data)
                 .map_err(|err| format!("exception parsing stream chunk {data}. {err}"))?;
+            options.hooks.stream_event(&json).await;
             state.handle(&json, model, sender)?;
         }
     }
@@ -775,6 +776,7 @@ async fn connect(
     let max_tokens = requested_max_tokens(model, messages, options);
     let thinking = thinking(model, options, flavor)?;
     let body = build_body(model, messages, options, max_tokens, &thinking)?;
+    let body = options.hooks.payload(body).await;
     let body = yapi_types::json::stringify(&body);
     let mut headers = Headers::default();
     headers.set("content-type", Some("application/json"));

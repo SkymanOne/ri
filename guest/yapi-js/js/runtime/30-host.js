@@ -742,10 +742,40 @@
 		});
 	}
 
+	// ----- bash operations -----------------------------------------------------------------------
+	// Operations `user_bash` handlers returned, by id, until the host runs them.
+	const bashOperations = new Map();
+	let nextBashOperations = 1;
+	const bashAborts = new Map();
+	/** pi's `isUserBashEventResult`. */
+	function isUserBashEventResult(value) {
+		if (typeof value !== "object" || value === null) return false;
+		const hasOperations = value.operations !== undefined;
+		const hasResult = value.result !== undefined;
+		if (hasOperations === hasResult) return false;
+		if (hasOperations) {
+			return typeof value.operations === "object" && value.operations !== null && typeof value.operations.exec === "function";
+		}
+		const result = value.result;
+		if (typeof result !== "object" || result === null) return false;
+		return (
+			typeof result.output === "string" &&
+			"exitCode" in result &&
+			(result.exitCode === undefined || typeof result.exitCode === "number") &&
+			typeof result.cancelled === "boolean" &&
+			typeof result.truncated === "boolean" &&
+			(result.fullOutputPath === undefined || typeof result.fullOutputPath === "string")
+		);
+	}
+
 	// ----- emitting to one extension -----------------------------------------------------------
 	/** Runs `extension`'s handlers for `event` as pi's runner does for each handler. */
 	async function emit(extension, event, ctx) {
 		const handlers = [...(extension.handlers.get(event.type) ?? [])];
+		// What JSON cannot carry: the abort signal and pi's file operation sets.
+		if (event.type === "session_before_compact" || event.type === "session_before_tree") event.signal = ctx.signal;
+		const fileOps = event.type === "session_before_compact" ? event.preparation?.fileOps : undefined;
+		if (fileOps) for (const key of ["read", "written", "edited"]) fileOps[key] = new Set(fileOps[key] ?? []);
 		const errors = [];
 		const guard = async (run) => {
 			try {
@@ -758,7 +788,8 @@
 		let result;
 		switch (event.type) {
 			case "tool_call": {
-				// Errors propagate: a failing guard blocks the call.
+				// Errors propagate: a failing guard blocks the call. Handlers
+				// change the arguments by editing `event.input` in place.
 				for (const handler of handlers) {
 					const handlerResult = await handler(event, ctx);
 					if (handlerResult) {
@@ -766,6 +797,7 @@
 						if (result.block) break;
 					}
 				}
+				result = { ...result, input: event.input };
 				break;
 			}
 			case "tool_result": {
@@ -831,12 +863,47 @@
 			}
 			case "context":
 			case "context_with_system": {
+				// Handlers return a new list or edit `event.messages` in place.
 				let messages = event.messages;
+				let changed = false;
 				for (const handler of handlers) {
-					const handlerResult = await guard(() => handler({ ...event, messages }, ctx));
-					if (handlerResult?.messages) messages = handlerResult.messages;
+					const visible = messages;
+					const snapshot = visible.slice();
+					const handlerResult = await guard(() => handler({ ...event, messages: visible }, ctx));
+					const edited = visible.length !== snapshot.length || visible.some((message, index) => message !== snapshot[index]);
+					const returned = handlerResult?.messages ?? (edited ? visible : undefined);
+					if (!returned) continue;
+					messages = returned;
+					changed = true;
 				}
-				if (messages !== event.messages) result = { messages };
+				if (changed) result = { messages };
+				break;
+			}
+			case "before_provider_headers": {
+				// Handlers change `event.headers` in place.
+				for (const handler of handlers) await guard(() => handler(event, ctx));
+				result = { headers: event.headers };
+				break;
+			}
+			case "turn_end":
+			case "agent_before_settle": {
+				// pi's `emitBoundary` for this extension's handlers: each sees the
+				// entries and continuation the earlier ones staged, and the context
+				// they would make, built when read.
+				let entries = event.entries;
+				let shouldContinue = event.continue;
+				for (const handler of handlers) {
+					const staged = entries;
+					const boundaryEvent = { ...event, entries: staged, continue: shouldContinue };
+					Object.defineProperty(boundaryEvent, "context", {
+						enumerable: true,
+						get: () => yapi.request("session.boundaryContext", { type: event.type, entries: plain(staged) }),
+					});
+					const handlerResult = await guard(() => handler(boundaryEvent, ctx));
+					if (handlerResult?.entries !== undefined) entries = handlerResult.entries;
+					if (handlerResult?.continue !== undefined) shouldContinue = handlerResult.continue;
+				}
+				result = { entries, continue: shouldContinue };
 				break;
 			}
 			case "before_provider_request": {
@@ -849,12 +916,23 @@
 				break;
 			}
 			case "user_bash": {
+				// Errors propagate: a failing handler stops the command.
 				for (const handler of handlers) {
 					const handlerResult = await handler(event, ctx);
-					if (handlerResult !== undefined) {
-						result = handlerResult;
-						break;
+					if (handlerResult === undefined) continue;
+					if (!isUserBashEventResult(handlerResult)) {
+						throw new Error(
+							"Invalid user_bash handler result: return undefined for local execution or exactly one valid { operations } or { result } object",
+						);
 					}
+					if (handlerResult.operations) {
+						const id = nextBashOperations++;
+						bashOperations.set(id, handlerResult.operations);
+						result = { operations: { id } };
+					} else {
+						result = { result: handlerResult.result };
+					}
+					break;
 				}
 				break;
 			}
@@ -1024,6 +1102,25 @@
 				if ("focused" in editor) editor.focused = !!payload.focused;
 				tui.terminal.rows = payload.rows;
 			}
+			return null;
+		},
+		/** Runs a `!` command through the operations with `id`; `{ exitCode }`. */
+		async bash(payload) {
+			const operations = bashOperations.get(payload.id);
+			bashOperations.delete(payload.id);
+			if (!operations) throw new Error(`No bash operations ${payload.id}`);
+			const controller = new AbortController();
+			bashAborts.set(payload.id, controller);
+			try {
+				const onData = (data) => yapi.request("bash.data", { id: payload.id, data: yapi.base64Encode(Buffer.from(data)) });
+				const result = await operations.exec(payload.command, payload.cwd, { onData, signal: controller.signal });
+				return { exitCode: result?.exitCode ?? null };
+			} finally {
+				bashAborts.delete(payload.id);
+			}
+		},
+		bashAbort(payload) {
+			bashAborts.get(payload.id)?.abort();
 			return null;
 		},
 		async shortcut(payload) {
