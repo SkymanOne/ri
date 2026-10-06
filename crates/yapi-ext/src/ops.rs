@@ -279,21 +279,78 @@ fn spawn_error(command: &str, err: &std::io::Error) -> String {
     format!("spawn {command} {code}")
 }
 
+/// The signals Node names, as its `signo_string` does; others have no name.
+#[cfg(unix)]
+const SIGNALS: &[(rustix::process::Signal, &str)] = {
+    use rustix::process::Signal;
+    &[
+        (Signal::HUP, "SIGHUP"),
+        (Signal::INT, "SIGINT"),
+        (Signal::QUIT, "SIGQUIT"),
+        (Signal::ILL, "SIGILL"),
+        (Signal::TRAP, "SIGTRAP"),
+        (Signal::ABORT, "SIGABRT"),
+        (Signal::BUS, "SIGBUS"),
+        (Signal::FPE, "SIGFPE"),
+        (Signal::KILL, "SIGKILL"),
+        (Signal::USR1, "SIGUSR1"),
+        (Signal::SEGV, "SIGSEGV"),
+        (Signal::USR2, "SIGUSR2"),
+        (Signal::PIPE, "SIGPIPE"),
+        (Signal::ALARM, "SIGALRM"),
+        (Signal::TERM, "SIGTERM"),
+        (Signal::CHILD, "SIGCHLD"),
+        #[cfg(target_os = "linux")]
+        (Signal::STKFLT, "SIGSTKFLT"),
+        (Signal::CONT, "SIGCONT"),
+        (Signal::STOP, "SIGSTOP"),
+        (Signal::TSTP, "SIGTSTP"),
+        (Signal::TTIN, "SIGTTIN"),
+        (Signal::TTOU, "SIGTTOU"),
+        (Signal::URG, "SIGURG"),
+        (Signal::XCPU, "SIGXCPU"),
+        (Signal::XFSZ, "SIGXFSZ"),
+        (Signal::VTALARM, "SIGVTALRM"),
+        (Signal::PROF, "SIGPROF"),
+        (Signal::WINCH, "SIGWINCH"),
+        (Signal::IO, "SIGIO"),
+        #[cfg(target_os = "linux")]
+        (Signal::POWER, "SIGPWR"),
+        #[cfg(target_os = "macos")]
+        (Signal::INFO, "SIGINFO"),
+        (Signal::SYS, "SIGSYS"),
+    ]
+};
+
+/// The name of the signal that ended a process, as Node reports it.
 fn signal_name(status: &std::process::ExitStatus) -> Option<&'static str> {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt as _;
-        status.signal().map(|signal| match signal {
-            1 => "SIGHUP",
-            2 => "SIGINT",
-            9 => "SIGKILL",
-            15 => "SIGTERM",
-            _ => "SIGTERM",
-        })
+        let signal = status.signal()?;
+        SIGNALS
+            .iter()
+            .find(|(known, _)| known.as_raw() == signal)
+            .map(|(_, name)| *name)
     }
     #[cfg(not(unix))]
     {
         let _ = status;
         None
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_signals_as_node_does() {
+        for name in ["SEGV", "USR1", "TERM"] {
+            let script = format!("kill -s {name} $$");
+            let result = exec_sync(&json!({"command": "/bin/sh", "args": ["-c", script]})).unwrap();
+            assert_eq!(result["signal"], format!("SIG{name}"), "{result}");
+            assert_eq!(result["code"], Value::Null, "{result}");
+        }
     }
 }
