@@ -5,8 +5,8 @@
 //! Connections run in the background. The first prompt waits only for servers
 //! with `direct` tools; `tool_search` and the resource tools wait for the
 //! servers they need when they run. Servers whose tools are not declared are
-//! listed in the `mcp_servers` system prompt section. Signing in (OAuth) and
-//! the `/mcp` manager are not ported yet; `/mcp` reports the status.
+//! listed in the `mcp_servers` system prompt section. `/mcp login` signs in to
+//! OAuth servers. The `/mcp` manager is not ported; `/mcp` reports the status.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -23,6 +23,7 @@ use yapi_types::sync::lock;
 use super::config::{self, McpExposure, ServerEntry, namespace};
 use super::connection::{Connection, State};
 use super::http::ProviderToken;
+use super::sign_in::SignInPrompt;
 use super::tools::{
     LIST_MCP_RESOURCE_TEMPLATES_TOOL, LIST_MCP_RESOURCES_TOOL, McpTool, READ_MCP_RESOURCE_TOOL,
     resource_tools, tool_name,
@@ -30,7 +31,7 @@ use super::tools::{
 use crate::extensions::codemode;
 use crate::extensions::tool_search::{TOOL_SEARCH_TOOL_NAME, is_tool_search};
 use crate::extensions::{
-    Command, Completion, Context, DialogOptions, Extension, ExtensionUi, NotifyKind, Tools,
+    Command, Completion, Context, DialogOptions, Extension, ExtensionUi, Mode, NotifyKind, Tools,
     builtin_source,
 };
 use crate::tools::{Exposure, Namespace, RegisteredTool};
@@ -700,6 +701,77 @@ impl McpExtension {
         }
     }
 
+    /// pi's `signIn`: a failure message, or `None` once signed in and
+    /// reconnected.
+    async fn sign_in(&self, name: &str, ctx: &Context) -> Option<String> {
+        let Some(connection) = self
+            .connection(name)
+            .filter(|connection| connection.oauth_url().is_some())
+        else {
+            return Some(format!("MCP server \"{name}\" does not use OAuth."));
+        };
+        let (ui, server, tui) = (Arc::clone(&ctx.ui), name.to_owned(), ctx.mode == Mode::Tui);
+        let show_authorization_url = Box::new(move |url: &str| {
+            // pi links both lines; yapi shows the text and the terminal detects the URL.
+            let lines = match tui {
+                true if cfg!(target_os = "macos") => format!("{url}\nCmd+click to open"),
+                true => format!("{url}\nCtrl+click to open"),
+                false => url.to_owned(),
+            };
+            ui.notify(
+                &format!("Sign in to MCP server \"{server}\" in your browser:\n{lines}"),
+                NotifyKind::Info,
+            );
+            yapi_ai::auth::open_browser(url);
+        });
+        let (ui, server) = (Arc::clone(&ctx.ui), name.to_owned());
+        let redirect_url = Box::new(move |cancel| {
+            ui.input(
+                &format!("Waiting for sign-in to \"{server}\". If the browser cannot reach this machine, paste the URL it was redirected to."),
+                Some("http://127.0.0.1:.../callback?code=..."),
+                DialogOptions {
+                    cancel: Some(cancel),
+                    ..DialogOptions::default()
+                },
+            )
+        });
+        let prompt = SignInPrompt {
+            show_authorization_url,
+            redirect_url,
+        };
+        match connection.sign_in(&prompt).await {
+            Err(yapi_ai::auth::AuthError::Cancelled) => return Some("Sign-in cancelled.".into()),
+            Err(error) => return Some(format!("Sign-in failed: {error}")),
+            Ok(()) => {}
+        }
+        match connection.reconnect().await {
+            Err(error) => Some(format!("Signed in, but {error}")),
+            Ok(()) => None,
+        }
+    }
+
+    /// Reconnects servers that need a sign-in when their credentials were
+    /// stored since, as by `yapi mcp login` in another process.
+    async fn reconnect_signed_in(&self, ctx: &Context) {
+        let connections: Vec<Arc<Connection>> = lock(&self.shared)
+            .servers
+            .iter()
+            .filter_map(|server| server.connection.clone())
+            .collect();
+        let mut signed_in = Vec::new();
+        for connection in connections {
+            if connection.signed_in_elsewhere().await {
+                signed_in.push(connection);
+            }
+        }
+        if signed_in.is_empty() {
+            return;
+        }
+        futures_util::future::join_all(signed_in.iter().map(|connection| connection.reconnect()))
+            .await;
+        self.ensure_discovery_active(ctx);
+    }
+
     fn connection(&self, name: &str) -> Option<Arc<Connection>> {
         lock(&self.shared)
             .servers
@@ -745,21 +817,45 @@ impl McpExtension {
                     );
                     return;
                 }
+                if let Some(failure) = self.sign_in(&name, ctx).await {
+                    let kind = if failure == "Sign-in cancelled." {
+                        NotifyKind::Info
+                    } else {
+                        NotifyKind::Error
+                    };
+                    ctx.ui.notify(&failure, kind);
+                    return;
+                }
+                self.ensure_discovery_active(ctx);
+                let tools = self
+                    .connection(&name)
+                    .map_or(0, |connection| connection.snapshot().tools.len());
                 ctx.ui.notify(
-                    &format!(
-                        "Sign-in failed: MCP OAuth is not available in yapi yet (server \"{name}\")."
-                    ),
-                    NotifyKind::Error,
+                    &format!("Signed in to MCP server \"{name}\" ({tools} tools)."),
+                    NotifyKind::Info,
                 );
             }
             "logout" => {
                 let Some(name) = self.pick(name, ctx, oauth, needs_auth, none).await else {
                     return;
                 };
-                ctx.ui.notify(
-                    &format!("No stored credentials for MCP server \"{name}\"."),
-                    NotifyKind::Info,
-                );
+                let Some(connection) = self.connection(&name) else {
+                    return;
+                };
+                let removed = match connection.remove_credentials().await {
+                    Ok(removed) => removed,
+                    Err(error) => {
+                        ctx.ui.notify(&error.to_string(), NotifyKind::Error);
+                        return;
+                    }
+                };
+                connection.sign_out().await;
+                let message = if removed {
+                    format!("Signed out of MCP server \"{name}\".")
+                } else {
+                    format!("No stored credentials for MCP server \"{name}\".")
+                };
+                ctx.ui.notify(&message, NotifyKind::Info);
             }
             "reconnect" => {
                 let failed = |server: &Server| {
@@ -878,6 +974,20 @@ impl Extension for McpExtension {
         ctx: &'a Context,
     ) -> BoxFuture<'a, ()> {
         Box::pin(self.command(args, ctx))
+    }
+
+    // Picks up sign-ins done outside the session, such as `yapi mcp login` run by the agent.
+    fn handles(&self, kind: &str) -> bool {
+        kind == "turn_start"
+    }
+
+    fn handle<'a>(&'a self, ctx: &'a Context, event: &'a Value) -> BoxFuture<'a, Option<Value>> {
+        Box::pin(async move {
+            if event["type"] == "turn_start" {
+                self.reconnect_signed_in(ctx).await;
+            }
+            None
+        })
     }
 
     fn session_start<'a>(&'a self, ctx: &'a Context) -> BoxFuture<'a, ()> {

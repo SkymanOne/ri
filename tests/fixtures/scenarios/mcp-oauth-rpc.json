@@ -1,0 +1,62 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "notify",
+      "message": "MCP servers need attention:\n  web: failed: fetch failed\nRun /mcp to fix.",
+      "notifyType": "warning"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-2>",
+      "method": "notify",
+      "message": "Sign-in failed: fetch failed",
+      "notifyType": "error"
+    },
+    {
+      "id": "<id-3>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-4>",
+      "method": "notify",
+      "message": "No stored credentials for MCP server \"web\".",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-5>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-6>",
+      "method": "notify",
+      "message": "web: needs sign-in, run /mcp login web (codemode)",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-7>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}
