@@ -16,6 +16,7 @@ use yapi_ai::faux::{Faux, Response};
 use yapi_core::agent_session::{AgentSession, TreeNavigation};
 use yapi_core::extensions::{Mode, NoUi};
 use yapi_ext::ExtensionHost;
+use yapi_types::message::{Message, blocks_text};
 use yapi_types::session::FileEntry;
 
 /// Records the events it sees, and answers them as `/mode` says, until
@@ -71,9 +72,9 @@ export default function (pi: ExtensionAPI) {
 }
 "#;
 
-async fn extensions(dir: &Path) -> Arc<ExtensionHost> {
+async fn extensions(dir: &Path, source: &str) -> Arc<ExtensionHost> {
     let path = dir.join("events.ts");
-    std::fs::write(&path, EXTENSION).unwrap();
+    std::fs::write(&path, source).unwrap();
     let host = ExtensionHost::load(&engine(), options(dir), &[cli_source(&path)])
         .await
         .unwrap();
@@ -107,7 +108,7 @@ async fn conversation(faux: &Faux, dir: &Path, host: &Arc<ExtensionHost>) -> Age
 #[tokio::test(flavor = "multi_thread")]
 async fn compaction_takes_the_summary_an_extension_supplies() {
     let dir = scratch("events-compact");
-    let host = extensions(&dir).await;
+    let host = extensions(&dir, EXTENSION).await;
     let faux = Faux::new([Response::text("one"), Response::text("two")]);
     let session = conversation(&faux, &dir, &host).await;
 
@@ -136,7 +137,7 @@ async fn compaction_takes_the_summary_an_extension_supplies() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_extension_cancels_compaction() {
     let dir = scratch("events-compact-cancel");
-    let host = extensions(&dir).await;
+    let host = extensions(&dir, EXTENSION).await;
     let faux = Faux::new([Response::text("one"), Response::text("two")]);
     let session = conversation(&faux, &dir, &host).await;
     command(&session, "/mode cancel").await;
@@ -159,15 +160,13 @@ async fn an_extension_cancels_compaction() {
 #[tokio::test(flavor = "multi_thread")]
 async fn tree_navigation_takes_an_extension_summary_or_stops() {
     let dir = scratch("events-tree");
-    let host = extensions(&dir).await;
+    let host = extensions(&dir, EXTENSION).await;
     let faux = Faux::new([Response::text("one"), Response::text("two")]);
     let session = conversation(&faux, &dir, &host).await;
     let first = session.with_session(|file| {
         file.entries()
             .find_map(|entry| match entry {
-                FileEntry::Message(message)
-                    if matches!(message.message, yapi_types::message::Message::Assistant(_)) =>
-                {
+                FileEntry::Message(message) if matches!(message.message, Message::Assistant(_)) => {
                     Some(message.meta.id.clone())
                 }
                 _ => None,
@@ -211,4 +210,48 @@ async fn tree_navigation_takes_an_extension_summary_or_stops() {
             json!({"type": "session_before_tree", "wants": true, "entries": 2, "label": null}),
         ]
     );
+}
+
+/// Replaces every finished assistant message.
+const REWRITE: &str = r#"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	pi.on("message_end", (event) => {
+		const { message } = event;
+		if (message.role === "assistant") {
+			return { message: { ...message, content: [{ type: "text", text: "replaced" }] } };
+		}
+	});
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_end_replacements_are_recorded_and_sent() {
+    let dir = scratch("events-message-end");
+    let host = extensions(&dir, REWRITE).await;
+    let faux = Faux::new([Response::text("one"), Response::text("two")]);
+    let session = session(&faux, &dir, host.for_session());
+    session.bind_extensions(Arc::new(NoUi), Mode::Print).await;
+    session.prompt("first", Vec::new()).await.unwrap();
+    session.prompt("second", Vec::new()).await.unwrap();
+
+    let assistant_text = |message: &Message| match message {
+        Message::Assistant(assistant) => Some(blocks_text(&assistant.content, "")),
+        _ => None,
+    };
+    let recorded: Vec<String> = session.with_session(|file| {
+        file.entries()
+            .filter_map(|entry| match entry {
+                FileEntry::Message(entry) => assistant_text(&entry.message),
+                _ => None,
+            })
+            .collect()
+    });
+    assert_eq!(recorded, ["replaced", "replaced"]);
+    let sent: Vec<String> = faux.requests()[1]
+        .iter()
+        .filter_map(assistant_text)
+        .collect();
+    assert_eq!(sent, ["replaced"]);
 }

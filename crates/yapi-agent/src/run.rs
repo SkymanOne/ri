@@ -59,13 +59,14 @@ pub async fn run(
     hooks: &dyn AgentHooks,
 ) -> Vec<Message> {
     let initial = declare_tool_changes(&context.messages, &context.tools, prompts);
-    let mut new_messages = initial.clone();
-    context.messages.extend(initial.iter().cloned());
+    let mut new_messages = Vec::new();
 
     hooks.on_event(&AgentEvent::AgentStart).await;
     hooks.on_event(&AgentEvent::TurnStart).await;
     for message in initial {
-        emit_message(hooks, &message).await;
+        let message = emit_message(hooks, message).await;
+        context.messages.push(message.clone());
+        new_messages.push(message);
     }
     run_loop(context, &mut new_messages, config, hooks).await;
     new_messages
@@ -92,17 +93,25 @@ pub async fn run_continue(
     Ok(new_messages)
 }
 
-async fn emit_message(hooks: &dyn AgentHooks, message: &Message) {
+/// Emits `message`'s start and end; the message as the hooks finished it.
+async fn emit_message(hooks: &dyn AgentHooks, message: Message) -> Message {
     hooks
         .on_event(&AgentEvent::MessageStart {
             message: message.clone(),
         })
         .await;
+    end_message(hooks, message).await
+}
+
+/// Lets the hooks finish `message`, then emits its end.
+async fn end_message(hooks: &dyn AgentHooks, message: Message) -> Message {
+    let message = hooks.finish_message(message).await;
     hooks
         .on_event(&AgentEvent::MessageEnd {
             message: message.clone(),
         })
         .await;
+    message
 }
 
 async fn run_loop(
@@ -136,7 +145,7 @@ async fn run_loop(
                 &context.tools,
                 std::mem::take(&mut pending),
             ) {
-                emit_message(hooks, &message).await;
+                let message = emit_message(hooks, message).await;
                 context.messages.push(message.clone());
                 new_messages.push(message);
             }
@@ -356,7 +365,6 @@ async fn complete(
     started: bool,
 ) -> AssistantMessage {
     let wrapped = Message::Assistant(Box::new(message.clone()));
-    context.messages.push(wrapped.clone());
     if !started {
         hooks
             .on_event(&AgentEvent::MessageStart {
@@ -364,10 +372,12 @@ async fn complete(
             })
             .await;
     }
-    hooks
-        .on_event(&AgentEvent::MessageEnd { message: wrapped })
-        .await;
-    message
+    let finished = end_message(hooks, wrapped).await;
+    context.messages.push(finished.clone());
+    match finished {
+        Message::Assistant(finished) => *finished,
+        _ => message,
+    }
 }
 
 fn error_result(message: &str) -> ToolResult {
@@ -471,8 +481,10 @@ async fn emit_result(outcome: &ToolCallOutcome, hooks: &dyn AgentHooks) -> ToolR
         nested_calls: None,
     };
     hooks.complete_tool_result(&mut message);
-    emit_message(hooks, &Message::ToolResult(message.clone())).await;
-    message
+    match emit_message(hooks, Message::ToolResult(message.clone())).await {
+        Message::ToolResult(finished) => finished,
+        _ => message,
+    }
 }
 
 /// A call ready to run.
@@ -508,7 +520,7 @@ async fn prepare(
         arguments: tool.prepare_arguments(call.arguments.clone()),
         ..call.clone()
     };
-    let args = match validate_tool_arguments(tool.declaration(), &prepared_call) {
+    let mut args = match validate_tool_arguments(tool.declaration(), &prepared_call) {
         Ok(args) => args,
         Err(message) => return immediate(&message, false),
     };
@@ -516,7 +528,7 @@ async fn prepare(
         .before_tool_call(BeforeToolCall {
             assistant_message: scope.assistant,
             tool_call: call,
-            args: &args,
+            args: &mut args,
             messages: scope.messages,
             parent_tool_call_id: scope.parent,
         })

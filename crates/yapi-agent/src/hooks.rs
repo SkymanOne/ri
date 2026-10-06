@@ -14,8 +14,9 @@ pub struct BeforeToolCall<'a> {
     pub assistant_message: &'a AssistantMessage,
     /// The call as the model made it.
     pub tool_call: &'a ToolCall,
-    /// Validated arguments.
-    pub args: &'a Value,
+    /// Validated arguments, which the hook may change; the tool runs with
+    /// them as they are when it returns.
+    pub args: &'a mut Value,
     /// The transcript so far.
     pub messages: &'a [Message],
     /// The tool call that made this call, for calls a tool made.
@@ -117,6 +118,13 @@ pub trait AgentHooks: Send + Sync {
         _tool_results: &'a [ToolResultMessage],
     ) -> BoxFuture<'a, TurnDecision> {
         Box::pin(async { TurnDecision::default() })
+    }
+
+    /// The message to record in place of `message` once it is complete, before
+    /// its `message_end` is emitted; pi's `message_end` replacement. Must
+    /// keep the message's role.
+    fn finish_message(&self, message: Message) -> BoxFuture<'_, Message> {
+        Box::pin(async { message })
     }
 
     /// Completes a tool result message before it is emitted, for example

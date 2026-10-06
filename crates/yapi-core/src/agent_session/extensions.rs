@@ -73,7 +73,7 @@ fn extension_event(
         AgentEvent::MessageUpdate { .. } => {
             ("message_update", &["message", "assistantMessageEvent"])
         }
-        AgentEvent::MessageEnd { .. } => ("message_end", &["message"]),
+        // `message_end` reaches extensions as the message is finished.
         AgentEvent::ToolExecutionStart { .. } => (
             "tool_execution_start",
             &["toolCallId", "toolName", "args", "parentToolCallId"],
@@ -305,7 +305,7 @@ impl AgentHooks for Hooks {
             let ctx = self.session.extension_context(self.cancel.clone());
             for extension in &self.session.inner.extensions {
                 if let Some(reason) = extension
-                    .tool_call(&ctx, &call.tool_call.name, call.args)
+                    .tool_call(&ctx, &call.tool_call.name, &*call.args)
                     .await
                 {
                     return Some(yapi_agent::hooks::Block {
@@ -323,16 +323,23 @@ impl AgentHooks for Hooks {
                 event["parentToolCallId"] = Value::String(parent.to_owned());
             }
             event["input"] = call.args.clone();
+            // Handlers change the call's arguments by editing `event.input`,
+            // which later handlers see, as in pi.
             for extension in self.session.handlers_of("tool_call") {
-                if let Some(result) = extension.handle(&ctx, &event).await
-                    && result["block"] == true
-                {
+                let Some(result) = extension.handle(&ctx, &event).await else {
+                    continue;
+                };
+                if let Some(input) = result.get("input").filter(|input| input.is_object()) {
+                    event["input"] = input.clone();
+                }
+                if result["block"] == true {
                     return Some(yapi_agent::hooks::Block {
                         reason: result["reason"].as_str().map(str::to_owned),
-                        terminate: false,
+                        terminate: result["terminate"] == true,
                     });
                 }
             }
+            *call.args = event["input"].take();
             None
         })
     }
@@ -377,6 +384,14 @@ impl AgentHooks for Hooks {
             let turn_index = self.turn_index.load(Ordering::SeqCst);
             self.session
                 .turn_end_boundary(message, tool_results, turn_index, self.cancel.clone())
+                .await
+        })
+    }
+
+    fn finish_message(&self, message: Message) -> BoxFuture<'_, Message> {
+        Box::pin(async move {
+            self.session
+                .message_end_handlers(message, self.cancel.clone())
                 .await
         })
     }
@@ -553,6 +568,58 @@ impl AgentSession {
         });
         let result = self.emit_before(&event, CancellationToken::new()).await;
         result.is_some_and(|result| result["cancel"] == true)
+    }
+
+    /// pi's `message_end`: the message as handlers replaced it, each seeing
+    /// the previous one's. A replacement of another role is reported and
+    /// skipped, and a missing content of a user, assistant, tool result or
+    /// custom message becomes empty.
+    async fn message_end_handlers(&self, message: Message, cancel: CancellationToken) -> Message {
+        let handlers = self.handlers_of("message_end");
+        if handlers.is_empty() {
+            return message;
+        }
+        let ctx = self.extension_context(cancel);
+        let report = |extension: &Arc<dyn Extension>, error: &str| {
+            ctx.ui
+                .extension_error(&extension.source().path, "message_end", error, None);
+        };
+        let mut current = serde_json::json!(message);
+        let mut replaced_by = None;
+        for extension in handlers {
+            let event = serde_json::json!({"type": "message_end", "message": current});
+            let Some(next) = extension
+                .handle(&ctx, &event)
+                .await
+                .and_then(|mut result| result.get_mut("message").map(Value::take))
+                .filter(|next| !next.is_null())
+            else {
+                continue;
+            };
+            if next["role"] != current["role"] {
+                report(
+                    extension,
+                    "message_end handlers must return a message with the same role",
+                );
+                continue;
+            }
+            current = next;
+            replaced_by = Some(extension);
+        }
+        let Some(extension) = replaced_by else {
+            return message;
+        };
+        if matches!(
+            current["role"].as_str(),
+            Some("user" | "assistant" | "toolResult" | "custom")
+        ) && current["content"].is_null()
+        {
+            current["content"] = Value::Array(Vec::new());
+        }
+        serde_json::from_value(current).unwrap_or_else(|error| {
+            report(extension, &error.to_string());
+            message
+        })
     }
 
     /// pi's `before_provider_request`: the request body extensions return

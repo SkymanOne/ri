@@ -788,7 +788,8 @@
 		let result;
 		switch (event.type) {
 			case "tool_call": {
-				// Errors propagate: a failing guard blocks the call.
+				// Errors propagate: a failing guard blocks the call. Handlers
+				// change the arguments by editing `event.input` in place.
 				for (const handler of handlers) {
 					const handlerResult = await handler(event, ctx);
 					if (handlerResult) {
@@ -796,6 +797,7 @@
 						if (result.block) break;
 					}
 				}
+				result = { ...result, input: event.input };
 				break;
 			}
 			case "tool_result": {
