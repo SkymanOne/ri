@@ -121,14 +121,24 @@ fi
 name="yapi-$target.tar.gz"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+
+# Downloads file $1 of the release into $work and checks it against its
+# published SHA-256. On failure, $problem says why.
+fetch_checked() {
+    if ! curl -fsSL -o "$work/$1" "$download/$1"; then
+        problem="found no $1 in $release at $releases"
+    elif ! curl -fsSL -o "$work/$1.sha256" "$download/$1.sha256"; then
+        problem="could not download the checksum for $1"
+    elif [ "$(cut -d ' ' -f 1 <"$work/$1.sha256")" != "$(sha256 "$work/$1")" ]; then
+        problem="$1 does not match its SHA-256 checksum"
+    else
+        return 0
+    fi
+    return 1
+}
+
 echo "Downloading $name from $release"
-curl -fsSL -o "$work/$name" "$download/$name" ||
-    fail "found no $name in $release at $releases. Build from source: $from_source"
-curl -fsSL -o "$work/$name.sha256" "$download/$name.sha256" ||
-    fail "could not download the checksum for $name"
-expected=$(cut -d ' ' -f 1 <"$work/$name.sha256")
-actual=$(sha256 "$work/$name")
-[ "$expected" = "$actual" ] || fail "$name does not match its SHA-256 checksum"
+fetch_checked "$name" || fail "$problem. Build from source: $from_source"
 
 mkdir "$work/unpacked"
 tar -xzf "$work/$name" -C "$work/unpacked"
@@ -150,17 +160,13 @@ if [ -n "$docs" ]; then
         "~/"*) agent="${HOME:-}/${agent#\~/}" ;;
     esac
     [ -n "$agent" ] || agent="${HOME:+$HOME/.yapi/agent}"
-    docs_name=yapi-docs.tar.gz
     if [ -z "$agent" ]; then
         problem="HOME and YAPI_CODING_AGENT_DIR are not set"
-    elif ! curl -fsSL -o "$work/$docs_name" "$download/$docs_name" ||
-        ! curl -fsSL -o "$work/$docs_name.sha256" "$download/$docs_name.sha256"; then
-        problem="found no $docs_name in $release"
-    elif [ "$(cut -d ' ' -f 1 <"$work/$docs_name.sha256")" != "$(sha256 "$work/$docs_name")" ]; then
-        problem="$docs_name does not match its SHA-256 checksum"
-    elif ! mkdir -p "$agent/.docs.$$" || ! tar -xzf "$work/$docs_name" -C "$agent/.docs.$$"; then
+    elif ! fetch_checked yapi-docs.tar.gz; then
+        : # fetch_checked set $problem.
+    elif ! mkdir -p "$agent/.docs.$$" || ! tar -xzf "$work/yapi-docs.tar.gz" -C "$agent/.docs.$$"; then
         rm -rf "$agent/.docs.$$"
-        problem="could not unpack $docs_name into $agent"
+        problem="could not unpack yapi-docs.tar.gz into $agent"
     elif ! rm -rf "$agent/docs" || ! mv "$agent/.docs.$$" "$agent/docs"; then
         rm -rf "$agent/.docs.$$"
         problem="could not move the docs into $agent/docs"
