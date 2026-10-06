@@ -25,12 +25,14 @@ fn scratch(name: &str) -> PathBuf {
     common::scratch(&format!("install-{name}"))
 }
 
-/// Packages a fake `yapi` that prints `version` for every target, under
-/// `<site>/releases/download/v<version>/`.
+/// Packages a fake `yapi` that prints `version` for every target, with fake
+/// third-party notices, under `<site>/releases/download/v<version>/`.
 fn release(site: &Path, version: &str) {
     std::fs::create_dir_all(site).unwrap();
     let binary = site.join(format!("yapi-{version}"));
     std::fs::write(&binary, format!("#!/bin/sh\necho {version}\n")).unwrap();
+    let notices = site.join("THIRD-PARTY-NOTICES");
+    std::fs::write(&notices, "notices\n").unwrap();
     let out = site.join(format!("releases/download/v{version}"));
     for target in TARGETS {
         let output = Command::new("sh")
@@ -38,6 +40,7 @@ fn release(site: &Path, version: &str) {
             .arg(&binary)
             .arg(target)
             .arg(&out)
+            .arg(&notices)
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
@@ -180,10 +183,11 @@ fn points_to_a_source_build_without_a_release() {
     );
 }
 
-/// Each archive holds only the binary, so `curl ... | tar xzf -` into a
-/// directory on PATH installs it, as the install guide shows.
+/// Each archive holds the binary and its license files, and extracting
+/// `yapi` from it into a directory on PATH installs only the binary, as the
+/// install guide shows.
 #[test]
-fn archives_unpack_to_just_the_binary() {
+fn archives_hold_the_binary_and_its_licenses() {
     let dir = scratch("archive");
     let site = dir.join("site");
     release(&site, "9.9.9");
@@ -196,7 +200,7 @@ fn archives_unpack_to_just_the_binary() {
             .unwrap();
         assert_eq!(
             String::from_utf8(listing.stdout).unwrap(),
-            "yapi\n",
+            "yapi\nLICENSE-MIT\nLICENSE-APACHE\nTHIRD-PARTY-NOTICES\n",
             "{target}"
         );
     }
@@ -206,7 +210,7 @@ fn archives_unpack_to_just_the_binary() {
     let output = Command::new("sh")
         .arg("-c")
         .arg(format!(
-            "curl -fsSL {releases}/latest/download/yapi-{}.tar.gz | tar xzf - -C {}",
+            "curl -fsSL {releases}/latest/download/yapi-{}.tar.gz | tar xzf - -C {} yapi",
             TARGETS[0],
             bin.display()
         ))
@@ -214,4 +218,5 @@ fn archives_unpack_to_just_the_binary() {
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(installed_version(&bin.join("yapi")), "9.9.9");
+    assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 1, "only yapi");
 }
