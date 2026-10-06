@@ -1219,15 +1219,10 @@ impl AgentSession {
         let removed = {
             let mut queued = lock(&self.inner.queued);
             let (steering, follow_up) = &mut *queued;
-            if let Some(index) = steering.iter().position(|queued| *queued == text) {
-                steering.remove(index);
-                true
-            } else if let Some(index) = follow_up.iter().position(|queued| *queued == text) {
-                follow_up.remove(index);
-                true
-            } else {
-                false
-            }
+            [steering, follow_up].into_iter().any(|texts| {
+                let index = texts.iter().position(|queued| *queued == text);
+                index.map(|index| texts.remove(index)).is_some()
+            })
         };
         if removed {
             self.emit_queue_update();
@@ -1272,16 +1267,13 @@ impl AgentSession {
     fn queue(&self, behavior: StreamingBehavior, text: String, images: Vec<ImageContent>) {
         {
             let mut queued = lock(&self.inner.queued);
-            match behavior {
-                StreamingBehavior::Steer => queued.0.push(text.clone()),
-                StreamingBehavior::FollowUp => queued.1.push(text.clone()),
-            }
+            let (texts, queue) = match behavior {
+                StreamingBehavior::Steer => (&mut queued.0, &self.inner.steering),
+                StreamingBehavior::FollowUp => (&mut queued.1, &self.inner.follow_up),
+            };
+            texts.push(text.clone());
+            lock(queue).push_back(Self::user_message(text, images));
         }
-        let queue = match behavior {
-            StreamingBehavior::Steer => &self.inner.steering,
-            StreamingBehavior::FollowUp => &self.inner.follow_up,
-        };
-        lock(queue).push_back(Self::user_message(text, images));
         self.emit_queue_update();
     }
 
@@ -2245,22 +2237,12 @@ impl AgentSession {
             }
         }
         let (new_leaf, editor_text) = match &target {
-            FileEntry::Message(entry) if matches!(entry.message, Message::User(_)) => {
-                let text = match &entry.message {
-                    Message::User(user) => match &user.content {
-                        Content::Text(text) => text.clone(),
-                        Content::Blocks(blocks) => yapi_types::message::blocks_text(blocks, ""),
-                    },
-                    _ => String::new(),
-                };
-                (entry.meta.parent_id.clone(), Some(text))
-            }
+            FileEntry::Message(yapi_types::session::MessageEntry {
+                meta,
+                message: Message::User(user),
+            }) => (meta.parent_id.clone(), Some(user.content.text(""))),
             FileEntry::CustomMessage(entry) => {
-                let text = match &entry.content {
-                    Content::Text(text) => text.clone(),
-                    Content::Blocks(blocks) => yapi_types::message::blocks_text(blocks, ""),
-                };
-                (entry.meta.parent_id.clone(), Some(text))
+                (entry.meta.parent_id.clone(), Some(entry.content.text("")))
             }
             _ => (Some(target_id.to_owned()), None),
         };
@@ -2957,49 +2939,54 @@ struct Hooks {
     turn_index: std::sync::atomic::AtomicU64,
 }
 
-/// The pi extension event type a loop event is delivered as, if any.
-fn extension_event_kind(event: &AgentEvent) -> Option<&'static str> {
-    Some(match event {
-        AgentEvent::AgentStart => "agent_start",
-        AgentEvent::AgentEnd { .. } => "agent_end",
-        AgentEvent::TurnStart => "turn_start",
-        AgentEvent::TurnEnd { .. } => "turn_end",
-        AgentEvent::MessageStart { .. } => "message_start",
-        AgentEvent::MessageUpdate { .. } => "message_update",
-        AgentEvent::MessageEnd { .. } => "message_end",
-        AgentEvent::ToolExecutionStart { .. } => "tool_execution_start",
-        AgentEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
-        AgentEvent::ToolExecutionEnd { .. } => "tool_execution_end",
+/// A loop event as pi's extension event (`_emitExtensionEvent` in pi's agent
+/// session), when `wanted` takes its type; `None` for events extensions do
+/// not see.
+fn extension_event(
+    event: &AgentEvent,
+    turn_index: u64,
+    wanted: impl Fn(&str) -> bool,
+) -> Option<Value> {
+    let (kind, keys): (&str, &[&str]) = match event {
+        AgentEvent::AgentStart => ("agent_start", &[]),
+        AgentEvent::AgentEnd { .. } => ("agent_end", &["messages"]),
+        AgentEvent::TurnStart => ("turn_start", &[]),
+        AgentEvent::TurnEnd { .. } => ("turn_end", &["message", "toolResults"]),
+        AgentEvent::MessageStart { .. } => ("message_start", &["message"]),
+        AgentEvent::MessageUpdate { .. } => {
+            ("message_update", &["message", "assistantMessageEvent"])
+        }
+        AgentEvent::MessageEnd { .. } => ("message_end", &["message"]),
+        AgentEvent::ToolExecutionStart { .. } => (
+            "tool_execution_start",
+            &["toolCallId", "toolName", "args", "parentToolCallId"],
+        ),
+        AgentEvent::ToolExecutionUpdate { .. } => (
+            "tool_execution_update",
+            &[
+                "toolCallId",
+                "toolName",
+                "args",
+                "partialResult",
+                "parentToolCallId",
+            ],
+        ),
+        AgentEvent::ToolExecutionEnd { .. } => (
+            "tool_execution_end",
+            &[
+                "toolCallId",
+                "toolName",
+                "result",
+                "isError",
+                "parentToolCallId",
+            ],
+        ),
         _ => return None,
-    })
-}
-
-/// A loop event as pi's extension event of type `kind`
-/// (`_emitExtensionEvent` in pi's agent session).
-fn extension_event(event: &AgentEvent, kind: &str, turn_index: u64) -> Option<Value> {
-    let value = serde_json::to_value(event).ok()?;
-    let keys: &[&str] = match kind {
-        "agent_end" => &["messages"],
-        "turn_end" => &["message", "toolResults"],
-        "message_start" | "message_end" => &["message"],
-        "message_update" => &["message", "assistantMessageEvent"],
-        "tool_execution_start" => &["toolCallId", "toolName", "args", "parentToolCallId"],
-        "tool_execution_update" => &[
-            "toolCallId",
-            "toolName",
-            "args",
-            "partialResult",
-            "parentToolCallId",
-        ],
-        "tool_execution_end" => &[
-            "toolCallId",
-            "toolName",
-            "result",
-            "isError",
-            "parentToolCallId",
-        ],
-        _ => &[],
     };
+    if !wanted(kind) {
+        return None;
+    }
+    let value = serde_json::to_value(event).ok()?;
     let mut out = serde_json::Map::new();
     out.insert("type".into(), Value::String(kind.to_owned()));
     if matches!(kind, "turn_start" | "turn_end") {
@@ -3054,7 +3041,6 @@ impl AgentHooks for Hooks {
                 _ => None,
             };
             let event = rewritten.as_ref().unwrap_or(event);
-            let kind = extension_event_kind(event).filter(|kind| session.has_handlers(kind));
             if matches!(event, AgentEvent::AgentStart) {
                 self.turn_index.store(0, Ordering::SeqCst);
             }
@@ -3065,7 +3051,7 @@ impl AgentHooks for Hooks {
             // As in pi, extensions see the event first, then listeners; then the
             // session records it, so entries extensions append come before it.
             if let Some(extension_event) =
-                kind.and_then(|kind| extension_event(event, kind, turn_index))
+                extension_event(event, turn_index, |kind| session.has_handlers(kind))
             {
                 session
                     .emit_extension_event(&extension_event, self.cancel.clone())

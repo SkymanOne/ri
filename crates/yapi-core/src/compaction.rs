@@ -512,10 +512,7 @@ pub fn serialize_conversation(messages: &[Message]) -> String {
     for message in messages {
         match message {
             Message::User(user) => {
-                let text = match &user.content {
-                    Content::Text(text) => text.clone(),
-                    Content::Blocks(blocks) => yapi_types::message::blocks_text(blocks, ""),
-                };
+                let text = user.content.text("");
                 if !text.is_empty() {
                     parts.push(format!("[User]: {text}"));
                 }
