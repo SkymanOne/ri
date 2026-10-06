@@ -177,3 +177,43 @@ async fn evaluates_no_source_text() {
         .unwrap_err();
     assert_eq!(error.to_string(), "Unknown dispatch kind: eval");
 }
+
+/// pi exports yapi does not provide link, can be extended, and throw when
+/// called or constructed.
+#[tokio::test(flavor = "multi_thread")]
+async fn stubs_throw_when_used() {
+    let main = r#"
+import { SessionManager, compact } from "@earendil-works/pi-coding-agent";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { PiMessagesResponseError } from "@earendil-works/pi-ai/providers/pi-messages";
+class Manager extends SessionManager {}
+const failure = (run) => {
+	try {
+		run();
+		return "ran";
+	} catch (error) {
+		return `${error.code}: ${error.message}`;
+	}
+};
+export default function (pi) {
+	pi.registerCommand("probe", {
+		description: [
+			failure(() => new Manager()),
+			failure(() => compact()),
+			failure(() => new Agent()),
+			failure(() => new PiMessagesResponseError()),
+			SessionManager.name,
+		].join("|"),
+		handler: async () => {},
+	});
+}
+"#;
+    assert_eq!(
+        probe("stubs", main).await,
+        "ERR_NOT_SUPPORTED: SessionManager from @earendil-works/pi-coding-agent is not available in yapi extensions|\
+         ERR_NOT_SUPPORTED: compact from @earendil-works/pi-coding-agent is not available in yapi extensions|\
+         ERR_NOT_SUPPORTED: Agent from @earendil-works/pi-agent-core is not available in yapi extensions|\
+         ERR_NOT_SUPPORTED: PiMessagesResponseError from @earendil-works/pi-ai is not available in yapi extensions|\
+         SessionManager"
+    );
+}

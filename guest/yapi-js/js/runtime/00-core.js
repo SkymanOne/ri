@@ -16,6 +16,23 @@
 		error.code = "ERR_NOT_SUPPORTED";
 		throw error;
 	};
+	/**
+	 * Stand-ins for the exports of package `pkg` that yapi does not provide:
+	 * each name gives a function of that name that throws when called or
+	 * constructed, so imports link and classes can extend it.
+	 */
+	yapi.stubs = (pkg) =>
+		new Proxy(
+			{},
+			{
+				get: (_target, name) =>
+					({
+						[name]: function () {
+							yapi.unsupported(`${String(name)} from ${pkg} is not available in yapi extensions`);
+						},
+					})[name],
+			},
+		);
 
 	// ----- host plumbing -------------------------------------------------
 	const pendingOps = new Map();

@@ -7,8 +7,6 @@ import { Value } from "typebox/value";
 
 const yapi = globalThis.__yapi;
 
-const unavailable = (name) => yapi.unsupported(`${name} from @earendil-works/pi-ai is not available in yapi extensions`);
-
 export { Type };
 
 export function StringEnum(values, options) {
@@ -276,6 +274,15 @@ export function validateToolCall(tools, toolCall) {
 export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
 
 // ----- not available in yapi ---------------------------------------------------------------------------
+export const { AssistantMessageFrameEncoder, InMemoryCredentialStore, InMemoryModelsStore, appendAssistantMessageDiagnostic, cleanupSessionResources,
+	collapseSystemMessages, createAssistantMessageDiagnostic, createFauxCore, createInitialSystemMessage, createModels, declarationsEqual,
+	defaultProviderAuthContext, extractDiagnosticError, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, findEnvKeys,
+	generateImages, generateImagesOpenRouter, getCurrentSystemMessage, getCurrentSystemPrompt, getCurrentTools, getDeclaredTools, getImageModel,
+	getImageModels, getImageProviders, getImagesApiProvider, getInitialSystemMessage, getOverflowPatterns, getSystemMessageText, getToolStateChanges,
+	hasNonAdditiveToolChanges, hasToolRedefinitions, isContextOverflow, isRecoverableLength, isRetryableAssistantError, normalizeContext,
+	reduceAssistantMessageFrames, registerBuiltInImagesApiProviders, registerFauxProvider, registerImagesApiProvider, registerSessionResourceCleanup,
+	renderSystemMessageUpdate, resolveTranscript, resolveTranscriptTools, retryAssistantCall, retryDelayMs, setBedrockProviderModule, toToolDeclaration,
+	withoutInitialSystemMessage } = yapi.stubs("@earendil-works/pi-ai");
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
 export const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
 export const ANTHROPIC_FEDERATION_RULE_ID_ENV = "ANTHROPIC_FEDERATION_RULE_ID";
@@ -284,21 +291,6 @@ export const ANTHROPIC_OAUTH_TOKEN_ENV = "ANTHROPIC_OAUTH_TOKEN";
 export const ANTHROPIC_ORGANIZATION_ID_ENV = "ANTHROPIC_ORGANIZATION_ID";
 export const ANTHROPIC_SERVICE_ACCOUNT_ID_ENV = "ANTHROPIC_SERVICE_ACCOUNT_ID";
 export const ANTHROPIC_WORKSPACE_ID_ENV = "ANTHROPIC_WORKSPACE_ID";
-export class AssistantMessageFrameEncoder {
-	constructor() {
-		unavailable("AssistantMessageFrameEncoder");
-	}
-}
-export class InMemoryCredentialStore {
-	constructor() {
-		unavailable("InMemoryCredentialStore");
-	}
-}
-export class InMemoryModelsStore {
-	constructor() {
-		unavailable("InMemoryModelsStore");
-	}
-}
 export class ModelsError extends Error {
 	constructor(kind, message, options) {
 		super(message, options);
@@ -309,32 +301,11 @@ export class ModelsError extends Error {
 export function anthropicMessagesApi() {
 	return hostApi;
 }
-export function appendAssistantMessageDiagnostic() {
-	return unavailable("appendAssistantMessageDiagnostic");
-}
 export function azureOpenAIResponsesApi() {
 	return hostApi;
 }
 export function bedrockConverseStreamApi() {
 	return hostApi;
-}
-export function cleanupSessionResources() {
-	return unavailable("cleanupSessionResources");
-}
-export function collapseSystemMessages() {
-	return unavailable("collapseSystemMessages");
-}
-export function createAssistantMessageDiagnostic() {
-	return unavailable("createAssistantMessageDiagnostic");
-}
-export function createFauxCore() {
-	return unavailable("createFauxCore");
-}
-export function createInitialSystemMessage() {
-	return unavailable("createInitialSystemMessage");
-}
-export function createModels() {
-	return unavailable("createModels");
 }
 const KNOWN_MODEL_TYPES = ["chat", "image", "classifier"];
 export function createProvider(input) {
@@ -427,12 +398,6 @@ export function createProvider(input) {
 	}
 	return provider;
 }
-export function declarationsEqual() {
-	return unavailable("declarationsEqual");
-}
-export function defaultProviderAuthContext() {
-	return unavailable("defaultProviderAuthContext");
-}
 export function envApiKeyAuth(name, envVars) {
 	return {
 		name,
@@ -454,69 +419,6 @@ export function envApiKeyAuth(name, envVars) {
 		},
 	};
 }
-export function extractDiagnosticError() {
-	return unavailable("extractDiagnosticError");
-}
-export function fauxAssistantMessage() {
-	return unavailable("fauxAssistantMessage");
-}
-export function fauxProvider() {
-	return unavailable("fauxProvider");
-}
-export function fauxText() {
-	return unavailable("fauxText");
-}
-export function fauxThinking() {
-	return unavailable("fauxThinking");
-}
-export function fauxToolCall() {
-	return unavailable("fauxToolCall");
-}
-export function findEnvKeys() {
-	return unavailable("findEnvKeys");
-}
-export function generateImages() {
-	return unavailable("generateImages");
-}
-export function generateImagesOpenRouter() {
-	return unavailable("generateImagesOpenRouter");
-}
-export function getCurrentSystemMessage() {
-	return unavailable("getCurrentSystemMessage");
-}
-export function getCurrentSystemPrompt() {
-	return unavailable("getCurrentSystemPrompt");
-}
-export function getCurrentTools() {
-	return unavailable("getCurrentTools");
-}
-export function getDeclaredTools() {
-	return unavailable("getDeclaredTools");
-}
-export function getImageModel() {
-	return unavailable("getImageModel");
-}
-export function getImageModels() {
-	return unavailable("getImageModels");
-}
-export function getImageProviders() {
-	return unavailable("getImageProviders");
-}
-export function getImagesApiProvider() {
-	return unavailable("getImagesApiProvider");
-}
-export function getInitialSystemMessage() {
-	return unavailable("getInitialSystemMessage");
-}
-export function getOverflowPatterns() {
-	return unavailable("getOverflowPatterns");
-}
-export function getSystemMessageText() {
-	return unavailable("getSystemMessageText");
-}
-export function getToolStateChanges() {
-	return unavailable("getToolStateChanges");
-}
 export function googleGenerativeAIApi() {
 	return hostApi;
 }
@@ -526,21 +428,6 @@ export function googleVertexApi() {
 const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses", "azure-openai-responses", "openai-codex-responses", "google-generative-ai", "mistral-conversations"];
 export function hasApi(api) {
 	return HOST_APIS.includes(api);
-}
-export function hasNonAdditiveToolChanges() {
-	return unavailable("hasNonAdditiveToolChanges");
-}
-export function hasToolRedefinitions() {
-	return unavailable("hasToolRedefinitions");
-}
-export function isContextOverflow() {
-	return unavailable("isContextOverflow");
-}
-export function isRecoverableLength() {
-	return unavailable("isRecoverableLength");
-}
-export function isRetryableAssistantError() {
-	return unavailable("isRetryableAssistantError");
 }
 function setupErrorMessage(model, error) {
 	return {
@@ -606,9 +493,6 @@ export function lazyOAuth(input) {
 export function mistralConversationsApi() {
 	return hostApi;
 }
-export function normalizeContext() {
-	return unavailable("normalizeContext");
-}
 export function openAICodexResponsesApi() {
 	return hostApi;
 }
@@ -620,39 +504,6 @@ export function openAIResponsesApi() {
 }
 export function piMessagesApi() {
 	return hostApi;
-}
-export function reduceAssistantMessageFrames() {
-	return unavailable("reduceAssistantMessageFrames");
-}
-export function registerBuiltInImagesApiProviders() {
-	return unavailable("registerBuiltInImagesApiProviders");
-}
-export function registerFauxProvider() {
-	return unavailable("registerFauxProvider");
-}
-export function registerImagesApiProvider() {
-	return unavailable("registerImagesApiProvider");
-}
-export function registerSessionResourceCleanup() {
-	return unavailable("registerSessionResourceCleanup");
-}
-export function renderSystemMessageUpdate() {
-	return unavailable("renderSystemMessageUpdate");
-}
-export function resolveTranscript() {
-	return unavailable("resolveTranscript");
-}
-export function resolveTranscriptTools() {
-	return unavailable("resolveTranscriptTools");
-}
-export function retryAssistantCall() {
-	return unavailable("retryAssistantCall");
-}
-export function retryDelayMs() {
-	return unavailable("retryDelayMs");
-}
-export function setBedrockProviderModule() {
-	return unavailable("setBedrockProviderModule");
 }
 export const streamAnthropic = hostStream;
 export const streamAzureOpenAIResponses = hostStream;
@@ -670,27 +521,11 @@ export const streamSimpleMistral = hostStream;
 export const streamSimpleOpenAICodexResponses = hostStream;
 export const streamSimpleOpenAICompletions = hostStream;
 export const streamSimpleOpenAIResponses = hostStream;
-export function toToolDeclaration() {
-	return unavailable("toToolDeclaration");
-}
-export function withoutInitialSystemMessage() {
-	return unavailable("withoutInitialSystemMessage");
-}
 
 // ----- subpath modules ------------------------------------------------------------------------------
 // pi-ai's subpaths (`/providers/*`, `/api/*`, `/utils/*`, `/models`, `/compat`,
 // `/oauth`) resolve to this module too. The catalog reads yapi's built-in
 // catalog, which has chat models only.
-const stub = (name) =>
-	function () {
-		return unavailable(name);
-	};
-const stubClass = (name) =>
-	class {
-		constructor() {
-			unavailable(name);
-		}
-	};
 /** A provider's generated `<PROVIDER>_MODELS` table, read on first use. */
 function catalog(provider) {
 	let models;
@@ -737,276 +572,163 @@ export function sleep(ms, signal) {
 }
 // Generated from pi-ai 1.0.0's subpath modules: constants as published, the
 // rest stubs that throw when called.
-export const builtinModels = stub("builtinModels");
-export const builtinProviders = stub("builtinProviders");
-export const radiusProvider = stub("radiusProvider");
-export const amazonBedrockProvider = stub("amazonBedrockProvider");
+export const { builtinModels, builtinProviders, radiusProvider, amazonBedrockProvider, antLingProvider, anthropicProvider,
+	azureOpenAIResponsesProvider, basetenProvider, cerebrasProvider, cloudflareAIGatewayProvider, cloudflareAIGatewayAuth, cloudflareWorkersAIAuth,
+	cloudflareClassifier, cloudflareStreams, resolveCloudflareModel, cloudflareWorkersAIProvider, deepseekProvider, fireworksProvider,
+	githubCopilotProvider, googleVertexProvider, googleProvider, groqProvider, huggingfaceProvider, kimiCodingProvider, metaProvider, minimaxCnProvider,
+	minimaxProvider, mistralProvider, moonshotaiCnProvider, moonshotaiProvider, nvidiaProvider, openaiCodexProvider, openaiProvider, opencodeGoProvider,
+	withOpenCodeSessionHeader, opencodeProvider, openrouterProvider, qwenTokenPlanCnProvider, qwenTokenPlanIndividualProvider, qwenTokenPlanProvider,
+	getRadiusCredentialConfig, getRadiusModels, getRadiusModelsFromConfig, loadRadiusGatewayConfig, normalizeRadiusGatewayUrl, togetherProvider,
+	typesafeProvider, vercelAIGatewayProvider, xaiProvider, xiaomiTokenPlanAmsProvider, xiaomiTokenPlanCnProvider, xiaomiTokenPlanSgpProvider,
+	xiaomiProvider, zaiCodingCnProvider, zaiProvider, createAiBindingFetch, classify, cloudflareWorkersAISystemOneApi, appendGrammarToolInputJsonDelta,
+	createGrammarToolInputProperties, getGrammarToolInput, getJsonSchemaToolParameters, makeStrictJsonSchema, resolveGrammarConstrainedSampling,
+	resolveJsonSchemaStrictSampling, buildCopilotDynamicHeaders, hasCopilotVisionInput, inferCopilotInitiator, convertMessages, convertTools,
+	getDisabledGoogleThinkingConfig, isThinkingPart, mapStopReason, mapStopReasonString, mapToolChoice, requiresToolCallId,
+	resolveGoogleFunctionCallingMode, resolveGoogleThinkingLevel, retainThoughtSignature, retryGoogleRequest, supportsGoogleStrictToolSampling,
+	toGoogleSdkThinkingLevel, toGoogleThinkingLevel, usesGoogleThinkingLevel, answerFromProbabilities, labelProbabilities, llamaServerRoot,
+	peakConfidence, renderQuestion, llamaCppClassifyApi, closeOpenAICodexWebSocketSessions, getOpenAICodexWebSocketDebugStats,
+	resetOpenAICodexWebSocketDebugStats, clampOpenAIPromptCacheKey, convertResponsesMessages, convertResponsesTools, processResponsesStream,
+	openrouterImagesApi, PiMessagesResponseError, adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext, clampReasoning,
+	clampThinkingBudgetToAnswerRoom, thinkingBudgetForLevel, classifySystemOne, isRecord, transformMessages, typesafeSystemOneApi, combineAbortSignals,
+	operationSignal, raceWithAbortSignal, formatProviderError, normalizeProviderError, safeJsonStringify, truncateErrorText, calculateContextTokens,
+	estimateContextTokens, estimateMessageTokens, estimateTextAndImageContentTokens, estimateTextTokens, shortHash, headersToRecord,
+	providerHeadersToRecord, assertChatModel, assertClassifierModel, assertImageModel, classifierErrorResult, imageErrorResult,
+	resolveHttpProxyUrlForTarget, oauthErrorHtml, oauthSuccessHtml, getPiUserAgent, retryProviderRequest, sanitizeSurrogates } = yapi.stubs("@earendil-works/pi-ai");
 export const AMAZON_BEDROCK_CLASSIFIER_MODELS = Object.freeze({});
 export const AMAZON_BEDROCK_IMAGE_MODELS = Object.freeze({});
 export const AMAZON_BEDROCK_MODELS = catalog("amazon-bedrock");
-export const antLingProvider = stub("antLingProvider");
 export const ANT_LING_CLASSIFIER_MODELS = Object.freeze({});
 export const ANT_LING_IMAGE_MODELS = Object.freeze({});
 export const ANT_LING_MODELS = catalog("ant-ling");
-export const anthropicProvider = stub("anthropicProvider");
 export const ANTHROPIC_CLASSIFIER_MODELS = Object.freeze({});
 export const ANTHROPIC_IMAGE_MODELS = Object.freeze({});
 export const ANTHROPIC_MODELS = catalog("anthropic");
-export const azureOpenAIResponsesProvider = stub("azureOpenAIResponsesProvider");
 export const AZURE_OPENAI_RESPONSES_CLASSIFIER_MODELS = Object.freeze({});
 export const AZURE_OPENAI_RESPONSES_IMAGE_MODELS = Object.freeze({});
 export const AZURE_OPENAI_RESPONSES_MODELS = catalog("azure-openai-responses");
-export const basetenProvider = stub("basetenProvider");
 export const BASETEN_CLASSIFIER_MODELS = Object.freeze({});
 export const BASETEN_IMAGE_MODELS = Object.freeze({});
 export const BASETEN_MODELS = catalog("baseten");
-export const cerebrasProvider = stub("cerebrasProvider");
 export const CEREBRAS_CLASSIFIER_MODELS = Object.freeze({});
 export const CEREBRAS_IMAGE_MODELS = Object.freeze({});
 export const CEREBRAS_MODELS = catalog("cerebras");
-export const cloudflareAIGatewayProvider = stub("cloudflareAIGatewayProvider");
 export const CLOUDFLARE_AI_GATEWAY_CLASSIFIER_MODELS = Object.freeze({});
 export const CLOUDFLARE_AI_GATEWAY_IMAGE_MODELS = Object.freeze({});
 export const CLOUDFLARE_AI_GATEWAY_MODELS = catalog("cloudflare-ai-gateway");
-export const cloudflareAIGatewayAuth = stub("cloudflareAIGatewayAuth");
-export const cloudflareWorkersAIAuth = stub("cloudflareWorkersAIAuth");
-export const cloudflareClassifier = stub("cloudflareClassifier");
-export const cloudflareStreams = stub("cloudflareStreams");
-export const resolveCloudflareModel = stub("resolveCloudflareModel");
-export const cloudflareWorkersAIProvider = stub("cloudflareWorkersAIProvider");
 export const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS = Object.freeze({});
 export const CLOUDFLARE_WORKERS_AI_IMAGE_MODELS = Object.freeze({});
 export const CLOUDFLARE_WORKERS_AI_MODELS = catalog("cloudflare-workers-ai");
-export const deepseekProvider = stub("deepseekProvider");
 export const DEEPSEEK_CLASSIFIER_MODELS = Object.freeze({});
 export const DEEPSEEK_IMAGE_MODELS = Object.freeze({});
 export const DEEPSEEK_MODELS = catalog("deepseek");
-export const fireworksProvider = stub("fireworksProvider");
 export const FIREWORKS_CLASSIFIER_MODELS = Object.freeze({});
 export const FIREWORKS_IMAGE_MODELS = Object.freeze({});
 export const FIREWORKS_MODELS = catalog("fireworks");
-export const githubCopilotProvider = stub("githubCopilotProvider");
 export const GITHUB_COPILOT_CLASSIFIER_MODELS = Object.freeze({});
 export const GITHUB_COPILOT_IMAGE_MODELS = Object.freeze({});
 export const GITHUB_COPILOT_MODELS = catalog("github-copilot");
-export const googleVertexProvider = stub("googleVertexProvider");
 export const GOOGLE_VERTEX_CLASSIFIER_MODELS = Object.freeze({});
 export const GOOGLE_VERTEX_IMAGE_MODELS = Object.freeze({});
 export const GOOGLE_VERTEX_MODELS = catalog("google-vertex");
-export const googleProvider = stub("googleProvider");
 export const GOOGLE_CLASSIFIER_MODELS = Object.freeze({});
 export const GOOGLE_IMAGE_MODELS = Object.freeze({});
 export const GOOGLE_MODELS = catalog("google");
-export const groqProvider = stub("groqProvider");
 export const GROQ_CLASSIFIER_MODELS = Object.freeze({});
 export const GROQ_IMAGE_MODELS = Object.freeze({});
 export const GROQ_MODELS = catalog("groq");
-export const huggingfaceProvider = stub("huggingfaceProvider");
 export const HUGGINGFACE_CLASSIFIER_MODELS = Object.freeze({});
 export const HUGGINGFACE_IMAGE_MODELS = Object.freeze({});
 export const HUGGINGFACE_MODELS = catalog("huggingface");
-export const kimiCodingProvider = stub("kimiCodingProvider");
 export const KIMI_CODING_CLASSIFIER_MODELS = Object.freeze({});
 export const KIMI_CODING_IMAGE_MODELS = Object.freeze({});
 export const KIMI_CODING_MODELS = catalog("kimi-coding");
-export const metaProvider = stub("metaProvider");
 export const META_CLASSIFIER_MODELS = Object.freeze({});
 export const META_IMAGE_MODELS = Object.freeze({});
 export const META_MODELS = catalog("meta");
-export const minimaxCnProvider = stub("minimaxCnProvider");
 export const MINIMAX_CN_CLASSIFIER_MODELS = Object.freeze({});
 export const MINIMAX_CN_IMAGE_MODELS = Object.freeze({});
 export const MINIMAX_CN_MODELS = catalog("minimax-cn");
-export const minimaxProvider = stub("minimaxProvider");
 export const MINIMAX_CLASSIFIER_MODELS = Object.freeze({});
 export const MINIMAX_IMAGE_MODELS = Object.freeze({});
 export const MINIMAX_MODELS = catalog("minimax");
-export const mistralProvider = stub("mistralProvider");
 export const MISTRAL_CLASSIFIER_MODELS = Object.freeze({});
 export const MISTRAL_IMAGE_MODELS = Object.freeze({});
 export const MISTRAL_MODELS = catalog("mistral");
-export const moonshotaiCnProvider = stub("moonshotaiCnProvider");
 export const MOONSHOTAI_CN_CLASSIFIER_MODELS = Object.freeze({});
 export const MOONSHOTAI_CN_IMAGE_MODELS = Object.freeze({});
 export const MOONSHOTAI_CN_MODELS = catalog("moonshotai-cn");
-export const moonshotaiProvider = stub("moonshotaiProvider");
 export const MOONSHOTAI_CLASSIFIER_MODELS = Object.freeze({});
 export const MOONSHOTAI_IMAGE_MODELS = Object.freeze({});
 export const MOONSHOTAI_MODELS = catalog("moonshotai");
-export const nvidiaProvider = stub("nvidiaProvider");
 export const NVIDIA_CLASSIFIER_MODELS = Object.freeze({});
 export const NVIDIA_IMAGE_MODELS = Object.freeze({});
 export const NVIDIA_MODELS = catalog("nvidia");
-export const openaiCodexProvider = stub("openaiCodexProvider");
 export const OPENAI_CODEX_CLASSIFIER_MODELS = Object.freeze({});
 export const OPENAI_CODEX_IMAGE_MODELS = Object.freeze({});
 export const OPENAI_CODEX_MODELS = catalog("openai-codex");
-export const openaiProvider = stub("openaiProvider");
 export const OPENAI_CLASSIFIER_MODELS = Object.freeze({});
 export const OPENAI_IMAGE_MODELS = Object.freeze({});
 export const OPENAI_MODELS = catalog("openai");
-export const opencodeGoProvider = stub("opencodeGoProvider");
 export const OPENCODE_GO_CLASSIFIER_MODELS = Object.freeze({});
 export const OPENCODE_GO_IMAGE_MODELS = Object.freeze({});
 export const OPENCODE_GO_MODELS = catalog("opencode-go");
-export const withOpenCodeSessionHeader = stub("withOpenCodeSessionHeader");
-export const opencodeProvider = stub("opencodeProvider");
 export const OPENCODE_CLASSIFIER_MODELS = Object.freeze({});
 export const OPENCODE_IMAGE_MODELS = Object.freeze({});
 export const OPENCODE_MODELS = catalog("opencode");
-export const openrouterProvider = stub("openrouterProvider");
 export const OPENROUTER_CLASSIFIER_MODELS = Object.freeze({});
 export const OPENROUTER_IMAGE_MODELS = Object.freeze({});
 export const OPENROUTER_MODELS = catalog("openrouter");
-export const qwenTokenPlanCnProvider = stub("qwenTokenPlanCnProvider");
 export const QWEN_TOKEN_PLAN_CN_CLASSIFIER_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_CN_IMAGE_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_CN_MODELS = catalog("qwen-token-plan-cn");
-export const qwenTokenPlanIndividualProvider = stub("qwenTokenPlanIndividualProvider");
 export const QWEN_TOKEN_PLAN_INDIVIDUAL_CLASSIFIER_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_INDIVIDUAL_IMAGE_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_INDIVIDUAL_MODELS = catalog("qwen-token-plan-individual");
-export const qwenTokenPlanProvider = stub("qwenTokenPlanProvider");
 export const QWEN_TOKEN_PLAN_CLASSIFIER_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_IMAGE_MODELS = Object.freeze({});
 export const QWEN_TOKEN_PLAN_MODELS = catalog("qwen-token-plan");
 export const DEFAULT_RADIUS_GATEWAY = "https://radius.pi.dev";
-export const getRadiusCredentialConfig = stub("getRadiusCredentialConfig");
-export const getRadiusModels = stub("getRadiusModels");
-export const getRadiusModelsFromConfig = stub("getRadiusModelsFromConfig");
-export const loadRadiusGatewayConfig = stub("loadRadiusGatewayConfig");
-export const normalizeRadiusGatewayUrl = stub("normalizeRadiusGatewayUrl");
 export const RADIUS_CLASSIFIER_MODELS = Object.freeze({});
 export const RADIUS_IMAGE_MODELS = Object.freeze({});
 export const RADIUS_MODELS = catalog("radius");
-export const togetherProvider = stub("togetherProvider");
 export const TOGETHER_CLASSIFIER_MODELS = Object.freeze({});
 export const TOGETHER_IMAGE_MODELS = Object.freeze({});
 export const TOGETHER_MODELS = catalog("together");
-export const typesafeProvider = stub("typesafeProvider");
 export const TYPESAFE_CLASSIFIER_MODELS = Object.freeze({});
 export const TYPESAFE_IMAGE_MODELS = Object.freeze({});
 export const TYPESAFE_MODELS = catalog("typesafe");
-export const vercelAIGatewayProvider = stub("vercelAIGatewayProvider");
 export const VERCEL_AI_GATEWAY_CLASSIFIER_MODELS = Object.freeze({});
 export const VERCEL_AI_GATEWAY_IMAGE_MODELS = Object.freeze({});
 export const VERCEL_AI_GATEWAY_MODELS = catalog("vercel-ai-gateway");
-export const xaiProvider = stub("xaiProvider");
 export const XAI_CLASSIFIER_MODELS = Object.freeze({});
 export const XAI_IMAGE_MODELS = Object.freeze({});
 export const XAI_MODELS = catalog("xai");
-export const xiaomiTokenPlanAmsProvider = stub("xiaomiTokenPlanAmsProvider");
 export const XIAOMI_TOKEN_PLAN_AMS_CLASSIFIER_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_AMS_IMAGE_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_AMS_MODELS = catalog("xiaomi-token-plan-ams");
-export const xiaomiTokenPlanCnProvider = stub("xiaomiTokenPlanCnProvider");
 export const XIAOMI_TOKEN_PLAN_CN_CLASSIFIER_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_CN_IMAGE_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_CN_MODELS = catalog("xiaomi-token-plan-cn");
-export const xiaomiTokenPlanSgpProvider = stub("xiaomiTokenPlanSgpProvider");
 export const XIAOMI_TOKEN_PLAN_SGP_CLASSIFIER_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_SGP_IMAGE_MODELS = Object.freeze({});
 export const XIAOMI_TOKEN_PLAN_SGP_MODELS = catalog("xiaomi-token-plan-sgp");
-export const xiaomiProvider = stub("xiaomiProvider");
 export const XIAOMI_CLASSIFIER_MODELS = Object.freeze({});
 export const XIAOMI_IMAGE_MODELS = Object.freeze({});
 export const XIAOMI_MODELS = catalog("xiaomi");
-export const zaiCodingCnProvider = stub("zaiCodingCnProvider");
 export const ZAI_CODING_CN_CLASSIFIER_MODELS = Object.freeze({});
 export const ZAI_CODING_CN_IMAGE_MODELS = Object.freeze({});
 export const ZAI_CODING_CN_MODELS = catalog("zai-coding-cn");
-export const zaiProvider = stub("zaiProvider");
 export const ZAI_CLASSIFIER_MODELS = Object.freeze({});
 export const ZAI_IMAGE_MODELS = Object.freeze({});
 export const ZAI_MODELS = catalog("zai");
 export const CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL = "cloudflare-gateway-binding";
-export const createAiBindingFetch = stub("createAiBindingFetch");
-export const classify = stub("classify");
-export const cloudflareWorkersAISystemOneApi = stub("cloudflareWorkersAISystemOneApi");
 export const CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL = "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic";
 export const CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/compat";
 export const CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL = "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai";
 export const CLOUDFLARE_WORKERS_AI_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1";
 export const CLOUDFLARE_WORKERS_AI_REST_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai";
-export const appendGrammarToolInputJsonDelta = stub("appendGrammarToolInputJsonDelta");
-export const createGrammarToolInputProperties = stub("createGrammarToolInputProperties");
-export const getGrammarToolInput = stub("getGrammarToolInput");
-export const getJsonSchemaToolParameters = stub("getJsonSchemaToolParameters");
-export const makeStrictJsonSchema = stub("makeStrictJsonSchema");
-export const resolveGrammarConstrainedSampling = stub("resolveGrammarConstrainedSampling");
-export const resolveJsonSchemaStrictSampling = stub("resolveJsonSchemaStrictSampling");
-export const buildCopilotDynamicHeaders = stub("buildCopilotDynamicHeaders");
-export const hasCopilotVisionInput = stub("hasCopilotVisionInput");
-export const inferCopilotInitiator = stub("inferCopilotInitiator");
-export const convertMessages = stub("convertMessages");
-export const convertTools = stub("convertTools");
-export const getDisabledGoogleThinkingConfig = stub("getDisabledGoogleThinkingConfig");
-export const isThinkingPart = stub("isThinkingPart");
-export const mapStopReason = stub("mapStopReason");
-export const mapStopReasonString = stub("mapStopReasonString");
-export const mapToolChoice = stub("mapToolChoice");
-export const requiresToolCallId = stub("requiresToolCallId");
-export const resolveGoogleFunctionCallingMode = stub("resolveGoogleFunctionCallingMode");
-export const resolveGoogleThinkingLevel = stub("resolveGoogleThinkingLevel");
-export const retainThoughtSignature = stub("retainThoughtSignature");
-export const retryGoogleRequest = stub("retryGoogleRequest");
-export const supportsGoogleStrictToolSampling = stub("supportsGoogleStrictToolSampling");
-export const toGoogleSdkThinkingLevel = stub("toGoogleSdkThinkingLevel");
-export const toGoogleThinkingLevel = stub("toGoogleThinkingLevel");
-export const usesGoogleThinkingLevel = stub("usesGoogleThinkingLevel");
-export const answerFromProbabilities = stub("answerFromProbabilities");
-export const labelProbabilities = stub("labelProbabilities");
-export const llamaServerRoot = stub("llamaServerRoot");
-export const peakConfidence = stub("peakConfidence");
-export const renderQuestion = stub("renderQuestion");
-export const llamaCppClassifyApi = stub("llamaCppClassifyApi");
-export const closeOpenAICodexWebSocketSessions = stub("closeOpenAICodexWebSocketSessions");
-export const getOpenAICodexWebSocketDebugStats = stub("getOpenAICodexWebSocketDebugStats");
-export const resetOpenAICodexWebSocketDebugStats = stub("resetOpenAICodexWebSocketDebugStats");
 export const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH = 64;
-export const clampOpenAIPromptCacheKey = stub("clampOpenAIPromptCacheKey");
-export const convertResponsesMessages = stub("convertResponsesMessages");
-export const convertResponsesTools = stub("convertResponsesTools");
-export const processResponsesStream = stub("processResponsesStream");
-export const openrouterImagesApi = stub("openrouterImagesApi");
-export const PiMessagesResponseError = stubClass("PiMessagesResponseError");
 export const DEFAULT_THINKING_BUDGETS = {"minimal":1024,"low":2048,"medium":8192,"high":16384};
 export const MIN_ANSWER_TOKENS = 1024;
-export const adjustMaxTokensForThinking = stub("adjustMaxTokensForThinking");
-export const buildBaseOptions = stub("buildBaseOptions");
-export const clampMaxTokensToContext = stub("clampMaxTokensToContext");
-export const clampReasoning = stub("clampReasoning");
-export const clampThinkingBudgetToAnswerRoom = stub("clampThinkingBudgetToAnswerRoom");
-export const thinkingBudgetForLevel = stub("thinkingBudgetForLevel");
-export const classifySystemOne = stub("classifySystemOne");
-export const isRecord = stub("isRecord");
-export const transformMessages = stub("transformMessages");
-export const typesafeSystemOneApi = stub("typesafeSystemOneApi");
-export const combineAbortSignals = stub("combineAbortSignals");
-export const operationSignal = stub("operationSignal");
-export const raceWithAbortSignal = stub("raceWithAbortSignal");
 export const MAX_PROVIDER_ERROR_BODY_CHARS = 4000;
-export const formatProviderError = stub("formatProviderError");
-export const normalizeProviderError = stub("normalizeProviderError");
-export const safeJsonStringify = stub("safeJsonStringify");
-export const truncateErrorText = stub("truncateErrorText");
-export const calculateContextTokens = stub("calculateContextTokens");
-export const estimateContextTokens = stub("estimateContextTokens");
-export const estimateMessageTokens = stub("estimateMessageTokens");
-export const estimateTextAndImageContentTokens = stub("estimateTextAndImageContentTokens");
-export const estimateTextTokens = stub("estimateTextTokens");
-export const shortHash = stub("shortHash");
-export const headersToRecord = stub("headersToRecord");
-export const providerHeadersToRecord = stub("providerHeadersToRecord");
-export const assertChatModel = stub("assertChatModel");
-export const assertClassifierModel = stub("assertClassifierModel");
-export const assertImageModel = stub("assertImageModel");
-export const classifierErrorResult = stub("classifierErrorResult");
-export const imageErrorResult = stub("imageErrorResult");
 export const UNSUPPORTED_PROXY_PROTOCOL_MESSAGE = "Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL.";
-export const resolveHttpProxyUrlForTarget = stub("resolveHttpProxyUrlForTarget");
-export const oauthErrorHtml = stub("oauthErrorHtml");
-export const oauthSuccessHtml = stub("oauthSuccessHtml");
-export const getPiUserAgent = stub("getPiUserAgent");
-export const retryProviderRequest = stub("retryProviderRequest");
-export const sanitizeSurrogates = stub("sanitizeSurrogates");
