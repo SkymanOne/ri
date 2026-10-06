@@ -66,7 +66,6 @@ fn failed(error: impl std::fmt::Display) -> AuthError {
 #[derive(Clone, Debug)]
 pub struct CredentialStore {
     path: PathBuf,
-    lock_dir: PathBuf,
 }
 
 /// The state's keys: by name and URL, so servers sharing a URL keep separate
@@ -92,7 +91,6 @@ impl CredentialStore {
     pub fn new(agent_dir: &Path) -> CredentialStore {
         CredentialStore {
             path: agent_dir.join(ConfigFile::McpAuth.file_name()),
-            lock_dir: agent_dir.to_path_buf(),
         }
     }
 
@@ -185,23 +183,19 @@ impl ServerStore {
     }
 
     /// Runs `run` while no other process refreshes the server's tokens, with
-    /// pi's lock file for the server.
+    /// pi's lock file for the server next to `mcp-auth.json`, whose directory
+    /// exists once the tokens were loaded.
     async fn with_refresh_lock<T>(
         &self,
         run: impl Future<Output = Result<T, McpError>>,
     ) -> Result<T, McpError> {
-        let dir = &self.store.lock_dir;
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder
-            .create(dir)
-            .map_err(|error| McpError::Other(error.to_string()))?;
         let digest = sha2::Sha256::digest(self.key.as_bytes());
         let hash = yapi_types::time::hex(&digest[..8]);
         let _lock = FileLock::acquire(
-            &dir.join(format!("mcp-auth-refresh-{hash}")),
+            &self
+                .store
+                .path
+                .with_file_name(format!("mcp-auth-refresh-{hash}")),
             &CancellationToken::new(),
         )
         .await
