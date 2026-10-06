@@ -23,17 +23,10 @@ pub struct ApiKeyMethod {
     pub name: &'static str,
     /// Environment variables holding the key, in priority order.
     pub env: &'static [&'static str],
-    /// Whether `/login` can store a credential; otherwise the provider is
-    /// configured outside yapi.
-    pub login: bool,
 }
 
 const fn key(name: &'static str, env: &'static [&'static str]) -> Option<ApiKeyMethod> {
-    Some(ApiKeyMethod {
-        name,
-        env,
-        login: true,
-    })
+    Some(ApiKeyMethod { name, env })
 }
 
 const fn provider(
