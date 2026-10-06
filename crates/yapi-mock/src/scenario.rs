@@ -911,15 +911,19 @@ pub fn normalize(run: &Run) -> Value {
     out
 }
 
-/// Screen rows without the product-specific startup header (pi's logo, its
-/// docs tip, yapi's wordmark), with paths and session ids masked, trailing space
-/// trimmed and blank runs collapsed, so the rest compares across programs.
+/// Screen rows without the product-specific startup header (each program's
+/// logo and docs tip, yapi's wordmark), with paths and session ids masked,
+/// trailing space trimmed and blank runs collapsed, so the rest compares
+/// across programs.
 fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<String> {
     // The compact header ends with the "Press ... to show full startup help"
-    // row; pi follows it with a docs tip that yapi lacks. Rows up to the tip's
-    // end, or the part of the tip at the top of the screen, are dropped.
-    const TIP: &str =
-        "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.";
+    // row, then a docs tip naming the program. Rows up to the tip's end, or
+    // the part of the tip at the top of the screen, are dropped.
+    const TIPS: [&str; 2] = [
+        "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.",
+        "yapi can explain its own features and look up its docs. Ask it how to use or extend yapi.",
+    ];
+    let in_tip = |row: &str| !row.is_empty() && TIPS.iter().any(|tip| tip.contains(row));
     let start = match rows
         .iter()
         .position(|row| row.contains("to show full startup help"))
@@ -931,7 +935,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             }
             if rows
                 .get(next)
-                .is_some_and(|row| row.contains("Pi can explain"))
+                .is_some_and(|row| row.contains(" can explain its own features"))
             {
                 while next < rows.len() && !rows[next].trim().is_empty() {
                     next += 1;
@@ -939,10 +943,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             }
             next
         }
-        None => rows
-            .iter()
-            .take_while(|row| !row.trim().is_empty() && TIP.contains(row.trim()))
-            .count(),
+        None => rows.iter().take_while(|row| in_tip(row.trim())).count(),
     };
     let mut out: Vec<String> = Vec::new();
     for row in &rows[start..] {
@@ -951,7 +952,7 @@ fn normalize_screen(rows: &[String], normalizer: &mut Normalizer<'_>) -> Vec<Str
             continue;
         }
         // The expanded header shows the tip after the key help.
-        if row.trim() == TIP {
+        if TIPS.contains(&row.trim()) {
             continue;
         }
         // The logos' bottom rows precede the first key hint: yapi's first,
