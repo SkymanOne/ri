@@ -8,11 +8,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
+      - CHANGELOG.md
       - install.sh
       - about.toml
       - about.hbs
       - scripts/package-release.sh
       - scripts/check-release.sh
+      - scripts/release-notes.sh
       - scripts/third-party-notices.sh
   workflow_dispatch:
 
@@ -38,13 +40,14 @@ jobs:
         with:
           persist-credentials: false
       - id: tag
-        name: Match the tag to the version in Cargo.toml
+        name: Match the tag to the version in Cargo.toml and CHANGELOG.md
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
             exit 1
           fi
+          scripts/release-notes.sh "$version" >/dev/null
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
   # THIRD-PARTY-NOTICES, which every archive carries next to the binary.
@@ -157,11 +160,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          path: dist
           pattern: yapi-*
           merge-multiple: true
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes yapi-*.tar.gz*
+        run: |
+          scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" dist/yapi-*.tar.gz*
