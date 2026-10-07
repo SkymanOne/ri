@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const top = JSON.parse(fs.readFileSync(path.join(here, "../packages/ranked.json"), "utf8"));
-const scratch = path.join(os.tmpdir(), "ri-pi-packages");
+const scratch = path.join(os.tmpdir(), "yapi-pi-packages");
 fs.rmSync(scratch, { recursive: true, force: true });
 
 function run(command, args, options) {

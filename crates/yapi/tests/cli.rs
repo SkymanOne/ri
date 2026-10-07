@@ -30,11 +30,11 @@ fn export_matches_pi_byte_for_byte() {
     for (name, digest) in [
         (
             "main",
-            "abb9b743def853a26bd98116de413fef0cd6b9893e3723f44f5d6a0bd9d07ae7",
+            "fccaf043e37ff3994301e1823521b6d23b529e809776c2db498c3ef5f83bbe37",
         ),
         (
             "branched",
-            "20e92450caaa204f7faba57c5a4e2ded18de3c02d2630ed524ac77a564f25248",
+            "8310b9e08a3749c9d1e5f34ada5d60b269ddeba676cd4d94dbda762ee5aebb7a",
         ),
         (
             "legacy-before-compaction",

@@ -7,8 +7,8 @@
         "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
         "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
         "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
-        "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
-        "cwd": "<cwd>\n/tmp/ri-pi-fixtures/project\n</cwd>"
+        "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /tmp/yapi-pi-fixtures/pi-coding-agent/README.md\n- Additional docs: /tmp/yapi-pi-fixtures/pi-coding-agent/docs\n- Examples: /tmp/yapi-pi-fixtures/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
+        "cwd": "<cwd>\n/tmp/yapi-pi-fixtures/project\n</cwd>"
       },
       "toolsAdded": [
         {
@@ -131,13 +131,13 @@
           }
         }
       ],
-      "timestamp": 1790947556538
+      "timestamp": 1791380953106
     },
     {
       "role": "compactionSummary",
       "summary": "Hook summary.",
       "tokensBefore": 4096,
-      "timestamp": 1790947556538
+      "timestamp": 1791380953106
     },
     {
       "role": "user",
@@ -147,7 +147,7 @@
           "text": "Let us try another approach (edited)."
         }
       ],
-      "timestamp": 1790947556536
+      "timestamp": 1791380953104
     },
     {
       "role": "assistant",
@@ -161,11 +161,11 @@
       "provider": "anthropic",
       "model": "claude-sonnet-4-5",
       "usage": {
-        "input": 94,
+        "input": 95,
         "output": 8,
-        "cacheRead": 1451,
+        "cacheRead": 1414,
         "cacheWrite": 95,
-        "totalTokens": 1648,
+        "totalTokens": 1612,
         "cost": {
           "input": 0,
           "output": 0,
@@ -175,7 +175,7 @@
         }
       },
       "stopReason": "stop",
-      "timestamp": 1790947556534,
+      "timestamp": 1791380953102,
       "thinkingLevel": "medium"
     },
     {
@@ -212,7 +212,7 @@
         "reasoning": 120
       },
       "stopReason": "stop",
-      "timestamp": 1790947556538,
+      "timestamp": 1791380953106,
       "responseId": "msg_0123",
       "responseModel": "claude-sonnet-4-5-20250929",
       "rawStopReason": "end_turn",
@@ -245,7 +245,7 @@
         }
       },
       "stopReason": "length",
-      "timestamp": 1790947556539,
+      "timestamp": 1791380953107,
       "responseId": "chatcmpl-1",
       "rawStopReason": "length",
       "thinkingLevel": "off"
@@ -287,7 +287,7 @@
         }
       },
       "stopReason": "toolUse",
-      "timestamp": 1790947556540,
+      "timestamp": 1791380953108,
       "responseId": "resp-g1",
       "rawStopReason": "STOP",
       "thinkingLevel": "high"
@@ -319,7 +319,7 @@
       },
       "stopReason": "error",
       "errorMessage": "No API key for provider: anthropic",
-      "timestamp": 1790947556541
+      "timestamp": 1791380953109
     },
     {
       "role": "system",
@@ -328,7 +328,7 @@
         "project_context": "# AGENTS.md\nUse tabs.",
         "skills": null
       },
-      "timestamp": 1790947556542,
+      "timestamp": 1791380953110,
       "toolsAdded": [
         {
           "name": "grep",
