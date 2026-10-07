@@ -130,7 +130,7 @@ Run on Linux x86_64 after the rename to yapi.
 
 | Check | Command | Result |
 |---|---|---|
-| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | On macOS at commit `17b4f4e`, 291 of the 293 scenarios matched, covering every wire API, sessions, compaction, the TUI, sign-in, MCP, packages, extensions with their UI and events, and codemode. The other two differ only in the footer's context percentage ([#70](https://github.com/SkymanOne/yapi/issues/70)). |
+| Live differential against pi `v1.0.0` | `cargo xtask e2e --differential` | On macOS at commit `24392f2`, all 293 scenarios matched, covering every wire API, sessions, compaction, the TUI, sign-in, MCP, packages, extensions with their UI and events, and codemode. Before that commit, `tui-fork` and `tui-tree-navigate` differed in the footer's context percentage: pi's system prompt names paths in its install, and a package directory path of 89 characters or more raised pi's estimate from 0.1% to 0.2% ([#70](https://github.com/SkymanOne/yapi/issues/70)). Scenarios now run pi with a package directory path of 88 characters. |
 | Workspace tests | `cargo test --workspace` | Pass, including every scenario against its recorded golden. |
 | QA review | Agents drove yapi and pi side by side and compared screens, styles, requests, files and exit codes | Every finding is fixed with a regression test or a scenario recorded from pi, or listed in [compat.md](../docs/compat.md). |
 | Lints, licenses, runtime artifact | `cargo clippy`, `cargo deny check`, `cargo xtask js-runtime --check` | Clean. |
@@ -139,7 +139,6 @@ QA once saw yapi exit with SIGABRT after writing all of its output, in 2 of abou
 
 ## Open issues
 
-- The footer's context percentage differs from pi's in two scenarios on macOS ([#70](https://github.com/SkymanOne/yapi/issues/70)).
 - CI runs the `x86_64-apple-darwin` release archive only under Rosetta on Apple silicon, not on an Intel Mac.
 
 ## Pending live checks
