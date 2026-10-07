@@ -2900,6 +2900,9 @@ impl App {
     ) -> Result<(), String> {
         let target = crate::runtime::file_of(&manager);
         let session = (self.factory)(manager).map_err(|error| error.to_string())?;
+        // Reports a replacement left waiting, when an extension's
+        // `withSession` failed, are not this one's.
+        self.on_bound.clear();
         self.session.abort();
         self.session.abort_bash();
         self.epoch += 1;
@@ -3965,17 +3968,15 @@ impl App {
 mod tests {
     use super::*;
 
-    /// An app around an in-memory session without a model, as `run` builds
-    /// it, and the receiver of its events.
-    pub(super) fn app() -> (App, UnboundedReceiver<Event>) {
-        let cwd = Path::new("/work");
-        let session = AgentSession::new(yapi_core::agent_session::SessionConfig {
-            cwd: cwd.to_path_buf(),
+    /// A session around `manager` without a model.
+    fn session_around(manager: SessionManager) -> AgentSession {
+        AgentSession::new(yapi_core::agent_session::SessionConfig {
+            cwd: PathBuf::from("/work"),
             agent_dir: PathBuf::from("/agent"),
             settings: yapi_core::settings::SettingsManager::in_memory(),
             registry: yapi_ai::registry::ModelRegistry::builtin(),
             apis: yapi_ai::api::Apis::default(),
-            session: SessionManager::in_memory(cwd),
+            session: manager,
             model: None,
             thinking_level: yapi_types::message::ThinkingLevel::Off,
             tools: Vec::new(),
@@ -3985,13 +3986,19 @@ mod tests {
             excluded_tools: Vec::new(),
             resources: yapi_core::agent_session::Resources::default(),
             docs: yapi_core::docs::Locations::default(),
-        });
+        })
+    }
+
+    /// An app around an in-memory session without a model, as `run` builds
+    /// it, and the receiver of its events.
+    pub(super) fn app() -> (App, UnboundedReceiver<Event>) {
+        let session = session_around(SessionManager::in_memory(Path::new("/work")));
         let options = Options {
             tui_mode: None,
             verbose: false,
             initial: Vec::new(),
             initial_images: Vec::new(),
-            factory: Box::new(|_| anyhow::bail!("no sessions in tests")),
+            factory: Box::new(|manager| Ok(session_around(manager))),
             use_theme: None,
             model_fallback: None,
             model_network: false,
@@ -4000,6 +4007,16 @@ mod tests {
         let colors = yapi_tui::terminal::TerminalColors::default();
         let (app, _) = App::new(session, PathBuf::from("/agent"), options, tx, colors, false);
         (app, rx)
+    }
+
+    #[tokio::test]
+    async fn a_replacement_drops_the_reports_left_by_another() {
+        let (mut app, _events) = app();
+        // A fork an extension asked for, whose `withSession` failed.
+        app.once_bound(|app| app.set_editor_text("forked"));
+        app.new_session(None);
+        app.on_event(Event::Bound);
+        assert_eq!(app.editor.text(), "");
     }
 
     #[tokio::test]
