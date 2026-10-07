@@ -14,6 +14,15 @@ yapi remove npm:@scope/some-pi-package
 
 Installed packages are recorded in `settings.json` as Pi records them. `-l` installs into the project's `.yapi` folder instead of the global one. Local folders and files are used where they are, not copied.
 
+To try a package for one run without adding it to settings, pass it to `-e`:
+
+```sh
+yapi -e npm:@scope/some-pi-package
+yapi -e git:github.com/user/repo
+```
+
+yapi installs these into `~/.yapi/agent/tmp/extensions` and reuses them on later runs. An npm package is installed again when its version no longer matches the source's range, and a git source without a ref is updated on each run. With `--offline` or `PI_OFFLINE`, nothing is installed or updated, and a source that is not installed yet is skipped.
+
 `yapi list` shows each package with its install location. A tag after the source says what kind of extensions it contains: `[npm]` for Pi extensions in JavaScript or TypeScript, `[wasm]` for native extensions, and `[npm, wasm]` for both. Packages that hold only skills, prompt templates or themes, and packages that are not installed yet, have no tag.
 
 ```
