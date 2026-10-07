@@ -1084,6 +1084,9 @@ struct SessionBridge {
     /// Update sinks, cancellation and job queues of running extension tools,
     /// by call id.
     updates: Mutex<HashMap<String, (UpdateSink, CancellationToken, Jobs)>>,
+    /// Updates running tools published in the current guest step, held until
+    /// the step ends.
+    held_updates: Mutex<Vec<(Jobs, crate::ops::Job)>>,
     /// Custom components shown as blocking dialogs, by handle.
     prompts: Mutex<std::collections::HashSet<u64>>,
     /// Where the output of `!` commands that bash operations run goes, by
@@ -1117,6 +1120,7 @@ impl SessionBridge {
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
+            held_updates: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
             logins: Mutex::default(),
@@ -1434,11 +1438,13 @@ impl Bridge for SessionBridge {
             return Ok(Value::Null);
         }
         if kind == "tool.update" {
-            let sink = lock(&self.updates)
+            let caller = lock(&self.updates)
                 .get(payload["toolCallId"].as_str().unwrap_or_default())
-                .map(|(sink, ..)| sink.clone());
-            if let (Some(sink), Ok(partial)) = (sink, tool_result(payload["partial"].clone())) {
-                sink(partial);
+                .map(|(sink, _, jobs)| (sink.clone(), jobs.clone()));
+            if let (Some((sink, jobs)), Ok(partial)) =
+                (caller, tool_result(payload["partial"].clone()))
+            {
+                lock(&self.held_updates).push((jobs, Box::pin(async move { sink(partial) })));
             }
             return Ok(Value::Null);
         }
@@ -1634,6 +1640,20 @@ impl Bridge for SessionBridge {
                 Ok(Value::String(yapi_core::compaction::serialize_conversation(&messages)))
             }
             _ => Err(format!("{kind} is not available in yapi extensions yet")),
+        }
+    }
+
+    /// pi emits a tool's update a few microtasks after the tool publishes it:
+    /// after the start of a nested call the tool began in the same step, and
+    /// before that call ends. So the step's updates queue behind the jobs of
+    /// its nested calls. This relies on [`crate::ops::drive`] polling a tool's
+    /// jobs first in, first out: a nested call reports its start on its first
+    /// poll, and the update goes out once that call waits, unless the call
+    /// ends without waiting.
+    fn step_ended(&self) {
+        for (jobs, update) in std::mem::take(&mut *lock(&self.held_updates)) {
+            // An update after the tool ended is dropped, as in pi.
+            let _ = jobs.send(update);
         }
     }
 

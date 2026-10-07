@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use futures_util::StreamExt as _;
 use futures_util::future::BoxFuture;
 use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt as _, StreamExt as _};
 use serde_json::{Map, Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::sync::{mpsc, oneshot};
@@ -150,6 +150,9 @@ pub(crate) async fn drive<T>(
     while let Ok(job) = jobs.try_recv() {
         running.push(job);
     }
+    // Jobs of the call's last step, such as its last updates, take their
+    // first step with it.
+    while let Some(Some(())) = running.next().now_or_never() {}
     if !running.is_empty() {
         tokio::spawn(async move { while running.next().await.is_some() {} });
     }

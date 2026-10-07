@@ -392,9 +392,11 @@ async fn before_agent_start_handlers_edit_the_prompt_options() {
 }
 
 /// A tool's updates and the calls it makes through `ctx.executeTool()` report
-/// in call order, as pi emits them, from the task that runs the tool (#59).
+/// in pi's order, from the task that runs the tool: an update goes out after
+/// the start of a call the tool begins in the same step, and before its end
+/// (#59).
 #[tokio::test(flavor = "multi_thread")]
-async fn tool_updates_and_nested_calls_report_in_call_order() {
+async fn tool_updates_and_nested_calls_report_in_pi_order() {
     let dir = scratch("tool-order");
     std::fs::write(dir.join("hello.txt"), "hi\n").unwrap();
     let path = dir.join("relay.ts");
@@ -408,6 +410,7 @@ async fn tool_updates_and_nested_calls_report_in_call_order() {
 			await ctx.executeTool("read", { path: "hello.txt" });
 			onUpdate({ content: [{ type: "text", text: "between" }] });
 			await ctx.executeTool("read", { path: "hello.txt" });
+			onUpdate({ content: [{ type: "text", text: "after" }] });
 			return { content: [{ type: "text", text: "done" }] };
 		},
 	});
@@ -452,12 +455,13 @@ async fn tool_updates_and_nested_calls_report_in_call_order() {
         lines,
         [
             "start call-1",
-            "update call-1 before",
             "start call-1/1",
+            "update call-1 before",
             "end call-1/1",
-            "update call-1 between",
             "start call-1/2",
+            "update call-1 between",
             "end call-1/2",
+            "update call-1 after",
             "end call-1",
         ]
     );
