@@ -646,11 +646,11 @@ impl super::App {
                     .with_session(|session| session.leaf_id().map(str::to_owned));
                 match leaf {
                     None => self.status("Nothing to clone yet"),
-                    Some(leaf) => self.fork(&leaf, true),
+                    Some(leaf) => self.fork(&leaf, true, None),
                 }
             }
             "/tree" => self.open_tree(None),
-            "/new" => self.new_session(None),
+            "/new" => self.new_session(None, None),
             "/compact" => {
                 self.indicator = None;
                 let session = self.session.clone();
@@ -659,7 +659,7 @@ impl super::App {
                     let _ = session.compact(instructions.as_deref()).await;
                 });
             }
-            "/reload" => self.reload(),
+            "/reload" => self.reload(None),
             "/debug" => self.debug(),
             "/resume" => self.open_resume(),
             "/quit" => self.quit = true,
@@ -805,21 +805,21 @@ impl super::App {
         }
         let target = destination.display().to_string();
         let path = path.to_owned();
-        self.unless_cancelled(SessionChange::Resume(target), move |app| {
+        self.unless_cancelled(SessionChange::Resume(target), None, move |app, _| {
             if !already && let Err(error) = std::fs::copy(&source, &destination) {
-                app.fatal("Failed to import session", &error.to_string());
+                app.fatal("Failed to import session", &error.to_string(), None);
                 return;
             }
             match SessionManager::open(&destination, Some(&dir), None) {
-                Ok(manager) => match app.replace_session(manager, Replacement::Resume) {
+                Ok(manager) => match app.replace_session(manager, Replacement::Resume, None) {
                     Ok(()) => {
                         app.once_bound(move |app| {
                             app.status(format!("Session imported from: {path}"))
                         });
                     }
-                    Err(error) => app.fatal("Failed to import session", &error),
+                    Err(error) => app.fatal("Failed to import session", &error, None),
                 },
-                Err(error) => app.fatal("Failed to import session", &error.to_string()),
+                Err(error) => app.fatal("Failed to import session", &error.to_string(), None),
             }
         });
     }
@@ -850,23 +850,23 @@ impl super::App {
         );
     }
 
-    pub(super) fn reload(&mut self) {
+    /// `/reload`, or an extension command's `reload` waiting on `reply`.
+    pub(super) fn reload(&mut self, reply: super::Reply) {
         if self.running {
             self.warning("Wait for the current response to finish before reloading.");
-            self.answer(Ok(false));
+            super::answer(reply, Ok(false));
             return;
         }
         if self.manual_compaction {
             self.warning("Wait for compaction to finish before reloading.");
-            self.answer(Ok(false));
+            super::answer(reply, Ok(false));
             return;
         }
         // pi reloads the session in place, keeping its model and level.
         let previous = self.session.clone();
         let manager = self.session.take_session();
-        let replaced = self.replace_session(manager, Replacement::Reload);
+        let replaced = self.replace_session(manager, Replacement::Reload, reply);
         if let Err(error) = replaced {
-            self.answer(Err(error.clone()));
             self.error(format!("Reload failed: {error}"));
             return;
         }

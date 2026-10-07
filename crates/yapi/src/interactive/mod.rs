@@ -120,6 +120,29 @@ const VIEWPORT_KEYS: &[&str] = &[
 /// Work to finish on the loop.
 type Then = Box<dyn FnOnce(&mut App) + Send>;
 
+/// Where the outcome of a session change goes when an extension command
+/// asked for it: whether an extension cancelled it, or why it failed.
+/// `None` for the user's own commands.
+type Reply = Option<tokio::sync::oneshot::Sender<Result<bool, String>>>;
+
+/// Sends `outcome` to the extension command waiting on `reply`, if any.
+fn answer(reply: Reply, outcome: Result<bool, String>) {
+    if let Some(reply) = reply {
+        let _ = reply.send(outcome);
+    }
+}
+
+/// A session the current one replaced for `reason`, which shuts down
+/// before the current session's extensions start.
+struct Replaced {
+    old: AgentSession,
+    reason: Replacement,
+    /// The current session's file.
+    target: Option<String>,
+    /// The extension command that asked for the change.
+    reply: Reply,
+}
+
 /// Events the loop handles. Session events carry the epoch of the session
 /// that sent them, so a replaced session's late events are dropped.
 enum Event {
@@ -153,8 +176,9 @@ enum Event {
     TerminalInput(Vec<String>),
     /// Lines of the extension component with this key, rendered at a width.
     Rendered(u64, (u64, u32), usize, Vec<String>),
-    /// The first session's extensions started.
-    Bound,
+    /// The current session's extensions started, after a change `Reply`
+    /// waits on.
+    Bound(Reply),
     /// A model catalog refresh finished.
     Catalogs(
         Box<catalogs::Refresh>,
@@ -194,7 +218,7 @@ enum Dialog {
     /// Custom summary instructions for navigating to the entry.
     TreeInstructions(String),
     /// Resume a session whose working directory is gone.
-    ResumeMissingCwd(PathBuf),
+    ResumeMissingCwd(PathBuf, Reply),
     /// Import a session file.
     Import(String),
     /// The `/login` method menu, for all providers or these, offering these kinds.
@@ -430,13 +454,10 @@ struct App {
     model_network: bool,
     /// The last selector catalog refresh id.
     next_refresh: u64,
-    /// Where the outcome of the session change an extension command asked
-    /// for goes.
-    action: Option<tokio::sync::oneshot::Sender<Result<bool, String>>>,
     /// The current session's extensions wait to start, after the session
     /// they replace (if any) shuts down for a reason, with the replacement's
     /// session file.
-    binding: Option<Option<(AgentSession, Replacement, Option<String>)>>,
+    binding: Option<Option<Replaced>>,
     /// What to show once the replacement session's extensions have started.
     on_bound: Vec<Then>,
     /// Messages to send once extensions have started.
@@ -2416,7 +2437,7 @@ impl App {
                     ));
                 }
             }
-            "app.session.new" => self.new_session(None),
+            "app.session.new" => self.new_session(None, None),
             "app.session.tree" => self.open_tree(None),
             "app.session.fork" => self.open_fork(),
             "app.session.resume" => self.open_resume(),
@@ -2545,9 +2566,9 @@ impl App {
         match dialog {
             Some(Dialog::TreeSummary(id)) => self.open_tree(Some(id)),
             Some(Dialog::TreeInstructions(id)) => self.ask_tree_summary(id),
-            Some(Dialog::ResumeMissingCwd(_)) => {
+            Some(Dialog::ResumeMissingCwd(_, reply)) => {
                 self.status("Resume cancelled");
-                self.answer(Ok(true));
+                answer(reply, Ok(true));
             }
             Some(Dialog::Import(_)) => self.status("Import cancelled"),
             Some(Dialog::LoginMenu(..) | Dialog::Logout) => {}
@@ -2595,8 +2616,8 @@ impl App {
                 id,
                 level,
             } => self.set_model_thinking(&provider, &id, level),
-            Action::Fork(id) => self.fork(&id, false),
-            Action::Resume(path) => self.resume(&path, None),
+            Action::Fork(id) => self.fork(&id, false, None),
+            Action::Resume(path) => self.resume(&path, None, None),
             Action::Tree(id) => self.tree_selected(id),
             Action::Label { id, label } => {
                 let _ = self
@@ -2659,13 +2680,13 @@ impl App {
                 }
             },
             Some(Dialog::LoginSelect) => self.login_select_done(Some(index)),
-            Some(Dialog::ResumeMissingCwd(path)) => {
+            Some(Dialog::ResumeMissingCwd(path, reply)) => {
                 if index == 0 {
                     let cwd = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
-                    self.resume(&path, Some(cwd));
+                    self.resume(&path, Some(cwd), reply);
                 } else {
                     self.status("Resume cancelled");
-                    self.answer(Ok(true));
+                    answer(reply, Ok(true));
                 }
             }
             Some(Dialog::Extension(ExtensionReply::Select(options, reply))) => {
@@ -2892,14 +2913,23 @@ impl App {
     // Sessions
 
     /// Builds a session around `manager` and shows it in place of the current
-    /// one, which it replaces for `reason`.
+    /// one, which it replaces for `reason`. An extension command waiting on
+    /// `reply` hears of a failure at once, otherwise once the replacement's
+    /// extensions have started.
     fn replace_session(
         &mut self,
         manager: SessionManager,
         reason: Replacement,
+        reply: Reply,
     ) -> Result<(), String> {
         let target = crate::runtime::file_of(&manager);
-        let session = (self.factory)(manager).map_err(|error| error.to_string())?;
+        let session = match (self.factory)(manager) {
+            Ok(session) => session,
+            Err(error) => {
+                answer(reply, Err(error.to_string()));
+                return Err(error.to_string());
+            }
+        };
         // Reports a replacement left waiting, when an extension's
         // `withSession` failed, are not this one's.
         self.on_bound.clear();
@@ -2909,7 +2939,12 @@ impl App {
         let old = std::mem::replace(&mut self.session, session);
         subscribe(&self.session, &self.tx, self.epoch);
         self.reset_extension_ui();
-        self.binding = Some(Some((old, reason, target)));
+        self.binding = Some(Some(Replaced {
+            old,
+            reason,
+            target,
+            reply,
+        }));
         self.cwd = self.session.cwd().to_path_buf();
         self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
         self.branch = footer::git_branch(&self.cwd);
@@ -2927,87 +2962,97 @@ impl App {
 
     /// Runs `then` unless an extension cancels `change`: at once when no
     /// extension handles its event, otherwise once pi's cancellable
-    /// `session_before_*` event answers that none did.
+    /// `session_before_*` event answers that none did. A cancelled change
+    /// answers `reply`.
     pub(super) fn unless_cancelled(
         &mut self,
         change: SessionChange,
-        then: impl FnOnce(&mut App) + Send + 'static,
+        reply: Reply,
+        then: impl FnOnce(&mut App, Reply) + Send + 'static,
     ) {
         if !self.session.has_handlers(change.event()) {
-            then(self);
+            then(self, reply);
             return;
         }
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
         tokio::spawn(async move {
-            let then: Then = if session.cancels(&change).await {
-                Box::new(|app| app.answer(Ok(true)))
+            if session.cancels(&change).await {
+                answer(reply, Ok(true));
             } else {
-                Box::new(then)
-            };
-            let _ = tx.send(Event::Then(epoch, then));
+                let _ = tx.send(Event::Then(epoch, Box::new(move |app| then(app, reply))));
+            }
         });
     }
 
     /// pi's `newSession`, linked to `parent` when given; `/new` also says so.
-    fn new_session(&mut self, parent: Option<String>) {
+    fn new_session(&mut self, parent: Option<String>, reply: Reply) {
         self.indicator = None;
-        self.unless_cancelled(SessionChange::New, |app| {
-            let command = app.action.is_none();
-            let result = crate::runtime::new_session(&app.session, parent)
-                .map_err(|error| error.to_string())
-                .and_then(|manager| app.replace_session(manager, Replacement::New));
-            match result {
+        self.unless_cancelled(SessionChange::New, reply, |app, reply| {
+            let command = reply.is_none();
+            let manager = match crate::runtime::new_session(&app.session, parent) {
+                Ok(manager) => manager,
+                Err(error) => {
+                    return app.fatal("Failed to create session", &error.to_string(), reply);
+                }
+            };
+            match app.replace_session(manager, Replacement::New, reply) {
                 Ok(()) if command => app.once_bound(|app| {
                     let notice = lines::styled("✓ New session started", app.theme.fg("accent"));
                     app.text_item(vec![notice], true, (1, 1));
                 }),
                 Ok(()) => {}
-                Err(error) => app.fatal("Failed to create session", &error),
+                Err(error) => app.fatal("Failed to create session", &error, None),
             }
         });
     }
 
     /// pi's `runtimeHost.fork`: `at` keeps the entry (`/clone`), otherwise the
     /// branch ends before the user message (`/fork`).
-    fn fork(&mut self, id: &str, at: bool) {
+    fn fork(&mut self, id: &str, at: bool, reply: Reply) {
         let entry_id = id.to_owned();
         let id = id.to_owned();
-        self.unless_cancelled(SessionChange::Fork { entry_id, at }, move |app| {
-            let result = crate::runtime::plan_fork(&app.session, &id, at).and_then(|fork| {
-                let manager = fork.build(&app.session)?;
-                app.replace_session(manager, Replacement::Fork)?;
-                Ok(fork.text)
-            });
-            // pi's fork action says "Forked" for both positions, and a
-            // failure ends the app.
-            let command = app.action.is_none();
-            match result {
-                Ok(_) if at && command => app.once_bound(|app| {
-                    app.set_editor_text("");
-                    app.status("Cloned to new session");
-                }),
-                Ok(text) => app.once_bound(move |app| {
-                    app.set_editor_text(text.as_deref().unwrap_or_default());
-                    app.status("Forked to new session");
-                }),
-                Err(error) if command => app.error(error),
-                Err(error) => app.fatal("Failed to fork session", &error),
-            }
-        });
+        self.unless_cancelled(
+            SessionChange::Fork { entry_id, at },
+            reply,
+            move |app, reply| {
+                // pi's fork action says "Forked" for both positions, and a
+                // failure ends the app.
+                let command = reply.is_none();
+                let planned = crate::runtime::plan_fork(&app.session, &id, at)
+                    .and_then(|fork| Ok((fork.build(&app.session)?, fork.text)));
+                let (manager, text) = match planned {
+                    Ok(planned) => planned,
+                    Err(error) if command => return app.error(error),
+                    Err(error) => return app.fatal("Failed to fork session", &error, reply),
+                };
+                match app.replace_session(manager, Replacement::Fork, reply) {
+                    Ok(()) if at && command => app.once_bound(|app| {
+                        app.set_editor_text("");
+                        app.status("Cloned to new session");
+                    }),
+                    Ok(()) => app.once_bound(move |app| {
+                        app.set_editor_text(text.as_deref().unwrap_or_default());
+                        app.status("Forked to new session");
+                    }),
+                    Err(error) if command => app.error(error),
+                    Err(error) => app.fatal("Failed to fork session", &error, None),
+                }
+            },
+        );
     }
 
     /// pi's `switchSession` to `path`, in `cwd_override` when given.
-    fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
+    fn resume(&mut self, path: &Path, cwd_override: Option<PathBuf>, reply: Reply) {
         let target = path.display().to_string();
         let path = path.to_path_buf();
-        self.unless_cancelled(SessionChange::Resume(target), move |app| {
-            app.open_resumed(&path, cwd_override);
+        self.unless_cancelled(SessionChange::Resume(target), reply, move |app, reply| {
+            app.open_resumed(&path, cwd_override, reply);
         });
     }
 
-    fn open_resumed(&mut self, path: &Path, cwd_override: Option<PathBuf>) {
+    fn open_resumed(&mut self, path: &Path, cwd_override: Option<PathBuf>, reply: Reply) {
         let fallback = std::env::current_dir().unwrap_or_else(|_| self.cwd.clone());
         let manager = match crate::runtime::open_session(path, cwd_override.as_deref(), &fallback) {
             Ok(manager) => manager,
@@ -3016,7 +3061,7 @@ impl App {
                 fallback,
                 ..
             }) => {
-                self.dialog = Some(Dialog::ResumeMissingCwd(path.to_path_buf()));
+                self.dialog = Some(Dialog::ResumeMissingCwd(path.to_path_buf(), reply));
                 self.selector = Some(Selector::Choice(ChoiceDialog::new(
                     &format!(
                         "Session cwd not found\ncwd from session file does not exist\n{}\n\ncontinue in current cwd\n{}",
@@ -3028,16 +3073,16 @@ impl App {
                 return;
             }
             Err(error) => {
-                self.fatal("Failed to resume session", &error.to_string());
+                self.fatal("Failed to resume session", &error.to_string(), reply);
                 return;
             }
         };
-        match self.replace_session(manager, Replacement::Resume) {
+        match self.replace_session(manager, Replacement::Resume, reply) {
             Ok(()) if cwd_override.is_some() => {
                 self.once_bound(|app| app.status("Resumed session in current cwd"));
             }
             Ok(()) => self.once_bound(|app| app.status("Resumed session")),
-            Err(error) => self.fatal("Failed to resume session", &error),
+            Err(error) => self.fatal("Failed to resume session", &error, None),
         }
     }
 
@@ -3048,8 +3093,9 @@ impl App {
     }
 
     /// pi's fatal runtime error: shown, then the app exits with status 1.
-    fn fatal(&mut self, prefix: &str, error: &str) {
-        self.answer(Err(error.to_owned()));
+    /// An extension command waiting on `reply` gets the error.
+    fn fatal(&mut self, prefix: &str, error: &str, reply: Reply) {
+        answer(reply, Err(error.to_owned()));
         self.error(format!("{prefix}: {error}"));
         self.quit = true;
         self.exit_code = 1;
@@ -3724,7 +3770,6 @@ impl App {
             model_network: options.model_network,
             next_refresh: 0,
             binding: None,
-            action: None,
             on_bound: Vec::new(),
             overlay: None,
             overlays_below: Vec::new(),
@@ -3773,16 +3818,19 @@ impl App {
         let session = self.session.clone();
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let mut replaced = None;
-            if let Some((old, reason, target)) = old {
-                let previous = old.with_session(|manager| crate::runtime::file_of(manager));
-                old.shutdown_for(reason, target).await;
-                replaced = Some((reason, previous));
+            let (mut replaced, mut reply) = (None, None);
+            if let Some(old) = old {
+                let previous = old
+                    .old
+                    .with_session(|manager| crate::runtime::file_of(manager));
+                old.old.shutdown_for(old.reason, old.target).await;
+                replaced = Some((old.reason, previous));
+                reply = old.reply;
             }
             session
                 .bind_extensions(Arc::new(ui), Mode::Tui, replaced)
                 .await;
-            let _ = tx.send(Event::Bound);
+            let _ = tx.send(Event::Bound(reply));
         });
     }
 
@@ -3799,15 +3847,10 @@ impl App {
     /// interactive mode does; its outcome goes to `reply` once the change is
     /// done, with the replacement's extensions started.
     fn on_action(&mut self, (action, reply): crate::runtime::ActionRequest) {
-        if matches!(action, SessionAction::Replaced) {
-            self.run_on_bound();
-            let _ = reply.send(Ok(false));
-            return;
-        }
-        self.action = Some(reply);
+        let reply = Some(reply);
         match action {
-            SessionAction::New { parent } => self.new_session(parent),
-            SessionAction::Fork { entry_id, at } => self.fork(&entry_id, at),
+            SessionAction::New { parent } => self.new_session(parent, reply),
+            SessionAction::Fork { entry_id, at } => self.fork(&entry_id, at, reply),
             SessionAction::Tree { target_id, options } => {
                 let session = self.session.clone();
                 let tx = self.tx.clone();
@@ -3816,15 +3859,18 @@ impl App {
                     let result = session.navigate_tree(&target_id, options).await;
                     let _ = tx.send(Event::Then(
                         epoch,
-                        Box::new(move |app: &mut App| app.navigated(result)),
+                        Box::new(move |app: &mut App| app.navigated(result, reply)),
                     ));
                 });
             }
             SessionAction::Switch { path } => {
-                self.resume(&crate::runtime::session_path(&path), None);
+                self.resume(&crate::runtime::session_path(&path), None, reply);
             }
-            SessionAction::Reload => self.reload(),
-            SessionAction::Replaced => {}
+            SessionAction::Reload => self.reload(reply),
+            SessionAction::Replaced => {
+                self.run_on_bound();
+                answer(reply, Ok(false));
+            }
         }
     }
 
@@ -3835,21 +3881,14 @@ impl App {
     }
 
     /// pi's `navigateTree` action: the transcript of the new position.
-    fn navigated(&mut self, result: Result<TreeOutcome, String>) {
+    fn navigated(&mut self, result: Result<TreeOutcome, String>, reply: Reply) {
         match result {
-            Ok(outcome) if outcome.cancelled => self.answer(Ok(true)),
+            Ok(outcome) if outcome.cancelled => answer(reply, Ok(true)),
             Ok(outcome) => {
                 self.show_navigation(outcome.editor_text);
-                self.answer(Ok(false));
+                answer(reply, Ok(false));
             }
-            Err(error) => self.answer(Err(error)),
-        }
-    }
-
-    /// Answers the extension command whose session change is done.
-    fn answer(&mut self, outcome: Result<bool, String>) {
-        if let Some(reply) = self.action.take() {
-            let _ = reply.send(outcome);
+            Err(error) => answer(reply, Err(error)),
         }
     }
 
@@ -3925,14 +3964,13 @@ impl App {
                 self.extension_error(message, stack.as_deref());
             }
             Event::Ui(epoch, request) if epoch == self.epoch => self.on_ui_request(*request),
-            Event::Bound => {
+            Event::Bound(reply) => {
                 // A session change an extension command asked for is
                 // reported once the command's own work on the replacement
                 // is done; others at once.
-                if self.action.is_some() {
-                    self.answer(Ok(false));
-                } else {
-                    self.run_on_bound();
+                match reply {
+                    Some(reply) => answer(Some(reply), Ok(false)),
+                    None => self.run_on_bound(),
                 }
                 // Extensions may have added skills, prompt templates and themes.
                 self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
@@ -4014,9 +4052,29 @@ mod tests {
         let (mut app, _events) = app();
         // A fork an extension asked for, whose `withSession` failed.
         app.once_bound(|app| app.set_editor_text("forked"));
-        app.new_session(None);
-        app.on_event(Event::Bound);
+        app.new_session(None, None);
+        app.on_event(Event::Bound(None));
         assert_eq!(app.editor.text(), "");
+    }
+
+    #[tokio::test]
+    async fn a_user_change_beside_an_extension_action_reports_itself() {
+        let (mut app, _events) = app();
+        let (reply, mut outcome) = tokio::sync::oneshot::channel();
+        let tree = SessionAction::Tree {
+            target_id: "missing".into(),
+            options: TreeNavigation::default(),
+        };
+        app.on_action((tree, reply));
+        app.new_session(None, None);
+        app.on_event(Event::Bound(None));
+        let rows: Vec<String> = app.transcript(80).iter().map(text).collect();
+        assert!(
+            rows.iter().any(|row| row.contains("New session started")),
+            "{rows:?}"
+        );
+        // The tree action is still waiting for its own outcome.
+        assert!(outcome.try_recv().is_err());
     }
 
     #[tokio::test]
