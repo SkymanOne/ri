@@ -63,12 +63,12 @@ yapi does not pay for starting Node.js and loading Pi's JavaScript. Measured on 
 
 | Measure | yapi | Pi |
 |---|---|---|
-| Startup, interactive | 10.6 ms | 316.1 ms |
-| Startup, print mode (to first request byte) | 14.9 ms | 340.5 ms |
-| Keystroke to paint, p99, 10,000-line session | 0.7 ms | 4.1 ms |
-| Memory, idle | 18.1 MB | 116.2 MB |
-| Memory after 20 turns with tool calls | 35.4 MB | 198.3 MB |
-| Install size | 32.5 MB | 246.6 MB with Node.js |
+| Startup, interactive | 10.1 ms | 323.9 ms |
+| Startup, print mode (to first request byte) | 14.1 ms | 352.3 ms |
+| Keystroke to paint, p99, 10,000-line session | 0.9 ms | 3.8 ms |
+| Memory, idle | 18.8 MB | 117.4 MB |
+| Memory after 20 turns with tool calls | 37.0 MB | 202.6 MB |
+| Install size | 35.0 MB | 246.6 MB with Node.js |
 
 [Performance](https://skymanone.github.io/yapi/performance.html) explains each measure and the method, and has the macOS results.
 

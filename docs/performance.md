@@ -4,39 +4,39 @@ yapi is built to start fast, use little memory and install small. `cargo xtask b
 
 ## Results
 
-The [Bench workflow](https://github.com/SkymanOne/yapi/actions/runs/37471240557) measured these on GitHub's hosted runners, which are shared virtual machines, at commit `ccf76a6`, against Pi `1.0.0`. Each value is the median of the samples, with their range in parentheses.
+The [Bench workflow](https://github.com/SkymanOne/yapi/actions/runs/37601516053) measured these on GitHub's hosted runners, which are shared virtual machines, at commit `ecd633a`, against Pi `1.0.0`. Each value is the median of the samples, with their range in parentheses.
 
 Linux, on `ubuntu-latest` (AMD EPYC 9V74, 4 hardware threads), with Pi on Node.js 22.23.3:
 
 | Measure | yapi | Pi | Pi / yapi |
 |---|---|---|---|
-| Startup, interactive | 10.6 ms (10.4 to 11.7) | 316.1 ms (299.3 to 349.3) | 29.8× |
-| Startup, print mode (to first request byte) | 14.9 ms (14.6 to 15.5) | 340.5 ms (332.0 to 364.2) | 22.8× |
-| Keystroke to paint, p50, 10,000-line session | 0.6 ms | 2.3 ms | 3.9× |
-| Keystroke to paint, p99, 10,000-line session | 0.7 ms | 4.1 ms | 6.1× |
-| Memory, idle | 18.1 MB (17.8 to 18.2) | 116.2 MB (114.0 to 116.9) | 6.4× |
-| Memory, 10,000-line session open | 32.0 MB (31.8 to 32.1) | 149.9 MB (147.1 to 150.8) | 4.7× |
-| Memory after 20 turns with tool calls | 35.4 MB (34.8 to 36.3) | 198.3 MB (197.7 to 201.9) | 5.6× |
-| Memory with 10 small JS extensions | 35.8 MB (35.8 to 36.3) | 119.6 MB (118.2 to 121.4) | 3.3× |
-| Memory with 57 of Pi's example extensions | 42.1 MB (41.9 to 42.4) | 121.9 MB (121.3 to 122.5) | 2.9× |
-| Install size | 32.5 MB | 246.6 MB | 7.6× |
+| Startup, interactive | 10.1 ms (9.8 to 10.8) | 323.9 ms (310.5 to 367.9) | 31.9× |
+| Startup, print mode (to first request byte) | 14.1 ms (13.9 to 15.3) | 352.3 ms (342.4 to 373.0) | 24.9× |
+| Keystroke to paint, p50, 10,000-line session | 0.7 ms | 1.9 ms | 2.8× |
+| Keystroke to paint, p99, 10,000-line session | 0.9 ms | 3.8 ms | 4.4× |
+| Memory, idle | 18.8 MB (18.7 to 19.1) | 117.4 MB (116.8 to 119.2) | 6.2× |
+| Memory, 10,000-line session open | 32.8 MB (32.7 to 33.0) | 151.7 MB (149.7 to 154.5) | 4.6× |
+| Memory after 20 turns with tool calls | 37.0 MB (36.8 to 37.6) | 202.6 MB (199.9 to 203.7) | 5.5× |
+| Memory with 10 small JS extensions | 40.0 MB (39.6 to 40.1) | 121.1 MB (120.5 to 121.7) | 3.0× |
+| Memory with 57 of Pi's example extensions | 43.1 MB (42.8 to 43.3) | 122.3 MB (122.0 to 123.1) | 2.8× |
+| Install size | 35.0 MB | 246.6 MB | 7.0× |
 
 macOS, on `macos-latest` (Apple M1 virtual machine, 3 hardware threads), with Pi on Node.js 22.23.2:
 
 | Measure | yapi | Pi | Pi / yapi |
 |---|---|---|---|
-| Startup, interactive | 23.5 ms (16.3 to 156.9) | 363.5 ms (286.2 to 526.7) | 15.5× |
-| Startup, print mode (to first request byte) | 14.3 ms (11.8 to 36.7) | 293.9 ms (267.2 to 371.1) | 20.5× |
-| Keystroke to paint, p50, 10,000-line session | 0.9 ms | 3.3 ms | 3.6× |
-| Keystroke to paint, p99, 10,000-line session | 2.1 ms | 9.7 ms | 4.5× |
-| Memory, idle | 16.2 MB (16.2 to 16.3) | 125.2 MB (123.8 to 125.5) | 7.7× |
-| Memory, 10,000-line session open | 32.0 MB (31.9 to 32.2) | 151.7 MB (150.2 to 152.1) | 4.7× |
-| Memory after 20 turns with tool calls | 37.6 MB (37.5 to 37.7) | 205.7 MB (204.7 to 207.6) | 5.5× |
-| Memory with 10 small JS extensions | 26.9 MB (26.9 to 27.0) | 129.0 MB (127.2 to 130.1) | 4.8× |
-| Memory with 57 of Pi's example extensions | 34.1 MB (33.9 to 34.1) | 130.5 MB (129.6 to 130.8) | 3.8× |
-| Install size | 26.6 MB | 233.9 MB | 8.8× |
+| Startup, interactive | 24.6 ms (15.2 to 127.6) | 343.3 ms (271.8 to 443.9) | 14.0× |
+| Startup, print mode (to first request byte) | 14.0 ms (10.8 to 30.6) | 287.9 ms (252.1 to 321.9) | 20.6× |
+| Keystroke to paint, p50, 10,000-line session | 1.7 ms | 3.7 ms | 2.1× |
+| Keystroke to paint, p99, 10,000-line session | 3.8 ms | 8.3 ms | 2.2× |
+| Memory, idle | 17.1 MB (16.9 to 17.1) | 126.0 MB (125.4 to 127.7) | 7.4× |
+| Memory, 10,000-line session open | 32.5 MB (32.3 to 32.6) | 152.1 MB (151.6 to 152.6) | 4.7× |
+| Memory after 20 turns with tool calls | 38.7 MB (38.4 to 39.3) | 209.1 MB (204.4 to 209.9) | 5.4× |
+| Memory with 10 small JS extensions | 31.2 MB (31.1 to 31.3) | 129.5 MB (128.7 to 129.9) | 4.2× |
+| Memory with 57 of Pi's example extensions | 35.0 MB (35.0 to 35.1) | 131.1 MB (130.2 to 131.6) | 3.7× |
+| Install size | 28.7 MB | 233.9 MB | 8.1× |
 
-Single samples on the macOS runner reach 157 ms for yapi's interactive startup and 527 ms for Pi's, which is why the tables report medians.
+Single samples on the macOS runner reach 128 ms for yapi's interactive startup and 444 ms for Pi's, which is why the tables report medians.
 
 ## What each measure means
 
