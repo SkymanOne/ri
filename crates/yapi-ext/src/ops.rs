@@ -658,6 +658,34 @@ fn ignored_signals() -> Vec<libc::c_int> {
         .collect()
 }
 
+/// Gives every signal yapi inherited ignored its default action, as Node's
+/// `ResetSignalHandlers` does at startup, so every process yapi starts has
+/// default actions as Node's children do. A shell's background job, for
+/// one, starts with SIGINT and SIGQUIT ignored. Installed handlers are
+/// kept. SIGPIPE stays ignored, as in Node: the standard library ignores it
+/// in yapi and restores it in children. Node also ignores SIGXFSZ, but
+/// yapi's children would inherit that, where libuv restores it in Node's.
+///
+/// Call it first in `main`, before any thread or child exists.
+pub fn reset_signal_dispositions() {
+    #[cfg(unix)]
+    for signal in (1..32).filter(|&signal| signal != libc::SIGPIPE) {
+        let mut action = std::mem::MaybeUninit::<libc::sigaction>::uninit();
+        // SAFETY: with a null new action, `sigaction` only writes the current
+        // one to `action`, which is read only when that succeeded. Replacing
+        // SIG_IGN with SIG_DFL installs no handler. The check and the reset
+        // are not atomic, so a handler another thread installed in between
+        // would be lost; the caller runs this before any thread exists.
+        unsafe {
+            if libc::sigaction(signal, std::ptr::null(), action.as_mut_ptr()) == 0
+                && action.assume_init().sa_sigaction == libc::SIG_IGN
+            {
+                libc::signal(signal, libc::SIG_DFL);
+            }
+        }
+    }
+}
+
 fn spawn_error(command: &str, err: &std::io::Error) -> String {
     let code = match err.kind() {
         std::io::ErrorKind::NotFound => "ENOENT",
