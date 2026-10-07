@@ -183,6 +183,8 @@ pub enum Scope {
     Global,
     /// The project's `mcp.json`.
     Project,
+    /// Registered by the extension at `source` with `pi.registerMcpServer`.
+    Extension,
 }
 
 impl Scope {
@@ -191,6 +193,7 @@ impl Scope {
         match self {
             Scope::Global => "global",
             Scope::Project => "project",
+            Scope::Extension => "extension",
         }
     }
 }

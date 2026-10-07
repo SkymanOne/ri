@@ -22,7 +22,7 @@ use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
 use yapi_ai::stream::{Hook, RequestHeaders, RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
-use yapi_types::extension_event::{ExtensionEvent, TreePreparation};
+use yapi_types::extension_event::{ExtensionEvent, RegisteredMcpServer, TreePreparation};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
     ThinkingLevel, ToolCall, UserMessage,
@@ -292,6 +292,11 @@ struct Inner {
     /// Blocking extension dialogs open, and the kind and title of the
     /// outermost.
     ui_prompts: Mutex<(usize, Option<UiPrompt>)>,
+    /// MCP servers extensions registered, by the extension runtime that
+    /// reported them.
+    mcp_servers: Mutex<IndexMap<u64, Vec<RegisteredMcpServer>>>,
+    /// Registered MCP servers reported as connected by no extension.
+    unhandled_mcp_servers: Mutex<std::collections::HashSet<String>>,
 }
 
 /// A blocking extension dialog's kind and title.
@@ -481,6 +486,8 @@ impl AgentSession {
                 announcing: tokio::sync::Mutex::new(()),
                 outcome: Mutex::new("completed"),
                 ui_prompts: Mutex::new((0, None)),
+                mcp_servers: Mutex::default(),
+                unhandled_mcp_servers: Mutex::default(),
                 nested: crate::nested::NestedCalls::default(),
             }),
         }

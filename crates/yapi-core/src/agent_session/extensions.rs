@@ -12,7 +12,7 @@ use yapi_agent::Tool;
 use yapi_agent::hooks::AgentHooks;
 use yapi_ai::registry::Auth;
 use yapi_types::event::AgentEvent;
-use yapi_types::extension_event::{ExtensionEvent, UiPrompt};
+use yapi_types::extension_event::{ExtensionEvent, RegisteredMcpServer, UiPrompt};
 use yapi_types::message::{
     Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
 };
@@ -796,6 +796,48 @@ impl AgentSession {
         }
     }
 
+    /// Sets the MCP servers that extension runtime `owner` registered, and
+    /// announces `mcp_servers_change` when they changed. A runtime's first
+    /// report holds the servers registered while it loaded, which the MCP
+    /// extension reads when the session starts.
+    pub fn set_mcp_servers(&self, owner: u64, servers: Vec<RegisteredMcpServer>) {
+        let previous = lock(&self.inner.mcp_servers).insert(owner, servers.clone());
+        if previous.is_some_and(|previous| previous != servers) {
+            let servers = self.mcp_servers();
+            self.announce(ExtensionEvent::McpServersChange { servers: &servers });
+            self.report_unhandled_mcp_servers();
+        }
+    }
+
+    /// pi's `reportUnhandledMcpServers`: when no extension handles
+    /// `mcp_servers_change`, nothing connects registered servers, and each
+    /// is reported once as its extension's error.
+    fn report_unhandled_mcp_servers(&self) {
+        if self.has_handlers("mcp_servers_change") {
+            return;
+        }
+        let (ui, _) = self.extension_binding();
+        for server in self.mcp_servers() {
+            if !lock(&self.inner.unhandled_mcp_servers).insert(server.name.clone()) {
+                continue;
+            }
+            let error = format!(
+                "MCP server \"{}\" is registered, but no loaded extension connects MCP servers; another extension may have replaced the built-in MCP support",
+                server.name
+            );
+            ui.extension_error(&server.extension_path, "register_mcp_server", &error, None);
+        }
+    }
+
+    /// pi's `getMcpServers`: the servers extensions registered.
+    pub fn mcp_servers(&self) -> Vec<RegisteredMcpServer> {
+        lock(&self.inner.mcp_servers)
+            .values()
+            .flatten()
+            .cloned()
+            .collect()
+    }
+
     /// Waits until the events announced so far have reached extensions.
     pub async fn flush_announcements(&self) {
         let _turn = self.inner.announcing.lock().await;
@@ -957,6 +999,7 @@ impl AgentSession {
         };
         self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
+        self.report_unhandled_mcp_servers();
         let reload = reason == Some(Replacement::Reload);
         self.discover_resources(if reload { "reload" } else { "startup" })
             .await;
