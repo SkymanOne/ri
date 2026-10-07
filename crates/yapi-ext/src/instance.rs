@@ -280,10 +280,20 @@ impl Instance {
         })
     }
 
-    /// Runs dispatch `kind` with `payload` and waits for its result.
-    pub async fn call(&self, kind: &str, payload: &Value) -> Result<Value, Error> {
-        let result = self.send_call(kind, payload).ok_or(Error::Stopped)?;
-        result.await.map_err(|_| Error::Stopped)?
+    /// Runs dispatch `kind` with `payload`, queued at once after the calls
+    /// and input sent before it, and returns its result.
+    pub fn call(
+        &self,
+        kind: &str,
+        payload: &Value,
+    ) -> impl Future<Output = Result<Value, Error>> + use<> {
+        let result = self.send_call(kind, payload);
+        async move {
+            result
+                .ok_or(Error::Stopped)?
+                .await
+                .map_err(|_| Error::Stopped)?
+        }
     }
 
     /// Runs dispatch `kind` with `payload` without waiting for its result,

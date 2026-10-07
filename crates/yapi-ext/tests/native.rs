@@ -262,3 +262,33 @@ async fn repo_status_reports_uncommitted_files() {
     assert!(report.starts_with("On main, "), "{report}");
     assert!(report.contains("a.txt"), "{report}");
 }
+
+/// A tool call whose run is aborted before it reaches the extension is
+/// aborted as soon as it starts, instead of running to the end.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_tools_aborted_before_they_start_stop() {
+    let dir = scratch("subagent-aborted");
+    let host = load(&dir, "subagent").await;
+    let faux = Faux::new([]);
+    let session = session(&faux, &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    let tool = session
+        .callable_tools()
+        .into_iter()
+        .find(|tool| tool.name() == "subagent")
+        .unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    let result = tool
+        .tool
+        .execute(
+            "call-1".into(),
+            json!({"task": "x"}),
+            cancel,
+            Arc::new(|_| {}),
+        )
+        .await;
+    assert_eq!(result.unwrap_err(), "This operation was aborted");
+}
