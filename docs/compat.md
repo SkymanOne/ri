@@ -56,7 +56,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Syntax highlighting in tool rows | `read` results, `write` previews and codemode scripts are highlighted | Shown in the default color. | [#32](https://github.com/SkymanOne/yapi/issues/32) |
 | Cache warming | Refreshes the prompt cache while the model streams (`cacheWarming`) and reports cache misses | Sends no refresh requests. The setting is saved and ignored. | [#33](https://github.com/SkymanOne/yapi/issues/33) |
 | Images in the terminal | Inline images, with the "Show images" and "Image width" settings | Not shown. | [#34](https://github.com/SkymanOne/yapi/issues/34) |
-| Mouse selection | Selects text in fullscreen mode, and `fullscreenCopyOnSelect` | No mouse selection. The setting is saved and ignored. | [#36](https://github.com/SkymanOne/yapi/issues/36) |
 | Update notices | Checks at startup for new versions and package updates and shows a notice | Makes no such checks and shows no update notices. `/changelog` and the list of changes after an upgrade work as in Pi. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
 | Codemode | Scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | Scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
 | OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |

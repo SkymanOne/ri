@@ -1,6 +1,6 @@
 # pi golden fixtures
 
-Files written by pi `v1.0.0` (commit `a13d35a`). `crates/yapi-types/tests/golden.rs` checks that yapi reads and writes them back byte-identically, `crates/yapi-core/tests/session.rs` that yapi builds the same model context from each session, `crates/yapi-core/tests/mcp.rs` that yapi's MCP sign-in stores the same state, `crates/yapi-tui/tests/keys.rs` that yapi decodes terminal input as pi does, `crates/yapi-tui/tests/editor.rs` that yapi's editor behaves as pi's, `crates/yapi-tui/tests/theme.rs` that yapi's themes produce pi's colors, and `crates/yapi-tui/tests/text.rs` that yapi lays out text and markdown as pi does. Do not edit them by hand; regenerate instead.
+Files written by pi `v1.0.0` (commit `a13d35a`). `crates/yapi-types/tests/golden.rs` checks that yapi reads and writes them back byte-identically, `crates/yapi-core/tests/session.rs` that yapi builds the same model context from each session, `crates/yapi-core/tests/mcp.rs` that yapi's MCP sign-in stores the same state, `crates/yapi-tui/tests/keys.rs` that yapi decodes terminal input as pi does, `crates/yapi-tui/tests/editor.rs` that yapi's editor behaves as pi's, `crates/yapi-tui/tests/theme.rs` that yapi's themes produce pi's colors, `crates/yapi-tui/tests/text.rs` that yapi lays out text and markdown as pi does, and `crates/yapi-tui/tests/selection.rs` that yapi selects text with the mouse in fullscreen mode as pi does. Do not edit them by hand; regenerate instead.
 
 ## Regenerate
 
@@ -15,6 +15,7 @@ node keys.mjs
 node editor.mjs
 node theme.mjs
 node text.mjs
+node selection.mjs
 node autocomplete.mjs   # needs fd on PATH
 node models-api.mjs
 node mcp-auth.mjs       # needs python3 on PATH
@@ -47,6 +48,7 @@ The script runs pi offline in `/tmp/yapi-pi-fixtures` with faux providers. Ids a
 | `text/text.json` | pi-tui `wrapTextWithAnsi`, `truncateToWidth` and `Markdown` with an identity theme | Wrapping, truncation and markdown blocks at three widths, with and without preserved list markers and escapes |
 | `editor/editor.json` | pi-tui `Editor` driven key by key | Text, cursor, rendered rows and submissions after every key: wrapping, word motion, kill ring, undo, history, pastes and markers, sticky columns, jumps, scrolling |
 | `models-api/cases.json` | pi-ai's `pi-messages`, System One, llama.cpp classifier and OpenRouter image APIs, with `fetch` stubbed | Request URLs, headers and bodies, results and error messages; checked by `crates/yapi-ai/tests/models_api.rs` |
+| `selection/selection.json` | pi-tui `TuiAltScreen` in pi's chat viewport layout, fed SGR mouse reports | The screen and the copied text after every report: drags, word and line clicks, the dock, auto-scroll at the transcript's edge, wheel scrolling, graphemes, focus loss, flashes, `copyOnSelect` off |
 | `autocomplete/cases.json` | pi-tui `CombinedAutocompleteProvider` over a generated tree | Slash commands and arguments, skill names, path and quoted completion, `@` search through `fd`, applying the first item |
 
 The excerpts in `legacy/` come from pi, Copyright (c) 2025 Mario Zechner, MIT License.

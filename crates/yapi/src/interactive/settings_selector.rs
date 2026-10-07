@@ -1424,15 +1424,21 @@ impl super::App {
                 self.style_alt_screen();
                 self.invalidate_all();
             }
-            "fullscreen-copy-on-select" => global("fullscreenCopyOnSelect", on.into()),
-            "fullscreen-wheel-scroll-lines" => global(
-                "fullscreenWheelScrollLines",
-                if value == "auto" {
-                    text()
-                } else {
-                    number().into()
-                },
-            ),
+            "fullscreen-copy-on-select" => {
+                global("fullscreenCopyOnSelect", on.into());
+                self.style_alt_screen();
+            }
+            "fullscreen-wheel-scroll-lines" => {
+                global(
+                    "fullscreenWheelScrollLines",
+                    if value == "auto" {
+                        text()
+                    } else {
+                        number().into()
+                    },
+                );
+                self.style_alt_screen();
+            }
             "theme" => {
                 global("theme", text());
                 self.theme_override = None;

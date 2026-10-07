@@ -52,7 +52,10 @@ use yapi_tui::keybindings::Keybindings;
 use yapi_tui::keys::Keys;
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::markdown::MarkdownTheme;
-use yapi_tui::screen::{ALT_SCREEN_ENTER, ALT_SCREEN_LEAVE, AltScreen, MainScreen};
+use yapi_tui::screen::{
+    ALT_SCREEN_ENTER, ALT_SCREEN_LEAVE, AltScreen, COPY_ERROR_FLASH_DURATION, FLASH_DURATION,
+    MainScreen, MouseAction,
+};
 use yapi_tui::terminal::{
     BRACKETED_PASTE_DISABLE, BRACKETED_PASTE_ENABLE, ColorQuery, Filtered, KeyboardProtocol,
     color_query,
@@ -1519,7 +1522,7 @@ impl App {
         }
     }
 
-    /// The fullscreen renderer's theme colors and scrollbar setting.
+    /// The fullscreen renderer's theme colors and settings.
     fn style_alt_screen(&mut self) {
         self.alt.jump_label_style = self.theme.bg("selectedBg").patch(self.theme.fg("text"));
         self.alt.scrollbar = self
@@ -1529,6 +1532,12 @@ impl App {
             .unwrap_or_default();
         self.alt.scrollbar_track = self.theme.fg("scrollbarTrack");
         self.alt.scrollbar_thumb = self.theme.fg("scrollbarThumb");
+        let settings = self.session.settings();
+        self.alt.copy_on_select = settings.fullscreen_copy_on_select.unwrap_or(true);
+        self.alt.wheel_lines = match settings.fullscreen_wheel_scroll_lines {
+            Some(yapi_types::settings::NumberOr::Number(lines)) => lines.clamp(1, 100) as usize,
+            _ => 1,
+        };
     }
 
     fn progress_enabled(&self) -> bool {
@@ -1579,8 +1588,7 @@ impl App {
 
     /// Whether something on screen animates.
     fn animating(&self) -> bool {
-        (self.fullscreen && self.alt.scrollbar_deadline().is_some())
-            || self.indicator.is_some()
+        self.indicator.is_some()
             || self.chat.iter().any(Item::animating)
             || self.pending_bash.iter().any(BashView::running)
             || matches!(&self.selector, Some(Selector::Session(selector)) if selector.has_timed_status())
@@ -2418,7 +2426,19 @@ impl App {
                 });
             }
             "app.editor.external" => self.external_editor(terminal),
-            "app.message.copy" => self.copy_last(),
+            // In fullscreen mode, pi's copy key copies a selection that the
+            // mouse release left uncopied, and flashes "Copied!".
+            "app.message.copy" => {
+                let selection = self
+                    .alt
+                    .selected_text(&self.flat)
+                    .filter(|_| self.fullscreen && !self.alt.copy_on_select);
+                match (selection, self.session.last_assistant_text()) {
+                    (Some(text), _) => self.copy_and_flash(text, true),
+                    (None, Some(text)) if self.fullscreen => self.copy_and_flash(text, false),
+                    _ => self.copy_last(),
+                }
+            }
             "app.clipboard.pasteImage" => self.paste_clipboard(),
             "app.message.followUp" => {
                 let text = self.editor.expanded_text().trim().to_owned();
@@ -2476,6 +2496,21 @@ impl App {
             return;
         };
         self.copy_to_clipboard(text, "Copied last agent message to clipboard");
+    }
+
+    /// pi's fullscreen copies beside the loop: "Copied!" flashes, and an
+    /// error flashes for longer when `flash_error`, else shows as an error.
+    fn copy_and_flash(&self, text: String, flash_error: bool) {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        tokio::spawn(async move {
+            let copied = clipboard::copy(&text, emit).await;
+            let then: Then = Box::new(move |app| match copied {
+                Ok(()) => app.alt.flash("Copied!", FLASH_DURATION),
+                Err(error) if flash_error => app.alt.flash(error, COPY_ERROR_FLASH_DURATION),
+                Err(error) => app.error(error),
+            });
+            let _ = tx.send(Event::Then(epoch, then));
+        });
     }
 
     /// pi's `copyToClipboard` beside the loop, then `done` or the error.
@@ -2566,25 +2601,16 @@ impl App {
         self.warn_anthropic_subscription(Some(&model));
     }
 
-    /// Fullscreen scrolling; returns whether the key was consumed.
+    /// Fullscreen scrolling and mouse selection; returns whether the key was
+    /// consumed.
     fn handle_viewport_key(&mut self, data: &str) -> bool {
-        if let Some(rest) = data.strip_prefix("\x1b[<") {
-            // SGR mouse: wheel up 64, wheel down 65.
-            let button: u32 = rest
-                .split(';')
-                .next()
-                .and_then(|b| b.parse().ok())
-                .unwrap_or(0);
-            let lines = match self.session.settings().fullscreen_wheel_scroll_lines {
-                Some(yapi_types::settings::NumberOr::Number(lines)) => lines.clamp(1, 100) as isize,
-                _ => 1,
-            };
-            match button & !0b11100 {
-                64 => self.alt.scroll_by(-lines),
-                65 => self.alt.scroll_by(lines),
-                _ => {}
+        match self.alt.mouse(data, &self.flat) {
+            MouseAction::Unhandled => {}
+            MouseAction::Handled => return true,
+            MouseAction::Copy(text) => {
+                self.copy_and_flash(text, true);
+                return true;
             }
-            return true;
         }
         let Some(&action) = VIEWPORT_KEYS
             .iter()
@@ -3590,11 +3616,16 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     let mut last_draw = Instant::now();
     let mut dirty = false;
     while !app.quit {
-        let tick = if app.animating() {
+        let mut tick = if app.animating() {
             app.animation_interval()
         } else {
             Duration::from_secs(3600)
         };
+        if app.fullscreen
+            && let Some(at) = app.alt.deadline()
+        {
+            tick = tick.min(at.saturating_duration_since(Instant::now()));
+        }
         let input_wait = buffer
             .timeout(escape_wait)
             .unwrap_or(Duration::from_secs(3600));

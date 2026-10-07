@@ -8,13 +8,16 @@
 
 use std::time::{Duration, Instant};
 
-use ratatui_core::style::Style;
+use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 
 use crate::ansi::line_to_ansi;
 use crate::lines::{StyledLine, composite, truncate, width as line_width};
+pub use selection::MouseAction;
 /// pi's `fullscreenScrollbar` setting.
 pub use yapi_types::settings::Scrollbar;
+
+mod selection;
 
 const SYNC_START: &str = "\x1b[?2026h";
 const SYNC_END: &str = "\x1b[?2026l";
@@ -485,31 +488,81 @@ pub struct AltScreen {
     pub scrollbar_thumb: Style,
     /// Until when an `auto` scrollbar shows after scrolling.
     scrollbar_until: Option<Instant>,
+    /// Copy a selection when the mouse button is released; pi's
+    /// `fullscreenCopyOnSelect`.
+    pub copy_on_select: bool,
+    /// Rows a wheel step scrolls; pi's `fullscreenWheelScrollLines`.
+    pub wheel_lines: usize,
+    /// The rows of the last frame.
+    screen: Vec<StyledLine>,
+    /// The width and height of the last frame.
+    size: (usize, usize),
+    selection: selection::Selection,
+    /// Messages at the top right, and when each goes.
+    flashes: Vec<(String, Instant)>,
 }
 
 /// How long pi's `auto` scrollbar stays after the view scrolls.
 const SCROLLBAR_HIDE_DELAY: Duration = Duration::from_millis(1000);
 
-/// Bytes that enter the alternate screen with wheel reporting.
+/// How long pi's flash messages show.
+pub const FLASH_DURATION: Duration = Duration::from_millis(1000);
+/// How long pi shows a failed copy's message.
+pub const COPY_ERROR_FLASH_DURATION: Duration = Duration::from_millis(5000);
+
+/// Bytes that enter the alternate screen with mouse reports while a button
+/// is held, and focus reports.
 pub const ALT_SCREEN_ENTER: &str =
-    "\x1b[?1049h\x1b[?7l\x1b[?1000h\x1b[?1006h\x1b[2J\x1b[H\x1b[?25l";
+    "\x1b[?1049h\x1b[?7l\x1b[?1000h\x1b[?1002h\x1b[?1004h\x1b[?1006h\x1b[2J\x1b[H\x1b[?25l";
 /// Bytes that leave the alternate screen.
-pub const ALT_SCREEN_LEAVE: &str = "\x1b[?1006l\x1b[?1000l\x1b[?7h\x1b[?1049l\x1b[?25h";
+pub const ALT_SCREEN_LEAVE: &str =
+    "\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?1049l\x1b[?25h";
 
 impl AltScreen {
     /// A renderer that has drawn nothing yet.
     pub fn new() -> AltScreen {
         AltScreen {
             bottom_key: "End".to_owned(),
+            copy_on_select: true,
+            wheel_lines: 1,
             ..AltScreen::default()
         }
     }
 
-    /// Forgets what was drawn, so the next frame repaints everything.
+    /// Forgets what was drawn, the selection and the flashes, as pi does on
+    /// entering the screen, so the next frame repaints everything.
     pub fn invalidate(&mut self) {
         self.previous.clear();
         self.previous_size = (0, 0);
         self.previous_cursor.clear();
+        self.selection = selection::Selection::default();
+        self.flashes.clear();
+    }
+
+    /// pi's `getScreenLines`: the rows of the last frame.
+    pub fn screen_lines(&self) -> &[StyledLine] {
+        &self.screen
+    }
+
+    /// pi's `flash`: shows `message` at the top right of the screen for
+    /// `duration`, below the messages already there.
+    pub fn flash(&mut self, message: impl Into<String>, duration: Duration) {
+        self.flashes
+            .push((message.into(), Instant::now() + duration));
+    }
+
+    /// When the screen changes on its own: an `auto` scrollbar hides, a
+    /// flash ends or a drag held at the transcript's edge scrolls it. A frame
+    /// drawn then shows the change.
+    pub fn deadline(&self) -> Option<Instant> {
+        let now = Instant::now();
+        self.flashes
+            .iter()
+            .map(|(_, until)| *until)
+            .chain(self.scrollbar_until)
+            .chain(self.autoscroll_deadline())
+            .filter(|at| *at > now)
+            .min()
     }
 
     fn max_scroll(&self) -> usize {
@@ -534,8 +587,8 @@ impl AltScreen {
         }
     }
 
-    /// When a shown `auto` scrollbar hides, so the screen is drawn again.
-    pub fn scrollbar_deadline(&self) -> Option<Instant> {
+    /// When a shown `auto` scrollbar hides.
+    fn scrollbar_deadline(&self) -> Option<Instant> {
         self.scrollbar_until.filter(|until| *until > Instant::now())
     }
 
@@ -615,6 +668,8 @@ impl AltScreen {
         let viewport = height - dock_rows;
         self.viewport = viewport;
         self.transcript_len = transcript.len();
+        self.size = (width, height);
+        self.step_autoscroll(transcript);
         let max = self.max_scroll();
         let top = self.scroll_top.map_or(max, |top| top.min(max));
         if top >= max {
@@ -645,8 +700,16 @@ impl AltScreen {
         }
         rows.extend(dock.iter().skip(dock_skip).cloned());
         composite_overlays(&mut rows, &self.overlays, width);
+        self.highlight(&mut rows, top, width);
+        self.composite_flashes(&mut rows, width);
+        for row in &mut rows {
+            if line_width(row) > width {
+                *row = truncate(row, width, "");
+            }
+        }
 
-        let lines: Vec<String> = rows.iter().map(|line| clip(line, width)).collect();
+        let lines: Vec<String> = rows.iter().map(line_to_ansi).collect();
+        self.screen = rows;
         let mut changes = String::new();
         for (index, line) in lines.iter().enumerate() {
             if self.previous.get(index) != Some(line) {
@@ -682,6 +745,23 @@ impl AltScreen {
         self.previous_size = (width, height);
         self.previous_cursor = cursor;
         out
+    }
+
+    /// pi's `compositeFlashes`: each message reversed at the right end of a
+    /// row, from the top.
+    fn composite_flashes(&mut self, rows: &mut [StyledLine], width: usize) {
+        let now = Instant::now();
+        self.flashes.retain(|(_, until)| *until > now);
+        let skip = self.flashes.len().saturating_sub(rows.len());
+        let reversed = Style::new().add_modifier(Modifier::REVERSED);
+        for (row, (message, _)) in rows.iter_mut().zip(self.flashes.iter().skip(skip)) {
+            let flash = Line::from(Span::styled(format!(" {message} "), reversed));
+            let flash = truncate(&flash, width, "");
+            let flash_width = line_width(&flash);
+            if flash_width > 0 {
+                *row = composite(row, &flash, width - flash_width, flash_width, width);
+            }
+        }
     }
 
     /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
