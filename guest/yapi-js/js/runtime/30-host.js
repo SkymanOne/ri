@@ -50,6 +50,9 @@
 		throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading.");
 	};
 	const action = (kind) => (payload) => (bound ? yapi.request(kind, payload) : notInitialized());
+	// The requests behind `sendMessage` and `sendUserMessage`.
+	const messageRequest = (message, options) => ({ message: plain(message), options: plain(options) });
+	const userMessageRequest = (content, options) => ({ content: plain(content), options: plain(options) });
 
 	// ----- staleness ---------------------------------------------------------------------------
 	// pi stops a session's extension API and contexts once another session
@@ -137,10 +140,10 @@
 				return flagValues.has(name) ? flagValues.get(name) : pendingFlagValues.get(name);
 			},
 			sendMessage(message, options) {
-				action("session.sendMessage")({ message: plain(message), options: plain(options) });
+				action("session.sendMessage")(messageRequest(message, options));
 			},
 			sendUserMessage(content, options) {
-				action("session.sendUserMessage")({ content: plain(content), options: plain(options) });
+				action("session.sendUserMessage")(userMessageRequest(content, options));
 			},
 			appendEntry(customType, data) {
 				action("session.appendEntry")({ customType, data: plain(data) });
@@ -762,26 +765,21 @@
 			getSystemPrompt: () => yapi.request("agent.systemPrompt", {}) ?? "",
 			...extra,
 		};
-		// Every member throws once the session is replaced; later assignments
-		// replace members.
+		// Every member throws once the session is replaced.
 		const born = generation;
 		const guarded = {};
 		for (const [key, value] of Object.entries(context)) {
 			Object.defineProperty(guarded, key, {
 				enumerable: true,
-				configurable: true,
 				get() {
 					assertActive(born);
 					return value;
-				},
-				set(next) {
-					Object.defineProperty(guarded, key, { value: next, writable: true, enumerable: true, configurable: true });
 				},
 			});
 		}
 		return guarded;
 	}
-	function createCommandContext(data) {
+	function createCommandContext(data, extra = {}) {
 		// pi's session replacements: `setup` and `withSession` run once the
 		// replacement has started, `withSession` with a context bound to it.
 		const replace = async (kind, payload, options) => {
@@ -807,18 +805,19 @@
 				await yapi.op("session.reload", {});
 				await yapi.op("session.replaced", {});
 			},
+			...extra,
 		});
 	}
 	/** pi's `ReplacedSessionContext`: a command context for the session now current. */
 	function createReplacedContext() {
-		const ctx = createCommandContext(yapi.request("session.context", {}) ?? {});
-		ctx.sendMessage = async (message, options) => {
-			yapi.request("session.sendMessage", { message: plain(message), options: plain(options) });
-		};
-		ctx.sendUserMessage = async (content, options) => {
-			yapi.request("session.sendUserMessage", { content: plain(content), options: plain(options) });
-		};
-		return ctx;
+		return createCommandContext(yapi.request("session.context", {}) ?? {}, {
+			sendMessage: async (message, options) => {
+				yapi.request("session.sendMessage", messageRequest(message, options));
+			},
+			sendUserMessage: async (content, options) => {
+				yapi.request("session.sendUserMessage", userMessageRequest(content, options));
+			},
+		});
 	}
 
 	// ----- bash operations -----------------------------------------------------------------------
