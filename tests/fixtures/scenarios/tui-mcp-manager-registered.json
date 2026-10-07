@@ -1,0 +1,23 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Extensions]",
+    "  reg.ts",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " MCP servers",
+    " overridden: \"demo\" registered by <cwd>/reg.ts is overridden by \"demo\" in",
+    " <agent>/mcp.json",
+    "",
+    "→ demo                            connected · 9 tools · 1 resource · codemode · global",
+    "  ext                             connected · 9 tools · 1 resource · codemode · extension",
+    "",
+    " enter manage • escape/ctrl+c close",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

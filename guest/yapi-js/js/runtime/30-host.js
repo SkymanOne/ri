@@ -64,6 +64,16 @@
 		if (born.stale) throw new Error(STALE);
 	};
 
+	// ----- MCP servers -----------------------------------------------------------------------
+	/** pi's `getMcpServers`: the servers the loaded extensions registered. */
+	const mcpServers = () =>
+		[...extensions.values()].flatMap((extension) =>
+			[...extension.mcpServers].map(([name, config]) => ({ name, config: plain(config), extensionPath: extension.path })),
+		);
+	const mcpNamespace = (name) => `mcp__${name.replace(/-/g, "_")}`;
+	/** The host connects the servers of the bound session. */
+	const reportMcpServers = () => yapi.request("mcp.servers", { servers: mcpServers() });
+
 	// ----- the pi API ------------------------------------------------------------------------
 	function createApi(extension) {
 		const pendingFlagValues = new Map();
@@ -198,13 +208,23 @@
 				extension.providers = extension.providers.filter((provider) => provider.name !== name);
 			},
 			registerMcpServer(name, config) {
+				// The host checks the config and the grant its transport needs.
+				yapi.request("mcp.validate", { name, config: plain(config), extension: extension.path });
+				const owner = mcpServers().find((server) => server.name === name)?.extensionPath;
+				if (owner !== undefined && owner !== extension.path) {
+					throw new Error(`MCP server "${name}" is already registered by extension "${owner}"`);
+				}
+				// Names that differ only in `-` and `_` would share a namespace.
+				const clash = mcpServers().find((server) => server.name !== name && mcpNamespace(server.name) === mcpNamespace(name));
+				if (clash) throw new Error(`MCP server "${name}" conflicts with registered server "${clash.name}"`);
 				extension.mcpServers.set(name, plain(config));
+				if (bound) reportMcpServers();
 			},
 			unregisterMcpServer(name) {
-				extension.mcpServers.delete(name);
+				if (extension.mcpServers.delete(name) && bound) reportMcpServers();
 			},
 			getMcpServers() {
-				return [...extension.mcpServers].map(([name, config]) => ({ name, config, extensionPath: extension.path }));
+				return mcpServers();
 			},
 			registerVirtualModel(model) {
 				extension.virtualModels.push(model);
@@ -1190,6 +1210,13 @@
 		},
 		async bind() {
 			bound = true;
+			// The servers registered while loading. After a restart, the
+			// session drops the servers registered since.
+			try {
+				reportMcpServers();
+			} catch {
+				// Hosts without a session connect no servers.
+			}
 			let spec = null;
 			let keys = null;
 			try {

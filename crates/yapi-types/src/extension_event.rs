@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::event::CompactionReason;
@@ -38,6 +38,9 @@ pub enum ExtensionEvent<'a> {
     ResourcesDiscover {
         cwd: &'a Path,
         reason: &'a str,
+    },
+    McpServersChange {
+        servers: &'a [RegisteredMcpServer],
     },
     SessionStart {
         reason: &'a str,
@@ -184,6 +187,17 @@ impl ExtensionEvent<'_> {
         // `null` and reaches no handler.
         serde_json::to_value(self).unwrap_or_default()
     }
+}
+
+/// pi's `RegisteredMcpServer`: a server an extension registered with
+/// `pi.registerMcpServer`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisteredMcpServer {
+    pub name: String,
+    /// The `mcpServers` entry.
+    pub config: Value,
+    pub extension_path: String,
 }
 
 /// pi's `UIPromptEvent`: a blocking extension dialog opened or closed.

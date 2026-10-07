@@ -24,6 +24,12 @@ yapi mcp remove docs
 
 Inside yapi, `/mcp` opens a manager that lists the servers with their state, tool count, exposure and configuration file. Servers that need attention come first. Select a server to see its tools and connection details, reconnect, sign in or out, change its exposure, or enable and disable it. Exposure and enabled changes are saved to the `mcp.json` that defines the server, and the rest of the file is kept. Outside the interactive mode, `/mcp` prints the status, and `/mcp login`, `/mcp logout` and `/mcp reconnect` act on a server directly.
 
+## Servers from extensions
+
+An extension adds a server for the session with `pi.registerMcpServer(name, config)`, where `config` takes the same settings as an entry in `mcp.json`. The server connects when the session starts, or right away when registered later, and `pi.unregisterMcpServer(name)` disconnects it. A server of the same name in `mcp.json` takes precedence, and `/mcp` notes the registration it overrides. Exposure and enabled changes to a registered server in `/mcp` apply to the session only and are never saved.
+
+A stdio server needs the extension's process grant and an HTTP server its network grant. Without it, `registerMcpServer` throws an error that names the missing grant. Every package has both grants by default, as in Pi.
+
 ## Signing in
 
 HTTP servers without an `Authorization` header sign in with OAuth. A server that asks for a sign-in shows as needing one in `/mcp` and `yapi mcp list`. Select it in `/mcp` or run `/mcp login <server>` inside yapi, or run `yapi mcp login <server>` in a terminal. `/mcp logout <server>` and `yapi mcp logout <server>` delete the stored credentials.
