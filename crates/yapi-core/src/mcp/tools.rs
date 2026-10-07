@@ -442,6 +442,7 @@ pub type ResourceServers = Arc<dyn Fn() -> Vec<Arc<Connection>> + Send + Sync>;
 /// connected server with resources.
 pub struct McpResourceTool {
     declaration: ToolDeclaration,
+    output_schema: Value,
     kind: ResourceTool,
     servers: ResourceServers,
 }
@@ -512,6 +513,95 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
         parameters,
         constrained_sampling: None,
     };
+    // pi's output schemas, which codemode describes scripts' results by.
+    let optional_string = json!({"type": "string"});
+    let listing_errors = json!({
+        "type": "array",
+        "description": "Servers that could not be listed",
+        "items": {
+            "type": "object",
+            "properties": {"server": {"type": "string"}, "error": {"type": "string"}},
+            "required": ["server", "error"],
+        },
+    });
+    let list_output = json!({
+        "type": "object",
+        "properties": {
+            "server": optional_string,
+            "resources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "server": {"type": "string"},
+                        "uri": {"type": "string"},
+                        "name": {"type": "string"},
+                        "title": optional_string,
+                        "description": optional_string,
+                        "mimeType": optional_string,
+                        "size": {"type": "number"},
+                    },
+                    "required": ["server", "uri", "name"],
+                },
+            },
+            "nextCursor": optional_string,
+            "errors": listing_errors,
+        },
+        "required": ["resources"],
+    });
+    let list_templates_output = json!({
+        "type": "object",
+        "properties": {
+            "server": optional_string,
+            "resourceTemplates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "server": {"type": "string"},
+                        "uriTemplate": {"type": "string", "description": "RFC 6570 URI template"},
+                        "name": {"type": "string"},
+                        "title": optional_string,
+                        "description": optional_string,
+                        "mimeType": optional_string,
+                    },
+                    "required": ["server", "uriTemplate", "name"],
+                },
+            },
+            "nextCursor": optional_string,
+            "errors": listing_errors,
+        },
+        "required": ["resourceTemplates"],
+    });
+    let read_output = json!({
+        "type": "object",
+        "properties": {
+            "server": {"type": "string"},
+            "uri": {"type": "string"},
+            "contents": {
+                "type": "array",
+                "items": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {"uri": {"type": "string"}, "mimeType": optional_string, "text": {"type": "string"}},
+                            "required": ["uri", "text"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "uri": {"type": "string"},
+                                "mimeType": optional_string,
+                                "blob": {"type": "string", "description": "base64"},
+                            },
+                            "required": ["uri", "blob"],
+                        },
+                    ],
+                },
+            },
+        },
+        "required": ["server", "uri", "contents"],
+    });
     vec![
         McpResourceTool {
             declaration: declare(
@@ -519,6 +609,7 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
                 "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
                 list_parameters.clone(),
             ),
+            output_schema: list_output,
             kind: ResourceTool::List(ResourceKind::Resources),
             servers: Arc::clone(&servers),
         },
@@ -528,6 +619,7 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
                 "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
                 list_parameters,
             ),
+            output_schema: list_templates_output,
             kind: ResourceTool::List(ResourceKind::Templates),
             servers: Arc::clone(&servers),
         },
@@ -537,6 +629,7 @@ pub fn resource_tools(servers: ResourceServers) -> Vec<McpResourceTool> {
                 "Read a specific resource from an MCP server given the server name and resource URI.",
                 read_parameters,
             ),
+            output_schema: read_output,
             kind: ResourceTool::Read,
             servers,
         },
@@ -672,6 +765,10 @@ impl McpResourceTool {
 impl Tool for McpResourceTool {
     fn declaration(&self) -> &ToolDeclaration {
         &self.declaration
+    }
+
+    fn output_schema(&self) -> Option<&Value> {
+        Some(&self.output_schema)
     }
 
     fn execute(
