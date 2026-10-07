@@ -1,0 +1,17 @@
+[package]
+name = "subagent"
+description = "An example native yapi extension. Delegates a task to another yapi run, in the foreground or in the background."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json = "1"
+yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

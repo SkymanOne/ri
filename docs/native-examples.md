@@ -1,6 +1,6 @@
 # Native extension examples
 
-The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Four are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/yapi-ext/tests/native.rs`.
+The repository has six native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Five are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
@@ -9,6 +9,7 @@ The repository has five native extensions in [`guest/examples`](https://github.c
 | [`protected-paths`](#protected-paths) | Inspecting tool input, notifications | `protected-paths.ts` |
 | [`todo`](#todo) | State kept in tool results and rebuilt from the session branch | `todo.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
+| [`subagent`](#subagent) | A process read as it runs, tool progress, background work that reports in a new turn | `subagent/` |
 
 ## Build and try them
 
@@ -125,3 +126,25 @@ fn status(ctx: &Context) -> Option<(String, Vec<String>)> {
 ```
 
 `exec` needs the process grant, which every extension has by default.
+
+## subagent
+
+A `subagent` tool that hands a task to another yapi run, with a context window of its own. The tool starts yapi in JSON mode with `Process` and reads its events as they arrive, as Pi's `subagent` example does with Pi. In the foreground the tool shows each answer of the subagent as progress and returns the last one. With `background`, the tool returns at once and `spawn` keeps the subagent running. Its answer arrives later as a message that starts a turn.
+
+```rust
+spawn(async move {
+    let content = match run(&task, model.as_deref(), cwd.as_deref(), |_| {}).await {
+        Ok(answer) => format!("Subagent finished:\n\n{answer}"),
+        Err(error) => error,
+    };
+    let _ = request(
+        "session.sendMessage",
+        &json!({
+            "message": {"customType": "subagent", "content": content, "display": true},
+            "options": {"triggerTurn": true, "deliverAs": "followUp"},
+        }),
+    );
+});
+```
+
+`request("execPath", ...)` names the running yapi binary, so the subagent runs the same version. When the user aborts the run, yapi drops the foreground tool's future, and dropping the `Process` kills the subagent. Pi's own TypeScript example also runs unchanged in yapi, with each agent defined in `~/.yapi/agent/agents`.

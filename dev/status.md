@@ -66,7 +66,7 @@ Done.
 - The host-side module loader: Node resolution, TypeScript stripping, ES module and CommonJS interop, and a transpile cache.
 - Extension tools, commands, flags, events and actions in every mode, with errors reported as pi reports them.
 - Packages: `yapi install`, `remove`, `update`, `list` and `config` with pi's arguments and settings entries, a built-in npm client without lifecycle scripts, and resource resolution checked against pi's on eight trees (`crates/yapi-core/tests/resolve.rs`).
-- Native extensions: the Rust SDK in `guest/yapi-extension-api` with five examples, each tested in `crates/yapi-ext/tests/native.rs`.
+- Native extensions: the Rust SDK in `guest/yapi-extension-api` with six examples, tested in `crates/yapi-ext/tests/native.rs` and, for `subagent`, against a real yapi in `crates/yapi/tests/subagent.rs`.
 
 Exit criterion. All 79 of pi's example extensions register the same tools (with schemas), commands, flags, shortcuts and event handlers as in pi, and fail with pi's messages where pi does (`crates/yapi-ext/tests/examples.rs`). The criterion asks for 90%.
 

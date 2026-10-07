@@ -152,7 +152,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `op` | Start a host operation by name, such as a dialog or an HTTP request, and await its answer |
 | `Context` | The mode, the working folder and the rest of Pi's `ctx`. `Context::update` shows a running tool's progress. |
 
-[Native extension examples](native-examples.md) walks through five complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter and a minimal starting point.
+[Native extension examples](native-examples.md) walks through six complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter, a subagent that runs in the foreground or the background, and a minimal starting point.
 
 ### Host requests
 

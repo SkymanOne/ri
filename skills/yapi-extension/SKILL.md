@@ -66,7 +66,7 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
    cp target/wasm32-wasip2/release/<crate>.wasm extensions/
    python3 scripts/check-extension.py .
    ```
-5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch and a git status reporter.
+5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch, a git status reporter and a subagent that runs another yapi in the foreground or the background.
 
 ## Package and share
 
