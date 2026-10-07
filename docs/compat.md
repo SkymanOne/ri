@@ -1,51 +1,46 @@
 # Differences from Pi
 
-yapi follows Pi `v1.0.0`. It reads Pi's settings, sessions, credentials and packages, and behaves like Pi unless this page says otherwise. Any other difference is a bug, and the [issue tracker](https://github.com/SkymanOne/yapi/issues) is the place to report it.
-
-This page lists only differences that change what you can do. Small differences in wording, error messages or product names are not listed.
+yapi follows Pi `v1.0.0` and reads Pi's settings, sessions, credentials and packages. It behaves like Pi except as listed here. Any other difference is a bug: please [report it](https://github.com/SkymanOne/yapi/issues).
 
 ## Extensions
 
-Pi extensions run unchanged, but not in Pi's Node.js process. yapi runs them in WebAssembly, which limits what they can reach.
+Pi extensions run unchanged, in WebAssembly rather than Node.js.
 
 | Area | Pi | yapi |
 |---|---|---|
-| Where extensions run | In Pi's Node.js process, with your permissions | In a QuickJS-NG runtime compiled to WebAssembly. Each call may compute for 60 seconds and each instance may use 1 GiB of memory. An instance that traps restarts and its extensions load again. Grants are full by default, see the [security model](configuration.md#security-model). |
-| Node APIs | All of Node | The shims listed in [Extensions](extensions.md#how-pi-extensions-run). These import but throw when used: `http` requests, `net` sockets and servers, `tls`, `worker_threads` workers, `node:sqlite`, `zlib` compression, `vm`, `v8`, `dns` queries other than `lookup`, `http2`, `dgram`, `cluster`, `inspector`, `child_process.fork`, `util.parseArgs`, `stream.pipeline`, `stream.finished`, `events.on` and `process.chdir`. `require()` of an ES module fails. |
-| Native addons | Loaded by Node | Installed but not built. Loading one fails. The rest of the package still works if it loads the addon lazily. |
-| Pi internals | Extensions can import all of `pi-coding-agent`, `pi-ai` and `pi-agent-core` | The extension API and the helpers extensions use. Other exports import but throw when called, and built-in tool factories reject custom `operations`. |
-| Agent sessions in the extension's process | Extensions run more agent sessions in Pi's process with `createAgentSession` and the rest of Pi's SDK, as @gotgenes/pi-subagents does | Not supported, by design. A session started from the sandbox would run its tools and use its credentials in yapi's own process, outside the extension's grants. A subagent runs as another yapi process instead, which needs the process grant, in the foreground or the background. Pi's `RpcClient` runs yapi in RPC mode for this, and Pi's `subagent` example runs it in JSON mode. |
-| `Intl` | ICU in every locale | Number and plural formatting in `en-US` only, and `Intl.DateTimeFormat` ignores its options. |
-| Extension UI | Components detect hyperlink and image support and see theme changes at once | Links and images in components fall back to pi-tui's text forms, and theme changes reach extensions when their session next starts. |
-| Terminal input listeners | `onTerminalInput` handlers run on each key, and Pi handles the key before the next one reaches them | Handlers run in the extension's runtime while yapi keeps drawing, so the interface never waits on an extension. Keys that arrive together, or while handlers run, pass through the handlers together before yapi handles the first of them. |
-| Autocomplete providers | The editor calls a provider's `applyCompletion` for the suggestion picked and its `shouldTriggerFileCompletion` on Tab. A newer request aborts the `signal` of an older one. | yapi's editor never waits for a provider, so `applyCompletion` runs for every suggestion as the suggestions arrive, Tab follows the built-in `shouldTriggerFileCompletion`, and the `signal` never aborts. An editor from `setEditorComponent` behaves as in Pi. |
-| Failing session actions | When the `setup` or `withSession` callback of `newSession`, `fork` or `switchSession` throws, interactive mode prints "Failed to fork session" or "Failed to create session" and exits | yapi reports the extension's error and keeps the current session open. |
-| Console output | Written to stdout and stderr | Written to stderr, because stdout carries print, JSON and RPC output. |
-| Project trust | Extensions loaded before trust can answer the `project_trust` event | yapi asks before loading any extension, so no extension runs in a project you have not trusted. |
-| Synchronous process timeouts | `execSync` and `spawnSync` send SIGTERM and wait for the process to exit | SIGTERM, then SIGKILL after 5 seconds, as Pi's `exec` does. |
-| Codemode scripts | Runaway recursion throws a catchable `RangeError`. A script without `timeout_ms` may compute without limit. | Runaway recursion or 60 seconds of computing without awaiting a call stops the script with a sandbox failure. |
-| Native extensions | Not available | yapi also loads WebAssembly components written with its Rust SDK. See [Native extensions in Rust](native-extensions.md). They are unstable until yapi 1.0. |
+| Runtime | Pi's Node.js process | QuickJS-NG in WebAssembly: 60 seconds of computing per call, 1 GiB per instance, restart after a crash. See the [security model](configuration.md#security-model). |
+| Node APIs | All of Node | [Shims](extensions.md#how-pi-extensions-run). Sockets, servers, `http` requests, `worker_threads`, `node:sqlite`, `zlib`, `vm` and `child_process.fork` throw when used. `require()` of an ES module fails. |
+| Native addons | Loaded | Installed, never built. Loading one fails. |
+| Pi internals | Every export of Pi's packages | The extension API and its helpers. Other exports throw when called, and built-in tool factories reject custom `operations`. |
+| Agent sessions in an extension | `createAgentSession` and Pi's SDK | Not supported, by design: such a session would run tools and use credentials outside the extension's grants. Run a subagent as another yapi, with Pi's `RpcClient` or as Pi's `subagent` example does. |
+| Extension UI | Components detect links, images and theme changes | Links and images fall back to text. Theme changes reach extensions at their next session. |
+| Terminal input listeners | Pi handles each key before the next one reaches them | They run while yapi keeps drawing, so keys that arrive together pass through them together. |
+| Autocomplete providers | The editor waits for providers | yapi's editor never waits: `applyCompletion` runs for every suggestion, and `signal` never aborts. Editors from `setEditorComponent` behave as in Pi. |
+| Failing session actions | A throwing `setup` or `withSession` callback ends interactive mode | yapi reports the error and keeps the current session. |
+| Console output | stdout and stderr | stderr only, because stdout carries print, JSON and RPC output. |
+| Project trust | Extensions loaded before trust can answer `project_trust` | No extension loads before you trust the project. |
+| Codemode scripts | May compute without limit | Stop after 60 seconds of computing without awaiting a call. |
+| Native extensions | None | WebAssembly components written in Rust. See [Native extensions](native-extensions.md). Unstable until 1.0. |
 
 ## Packages and installation
 
 | Area | Pi | yapi |
 |---|---|---|
-| Directories | `~/.pi/agent`, project `.pi/`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` | `~/.yapi/agent`, project `.yapi/`, `YAPI_CODING_AGENT_DIR`, `YAPI_CODING_AGENT_SESSION_DIR`. The formats are the same, and `yapi import pi` copies Pi's state. |
-| Package installs | `npm install`, which runs lifecycle scripts. `npmCommand` replaces npm for every package operation. | A built-in npm client that skips lifecycle scripts and needs no Node.js. `npmCommand` is used only to install and update npm sources. |
-| Package manifests | The `pi` key in `package.json` | The `pi` key, or a `yapi` key of the same shape that takes precedence, so one package can ship JavaScript for Pi and a native build for yapi. |
-| Self-update | `pi update` updates Pi | `yapi update` updates packages and model catalogs only. Upgrade yapi itself as [Install](install.md#upgrade) describes. |
-| `yapi new` | `pi new ...` sends the words as a prompt | Creates a native extension project. A prompt that starts with the word `new` needs quotes. |
+| Directories | `~/.pi/agent`, project `.pi/`, `PI_CODING_AGENT_DIR` | `~/.yapi/agent`, project `.yapi/`, `YAPI_CODING_AGENT_DIR`, and `YAPI_` in place of `PI_` for the session directory variable. Same formats, and `yapi import pi` copies Pi's state. |
+| Package installs | `npm install`, with lifecycle scripts | A built-in npm client that skips lifecycle scripts. `npmCommand` applies to npm sources only. |
+| Package manifests | The `pi` key | A `yapi` key of the same shape takes precedence, so one package can ship a native build for yapi. |
+| Self-update | `pi update` | `yapi update` updates packages and models only. See [Install](install.md#upgrade). |
+| `new` | `pi new ...` is a prompt | `yapi new` creates a native extension. Quote a prompt that starts with `new`. |
 
 ## Interface and providers
 
 | Area | Pi | yapi |
 |---|---|---|
-| `/share` and `/bug` | Publish the session to pi.dev's viewer and send reports to Pi's developers | Not available, because they are Pi's services. |
-| Clipboard | A native clipboard addon, then platform commands and OSC 52 | Platform commands and OSC 52. |
-| Word motions in Chinese, Japanese and Thai | Move by dictionary words | Move one character at a time, because ICU's word dictionaries would add megabytes to the binary. |
-| Tree label times | Local time | UTC, because yapi carries no time zone database. |
-| Codex transport | WebSocket first, then SSE with a compressed body | SSE with an uncompressed body. Requests and events are the same as Pi's fallback. |
-| Image formats | Images from RPC clients, extensions and tools in any format Pi's image library reads, such as TIFF, are converted to PNG for the model | BMP is the only format converted. Prompt images in other formats are left out with a note, and tool results pass them on unchanged. |
+| `/share` and `/bug` | Use Pi's services | Not available. |
+| Word motions in Chinese, Japanese and Thai | By dictionary word | By character, to keep ICU's dictionaries out of the binary. |
+| Tree label times | Local time | UTC, with no time zone database. |
+| Codex transport | WebSocket, then compressed SSE | Uncompressed SSE, the same requests and events as Pi's fallback. |
+| Image formats | Any format Pi's image library reads becomes PNG | Only BMP is converted. Other prompt images are left out with a note. |
 
 ## Open Gaps
 
