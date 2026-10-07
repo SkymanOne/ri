@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ri-pi-resolve-")));
+const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "yapi-pi-resolve-")));
 
 /** Each case: files to write under the root, and whether the project is trusted. */
 const cases = {

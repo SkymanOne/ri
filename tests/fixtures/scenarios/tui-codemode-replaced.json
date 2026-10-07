@@ -1,0 +1,22 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Extensions]",
+    "  ext.ts",
+    "",
+    "[Extension issues]",
+    "  builtin:codemode",
+    "    Extension <cwd>/ext.ts registers tool `codemode`, so built-in extension `codemode` was not loaded. To use `codemode`, run `pi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time.",
+    "",
+    " Warning: Extension package \"builtin:codemode\": Extension <cwd>/ext.ts registers tool `codemode`, so built-in extension `codemode` was not loaded. To use `codemode`, run `pi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time.",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                                                                                                                                                                                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

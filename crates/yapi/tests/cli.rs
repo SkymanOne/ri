@@ -30,11 +30,11 @@ fn export_matches_pi_byte_for_byte() {
     for (name, digest) in [
         (
             "main",
-            "abb9b743def853a26bd98116de413fef0cd6b9893e3723f44f5d6a0bd9d07ae7",
+            "fccaf043e37ff3994301e1823521b6d23b529e809776c2db498c3ef5f83bbe37",
         ),
         (
             "branched",
-            "20e92450caaa204f7faba57c5a4e2ded18de3c02d2630ed524ac77a564f25248",
+            "8310b9e08a3749c9d1e5f34ada5d60b269ddeba676cd4d94dbda762ee5aebb7a",
         ),
         (
             "legacy-before-compaction",
@@ -101,6 +101,30 @@ fn metadata_goes_to_stderr_in_print_and_modes() {
     assert!(stderr.contains("claude-sonnet-4-5"));
     let (stdout, _) = run(&["--list-models", "claude-sonnet-4-5"]);
     assert!(stdout.contains("claude-sonnet-4-5"));
+}
+
+/// Help lists the flags of the extensions that loaded when another fails,
+/// without reporting the failure, as in pi.
+#[test]
+fn help_lists_flags_despite_extension_errors() {
+    let home = common::scratch("help-extensions");
+    std::fs::write(
+        home.join("ext.ts"),
+        "export default function (pi) {\n\tpi.registerFlag(\"mood\", { type: \"string\", description: \"Mood\" });\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        home.join("broken.ts"),
+        "export default function () {\n\tthrow new Error(\"broken\");\n}\n",
+    )
+    .unwrap();
+    let output = common::yapi(&home)
+        .args(["--help", "-e", "ext.ts", "-e", "broken.ts"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(String::from_utf8(output.stdout).unwrap().contains("--mood"));
 }
 
 /// pi's RPC mode starts without any model, reporting pi-agent-core's

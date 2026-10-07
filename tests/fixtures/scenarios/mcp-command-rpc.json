@@ -5,14 +5,14 @@
       "type": "extension_ui_request",
       "id": "<id-1>",
       "method": "notify",
-      "message": "MCP servers need attention:\n  config: <agent>/mcp.json: server \"bad\": url must be an http or https URL\n  broken: failed: spawn ri-no-such-command ENOENT\nRun /mcp to fix.",
+      "message": "MCP servers need attention:\n  config: <agent>/mcp.json: server \"bad\": url must be an http or https URL\n  broken: failed: spawn yapi-no-such-command ENOENT\nRun /mcp to fix.",
       "notifyType": "warning"
     },
     {
       "type": "extension_ui_request",
       "id": "<id-2>",
       "method": "notify",
-      "message": "demo: connected, 9 tools (direct)\noff: disabled (direct)\nbroken: failed (direct)\n    spawn ri-no-such-command ENOENT\nconfig error: <agent>/mcp.json: server \"bad\": url must be an http or https URL",
+      "message": "demo: connected, 9 tools (direct)\noff: disabled (direct)\nbroken: failed (direct)\n    spawn yapi-no-such-command ENOENT\nconfig error: <agent>/mcp.json: server \"bad\": url must be an http or https URL",
       "notifyType": "info"
     },
     {

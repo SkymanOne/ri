@@ -270,6 +270,8 @@ pub struct Options {
     pub initial: Vec<String>,
     /// Images attached to the first of `initial`.
     pub initial_images: Vec<ImageContent>,
+    /// Warnings about extensions that were not loaded, by path.
+    pub extension_warnings: Vec<(String, String)>,
     /// Builds replacement sessions for `/new`, `/resume`, `/fork` and `/clone`.
     pub factory: SessionFactory,
     /// `--use-theme`: the theme for this run instead of the `theme` setting.
@@ -489,6 +491,8 @@ struct App {
     waiting_suggestions: Option<(Value, tokio::sync::oneshot::Sender<Value>)>,
     /// pi's `[Extension issues]`: the extension each concerns, and what.
     extension_issues: Vec<(yapi_types::rpc::SourceInfo, String)>,
+    /// Warnings about extensions that were not loaded, by path.
+    extension_warnings: Vec<(String, String)>,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -634,6 +638,8 @@ impl App {
             expand_key: &self.expand_key,
             cancel_key: &self.cancel_key,
             home: self.home.as_deref().and_then(Path::to_str),
+            cwd: &self.cwd,
+            agent_dir: &self.agent_dir,
             thinking_label: self.ext.thinking_label.as_deref().unwrap_or("Thinking..."),
         }
     }
@@ -1142,6 +1148,7 @@ impl App {
         ));
         header.extend(header::extension_issues(
             &self.theme,
+            &self.extension_warnings,
             &self.extension_issues,
             self.home.as_deref(),
             width,
@@ -3480,6 +3487,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     for error in app.session.settings_errors() {
         app.warning(error);
     }
+    for (path, warning) in app.extension_warnings.clone() {
+        app.warning(crate::startup::extension_warning(&path, &warning));
+    }
     if let Some(error) = theme_error {
         app.error(error);
     }
@@ -3783,6 +3793,7 @@ impl App {
             builtin_completions: None,
             waiting_suggestions: None,
             extension_issues: Vec::new(),
+            extension_warnings: options.extension_warnings,
         };
         app.style_alt_screen();
         app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -4039,6 +4050,7 @@ mod tests {
             use_theme: None,
             model_fallback: None,
             model_network: false,
+            extension_warnings: Vec::new(),
         };
         let (tx, rx) = unbounded_channel();
         let colors = yapi_tui::terminal::TerminalColors::default();

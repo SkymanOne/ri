@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use yapi_ai::registry::ModelRegistry;
 use yapi_types::event::AgentEvent;
+use yapi_types::extension_event::ExtensionEvent;
 use yapi_types::message::ThinkingLevel;
 use yapi_types::model::Model;
 use yapi_types::sync::{lock, read, write};
@@ -139,13 +140,11 @@ impl AgentSession {
             .as_ref()
             .is_none_or(|previous| !previous.is(&model.provider, &model.id))
         {
-            let event = serde_json::json!({
-                "type": "model_select",
-                "model": model,
-                "previousModel": previous,
-                "source": source,
+            self.announce(ExtensionEvent::ModelSelect {
+                model: &model,
+                previous_model: previous.as_ref(),
+                source,
             });
-            self.announce(super::extensions::defined(event, &["previousModel"]));
         }
     }
 
@@ -206,11 +205,10 @@ impl AgentSession {
         let _ = state.session.append_thinking_level_change(level.as_str());
         drop(state);
         self.emit(&AgentEvent::ThinkingLevelChanged { level });
-        self.announce(serde_json::json!({
-            "type": "thinking_level_select",
-            "level": level,
-            "previousLevel": previous,
-        }));
+        self.announce(ExtensionEvent::ThinkingLevelSelect {
+            level,
+            previous_level: previous,
+        });
     }
 
     /// The thinking levels the current model supports; all of them without a

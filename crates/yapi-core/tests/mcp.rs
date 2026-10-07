@@ -50,7 +50,7 @@ async fn exercise(client: &McpClient) {
     assert_eq!(server.protocol_version, "2025-11-25");
     assert_eq!(
         server.instructions.as_deref(),
-        Some("Test tools for ri.\nThey echo, add and fail.")
+        Some("Test tools for yapi.\nThey echo, add and fail.")
     );
     let tools = client.list_tools(RequestOptions::default()).await.unwrap();
     assert_eq!(tools[0].name, "echo");

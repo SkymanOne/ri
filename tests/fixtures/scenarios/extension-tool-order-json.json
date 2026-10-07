@@ -312,7 +312,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Greet ri"
+            "text": "Greet yapi"
           }
         ],
         "timestamp": "<timestamp>"
@@ -325,7 +325,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Greet ri"
+            "text": "Greet yapi"
           }
         ],
         "timestamp": "<timestamp>"
@@ -359,7 +359,7 @@
       "assistantMessageEvent": {
         "type": "toolcall_delta",
         "contentIndex": 0,
-        "delta": "{\"name\":\"ri\"}"
+        "delta": "{\"name\":\"yapi\"}"
       }
     },
     {
@@ -372,7 +372,7 @@
           "id": "<id-1>",
           "name": "greet",
           "arguments": {
-            "name": "ri"
+            "name": "yapi"
           }
         }
       }
@@ -387,7 +387,7 @@
             "id": "<id-1>",
             "name": "greet",
             "arguments": {
-              "name": "ri"
+              "name": "yapi"
             }
           }
         ],
@@ -421,7 +421,7 @@
       "toolCallId": "<id-1>",
       "toolName": "greet",
       "args": {
-        "name": "ri"
+        "name": "yapi"
       }
     },
     {
@@ -453,7 +453,7 @@
       "toolCallId": "<id-1>",
       "toolName": "greet",
       "args": {
-        "name": "ri"
+        "name": "yapi"
       },
       "partialResult": {
         "content": [
@@ -481,7 +481,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Hello, ri!"
+            "text": "Hello, yapi!"
           }
         ]
       },
@@ -507,7 +507,7 @@
       "toolCallId": "<id-1>",
       "toolName": "greet",
       "args": {
-        "name": "ri"
+        "name": "yapi"
       },
       "partialResult": {
         "content": [
@@ -523,7 +523,7 @@
       "toolCallId": "<id-1>",
       "toolName": "greet",
       "args": {
-        "name": "ri"
+        "name": "yapi"
       },
       "partialResult": {
         "content": [
@@ -543,7 +543,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Hello, ri!"
+            "text": "Hello, yapi!"
           }
         ],
         "isError": false,
@@ -582,7 +582,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Hello, ri!"
+            "text": "Hello, yapi!"
           }
         ],
         "isError": false,
@@ -622,7 +622,7 @@
             "id": "<id-1>",
             "name": "greet",
             "arguments": {
-              "name": "ri"
+              "name": "yapi"
             }
           }
         ],
@@ -658,7 +658,7 @@
           "content": [
             {
               "type": "text",
-              "text": "Hello, ri!"
+              "text": "Hello, yapi!"
             }
           ],
           "isError": false,
@@ -944,7 +944,7 @@
           "content": [
             {
               "type": "text",
-              "text": "Greet ri"
+              "text": "Greet yapi"
             }
           ],
           "timestamp": "<timestamp>"
@@ -957,7 +957,7 @@
               "id": "<id-1>",
               "name": "greet",
               "arguments": {
-                "name": "ri"
+                "name": "yapi"
               }
             }
           ],
@@ -992,7 +992,7 @@
           "content": [
             {
               "type": "text",
-              "text": "Hello, ri!"
+              "text": "Hello, yapi!"
             }
           ],
           "isError": false,
@@ -1078,7 +1078,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Greet ri"
+                "text": "Greet yapi"
               }
             ]
           }
@@ -1274,7 +1274,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Greet ri"
+                "text": "Greet yapi"
               }
             ]
           },
@@ -1287,14 +1287,14 @@
                 "type": "function",
                 "function": {
                   "name": "greet",
-                  "arguments": "{\"name\":\"ri\"}"
+                  "arguments": "{\"name\":\"yapi\"}"
                 }
               }
             ]
           },
           {
             "role": "tool",
-            "content": "Hello, ri!",
+            "content": "Hello, yapi!",
             "tool_call_id": "call_mock_1"
           }
         ],
