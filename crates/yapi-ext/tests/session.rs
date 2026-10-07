@@ -391,6 +391,49 @@ async fn before_agent_start_handlers_edit_the_prompt_options() {
     assert!(!text.contains("- bash:"), "{text}");
 }
 
+/// Registered MCP servers list in registration order, as in pi, even when
+/// extensions in different runtimes register them.
+#[tokio::test(flavor = "multi_thread")]
+async fn registered_mcp_servers_list_in_registration_order_across_runtimes() {
+    let dir = scratch("mcp-order");
+    let mut extensions = Vec::new();
+    for (file, source) in [
+        (
+            "a.ts",
+            r#"export default function (pi) {
+	pi.registerMcpServer("a", { command: "python3", enabled: false });
+	pi.registerCommand("more", { description: "", handler: async () => pi.registerMcpServer("c", { command: "python3", enabled: false }) });
+}
+"#,
+        ),
+        (
+            "b.ts",
+            r#"export default function (pi) {
+	pi.registerMcpServer("b", { command: "python3", enabled: false });
+}
+"#,
+        ),
+    ] {
+        let path = dir.join(file);
+        std::fs::write(&path, source).unwrap();
+        let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+            .await
+            .unwrap();
+        extensions.extend(host.for_session());
+    }
+    let session = session(&Faux::new([]), &dir, extensions);
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    session.prompt("/more", Vec::new()).await.unwrap();
+    let names: Vec<String> = session
+        .mcp_servers()
+        .into_iter()
+        .map(|server| server.name)
+        .collect();
+    assert_eq!(names, ["a", "b", "c"]);
+}
+
 /// A tool's updates and the calls it makes through `ctx.executeTool()` report
 /// in pi's order, from the task that runs the tool: an update goes out after
 /// the start of a call the tool begins in the same step, and before its end

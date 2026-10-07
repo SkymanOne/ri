@@ -249,6 +249,9 @@ struct Inner {
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode, Option<SessionActions>)>,
     /// Extension sections of the current run's system prompt.
     run_options: Mutex<Option<SystemPromptOptions>>,
+    /// The base prompt options a command edited, with the options they were
+    /// made from; pi drops the edits when it rebuilds the base.
+    edited_base: Mutex<Option<(SystemPromptOptions, SystemPromptOptions)>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
     forced_prompt: Mutex<Option<String>>,
     /// Declared tools the last loadout left out of requests.
@@ -292,15 +295,22 @@ struct Inner {
     /// Blocking extension dialogs open, and the kind and title of the
     /// outermost.
     ui_prompts: Mutex<(usize, Option<UiPrompt>)>,
-    /// MCP servers extensions registered, by the extension runtime that
-    /// reported them.
-    mcp_servers: Mutex<IndexMap<u64, Vec<RegisteredMcpServer>>>,
+    /// MCP servers extensions registered, by name in registration order,
+    /// with the extension runtime that reported each, and the runtimes that
+    /// reported.
+    mcp_servers: Mutex<McpServers>,
     /// Registered MCP servers reported as connected by no extension.
     unhandled_mcp_servers: Mutex<std::collections::HashSet<String>>,
 }
 
 /// A blocking extension dialog's kind and title.
 type UiPrompt = (String, Option<String>);
+
+/// See [`Inner::mcp_servers`].
+type McpServers = (
+    IndexMap<String, (u64, RegisteredMcpServer)>,
+    std::collections::HashSet<u64>,
+);
 
 /// Counts an operation in [`Inner::compacting`] while alive.
 struct Compacting<'a>(&'a AtomicUsize);
@@ -462,6 +472,7 @@ impl AgentSession {
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print, None)),
                 run_options: Mutex::new(None),
+                edited_base: Mutex::new(None),
                 forced_prompt: Mutex::new(None),
                 hidden_tools: Mutex::default(),
                 next_turn: Mutex::new(Vec::new()),
@@ -1084,13 +1095,32 @@ impl AgentSession {
     }
 
     /// pi's base prompt options, which `ctx.getSystemPromptOptions()` gives
-    /// commands: the session's resources, the active tools, and the snippet
-    /// and guidelines of every registered tool, without what a run adds.
+    /// commands as a live object: the session's resources, the active tools,
+    /// and the snippet and guidelines of every registered tool, without what
+    /// a run adds, as a command last edited them.
     pub fn base_prompt_options(&self) -> SystemPromptOptions {
+        let base = self.rebuilt_prompt_options();
+        match &*lock(&self.inner.edited_base) {
+            Some((edited_from, edited)) if *edited_from == base => edited.clone(),
+            _ => base,
+        }
+    }
+
+    /// Keeps a command's edits to the base prompt options until the base
+    /// changes, as pi's live options keep them until it rebuilds them.
+    pub fn set_base_prompt_options(&self, options: SystemPromptOptions) {
+        *lock(&self.inner.edited_base) = Some((self.rebuilt_prompt_options(), options));
+    }
+
+    /// The base prompt options as pi's `_rebuildSystemPrompt` builds them.
+    /// Tools a loadout hides from requests have no snippet.
+    fn rebuilt_prompt_options(&self) -> SystemPromptOptions {
         let resources = self.resources();
+        let selected_tools = self.inner.tools.active();
+        let (_, changes) = self.loadout_changes(self.active_tools(&selected_tools));
         let mut options = SystemPromptOptions {
             custom_prompt: resources.custom_prompt,
-            selected_tools: self.inner.tools.active(),
+            selected_tools,
             append_system_prompt: resources.append_prompt.unwrap_or_default(),
             cwd: self.inner.cwd.clone(),
             context_files: resources.context_files,
@@ -1099,7 +1129,10 @@ impl AgentSession {
         };
         for tool in self.inner.tools.with(|registry| registry.all()) {
             let name = tool.name().to_owned();
-            if let Some(snippet) = tool.snippet.filter(|snippet| !snippet.is_empty()) {
+            if let Some(snippet) = tool
+                .snippet
+                .filter(|snippet| !snippet.is_empty() && !changes.hidden.contains(&name))
+            {
                 options.tool_snippets.insert(name.clone(), snippet);
             }
             if !tool.guidelines.is_empty() {
@@ -1296,11 +1329,12 @@ impl AgentSession {
                 &self.inner.docs,
             ));
         }
-        let mut sections = IndexMap::new();
+        let mut sections = self.base_prompt_options().sections;
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.before_agent_start(&ctx, &mut sections).await;
         }
+        // After the extensions, which may have registered tools.
         *lock(&self.inner.run_options) = Some(SystemPromptOptions {
             sections,
             ..self.base_prompt_options()
@@ -1310,7 +1344,10 @@ impl AgentSession {
             self.before_agent_start_handlers(&expanded, &images, options)
                 .await
         } else {
-            (Vec::new(), None)
+            let forced = lock(&self.inner.run_options)
+                .as_mut()
+                .and_then(|options| options.force_system_prompt.take());
+            (Vec::new(), forced)
         };
         *lock(&self.inner.forced_prompt) = forced;
         // Handlers may have changed the active tools.

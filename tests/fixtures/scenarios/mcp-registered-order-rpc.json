@@ -1,0 +1,45 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "custom",
+        "customType": "servers",
+        "content": "{\"changed\":[{\"name\":\"first\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"second\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"third\",\"config\":{\"command\":\"python3\",\"exposure\":\"codemode\",\"toolExposure\":{\"t\":\"codemode\"},\"enabled\":false}}],\"servers\":[{\"name\":\"first\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"second\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"third\",\"config\":{\"command\":\"python3\",\"exposure\":\"codemode\",\"toolExposure\":{\"t\":\"codemode\"},\"enabled\":false}}]}",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "custom",
+        "customType": "servers",
+        "content": "{\"changed\":[{\"name\":\"first\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"second\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"third\",\"config\":{\"command\":\"python3\",\"exposure\":\"codemode\",\"toolExposure\":{\"t\":\"codemode\"},\"enabled\":false}}],\"servers\":[{\"name\":\"first\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"second\",\"config\":{\"command\":\"python3\",\"enabled\":false}},{\"name\":\"third\",\"config\":{\"command\":\"python3\",\"exposure\":\"codemode\",\"toolExposure\":{\"t\":\"codemode\"},\"enabled\":false}}]}",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

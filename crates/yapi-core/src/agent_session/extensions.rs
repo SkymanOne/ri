@@ -477,8 +477,10 @@ impl Hooks {
                 "isError",
                 "usage",
             ] {
-                if let Some(value) = given(key) {
-                    event[key] = value.clone();
+                if let Some(value) = given(key)
+                    && let Some(event) = event.as_object_mut()
+                {
+                    set_tool_result_key(event, key, value.clone());
                     modified = true;
                 }
             }
@@ -492,6 +494,25 @@ impl Hooks {
             terminate: None,
         })
     }
+}
+
+/// Sets `key` of a `tool_result` event where pi's event has it: pi's holds
+/// `details` and `usage` even when undefined, after `content` and `isError`.
+fn set_tool_result_key(event: &mut serde_json::Map<String, Value>, key: &str, value: Value) {
+    if let Some(slot) = event.get_mut(key) {
+        *slot = value;
+        return;
+    }
+    let after = match key {
+        "details" => "content",
+        "usage" => "isError",
+        _ => "",
+    };
+    let index = event
+        .keys()
+        .position(|name| name == after)
+        .map_or(event.len(), |index| index + 1);
+    event.shift_insert(index, key.to_owned(), value);
 }
 
 impl AgentSession {
@@ -801,8 +822,19 @@ impl AgentSession {
     /// report holds the servers registered while it loaded, which the MCP
     /// extension reads when the session starts.
     pub fn set_mcp_servers(&self, owner: u64, servers: Vec<RegisteredMcpServer>) {
-        let previous = lock(&self.inner.mcp_servers).insert(owner, servers.clone());
-        if previous.is_some_and(|previous| previous != servers) {
+        let changed = {
+            let (registered, reported) = &mut *lock(&self.inner.mcp_servers);
+            let before = registered.clone();
+            // As in pi's registry, a server registered again keeps its place.
+            registered.retain(|name, (runtime, _)| {
+                *runtime != owner || servers.iter().any(|server| server.name == *name)
+            });
+            for server in servers {
+                registered.insert(server.name.clone(), (owner, server));
+            }
+            !reported.insert(owner) && *registered != before
+        };
+        if changed {
             let servers = self.mcp_servers();
             self.announce(ExtensionEvent::McpServersChange { servers: &servers });
             self.report_unhandled_mcp_servers();
@@ -829,12 +861,13 @@ impl AgentSession {
         }
     }
 
-    /// pi's `getMcpServers`: the servers extensions registered.
+    /// pi's `getMcpServers`: the servers extensions registered, in
+    /// registration order.
     pub fn mcp_servers(&self) -> Vec<RegisteredMcpServer> {
         lock(&self.inner.mcp_servers)
+            .0
             .values()
-            .flatten()
-            .cloned()
+            .map(|(_, server)| server.clone())
             .collect()
     }
 
@@ -1246,5 +1279,37 @@ impl AgentSession {
             .run_command(&resolved.command.name, args, &ctx)
             .await;
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// A handler's `details` and `usage` take the places pi's event holds
+    /// for them, as another extension runtime then sees the event.
+    #[test]
+    fn tool_result_keys_go_where_pi_has_them() {
+        let mut event = json!({"type": "tool_result", "content": [], "isError": false});
+        let event = event.as_object_mut().unwrap();
+        set_tool_result_key(event, "structuredContent", json!({}));
+        set_tool_result_key(event, "usage", json!({}));
+        set_tool_result_key(event, "details", json!({}));
+        set_tool_result_key(event, "isError", json!(true));
+        let keys: Vec<&String> = event.keys().collect();
+        assert_eq!(
+            keys,
+            [
+                "type",
+                "content",
+                "details",
+                "isError",
+                "usage",
+                "structuredContent"
+            ]
+        );
+        assert_eq!(event["isError"], true);
     }
 }

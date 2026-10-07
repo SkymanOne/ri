@@ -338,7 +338,8 @@ impl Host {
 
     /// pi's checks of `registerMcpServer({name, config})` by `extension`,
     /// and the grant the server's transport needs: process for stdio,
-    /// network for HTTP.
+    /// network for HTTP. Answers the config with pi's legacy exposure names
+    /// replaced.
     fn validate_mcp_server(&self, payload: &Value) -> Result<Value, String> {
         use yapi_core::mcp::config::{ServerTransport, validate_server};
         let name = text(payload, "name");
@@ -355,7 +356,9 @@ impl Host {
                 "MCP server \"{name}\" needs the {grant} grant, which this extension does not have"
             ));
         }
-        Ok(Value::Null)
+        Ok(yapi_core::mcp::config::resolve_exposure_aliases(
+            &payload["config"],
+        ))
     }
 
     /// Built-in tool `{name}` for `{cwd}`; with `run`, only when the grants
