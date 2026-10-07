@@ -1,8 +1,14 @@
 //! `yapi import pi`: copies pi's state into yapi's directories. yapi reads pi's
-//! formats unchanged, so files are copied as they are; files yapi already has
-//! are kept.
+//! formats unchanged, so files are copied as they are, except pi's
+//! `lastChangelogVersion`; files yapi already has are kept.
 
 use std::path::{Path, PathBuf};
+
+use serde_json::{Map, Value};
+use yapi_types::config::ConfigFile;
+
+/// The setting in which pi and yapi each record their own version.
+const CHANGELOG_VERSION: &str = "lastChangelogVersion";
 
 /// The agent directory entries yapi reads, in the order they are copied.
 pub const AGENT_ENTRIES: &[&str] = &[
@@ -117,8 +123,15 @@ fn copy_tree(
     Ok(())
 }
 
+/// The settings document at `path`, if it is a JSON object.
+fn settings(path: &Path) -> Option<Map<String, Value>> {
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
 /// Copies `entries` of directory `from` into `to`, keeping files `to`
-/// already has. Entries `from` lacks are skipped.
+/// already has. Entries `from` lacks are skipped. A `settings.json` that
+/// holds only the version yapi recorded on its first start is replaced, and
+/// pi's `lastChangelogVersion`, a pi version, is not copied.
 pub fn import(from: &Path, to: &Path, entries: &[&str]) -> std::io::Result<Vec<Imported>> {
     let mut out = Vec::new();
     for entry in entries {
@@ -130,7 +143,26 @@ pub fn import(from: &Path, to: &Path, entries: &[&str]) -> std::io::Result<Vec<I
             entry: (*entry).to_owned(),
             ..Imported::default()
         };
-        copy_tree(&source, &to.join(entry), &mut imported, &mut Vec::new())?;
+        let target = to.join(entry);
+        let is_settings = *entry == ConfigFile::Settings.file_name();
+        if is_settings
+            && settings(&target).is_some_and(|document| {
+                document.len() == 1 && document.contains_key(CHANGELOG_VERSION)
+            })
+        {
+            std::fs::remove_file(&target).map_err(|error| at(&target, error))?;
+        }
+        copy_tree(&source, &target, &mut imported, &mut Vec::new())?;
+        if is_settings
+            && imported.copied == 1
+            && let Some(mut document) = settings(&target)
+            && document.shift_remove(CHANGELOG_VERSION).is_some()
+        {
+            let text = ConfigFile::Settings
+                .render(&document)
+                .map_err(std::io::Error::other)?;
+            std::fs::write(&target, text).map_err(|error| at(&target, error))?;
+        }
         out.push(imported);
     }
     Ok(out)
@@ -182,6 +214,43 @@ mod tests {
         assert!(yapi.join("sessions/--a--/two.jsonl").is_file());
         assert!(!yapi.join("bin").exists());
         assert!(!yapi.join("pi-debug.log").exists());
+    }
+
+    #[test]
+    fn pi_settings_replace_yapi_first_start_record_without_pi_version() {
+        let dir = std::env::temp_dir().join(format!("yapi-import-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (pi, yapi) = (dir.join("pi"), dir.join("yapi"));
+        let pi_settings = "{\n  \"theme\": \"light\",\n  \"lastChangelogVersion\": \"1.0.0\",\n  \"defaultProvider\": \"anthropic\"\n}";
+        write(&pi, "settings.json", pi_settings);
+        // What yapi's first start writes.
+        write(
+            &yapi,
+            "settings.json",
+            "{\n  \"lastChangelogVersion\": \"0.1.0\"\n}",
+        );
+
+        let imported = import(&pi, &yapi, &["settings.json"]).unwrap();
+        assert_eq!((imported[0].copied, imported[0].kept), (1, 0));
+        assert_eq!(
+            std::fs::read_to_string(yapi.join("settings.json")).unwrap(),
+            "{\n  \"theme\": \"light\",\n  \"defaultProvider\": \"anthropic\"\n}"
+        );
+
+        // Settings with anything else are kept as before.
+        let kept = dir.join("kept");
+        write(
+            &kept,
+            "settings.json",
+            "{\"lastChangelogVersion\":\"0.1.0\",\"theme\":\"dark\"}",
+        );
+        let imported = import(&pi, &kept, &["settings.json"]).unwrap();
+        assert_eq!((imported[0].copied, imported[0].kept), (0, 1));
+        assert_eq!(
+            std::fs::read_to_string(kept.join("settings.json")).unwrap(),
+            "{\"lastChangelogVersion\":\"0.1.0\",\"theme\":\"dark\"}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]
