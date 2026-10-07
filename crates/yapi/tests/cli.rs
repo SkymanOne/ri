@@ -175,6 +175,46 @@ fn rpc_starts_without_models_and_exits_on_sigterm() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// A yapi started with SIGINT ignored, as a shell starts a background job,
+/// runs commands with SIGINT at its default action, as Node gives pi's.
+#[cfg(unix)]
+#[test]
+fn commands_take_signals_yapi_inherited_ignored() {
+    use std::io::{BufRead, Write};
+    let home = common::scratch("rpc-ignored-signal");
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", r#"trap '' INT; exec "$0" --mode rpc"#])
+        .arg(env!("CARGO_BIN_EXE_yapi"))
+        .current_dir(&home)
+        .env_clear()
+        .env("HOME", &home)
+        .env("YAPI_CODING_AGENT_DIR", home.join("agent"))
+        .env("PI_OFFLINE", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let script = "/bin/sh -c 'kill -INT $$; echo ignored'; echo done";
+    writeln!(
+        stdin,
+        "{}",
+        serde_json::json!({"id": "b", "type": "bash", "command": script})
+    )
+    .unwrap();
+    let response = std::io::BufReader::new(child.stdout.take().unwrap())
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap())
+        .find(|line| line["type"] == "response" && line["id"] == "b")
+        .unwrap();
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&home);
+    assert_eq!(response["data"]["output"], "done\n", "{response}");
+}
+
 /// On SIGTERM, print mode kills the commands its `bash` tool is running, as
 /// pi does, instead of leaving them behind.
 #[cfg(unix)]

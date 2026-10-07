@@ -66,8 +66,7 @@ impl Spawn {
 
     /// The process to start, killed when dropped, with piped output and
     /// piped input when asked for. An explicit environment replaces the
-    /// process's, as in Node. Every signal has its default action in the
-    /// process, as libuv gives Node's children.
+    /// process's, as in Node.
     fn command(&self) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(&self.command);
         command
@@ -86,25 +85,6 @@ impl Spawn {
         }
         if let Some(env) = self.env_pairs() {
             command.env_clear().envs(env);
-        }
-        // Without a hook the standard library keeps its faster posix_spawn
-        // path, so the hook is installed only when it has work to do.
-        #[cfg(unix)]
-        {
-            let ignored = ignored_signals();
-            if !ignored.is_empty() {
-                // SAFETY: the hook runs in the child between fork and exec. It
-                // only reads `ignored`, allocated before the fork, and calls
-                // `signal`, which is async-signal-safe.
-                unsafe {
-                    command.pre_exec(move || {
-                        for &signal in &ignored {
-                            libc::signal(signal, libc::SIG_DFL);
-                        }
-                        Ok(())
-                    });
-                }
-            }
         }
         command
     }
@@ -638,24 +618,32 @@ async fn terminate(child: &mut tokio::process::Child) -> std::io::Result<std::pr
     child.wait().await
 }
 
-/// The signals yapi currently ignores, as a shell's background job ignores
-/// SIGINT and SIGQUIT. A child would inherit them ignored, and `kill` with
-/// one would not stop it. SIGPIPE is left out: the standard library
-/// restores it in children itself.
-#[cfg(unix)]
-fn ignored_signals() -> Vec<libc::c_int> {
-    (1..32)
-        .filter(|&signal| signal != libc::SIGPIPE)
-        .filter(|&signal| {
-            let mut action = std::mem::MaybeUninit::<libc::sigaction>::uninit();
-            // SAFETY: with a null new action, `sigaction` only writes the
-            // current one to `action`, which is read only when that succeeded.
-            unsafe {
-                libc::sigaction(signal, std::ptr::null(), action.as_mut_ptr()) == 0
-                    && action.assume_init().sa_sigaction == libc::SIG_IGN
+/// Gives every signal yapi inherited ignored its default action, as Node's
+/// `ResetSignalHandlers` does at startup, so every process yapi starts has
+/// default actions as Node's children do. A shell's background job, for
+/// one, starts with SIGINT and SIGQUIT ignored. Installed handlers are
+/// kept. SIGPIPE stays ignored, as in Node: the standard library ignores it
+/// in yapi and restores it in children. Node also ignores SIGXFSZ, but
+/// yapi's children would inherit that, where libuv restores it in Node's.
+///
+/// Call it first in `main`, before any thread or child exists.
+pub fn reset_signal_dispositions() {
+    #[cfg(unix)]
+    for signal in (1..32).filter(|&signal| signal != libc::SIGPIPE) {
+        let mut action = std::mem::MaybeUninit::<libc::sigaction>::uninit();
+        // SAFETY: with a null new action, `sigaction` only writes the current
+        // one to `action`, which is read only when that succeeded. Replacing
+        // SIG_IGN with SIG_DFL installs no handler. The check and the reset
+        // are not atomic, so a handler another thread installed in between
+        // would be lost; the caller runs this before any thread exists.
+        unsafe {
+            if libc::sigaction(signal, std::ptr::null(), action.as_mut_ptr()) == 0
+                && action.assume_init().sa_sigaction == libc::SIG_IGN
+            {
+                libc::signal(signal, libc::SIG_DFL);
             }
-        })
-        .collect()
+        }
+    }
 }
 
 fn spawn_error(command: &str, err: &std::io::Error) -> String {
@@ -829,12 +817,13 @@ mod tests {
     }
 
     /// `kill` signals a running process by name or number and reports
-    /// whether it was still running. A signal yapi ignores, as a shell's
-    /// background job ignores SIGINT, still stops the process.
+    /// whether it was still running. A signal yapi inherited ignored, as a
+    /// shell's background job ignores SIGINT, still stops the process.
     #[tokio::test(flavor = "multi_thread")]
     async fn processes_take_signals() {
         // SAFETY: ignoring a signal installs no handler.
-        let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+        unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+        reset_signal_dispositions();
         let processes = Streams::new(tokio::runtime::Handle::current());
         for signal in [json!("SIGINT"), json!(15), Value::Null] {
             let id = spawn(&processes, json!({"command": "/bin/sleep", "args": ["10"]}));
@@ -848,8 +837,6 @@ mod tests {
             assert_eq!(exits[0]["signal"], name);
             assert_eq!(processes.kill(&json!({"id": id})), false);
         }
-        // SAFETY: `previous` is the disposition `signal` returned.
-        unsafe { libc::signal(libc::SIGINT, previous) };
     }
 
     /// Clearing the set kills its processes.

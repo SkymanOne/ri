@@ -82,6 +82,7 @@ fn block_on(future: impl std::future::Future<Output = u8>) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    yapi_ext::reset_signal_dispositions();
     let raw: Vec<String> = std::env::args().skip(1).collect();
     match raw.first().map(String::as_str) {
         Some("import") => return ExitCode::from(import::run(&raw[1..])),

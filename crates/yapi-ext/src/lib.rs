@@ -18,6 +18,7 @@ mod streams;
 pub use engine::Engine;
 pub use extensions::{ExtensionHost, Flag, LoadError, RegisteredProvider};
 pub use instance::{Bridge, Grants, Instance, NoBridge, Options, join_stopped};
+pub use ops::reset_signal_dispositions;
 
 /// Why the extension runtime failed.
 #[derive(Debug, thiserror::Error)]
