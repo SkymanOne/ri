@@ -680,7 +680,7 @@ mod tests {
             agent.clone(),
             agent.clone(),
             SettingsManager::in_memory(),
-            String::new(),
+            Default::default(),
         );
         let extensions = agent.join("tmp/extensions");
         let dir = |prefix: &str, suffix: &str, reference| {
