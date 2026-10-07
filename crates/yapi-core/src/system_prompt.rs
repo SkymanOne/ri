@@ -4,147 +4,12 @@
 //! preamble and the documentation section name yapi, and the section points
 //! to the local docs, or to the published ones without a local copy.
 
-use std::path::PathBuf;
-
 use indexmap::IndexMap;
-use serde_json::{Map, Value, json};
+use yapi_types::system_prompt::SystemPromptOptions;
 
-use crate::resources::{ContextFile, Skill, SourceInfo, format_skills};
+use crate::resources::format_skills;
 
-/// Inputs for the prompt.
-#[derive(Clone, Debug, Default)]
-pub struct PromptOptions {
-    /// Replaces the default preamble, tools, rules and docs (`SYSTEM.md`,
-    /// `--system-prompt`).
-    pub custom_prompt: Option<String>,
-    /// Active tool names, in order.
-    pub selected_tools: Vec<String>,
-    /// One-line summaries by tool name; tools without one are not listed.
-    pub tool_snippets: IndexMap<String, String>,
-    /// Rule bullets by tool name.
-    pub tool_guidelines: IndexMap<String, Vec<String>>,
-    /// Extra rule bullets.
-    pub prompt_guidelines: Vec<String>,
-    /// Appended after the rules (`APPEND_SYSTEM.md`, `--append-system-prompt`).
-    pub append: Option<String>,
-    /// Extra sections from extensions, by tag name.
-    pub sections: IndexMap<String, String>,
-    /// Working directory.
-    pub cwd: PathBuf,
-    /// Where the model reads yapi's and pi's docs.
-    pub docs: crate::docs::Locations,
-    /// Context files.
-    pub context_files: Vec<ContextFile>,
-    /// Skills.
-    pub skills: Vec<Skill>,
-}
-
-impl PromptOptions {
-    /// pi's normalized `BuildSystemPromptOptions`, as `before_agent_start`
-    /// hands them to extensions, with `forced` as `forceSystemPrompt`.
-    pub fn to_json(&self, forced: Option<&str>) -> Value {
-        let mut out = Map::new();
-        if let Some(prompt) = &self.custom_prompt {
-            out.insert("customPrompt".into(), json!(prompt));
-        }
-        if let Some(forced) = forced {
-            out.insert("forceSystemPrompt".into(), json!(forced));
-        }
-        out.insert("selectedTools".into(), json!(self.selected_tools));
-        out.insert("toolSnippets".into(), json!(self.tool_snippets));
-        out.insert("toolGuidelines".into(), json!(self.tool_guidelines));
-        out.insert("promptGuidelines".into(), json!(self.prompt_guidelines));
-        out.insert(
-            "appendSystemPrompt".into(),
-            json!(self.append.as_deref().unwrap_or_default()),
-        );
-        out.insert("sections".into(), json!(self.sections));
-        out.insert("cwd".into(), json!(self.cwd));
-        out.insert(
-            "contextFiles".into(),
-            self.context_files
-                .iter()
-                .map(|file| json!({"path": file.path, "content": file.content}))
-                .collect(),
-        );
-        out.insert(
-            "skills".into(),
-            self.skills
-                .iter()
-                .map(|skill| {
-                    json!({
-                        "name": skill.name,
-                        "description": skill.description,
-                        "filePath": skill.file_path,
-                        "baseDir": skill.base_dir,
-                        "sourceInfo": skill.source,
-                        "disableModelInvocation": skill.disable_model_invocation,
-                    })
-                })
-                .collect(),
-        );
-        Value::Object(out)
-    }
-
-    /// Takes the options an extension edited in `value`, pi's shape from
-    /// [`PromptOptions::to_json`]. A field it sent malformed keeps its value.
-    /// Returns the `forceSystemPrompt` it left.
-    pub fn apply_json(&mut self, value: &Value) -> Option<String> {
-        fn field<T: serde::de::DeserializeOwned>(value: &Value, key: &str) -> Option<T> {
-            serde_json::from_value(value.get(key)?.clone()).ok()
-        }
-        self.custom_prompt = field(value, "customPrompt");
-        self.append = field::<String>(value, "appendSystemPrompt").filter(|text| !text.is_empty());
-        if let Some(tools) = field(value, "selectedTools") {
-            self.selected_tools = tools;
-        }
-        if let Some(snippets) = field(value, "toolSnippets") {
-            self.tool_snippets = snippets;
-        }
-        if let Some(guidelines) = field(value, "toolGuidelines") {
-            self.tool_guidelines = guidelines;
-        }
-        if let Some(guidelines) = field(value, "promptGuidelines") {
-            self.prompt_guidelines = guidelines;
-        }
-        if let Some(sections) = field(value, "sections") {
-            self.sections = sections;
-        }
-        if let Some(cwd) = field(value, "cwd") {
-            self.cwd = cwd;
-        }
-        if let Some(files) = field::<Vec<Value>>(value, "contextFiles") {
-            self.context_files = files
-                .iter()
-                .filter_map(|file| {
-                    Some(ContextFile {
-                        path: field(file, "path")?,
-                        content: field(file, "content")?,
-                    })
-                })
-                .collect();
-        }
-        if let Some(skills) = field::<Vec<Value>>(value, "skills") {
-            self.skills = skills
-                .iter()
-                .filter_map(|skill| {
-                    Some(Skill {
-                        name: field(skill, "name")?,
-                        description: field(skill, "description")?,
-                        file_path: field(skill, "filePath")?,
-                        base_dir: field(skill, "baseDir")?,
-                        disable_model_invocation: field(skill, "disableModelInvocation")
-                            .unwrap_or(false),
-                        source: field::<SourceInfo>(skill, "sourceInfo")?,
-                    })
-                })
-                .collect();
-        }
-        field(value, "forceSystemPrompt")
-    }
-}
-
-fn rules(options: &PromptOptions) -> String {
+fn rules(options: &SystemPromptOptions) -> String {
     let mut rules: Vec<String> = Vec::new();
     let mut add = |rule: &str| {
         let rule = rule.trim();
@@ -206,9 +71,13 @@ pub fn valid_section_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
-/// The prompt's sections in order. `preamble` is plain text; every other section
-/// is wrapped in a tag of its name.
-pub fn build_sections(options: &PromptOptions) -> Result<IndexMap<String, String>, String> {
+/// The prompt's sections in order, with `docs` in the documentation section.
+/// `preamble` is plain text; every other section is wrapped in a tag of its
+/// name.
+pub fn build_sections(
+    options: &SystemPromptOptions,
+    docs: &crate::docs::Locations,
+) -> Result<IndexMap<String, String>, String> {
     for name in options.sections.keys() {
         if !valid_section_name(name) {
             return Err(format!("Invalid system prompt section name: {name}"));
@@ -245,11 +114,11 @@ pub fn build_sections(options: &PromptOptions) -> Result<IndexMap<String, String
                 format!("{tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."),
             );
             raw.insert("rules".into(), rules(options));
-            raw.insert("docs".into(), docs(&options.docs));
+            raw.insert("docs".into(), self::docs(docs));
         }
     }
-    if let Some(append) = options.append.as_ref().filter(|text| !text.is_empty()) {
-        raw.insert("addendum".into(), append.clone());
+    if !options.append_system_prompt.is_empty() {
+        raw.insert("addendum".into(), options.append_system_prompt.clone());
     }
     if !options.context_files.is_empty() {
         let mut parts = vec!["Project-specific instructions and guidelines:".to_owned()];
@@ -333,15 +202,15 @@ mod tests {
 
     #[test]
     fn builds_pi_sections() {
-        let mut options = PromptOptions {
+        let mut options = SystemPromptOptions {
             selected_tools: vec!["read".into(), "bash".into()],
-            cwd: PathBuf::from("/work"),
-            docs: crate::docs::Locations {
-                main: "/agent/docs/index.md".into(),
-                pi_docs: "/agent/docs/pi/docs".into(),
-                pi_examples: "/agent/docs/pi/examples".into(),
-            },
-            ..PromptOptions::default()
+            cwd: "/work".into(),
+            ..SystemPromptOptions::default()
+        };
+        let docs = crate::docs::Locations {
+            main: "/agent/docs/index.md".into(),
+            pi_docs: "/agent/docs/pi/docs".into(),
+            pi_examples: "/agent/docs/pi/examples".into(),
         };
         options
             .tool_snippets
@@ -354,7 +223,7 @@ mod tests {
             "read".into(),
             vec!["Use read to examine files instead of cat or sed.".into()],
         );
-        let sections = build_sections(&options).unwrap();
+        let sections = build_sections(&options, &docs).unwrap();
         assert_eq!(
             sections.keys().cloned().collect::<Vec<_>>(),
             ["preamble", "tools", "rules", "docs", "cwd"]

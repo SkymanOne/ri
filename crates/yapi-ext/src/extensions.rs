@@ -1613,6 +1613,7 @@ impl Bridge for SessionBridge {
                 )))
             }
             "agent.isIdle" => Ok(Value::Bool(!session.is_streaming())),
+            "agent.systemPromptOptions" => Ok(to_json(session.base_prompt_options())),
             "agent.abort" => {
                 session.abort();
                 Ok(Value::Null)

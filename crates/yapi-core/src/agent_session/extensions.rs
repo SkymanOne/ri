@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use futures_util::future::BoxFuture;
+use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::Tool;
@@ -20,10 +21,10 @@ use yapi_types::rpc::SourceInfo;
 use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::QueueMode;
 use yapi_types::sync::{lock, write};
+use yapi_types::system_prompt::SystemPromptOptions;
 
 use crate::extensions::{Context, Extension, ExtensionUi, Mode, SessionActions, ToolRenderers};
 use crate::messages::convert_to_llm;
-use crate::system_prompt::PromptOptions;
 use crate::time::now_ms;
 
 use super::{AgentSession, InputSource, Replacement, SessionChange, drain};
@@ -835,23 +836,22 @@ impl AgentSession {
         &self,
         prompt: &str,
         images: &[ImageContent],
-        mut options: PromptOptions,
+        mut options: SystemPromptOptions,
     ) -> (Vec<Message>, Option<String>) {
         let handlers = self.handlers_of("before_agent_start");
         let mut messages = Vec::new();
-        let mut forced: Option<String> = None;
         let selected = options.selected_tools.clone();
         let ctx = self.extension_context(CancellationToken::new());
         for extension in handlers {
-            let system_prompt = match &forced {
+            let system_prompt = match &options.force_system_prompt {
                 Some(forced) => forced.clone(),
-                None => Self::prompt_text(&options).unwrap_or_default(),
+                None => self.prompt_text(&options).unwrap_or_default(),
             };
             let event = ExtensionEvent::BeforeAgentStart {
                 prompt,
                 images,
                 system_prompt: &system_prompt,
-                system_prompt_options: options.to_json(forced.as_deref()),
+                system_prompt_options: &options,
             }
             .to_value();
             let Some(result) = extension.handle(&ctx, &event).await else {
@@ -873,16 +873,20 @@ impl AgentSession {
                     timestamp: now_ms(),
                 }));
             }
-            if result["systemPromptOptions"].is_object() {
-                forced = options.apply_json(&result["systemPromptOptions"]);
+            // An edit that is not pi's shape leaves the options as they were.
+            if result["systemPromptOptions"].is_object()
+                && let Ok(edited) = SystemPromptOptions::deserialize(&result["systemPromptOptions"])
+            {
+                options = edited;
             }
             if let Some(prompt) = result["systemPrompt"].as_str() {
-                forced = Some(prompt.to_owned());
+                options.force_system_prompt = Some(prompt.to_owned());
             }
         }
         if options.selected_tools != selected {
             self.set_active_tools(options.selected_tools.clone());
         }
+        let forced = options.force_system_prompt.take();
         *lock(&self.inner.run_options) = Some(options);
         (messages, forced)
     }

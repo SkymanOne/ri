@@ -24,6 +24,7 @@ use crate::message::{ContentBlock, ImageContent, Message, ThinkingLevel};
 use crate::model::Model;
 use crate::rpc::StreamingBehavior;
 use crate::session::FileEntry;
+use crate::system_prompt::SystemPromptOptions;
 
 /// A pi event for extension handlers. Absent optional fields are left out,
 /// as pi leaves them undefined.
@@ -110,7 +111,7 @@ pub enum ExtensionEvent<'a> {
         prompt: &'a str,
         images: &'a [ImageContent],
         system_prompt: &'a str,
-        system_prompt_options: Value,
+        system_prompt_options: &'a SystemPromptOptions,
     },
     AgentBeforeSettle {
         outcome: &'a str,

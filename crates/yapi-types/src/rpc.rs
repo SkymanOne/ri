@@ -257,7 +257,7 @@ pub struct ForkMessage {
 /// Where a resource was found, as pi's `SourceInfo`: `source` is `auto` for
 /// discovered files, `cli` for command-line paths and the package for
 /// package resources; `scope` is `user`, `project` or `temporary`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceInfo {
     pub path: String,
