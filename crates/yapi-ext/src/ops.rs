@@ -87,11 +87,24 @@ impl Spawn {
         if let Some(env) = self.env_pairs() {
             command.env_clear().envs(env);
         }
-        // SAFETY: the closure runs between fork and exec and only calls
-        // `signal`, which is async-signal-safe.
+        // Without a hook the standard library keeps its faster posix_spawn
+        // path, so the hook is installed only when it has work to do.
         #[cfg(unix)]
-        unsafe {
-            command.pre_exec(default_signals);
+        {
+            let ignored = ignored_signals();
+            if !ignored.is_empty() {
+                // SAFETY: the hook runs in the child between fork and exec. It
+                // only reads `ignored`, allocated before the fork, and calls
+                // `signal`, which is async-signal-safe.
+                unsafe {
+                    command.pre_exec(move || {
+                        for &signal in &ignored {
+                            libc::signal(signal, libc::SIG_DFL);
+                        }
+                        Ok(())
+                    });
+                }
+            }
         }
         command
     }
@@ -614,20 +627,24 @@ async fn terminate(child: &mut tokio::process::Child) -> std::io::Result<std::pr
     child.wait().await
 }
 
-/// Restores the default action of every signal in a child about to exec, as
-/// libuv does. A signal yapi ignores, as a shell's background job ignores
-/// SIGINT and SIGQUIT, would otherwise stay ignored in the child, and `kill`
-/// with it would not stop the child.
+/// The signals yapi currently ignores, as a shell's background job ignores
+/// SIGINT and SIGQUIT. A child would inherit them ignored, and `kill` with
+/// one would not stop it. SIGPIPE is left out: the standard library
+/// restores it in children itself.
 #[cfg(unix)]
-fn default_signals() -> std::io::Result<()> {
-    for signal in 1..32 {
-        if signal != libc::SIGKILL && signal != libc::SIGSTOP {
-            // SAFETY: `signal` is async-signal-safe, and SIG_DFL installs no
-            // handler.
-            unsafe { libc::signal(signal, libc::SIG_DFL) };
-        }
-    }
-    Ok(())
+fn ignored_signals() -> Vec<libc::c_int> {
+    (1..32)
+        .filter(|&signal| signal != libc::SIGPIPE)
+        .filter(|&signal| {
+            let mut action = std::mem::MaybeUninit::<libc::sigaction>::uninit();
+            // SAFETY: with a null new action, `sigaction` only writes the
+            // current one to `action`, which is read only when that succeeded.
+            unsafe {
+                libc::sigaction(signal, std::ptr::null(), action.as_mut_ptr()) == 0
+                    && action.assume_init().sa_sigaction == libc::SIG_IGN
+            }
+        })
+        .collect()
 }
 
 fn spawn_error(command: &str, err: &std::io::Error) -> String {
