@@ -447,6 +447,13 @@ async fn installs_temporary_packages_outside_settings() {
         .install_temporary("git:github.com/user/repo", true)
         .await;
     assert_eq!(git.unwrap(), None);
+    // A failed clone leaves no checkout and keeps the temporary folder.
+    let failed = packages
+        .install_temporary("git:http://127.0.0.1:9/user/repo", false)
+        .await;
+    assert!(failed.is_err());
+    assert!(!dir.join("agent/tmp/extensions/git-127.0.0.1").exists());
+    assert!(dir.join("agent/tmp/extensions").exists());
 
     // pi's `getTemporaryDir("npm")`: the hash is SHA-256 of `npm-`.
     let installed = dir.join("agent/tmp/extensions/npm/f35b2129/node_modules/temp-pkg");

@@ -355,12 +355,15 @@ impl PackageManager {
         Ok(())
     }
 
-    /// Removes `dir` and the empty directories above it, up to the git root.
+    /// Removes `dir` and the empty directories above it, up to the git root
+    /// or the temporary packages folder.
     fn remove_dir(&self, dir: &Path) {
         let _ = std::fs::remove_dir_all(dir);
+        let temporary = self.agent_dir.join("tmp").join("extensions");
         let mut current = dir.parent();
         while let Some(parent) = current {
             if parent.file_name().is_some_and(|name| name == "git")
+                || parent == temporary
                 || std::fs::remove_dir(parent).is_err()
             {
                 break;
