@@ -16,7 +16,8 @@ The first release of yapi, a Rust reimplementation of the [Pi](https://github.co
 - Every wire API and provider in Pi's model catalog. Sign-in with API keys or with subscriptions such as Claude Pro and Max, ChatGPT and GitHub Copilot. See [Models and sign-in](https://skymanone.github.io/yapi/models.html).
 - Pi packages from npm, git and local paths. Pi extensions run unchanged in a WebAssembly sandbox, including their interface components, every extension event, session actions, custom editors, terminal input listeners, autocomplete providers and providers with their own streams and sign-in.
 - Images are resized and converted as Pi does before they reach the model.
-- Native extensions in Rust, built as WebAssembly components. `yapi new` creates one.
+- Native extensions in Rust, built as WebAssembly components, with `async` handlers, dialogs, HTTP, processes and background tasks. `yapi new` creates one.
+- Subagents and other long-running processes in extensions. `child_process.spawn` streams output and takes input and signals, so Pi's `subagent` example runs unchanged, and a native `subagent` example works in the foreground or the background. Extension tools stop when the user aborts the run.
 - Context files, skills, prompt templates and project trust.
 - MCP servers over stdio and streamable HTTP, with OAuth sign-in for HTTP servers (`yapi mcp login`), and codemode.
 - `yapi import pi`, which copies Pi's settings, credentials, sessions and packages into yapi's directories.
