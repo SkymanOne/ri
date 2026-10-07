@@ -338,16 +338,24 @@ pub trait ExtensionUi: Send + Sync {
         Value::Null
     }
 
-    /// The theme as escape sequences: `{"name", "mode", "fg": {token:
-    /// sequence}, "bg": {token: sequence}, "dim": [token]}`. `Null` leaves
-    /// text unstyled.
+    /// The theme as escape sequences, and the colors they come from:
+    /// `{"name", "mode", "fg": {token: sequence}, "bg": {token: sequence},
+    /// "dim": [token], "colors": {token: color}}`. `Null` leaves text
+    /// unstyled.
     fn theme(&self) -> Value {
         Value::Null
     }
 
-    /// Switches to theme `name`, as `/settings` does; the error says why
-    /// it could not.
-    fn set_theme(&self, _name: &str) -> Result<(), String> {
+    /// The theme called `name`, as [`ExtensionUi::theme`] describes it;
+    /// `Null` when there is none.
+    fn get_theme(&self, _name: &str) -> Value {
+        Value::Null
+    }
+
+    /// Switches to `theme`: a theme name, which is saved as `/settings`
+    /// saves it, or a theme document `{"name", "appearance", "colors"}`,
+    /// which is not saved. The error says why it could not.
+    fn set_theme(&self, _theme: &Value) -> Result<(), String> {
         Err("UI not available".into())
     }
 
