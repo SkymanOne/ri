@@ -10,11 +10,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
-use futures_util::stream::FuturesUnordered;
 use serde_json::{Map, Value, json};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use yapi_agent::UpdateSink;
 use yapi_core::agent_session::AgentSession;
@@ -28,6 +26,7 @@ use yapi_types::sync::lock;
 
 use super::declarations::{Declaration, identifier, sample};
 use super::models;
+use crate::ops::Job;
 use crate::{Bridge, Engine, Grants, Instance, Options};
 
 /// The custom entry type of `store()` writes.
@@ -224,9 +223,6 @@ struct ScriptBridge {
     /// Operations the script started, for [`Runner::run`] to drive.
     jobs: mpsc::UnboundedSender<Job>,
 }
-
-/// An operation the script started, which replies when it is done.
-type Job = BoxFuture<'static, ()>;
 
 /// The successful result of an operation: `undefined` or a JSON value.
 fn script_value(value: Option<&Value>) -> Value {
@@ -606,16 +602,7 @@ impl Bridge for WeakBridge {
                 Box::pin(async move { Err(message) })
             }
         };
-        let (reply, result) = oneshot::channel();
-        // A job sent after the run ended is dropped, and so is its reply.
-        let _ = bridge.jobs.send(Box::pin(async move {
-            let _ = reply.send(operation.await);
-        }));
-        Box::pin(async move {
-            result
-                .await
-                .unwrap_or_else(|_| Err("The script has ended".to_owned()))
-        })
+        crate::ops::queue(&bridge.jobs, operation)
     }
 
     /// Engine diagnostics are discarded, as pi discards them.
@@ -934,7 +921,7 @@ impl Runner {
     async fn run(
         &self,
         bridge: &Arc<ScriptBridge>,
-        mut jobs: mpsc::UnboundedReceiver<Job>,
+        jobs: mpsc::UnboundedReceiver<Job>,
         session: Option<&AgentSession>,
         payload: &Value,
         options: &SourceOptions,
@@ -992,31 +979,18 @@ impl Runner {
                 Err(error) => sandbox(error.to_string()),
             }
         };
-        tokio::pin!(script, timeout);
-        // The script's operations run here, on the tool call's task, which
-        // also emits the updates they publish.
-        let mut running = FuturesUnordered::new();
-        let ending = loop {
+        let ending = async {
             tokio::select! {
                 biased;
-                ending = &mut script => break ending,
-                () = cancel.cancelled() => break aborted(),
-                () = &mut timeout => break timed_out(),
-                Some(()) = running.next(), if !running.is_empty() => {}
-                Some(job) = jobs.recv() => running.push(job),
+                ending = script => ending,
+                () = cancel.cancelled() => aborted(),
+                () = timeout => timed_out(),
             }
-            // What a step published goes out before the next step, as pi
-            // emits it before the script resumes or the next call starts.
-            tokio::task::yield_now().await;
         };
-        // Calls the script left running end on their own, as in pi.
-        while let Ok(job) = jobs.try_recv() {
-            running.push(job);
-        }
-        if !running.is_empty() {
-            tokio::spawn(async move { while running.next().await.is_some() {} });
-        }
-        ending
+        // The script's operations run here, on the tool call's task, which
+        // also emits the updates they publish. Calls the script left running
+        // end on their own, as in pi.
+        crate::ops::drive(ending, jobs).await
     }
 }
 
