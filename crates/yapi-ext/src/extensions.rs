@@ -1487,6 +1487,14 @@ impl Bridge for SessionBridge {
         }
         let session = self.session().ok_or_else(not_bound)?;
         match kind {
+            "mcp.servers" => {
+                let servers =
+                    serde_json::from_value(payload["servers"].clone()).map_err(|err| err.to_string())?;
+                // The change reaches extensions from the runtime.
+                let _runtime = self.runtime.enter();
+                session.set_mcp_servers(self.runtime_id, servers);
+                Ok(Value::Null)
+            }
             "session.sendMessage" => {
                 let message = custom_message(&payload["message"]);
                 let options = &payload["options"];

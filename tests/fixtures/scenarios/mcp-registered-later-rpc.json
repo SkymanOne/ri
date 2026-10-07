@@ -1,0 +1,3853 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "started"
+      }
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "type": "number",
+                  "description": "Timeout in seconds (optional, no default timeout)"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path",
+                "edits"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to edit (relative or absolute)"
+                },
+                "edits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "oldText",
+                      "newText"
+                    ],
+                    "properties": {
+                      "oldText": {
+                        "type": "string",
+                        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                      },
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text for this targeted edit."
+                      }
+                    }
+                  },
+                  "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "write",
+            "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to write (relative or absolute)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Content to write to the file"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "mcp__demo__echo",
+            "description": "Echo the given text back.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text to echo"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__add",
+            "description": "Add two numbers and return the sum as structured content.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__fail",
+            "description": "Always fails.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__progress",
+            "description": "Report progress twice, then finish.",
+            "parameters": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          {
+            "name": "mcp__demo__picture",
+            "description": "Return an image and resources.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__big",
+            "description": "Return a long text.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__sleep",
+            "description": "Wait, then answer.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          {
+            "name": "mcp__demo__exit",
+            "description": "End the server.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__env",
+            "description": "Read an environment variable of the server.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "name": "list_mcp_resources",
+            "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_mcp_resource_templates",
+            "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "read_mcp_resource",
+            "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                }
+              },
+              "required": [
+                "server",
+                "uri"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "system",
+        "content": "",
+        "sections": {
+          "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+          "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+          "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+          "cwd": "<cwd>\n<cwd>\n</cwd>"
+        },
+        "timestamp": "<timestamp>",
+        "toolsAdded": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Line number to start reading from (1-indexed)"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of lines to read"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "type": "number",
+                  "description": "Timeout in seconds (optional, no default timeout)"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path",
+                "edits"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to edit (relative or absolute)"
+                },
+                "edits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "oldText",
+                      "newText"
+                    ],
+                    "properties": {
+                      "oldText": {
+                        "type": "string",
+                        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                      },
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text for this targeted edit."
+                      }
+                    }
+                  },
+                  "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "write",
+            "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            "parameters": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to write (relative or absolute)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Content to write to the file"
+                }
+              }
+            },
+            "constrainedSampling": {
+              "type": "json_schema",
+              "strict": "prefer"
+            }
+          },
+          {
+            "name": "mcp__demo__echo",
+            "description": "Echo the given text back.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text to echo"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__add",
+            "description": "Add two numbers and return the sum as structured content.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__fail",
+            "description": "Always fails.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__progress",
+            "description": "Report progress twice, then finish.",
+            "parameters": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          {
+            "name": "mcp__demo__picture",
+            "description": "Return an image and resources.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__big",
+            "description": "Return a long text.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__sleep",
+            "description": "Wait, then answer.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          {
+            "name": "mcp__demo__exit",
+            "description": "End the server.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          {
+            "name": "mcp__demo__env",
+            "description": "Read an environment variable of the server.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "name": "list_mcp_resources",
+            "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "list_mcp_resource_templates",
+            "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "read_mcp_resource",
+            "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                }
+              },
+              "required": [
+                "server",
+                "uri"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Use the demo tools"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Use the demo tools"
+          }
+        ],
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Calling the tools."
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Calling the tools."
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "id": "<id-3>",
+        "toolName": "mcp__demo__echo"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"text\": \"hi there\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-3>",
+          "name": "mcp__demo__echo",
+          "arguments": {
+            "text": "hi there"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 2,
+        "id": "<id-4>",
+        "toolName": "mcp__demo__add"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 2,
+        "delta": "{\"a\": 2, \"b\": 3}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 2,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-4>",
+          "name": "mcp__demo__add",
+          "arguments": {
+            "a": 2,
+            "b": 3
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 3,
+        "id": "<id-5>",
+        "toolName": "mcp__demo__fail"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 3,
+        "delta": "{}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 3,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-5>",
+          "name": "mcp__demo__fail",
+          "arguments": {}
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 4,
+        "id": "<id-6>",
+        "toolName": "mcp__demo__progress"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 4,
+        "delta": "{}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 4,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-6>",
+          "name": "mcp__demo__progress",
+          "arguments": {}
+        }
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Calling the tools."
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-3>",
+            "name": "mcp__demo__echo",
+            "arguments": {
+              "text": "hi there"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-4>",
+            "name": "mcp__demo__add",
+            "arguments": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-5>",
+            "name": "mcp__demo__fail",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-6>",
+            "name": "mcp__demo__progress",
+            "arguments": {}
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "cost": {
+            "input": 0.00030000000000000003,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0006000000000000001
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-7>",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-3>",
+      "toolName": "mcp__demo__echo",
+      "args": {
+        "text": "hi there"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-4>",
+      "toolName": "mcp__demo__add",
+      "args": {
+        "a": 2,
+        "b": 3
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-5>",
+      "toolName": "mcp__demo__fail",
+      "args": {}
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-6>",
+      "toolName": "mcp__demo__progress",
+      "args": {}
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-3>",
+      "toolName": "mcp__demo__echo",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "hi there"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "echo"
+        },
+        "structuredContent": {
+          "content": [
+            {
+              "type": "text",
+              "text": "hi there"
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-4>",
+      "toolName": "mcp__demo__add",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"sum\": 5\n}"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "add"
+        },
+        "structuredContent": {
+          "structuredContent": {
+            "sum": 5
+          },
+          "content": []
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-5>",
+      "toolName": "mcp__demo__fail",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Something went wrong"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "fail"
+        },
+        "structuredContent": {
+          "content": [
+            {
+              "type": "text",
+              "text": "Something went wrong"
+            }
+          ],
+          "isError": true
+        },
+        "isError": true
+      },
+      "isError": true
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-6>",
+      "toolName": "mcp__demo__progress",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Done"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "progress"
+        },
+        "structuredContent": {
+          "content": [
+            {
+              "type": "text",
+              "text": "Done"
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-6>",
+      "toolName": "mcp__demo__progress",
+      "args": {},
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Halfway"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "progress"
+        }
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-6>",
+      "toolName": "mcp__demo__progress",
+      "args": {},
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Progress 2/2"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "progress"
+        }
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-3>",
+        "toolName": "mcp__demo__echo",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi there"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "echo"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-3>",
+        "toolName": "mcp__demo__echo",
+        "content": [
+          {
+            "type": "text",
+            "text": "hi there"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "echo"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-4>",
+        "toolName": "mcp__demo__add",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"sum\": 5\n}"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "add"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-4>",
+        "toolName": "mcp__demo__add",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"sum\": 5\n}"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "add"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-5>",
+        "toolName": "mcp__demo__fail",
+        "content": [
+          {
+            "type": "text",
+            "text": "Something went wrong"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "fail"
+        },
+        "isError": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-5>",
+        "toolName": "mcp__demo__fail",
+        "content": [
+          {
+            "type": "text",
+            "text": "Something went wrong"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "fail"
+        },
+        "isError": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-6>",
+        "toolName": "mcp__demo__progress",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "progress"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-6>",
+        "toolName": "mcp__demo__progress",
+        "content": [
+          {
+            "type": "text",
+            "text": "Done"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "progress"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Calling the tools."
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-3>",
+            "name": "mcp__demo__echo",
+            "arguments": {
+              "text": "hi there"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-4>",
+            "name": "mcp__demo__add",
+            "arguments": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-5>",
+            "name": "mcp__demo__fail",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-6>",
+            "name": "mcp__demo__progress",
+            "arguments": {}
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 100,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 120,
+          "cost": {
+            "input": 0.00030000000000000003,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0006000000000000001
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-7>",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-3>",
+          "toolName": "mcp__demo__echo",
+          "content": [
+            {
+              "type": "text",
+              "text": "hi there"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "echo"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-4>",
+          "toolName": "mcp__demo__add",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"sum\": 5\n}"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "add"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-5>",
+          "toolName": "mcp__demo__fail",
+          "content": [
+            {
+              "type": "text",
+              "text": "Something went wrong"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "fail"
+          },
+          "isError": true,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-6>",
+          "toolName": "mcp__demo__progress",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "progress"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 0,
+        "id": "<id-8>",
+        "toolName": "mcp__demo__picture"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 0,
+        "delta": "{}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 0,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-8>",
+          "name": "mcp__demo__picture",
+          "arguments": {}
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "id": "<id-9>",
+        "toolName": "read_mcp_resource"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"server\": \"demo\", \"uri\": \"test://notes/readme\"}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-9>",
+          "name": "read_mcp_resource",
+          "arguments": {
+            "server": "demo",
+            "uri": "test://notes/readme"
+          }
+        }
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 2,
+        "id": "<id-10>",
+        "toolName": "list_mcp_resources"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 2,
+        "delta": "{}"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 2,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "<id-10>",
+          "name": "list_mcp_resources",
+          "arguments": {}
+        }
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-8>",
+            "name": "mcp__demo__picture",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-9>",
+            "name": "read_mcp_resource",
+            "arguments": {
+              "server": "demo",
+              "uri": "test://notes/readme"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-10>",
+            "name": "list_mcp_resources",
+            "arguments": {}
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 300,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 320,
+          "cost": {
+            "input": 0.0009,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0012000000000000001
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-11>",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-8>",
+      "toolName": "mcp__demo__picture",
+      "args": {}
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-9>",
+      "toolName": "read_mcp_resource",
+      "args": {
+        "server": "demo",
+        "uri": "test://notes/readme"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-10>",
+      "toolName": "list_mcp_resources",
+      "args": {}
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-10>",
+      "toolName": "list_mcp_resources",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}"
+          }
+        ],
+        "details": {
+          "server": "",
+          "tool": "list_mcp_resources"
+        },
+        "structuredContent": {
+          "resources": [
+            {
+              "server": "demo",
+              "uri": "test://notes/readme",
+              "name": "readme",
+              "mimeType": "text/plain",
+              "description": "The notes"
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-8>",
+      "toolName": "mcp__demo__picture",
+      "result": {
+        "content": [
+          {
+            "type": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            "mimeType": "image/png"
+          },
+          {
+            "type": "text",
+            "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+          },
+          {
+            "type": "text",
+            "text": "Inline note"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "picture"
+        },
+        "structuredContent": {
+          "content": [
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            },
+            {
+              "type": "resource_link",
+              "uri": "test://notes/readme",
+              "name": "readme",
+              "mimeType": "text/plain"
+            },
+            {
+              "type": "resource",
+              "resource": {
+                "uri": "test://notes/inline",
+                "text": "Inline note"
+              }
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-9>",
+      "toolName": "read_mcp_resource",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Read me first."
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "read_mcp_resource"
+        },
+        "structuredContent": {
+          "server": "demo",
+          "uri": "test://notes/readme",
+          "contents": [
+            {
+              "uri": "test://notes/readme",
+              "mimeType": "text/plain",
+              "text": "Read me first."
+            }
+          ]
+        }
+      },
+      "isError": false
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-8>",
+        "toolName": "mcp__demo__picture",
+        "content": [
+          {
+            "type": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            "mimeType": "image/png"
+          },
+          {
+            "type": "text",
+            "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+          },
+          {
+            "type": "text",
+            "text": "Inline note"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "picture"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-8>",
+        "toolName": "mcp__demo__picture",
+        "content": [
+          {
+            "type": "image",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            "mimeType": "image/png"
+          },
+          {
+            "type": "text",
+            "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+          },
+          {
+            "type": "text",
+            "text": "Inline note"
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "picture"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-9>",
+        "toolName": "read_mcp_resource",
+        "content": [
+          {
+            "type": "text",
+            "text": "Read me first."
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "read_mcp_resource"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-9>",
+        "toolName": "read_mcp_resource",
+        "content": [
+          {
+            "type": "text",
+            "text": "Read me first."
+          }
+        ],
+        "details": {
+          "server": "demo",
+          "tool": "read_mcp_resource"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-10>",
+        "toolName": "list_mcp_resources",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}"
+          }
+        ],
+        "details": {
+          "server": "",
+          "tool": "list_mcp_resources"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "<id-10>",
+        "toolName": "list_mcp_resources",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}"
+          }
+        ],
+        "details": {
+          "server": "",
+          "tool": "list_mcp_resources"
+        },
+        "isError": false,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<id-8>",
+            "name": "mcp__demo__picture",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-9>",
+            "name": "read_mcp_resource",
+            "arguments": {
+              "server": "demo",
+              "uri": "test://notes/readme"
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<id-10>",
+            "name": "list_mcp_resources",
+            "arguments": {}
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 300,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 320,
+          "cost": {
+            "input": 0.0009,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0012000000000000001
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-11>",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-8>",
+          "toolName": "mcp__demo__picture",
+          "content": [
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            },
+            {
+              "type": "text",
+              "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+            },
+            {
+              "type": "text",
+              "text": "Inline note"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "picture"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-9>",
+          "toolName": "read_mcp_resource",
+          "content": [
+            {
+              "type": "text",
+              "text": "Read me first."
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "read_mcp_resource"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-10>",
+          "toolName": "list_mcp_resources",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}"
+            }
+          ],
+          "details": {
+            "server": "",
+            "tool": "list_mcp_resources"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "All done."
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "All done."
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "All done."
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 500,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 520,
+          "cost": {
+            "input": 0.0015,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0018
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-12>",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "medium"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "All done."
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "usage": {
+          "input": 500,
+          "output": 20,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 520,
+          "cost": {
+            "input": 0.0015,
+            "output": 0.00030000000000000003,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0.0018
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "timestamp": "<timestamp>",
+        "responseId": "<id-12>",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "medium"
+      },
+      "toolResults": []
+    },
+    {
+      "type": "agent_end",
+      "messages": [
+        {
+          "role": "system",
+          "content": "",
+          "sections": {
+            "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+            "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+            "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+            "cwd": "<cwd>\n<cwd>\n</cwd>"
+          },
+          "timestamp": "<timestamp>",
+          "toolsAdded": [
+            {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read (relative or absolute)"
+                  },
+                  "offset": {
+                    "type": "number",
+                    "description": "Line number to start reading from (1-indexed)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of lines to read"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "bash",
+              "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command to execute"
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds (optional, no default timeout)"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "edit",
+              "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "edits"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to edit (relative or absolute)"
+                  },
+                  "edits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "oldText",
+                        "newText"
+                      ],
+                      "properties": {
+                        "oldText": {
+                          "type": "string",
+                          "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                        },
+                        "newText": {
+                          "type": "string",
+                          "description": "Replacement text for this targeted edit."
+                        }
+                      }
+                    },
+                    "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "write",
+              "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+              "parameters": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "content"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to write (relative or absolute)"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Content to write to the file"
+                  }
+                }
+              },
+              "constrainedSampling": {
+                "type": "json_schema",
+                "strict": "prefer"
+              }
+            },
+            {
+              "name": "mcp__demo__echo",
+              "description": "Echo the given text back.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "Text to echo"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            },
+            {
+              "name": "mcp__demo__add",
+              "description": "Add two numbers and return the sum as structured content.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              }
+            },
+            {
+              "name": "mcp__demo__fail",
+              "description": "Always fails.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            {
+              "name": "mcp__demo__progress",
+              "description": "Report progress twice, then finish.",
+              "parameters": {
+                "properties": {},
+                "type": "object"
+              }
+            },
+            {
+              "name": "mcp__demo__picture",
+              "description": "Return an image and resources.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            {
+              "name": "mcp__demo__big",
+              "description": "Return a long text.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            {
+              "name": "mcp__demo__sleep",
+              "description": "Wait, then answer.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "seconds": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            {
+              "name": "mcp__demo__exit",
+              "description": "End the server.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            },
+            {
+              "name": "mcp__demo__env",
+              "description": "Read an environment variable of the server.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "name": "list_mcp_resources",
+              "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "server": {
+                    "type": "string",
+                    "description": "MCP server name. Omit to list every server with resources."
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "list_mcp_resource_templates",
+              "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "server": {
+                    "type": "string",
+                    "description": "MCP server name. Omit to list every server with resources."
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "read_mcp_resource",
+              "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "server": {
+                    "type": "string",
+                    "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                  },
+                  "uri": {
+                    "type": "string",
+                    "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                  }
+                },
+                "required": [
+                  "server",
+                  "uri"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the demo tools"
+            }
+          ],
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Calling the tools."
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-3>",
+              "name": "mcp__demo__echo",
+              "arguments": {
+                "text": "hi there"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-4>",
+              "name": "mcp__demo__add",
+              "arguments": {
+                "a": 2,
+                "b": 3
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-5>",
+              "name": "mcp__demo__fail",
+              "arguments": {}
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-6>",
+              "name": "mcp__demo__progress",
+              "arguments": {}
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "usage": {
+            "input": 100,
+            "output": 20,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 120,
+            "cost": {
+              "input": 0.00030000000000000003,
+              "output": 0.00030000000000000003,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0006000000000000001
+            },
+            "cacheWrite1h": 0
+          },
+          "stopReason": "toolUse",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-7>",
+          "rawStopReason": "tool_use",
+          "thinkingLevel": "medium"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-3>",
+          "toolName": "mcp__demo__echo",
+          "content": [
+            {
+              "type": "text",
+              "text": "hi there"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "echo"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-4>",
+          "toolName": "mcp__demo__add",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"sum\": 5\n}"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "add"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-5>",
+          "toolName": "mcp__demo__fail",
+          "content": [
+            {
+              "type": "text",
+              "text": "Something went wrong"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "fail"
+          },
+          "isError": true,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-6>",
+          "toolName": "mcp__demo__progress",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "progress"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "id": "<id-8>",
+              "name": "mcp__demo__picture",
+              "arguments": {}
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-9>",
+              "name": "read_mcp_resource",
+              "arguments": {
+                "server": "demo",
+                "uri": "test://notes/readme"
+              }
+            },
+            {
+              "type": "toolCall",
+              "id": "<id-10>",
+              "name": "list_mcp_resources",
+              "arguments": {}
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "usage": {
+            "input": 300,
+            "output": 20,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 320,
+            "cost": {
+              "input": 0.0009,
+              "output": 0.00030000000000000003,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0012000000000000001
+            },
+            "cacheWrite1h": 0
+          },
+          "stopReason": "toolUse",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-11>",
+          "rawStopReason": "tool_use",
+          "thinkingLevel": "medium"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-8>",
+          "toolName": "mcp__demo__picture",
+          "content": [
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            },
+            {
+              "type": "text",
+              "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+            },
+            {
+              "type": "text",
+              "text": "Inline note"
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "picture"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-9>",
+          "toolName": "read_mcp_resource",
+          "content": [
+            {
+              "type": "text",
+              "text": "Read me first."
+            }
+          ],
+          "details": {
+            "server": "demo",
+            "tool": "read_mcp_resource"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "<id-10>",
+          "toolName": "list_mcp_resources",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}"
+            }
+          ],
+          "details": {
+            "server": "",
+            "tool": "list_mcp_resources"
+          },
+          "isError": false,
+          "timestamp": "<timestamp>"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "All done."
+            }
+          ],
+          "api": "anthropic-messages",
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "usage": {
+            "input": 500,
+            "output": 20,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 520,
+            "cost": {
+              "input": 0.0015,
+              "output": 0.00030000000000000003,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.0018
+            },
+            "cacheWrite1h": 0
+          },
+          "stopReason": "stop",
+          "timestamp": "<timestamp>",
+          "responseId": "<id-12>",
+          "rawStopReason": "end_turn",
+          "thinkingLevel": "medium"
+        }
+      ],
+      "willRetry": false
+    },
+    {
+      "type": "agent_settled"
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-13>",
+      "method": "notify",
+      "message": "demo: connected, 9 tools (direct)",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-14>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "id": "<id-15>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    },
+    {
+      "type": "extension_ui_request",
+      "id": "<id-16>",
+      "method": "notify",
+      "message": "No MCP servers configured. Add them to <agent>/mcp.json or .pi/mcp.json.",
+      "notifyType": "info"
+    },
+    {
+      "id": "<id-17>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "body": {
+        "model": "claude-sonnet-4-5",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use the demo tools",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 64000,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "offset",
+                "limit"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "limit": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeout"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "edits"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to edit (relative or absolute)"
+                },
+                "edits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "oldText",
+                      "newText"
+                    ],
+                    "properties": {
+                      "oldText": {
+                        "type": "string",
+                        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                      },
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text for this targeted edit."
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "write",
+            "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to write (relative or absolute)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Content to write to the file"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "mcp__demo__echo",
+            "description": "Echo the given text back.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text to echo"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__add",
+            "description": "Add two numbers and return the sum as structured content.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__fail",
+            "description": "Always fails.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__progress",
+            "description": "Report progress twice, then finish.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__picture",
+            "description": "Return an image and resources.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__big",
+            "description": "Return a long text.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__sleep",
+            "description": "Wait, then answer.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "number"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__exit",
+            "description": "End the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__env",
+            "description": "Read an environment variable of the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resources",
+            "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resource_templates",
+            "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "read_mcp_resource",
+            "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                }
+              },
+              "required": [
+                "server",
+                "uri"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "body": {
+        "model": "claude-sonnet-4-5",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use the demo tools"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Calling the tools."
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-3>",
+                "name": "mcp__demo__echo",
+                "input": {
+                  "text": "hi there"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-4>",
+                "name": "mcp__demo__add",
+                "input": {
+                  "a": 2,
+                  "b": 3
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-5>",
+                "name": "mcp__demo__fail",
+                "input": {}
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-6>",
+                "name": "mcp__demo__progress",
+                "input": {}
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_echo",
+                "content": "hi there",
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_add",
+                "content": "{\n  \"sum\": 5\n}",
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_fail",
+                "content": "Something went wrong",
+                "is_error": true
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_progress",
+                "content": "Done",
+                "is_error": false,
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 64000,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "offset",
+                "limit"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "limit": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeout"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "edits"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to edit (relative or absolute)"
+                },
+                "edits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "oldText",
+                      "newText"
+                    ],
+                    "properties": {
+                      "oldText": {
+                        "type": "string",
+                        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                      },
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text for this targeted edit."
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "write",
+            "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to write (relative or absolute)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Content to write to the file"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "mcp__demo__echo",
+            "description": "Echo the given text back.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text to echo"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__add",
+            "description": "Add two numbers and return the sum as structured content.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__fail",
+            "description": "Always fails.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__progress",
+            "description": "Report progress twice, then finish.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__picture",
+            "description": "Return an image and resources.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__big",
+            "description": "Return a long text.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__sleep",
+            "description": "Wait, then answer.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "number"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__exit",
+            "description": "End the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__env",
+            "description": "Read an environment variable of the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resources",
+            "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resource_templates",
+            "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "read_mcp_resource",
+            "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                }
+              },
+              "required": [
+                "server",
+                "uri"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "body": {
+        "model": "claude-sonnet-4-5",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Use the demo tools"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Calling the tools."
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-3>",
+                "name": "mcp__demo__echo",
+                "input": {
+                  "text": "hi there"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-4>",
+                "name": "mcp__demo__add",
+                "input": {
+                  "a": 2,
+                  "b": 3
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-5>",
+                "name": "mcp__demo__fail",
+                "input": {}
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-6>",
+                "name": "mcp__demo__progress",
+                "input": {}
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_echo",
+                "content": "hi there",
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_add",
+                "content": "{\n  \"sum\": 5\n}",
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_fail",
+                "content": "Something went wrong",
+                "is_error": true
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_progress",
+                "content": "Done",
+                "is_error": false
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "<id-8>",
+                "name": "mcp__demo__picture",
+                "input": {}
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-9>",
+                "name": "read_mcp_resource",
+                "input": {
+                  "server": "demo",
+                  "uri": "test://notes/readme"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "<id-10>",
+                "name": "list_mcp_resources",
+                "input": {}
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_picture",
+                "content": [
+                  {
+                    "type": "image",
+                    "source": {
+                      "type": "base64",
+                      "media_type": "image/png",
+                      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "[Resource test://notes/readme \"readme\" (text/plain). Read it with read_mcp_resource (server \"demo\")]"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Inline note"
+                  }
+                ],
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_read",
+                "content": "Read me first.",
+                "is_error": false
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_list",
+                "content": "{\"resources\":[{\"server\":\"demo\",\"uri\":\"test://notes/readme\",\"name\":\"readme\",\"mimeType\":\"text/plain\",\"description\":\"The notes\"}]}",
+                "is_error": false,
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 64000,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<cwd>\n<cwd>\n</cwd>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "offset",
+                "limit"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to read (relative or absolute)"
+                },
+                "offset": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "limit": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "bash",
+            "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "command",
+                "timeout"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "description": "Shell command to execute"
+                },
+                "timeout": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "edits"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to edit (relative or absolute)"
+                },
+                "edits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "oldText",
+                      "newText"
+                    ],
+                    "properties": {
+                      "oldText": {
+                        "type": "string",
+                        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                      },
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text for this targeted edit."
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "write",
+            "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            "eager_input_streaming": true,
+            "strict": true,
+            "input_schema": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file to write (relative or absolute)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Content to write to the file"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "mcp__demo__echo",
+            "description": "Echo the given text back.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text to echo"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__add",
+            "description": "Add two numbers and return the sum as structured content.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "mcp__demo__fail",
+            "description": "Always fails.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__progress",
+            "description": "Report progress twice, then finish.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__picture",
+            "description": "Return an image and resources.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__big",
+            "description": "Return a long text.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__sleep",
+            "description": "Wait, then answer.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "number"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__exit",
+            "description": "End the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          {
+            "name": "mcp__demo__env",
+            "description": "Read an environment variable of the server.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resources",
+            "description": "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "list_mcp_resource_templates",
+            "description": "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name. Omit to list every server with resources."
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Opaque cursor from a previous call with the same server; omit for the first page."
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "read_mcp_resource",
+            "description": "Read a specific resource from an MCP server given the server name and resource URI.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "description": "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                }
+              },
+              "required": [
+                "server",
+                "uri"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    }
+  ]
+}

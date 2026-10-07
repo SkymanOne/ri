@@ -254,6 +254,7 @@ impl Host {
                 text(payload, "text"),
             ))),
             "codemode.definition" => Ok(crate::codemode::definition()),
+            "mcp.validate" => self.validate_mcp_server(payload),
             "builtin.tool" => {
                 // Declaring a tool needs no grant; running it does.
                 let tool = self.builtin_tool(payload, false)?;
@@ -333,6 +334,28 @@ impl Host {
             }
             _ => self.bridge.start(kind, payload),
         }
+    }
+
+    /// pi's checks of `registerMcpServer({name, config})` by `extension`,
+    /// and the grant the server's transport needs: process for stdio,
+    /// network for HTTP.
+    fn validate_mcp_server(&self, payload: &Value) -> Result<Value, String> {
+        use yapi_core::mcp::config::{ServerTransport, validate_server};
+        let name = text(payload, "name");
+        let config = validate_server(name, &payload["config"]).map_err(|problem| {
+            let extension = text(payload, "extension");
+            format!("Invalid MCP server registered by extension \"{extension}\": {problem}")
+        })?;
+        let (granted, grant) = match config.transport {
+            ServerTransport::Stdio { .. } => (self.options.grants.process, "process"),
+            ServerTransport::Http { .. } => (self.options.grants.network, "network"),
+        };
+        if !granted {
+            return Err(format!(
+                "MCP server \"{name}\" needs the {grant} grant, which this extension does not have"
+            ));
+        }
+        Ok(Value::Null)
     }
 
     /// Built-in tool `{name}` for `{cwd}`; with `run`, only when the grants

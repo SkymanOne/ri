@@ -548,6 +548,38 @@
     ]
   },
   {
+    "name": "mcp-registered-json",
+    "cassette": "mcp/direct.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "-e", "demo.ts", "Use the demo tools"],
+    "files": {"demo.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerMcpServer(\"demo\", { command: \"python3\", args: [\"{{fixtures}}/mcp/server.py\"], exposure: \"direct\", description: \"Demo tools\" });\n}\n"}
+  },
+  {
+    "name": "mcp-registered-overridden-json",
+    "cassette": "mcp/direct.json",
+    "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "-e", "demo.ts", "Use the demo tools"],
+    "files": {"demo.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerMcpServer(\"demo\", { command: \"yapi-no-such-command\", exposure: \"direct\" });\n}\n"},
+    "agentFiles": {"mcp.json": "{\"mcpServers\": {\"demo\": {\"command\": \"python3\", \"args\": [\"{{fixtures}}/mcp/server.py\"], \"exposure\": \"direct\", \"description\": \"Demo tools\"}}}\n"}
+  },
+  {
+    "name": "mcp-registered-unhandled-print",
+    "cassette": "anthropic-messages/text.json",
+    "args": ["-p", "--no-session", "--no-extensions", "--model", "anthropic/claude-sonnet-4-5", "-e", "demo.ts", "hi"],
+    "files": {"demo.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerMcpServer(\"demo\", { command: \"python3\", args: [\"{{fixtures}}/mcp/server.py\"] });\n}\n"}
+  },
+  {
+    "name": "mcp-registered-later-rpc",
+    "cassette": "mcp/direct.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "-e", "demo.ts"],
+    "files": {"demo.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerCommand(\"demo-on\", { description: \"Register the demo server\", handler: async () => pi.registerMcpServer(\"demo\", { command: \"python3\", args: [\"{{fixtures}}/mcp/server.py\"], exposure: \"direct\" }) });\n\tpi.registerCommand(\"demo-off\", { description: \"Unregister the demo server\", handler: async () => pi.unregisterMcpServer(\"demo\") });\n}\n"},
+    "rpc": [
+      {"send": {"id": "on", "type": "prompt", "message": "/demo-on"}},
+      {"send": {"id": "run", "type": "prompt", "message": "Use the demo tools"}, "until": "agent_end"},
+      {"send": {"id": "status", "type": "prompt", "message": "/mcp"}},
+      {"send": {"id": "off", "type": "prompt", "message": "/demo-off"}},
+      {"send": {"id": "gone", "type": "prompt", "message": "/mcp"}}
+    ]
+  },
+  {
     "name": "tui-login-menu",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--model", "anthropic/claude-sonnet-4-5"],

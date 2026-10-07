@@ -578,6 +578,64 @@ export default async function (pi) {
     );
 }
 
+/// `registerMcpServer` throws without the grant the server's transport
+/// needs: process for stdio, network for HTTP. Pi's default grants allow
+/// both.
+#[tokio::test(flavor = "multi_thread")]
+async fn registering_an_mcp_server_needs_its_transport_grant() {
+    let dir = scratch("mcp-grants");
+    std::fs::write(
+        dir.join("main.ts"),
+        r#"
+export default function (pi) {
+	const attempt = (name, config) => {
+		try {
+			pi.registerMcpServer(name, config);
+			return "registered";
+		} catch (error) {
+			return error.message;
+		}
+	};
+	const results = [attempt("local", { command: "python3" }), attempt("remote", { url: "https://example.com/mcp" })];
+	pi.registerCommand("probe", { description: JSON.stringify(results), handler: async () => {} });
+}
+"#,
+    )
+    .unwrap();
+    let denied = |name: &str, grant: &str| {
+        format!("MCP server \"{name}\" needs the {grant} grant, which this extension does not have")
+    };
+    for (process, network, expected) in [
+        (
+            false,
+            true,
+            json!([denied("local", "process"), "registered"]),
+        ),
+        (
+            true,
+            false,
+            json!(["registered", denied("remote", "network")]),
+        ),
+    ] {
+        let mut options = Options::new(dir.clone());
+        options.grants.process = process;
+        options.grants.network = network;
+        let instance = Instance::start(&engine(), options, Arc::new(NoBridge))
+            .await
+            .unwrap();
+        let loaded = instance
+            .call(
+                "load",
+                &json!({"cwd": dir, "extensions": [{"id": 1, "path": dir.join("main.ts")}]}),
+            )
+            .await
+            .unwrap();
+        let description = &loaded["extensions"][0]["commands"][0]["description"];
+        let results: Value = serde_json::from_str(description.as_str().unwrap()).unwrap();
+        assert_eq!(results, expected);
+    }
+}
+
 /// An instance given its own environment sees those variables only.
 #[tokio::test(flavor = "multi_thread")]
 async fn sees_only_the_given_environment() {
