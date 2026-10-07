@@ -2,8 +2,9 @@
 //!
 //! Port of `packages/tui/src/components/markdown.ts` in pi `v1.0.0`. pi parses
 //! with marked; this uses pulldown-cmark and rebuilds marked's block structure,
-//! including its blank-line tokens, from source offsets. LaTeX is shown as
-//! written and code blocks are not syntax highlighted.
+//! including its blank-line tokens, from source offsets, and marked's links
+//! for bare URLs. LaTeX is shown as written and code blocks are not syntax
+//! highlighted.
 
 use std::ops::Range;
 
@@ -128,6 +129,8 @@ struct Builder<'a> {
     source: &'a str,
     events: std::iter::Peekable<pulldown_cmark::OffsetIter<'a>>,
     preserve_escapes: bool,
+    /// Inside a link's text, where marked links no bare URLs.
+    in_link: bool,
 }
 
 /// Whether a blank line follows the block ending at byte `end`: two or more
@@ -248,7 +251,9 @@ impl<'a> Builder<'a> {
                 }
             }
             Event::Start(Tag::Link { dest_url, .. }) => {
+                let in_link = std::mem::replace(&mut self.in_link, true);
                 let children = self.inlines(TagEnd::Link);
+                self.in_link = in_link;
                 let text = plain_text(&children);
                 out.push(Inline::Link {
                     children,
@@ -272,7 +277,7 @@ impl<'a> Builder<'a> {
             }
             self.inline(event, range, &mut out);
         }
-        out
+        if self.in_link { out } else { autolink(out) }
     }
 
     fn table(&mut self, range: Range<usize>) -> Block {
@@ -381,7 +386,7 @@ impl<'a> Builder<'a> {
                         self.inline(next, next_range, &mut inlines);
                     }
                 }
-                Some(Block::Text(inlines))
+                Some(Block::Text(autolink(inlines)))
             } else {
                 match event {
                     Event::Start(Tag::Paragraph) => {
@@ -456,6 +461,177 @@ fn push_text(out: &mut Vec<Inline>, text: String) {
     } else {
         out.push(Inline::Text(text));
     }
+}
+
+/// marked's GFM `url` rule: the bare URLs and email addresses in the text
+/// of `inlines` as links. marked tries the rule where a token starts, which
+/// in text is at `http://`, `https://`, `ftp://` and `www.` anywhere, and at
+/// the start of an email address's local part.
+fn autolink(inlines: Vec<Inline>) -> Vec<Inline> {
+    let mut out = Vec::with_capacity(inlines.len());
+    for inline in inlines {
+        let Inline::Text(text) = inline else {
+            out.push(inline);
+            continue;
+        };
+        let bytes = text.as_bytes();
+        // Where the text left, and the token marked is in, starts.
+        let mut start = 0;
+        let mut at = 0;
+        while let Some(c) = text[at..].chars().next() {
+            let link = web_link(&text[at..]).or_else(|| {
+                (at == start || !is_local(bytes[at - 1]))
+                    .then(|| email_link(&text[at..]))
+                    .flatten()
+            });
+            let Some((len, href)) = link else {
+                at += c.len_utf8();
+                continue;
+            };
+            if start < at {
+                out.push(Inline::Text(text[start..at].to_owned()));
+            }
+            let link = text[at..at + len].to_owned();
+            out.push(Inline::Link {
+                children: vec![Inline::Text(link.clone())],
+                text: link,
+                href,
+            });
+            at += len;
+            start = at;
+        }
+        if start == 0 {
+            out.push(Inline::Text(text));
+        } else if start < text.len() {
+            out.push(Inline::Text(text[start..].to_owned()));
+        }
+    }
+    out
+}
+
+/// A character of an email address's local part, for marked.
+fn is_local(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'+' | b'-')
+}
+
+/// A character of a domain label, for marked.
+fn is_label(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')
+}
+
+/// marked's bare URL at the start of `s`, with its length and href: a
+/// scheme or `www.` and a domain character, up to whitespace or `<`, less
+/// what `_backpedal` leaves out.
+fn web_link(s: &str) -> Option<(usize, String)> {
+    let www = s.starts_with("www.");
+    let prefix = if www {
+        4
+    } else {
+        ["https://", "http://", "ftp://"]
+            .iter()
+            .find(|scheme| {
+                s.as_bytes()
+                    .get(..scheme.len())
+                    .is_some_and(|head| head.eq_ignore_ascii_case(scheme.as_bytes()))
+            })?
+            .len()
+    };
+    let first = *s.as_bytes().get(prefix)?;
+    if !(first.is_ascii_alphanumeric() || first == b'-') {
+        return None;
+    }
+    let mut len = s[prefix..]
+        .find(|c| crate::text::is_js_whitespace(c) || c == '<')
+        .map_or(s.len(), |end| prefix + end);
+    loop {
+        let kept = backpedal(&s[..len]);
+        if kept == len {
+            break;
+        }
+        len = kept;
+    }
+    let href = if www {
+        format!("http://{}", &s[..len])
+    } else {
+        s[..len].to_owned()
+    };
+    Some((len, href))
+}
+
+/// The length of the start of `url` that marked's `_backpedal` matches:
+/// trailing punctuation and an unclosed parenthesis or a final entity
+/// reference end the URL.
+fn backpedal(url: &str) -> usize {
+    const TRAILING: &[u8] = b"?!.,:;*_'\"~)";
+    let bytes = url.as_bytes();
+    let mut at = 0;
+    while let Some(&c) = bytes.get(at) {
+        if c == b'(' {
+            match url[at + 1..].find(')') {
+                Some(close) => at += close + 2,
+                None => break,
+            }
+        } else if c == b'&' {
+            let rest = &bytes[at + 1..];
+            let entity = rest.len() > 1
+                && rest.ends_with(b";")
+                && rest[..rest.len() - 1].iter().all(u8::is_ascii_alphanumeric);
+            if entity {
+                break;
+            }
+            at += 1;
+        } else if TRAILING.contains(&c) {
+            // A run of punctuation that does not end the URL.
+            let run = bytes[at..]
+                .iter()
+                .take_while(|c| TRAILING.contains(c))
+                .count();
+            if at + run < bytes.len() {
+                at += run;
+            } else if run > 1 {
+                at += run - 1;
+            } else {
+                break;
+            }
+        } else {
+            at += 1;
+        }
+    }
+    at
+}
+
+/// marked's email address at the start of `s`, with its length and href.
+fn email_link(s: &str) -> Option<(usize, String)> {
+    let bytes = s.as_bytes();
+    let local = bytes.iter().take_while(|c| is_local(**c)).count();
+    if local == 0 || bytes.get(local) != Some(&b'@') {
+        return None;
+    }
+    let label = bytes[local + 1..]
+        .iter()
+        .take_while(|c| is_label(**c))
+        .count();
+    if label == 0 {
+        return None;
+    }
+    let len = domain_end(bytes, local + 1 + label, false)?;
+    Some((len, format!("mailto:{}", &s[..len])))
+}
+
+/// Where marked's `(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])` ends from `at`,
+/// in the order its backtracking tries; `matched` once a label matched.
+fn domain_end(bytes: &[u8], at: usize, matched: bool) -> Option<usize> {
+    if bytes.get(at) == Some(&b'.') {
+        let run = bytes[at + 1..].iter().take_while(|c| is_label(**c)).count();
+        for end in (at + 2..=at + 1 + run).rev() {
+            if bytes[end - 1].is_ascii_alphanumeric()
+                && let Some(found) = domain_end(bytes, end, true)
+            {
+                return Some(found);
+            }
+        }
+    }
+    (matched && !matches!(bytes.get(at), Some(b'-' | b'_'))).then_some(at)
 }
 
 fn plain_text(inlines: &[Inline]) -> String {
@@ -942,6 +1118,7 @@ pub fn render(
             .into_offset_iter()
             .peekable(),
         preserve_escapes: options.preserve_backslash_escapes,
+        in_link: false,
     };
     let blocks = builder.blocks(None);
     let renderer = Renderer { theme, options };
