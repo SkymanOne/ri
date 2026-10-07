@@ -18,6 +18,8 @@ const stripAnsi = (line) => line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b_[^
 
 const type = (text) => [...text];
 const paste = (text) => `\x1b[200~${text}\x1b[201~`;
+// A step that calls `insertTextAtCursor`, as the clipboard paste key does, instead of a key.
+const insert = (text) => ({ insert: text });
 const LEFT = "\x1b[D";
 const RIGHT = "\x1b[C";
 const UP = "\x1b[A";
@@ -49,6 +51,7 @@ const cases = [
 	{ name: "kitty-keys", steps: ["\x1b[104u", "\x1b[105;2u", "\x1b[97:65;2u", "\x1b[32;2u", "\x1b[99;5u", "\x1b[27;2;66~"] },
 	{ name: "ctrl-chars", steps: [...type("ab"), "\x03", "\x1b", "\x02", "\x06", "\x0e", "\x10"] },
 	{ name: "set-text", setText: "pre\tset\r\ntext", steps: ["\x1f", "\x1f"] },
+	{ name: "insert-at-cursor", steps: [...type("ab"), LEFT, insert("x\ty\r\nz"), "\x1f", insert("/tmp/a.png"), ...type("c"), "\x1f"] },
 ];
 
 const results = cases.map((testCase) => {
@@ -63,7 +66,8 @@ const results = cases.map((testCase) => {
 	if (testCase.setText !== undefined) editor.setText(testCase.setText);
 	editor.render(width);
 	const states = testCase.steps.map((key) => {
-		editor.handleInput(key);
+		if (typeof key === "string") editor.handleInput(key);
+		else editor.insertTextAtCursor(key.insert);
 		const render = editor.render(width).map(stripAnsi);
 		const cursor = editor.getCursor();
 		return { key, text: editor.getText(), cursor: [cursor.line, cursor.col], render, submitted: [...submitted] };

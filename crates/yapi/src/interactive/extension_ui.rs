@@ -14,6 +14,7 @@ use yapi_core::extensions::{
     ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement,
     RemoteComponent, ShortcutBinding, Widget, WorkingIndicator,
 };
+use yapi_tui::color::Color;
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
 use yapi_types::sync::lock;
@@ -74,6 +75,8 @@ pub(super) enum Request {
     /// Switch to the named theme, which loads; `None` falls back to the
     /// system theme, as pi does when a theme fails to load.
     Theme(Option<String>),
+    /// Switch to a theme made from an extension's `Theme` object.
+    ThemeInstance(Theme),
     Shutdown,
 }
 
@@ -89,12 +92,12 @@ pub(super) struct Shared {
     /// The extension shortcuts, and the decoder their keys match with.
     pub shortcuts: Vec<ShortcutBinding>,
     pub keys: yapi_tui::keys::Keys,
-    /// Loads a theme by name: why it cannot be used.
-    pub check_theme: Option<CheckTheme>,
+    /// See [`LoadTheme`].
+    pub load_theme: Option<LoadTheme>,
 }
 
-/// Loads a theme by name: why it cannot be used.
-pub(super) type CheckTheme = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+/// Loads a theme by name, or from a theme document: why it cannot be used.
+pub(super) type LoadTheme = Arc<dyn Fn(&Value) -> Result<Theme, String> + Send + Sync>;
 
 /// The extension UI of one session.
 pub(super) struct InteractiveUi {
@@ -330,13 +333,26 @@ impl ExtensionUi for InteractiveUi {
         lock(&self.shared).theme.clone()
     }
 
-    /// pi's `setTheme` with a name: the theme applies and is saved, or the
-    /// system theme applies and the error says why.
-    fn set_theme(&self, name: &str) -> Result<(), String> {
-        let check = lock(&self.shared).check_theme.clone();
-        let checked = check.map_or(Ok(()), |check| check(name));
-        self.send(Request::Theme(checked.is_ok().then(|| name.to_owned())));
-        checked
+    fn get_theme(&self, name: &str) -> Value {
+        let load = lock(&self.shared).load_theme.clone();
+        load.and_then(|load| load(&Value::from(name)).ok())
+            .map_or(Value::Null, |theme| theme_json(&theme))
+    }
+
+    /// pi's `setTheme`. A name applies and is saved, or the system theme
+    /// applies and the error says why. A `Theme` object's colors apply
+    /// without being saved, as pi's `setThemeInstance` does.
+    fn set_theme(&self, theme: &Value) -> Result<(), String> {
+        let Some(load) = lock(&self.shared).load_theme.clone() else {
+            return Err("UI not available".into());
+        };
+        let loaded = load(theme);
+        if let Some(name) = theme.as_str() {
+            self.send(Request::Theme(loaded.is_ok().then(|| name.to_owned())));
+            return loaded.map(drop);
+        }
+        self.send(Request::ThemeInstance(loaded?));
+        Ok(())
     }
 
     fn footer_data(&self) -> Value {
@@ -360,19 +376,29 @@ pub(super) fn shortcut_for<'a>(
 pub(super) fn theme_json(theme: &Theme) -> Value {
     let mut fg = Map::new();
     let mut bg = Map::new();
+    let mut colors = Map::new();
     let mut dim = Vec::new();
     let mut tokens: Vec<&str> = theme.tokens().collect();
     tokens.sort_unstable();
     for token in tokens {
-        let (foreground, background) = match theme.paint(token) {
-            Some(Paint::Color(_)) => (
+        let (foreground, background, color) = match theme.paint(token) {
+            Some(Paint::Color(color)) => (
                 yapi_tui::ansi::sgr(ratatui_core::style::Style::new().fg(theme.color(token))),
                 yapi_tui::ansi::sgr(ratatui_core::style::Style::new().bg(theme.color(token))),
+                match color {
+                    Color::Indexed(index) => Value::from(index),
+                    color => Value::String(color.to_hex()),
+                },
             ),
-            _ => ("\x1b[39m".to_owned(), "\x1b[49m".to_owned()),
+            _ => (
+                "\x1b[39m".to_owned(),
+                "\x1b[49m".to_owned(),
+                Value::from(""),
+            ),
         };
         fg.insert(token.to_owned(), Value::String(foreground));
         bg.insert(token.to_owned(), Value::String(background));
+        colors.insert(token.to_owned(), color);
         if theme.is_dim(token) {
             dim.push(token.to_owned());
         }
@@ -383,6 +409,7 @@ pub(super) fn theme_json(theme: &Theme) -> Value {
         "fg": fg,
         "bg": bg,
         "dim": dim,
+        "colors": colors,
     })
 }
 
@@ -893,6 +920,7 @@ impl super::App {
                 let name = name.unwrap_or_else(|| yapi_tui::theme::SYSTEM_THEME_NAME.to_owned());
                 self.use_theme(Some(&name));
             }
+            Request::ThemeInstance(theme) => self.apply_theme(theme),
             Request::ToolsExpanded(expanded) => {
                 if expanded != self.expanded {
                     self.expanded = expanded;

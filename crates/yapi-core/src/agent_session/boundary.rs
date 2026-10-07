@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::hooks::TurnDecision;
 use yapi_types::event::AgentEvent;
+use yapi_types::extension_event::ExtensionEvent;
 use yapi_types::message::{AssistantMessage, Content, Message, StopReason, ToolResultMessage};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
@@ -291,15 +292,16 @@ impl AgentSession {
             .cloned()
             .map(Message::ToolResult)
             .collect();
-        let base = json!({
-            "type": "turn_end",
-            "turnIndex": turn_index,
-            "message": Message::Assistant(Box::new(message.clone())),
-            "toolResults": tool_results,
-            "messageEntryId": entry_id,
-            "toolResultEntryIds": tool_result_ids,
-            "outcome": outcome,
-        });
+        let message = Message::Assistant(Box::new(message.clone()));
+        let base = ExtensionEvent::TurnEnd {
+            turn_index,
+            message: &message,
+            tool_results: &tool_results,
+            message_entry_id: &entry_id,
+            tool_result_entry_ids: &tool_result_ids,
+            outcome,
+        }
+        .to_value();
         let (entries, proceed) = self.emit_boundary(base, Boundary::TurnEnd, cancel).await;
         let messages = self.commit_drafts(&entries).then(|| self.messages());
         let continue_run = proceed && self.can_continue_now(Boundary::TurnEnd);
@@ -319,7 +321,7 @@ impl AgentSession {
             return self.has_queued();
         }
         let outcome = *lock(&self.inner.outcome);
-        let base = json!({"type": "agent_before_settle", "outcome": outcome});
+        let base = ExtensionEvent::AgentBeforeSettle { outcome }.to_value();
         let (entries, proceed) = self
             .emit_boundary(base, Boundary::BeforeSettle, cancel.clone())
             .await;

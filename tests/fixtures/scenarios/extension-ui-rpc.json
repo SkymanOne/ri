@@ -61,7 +61,7 @@
       "type": "extension_ui_request",
       "id": "<id-8>",
       "method": "setTitle",
-      "title": "ri test"
+      "title": "yapi test"
     },
     {
       "type": "extension_ui_request",

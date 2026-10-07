@@ -148,9 +148,6 @@
             "description": "Greets someone",
             "parameters": {
               "type": "object",
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -298,9 +295,6 @@
             "description": "Greets someone",
             "parameters": {
               "type": "object",
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -431,6 +425,55 @@
       }
     },
     {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-3>",
+      "toolName": "read",
+      "args": {
+        "path": "hello.txt"
+      },
+      "parentToolCallId": "call_mock_1"
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-3>",
+      "toolName": "read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "hi\n"
+          }
+        ]
+      },
+      "isError": false,
+      "parentToolCallId": "call_mock_1"
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-1>",
+      "toolName": "greet",
+      "args": {
+        "name": "yapi"
+      },
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "before"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "<id-4>",
+      "toolName": "read",
+      "args": {
+        "path": "hello.txt"
+      },
+      "parentToolCallId": "call_mock_1"
+    },
+    {
       "type": "tool_execution_end",
       "toolCallId": "<id-1>",
       "toolName": "greet",
@@ -438,11 +481,58 @@
         "content": [
           {
             "type": "text",
-            "text": "Hi yapi"
+            "text": "Hello, yapi!"
           }
         ]
       },
       "isError": false
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "<id-4>",
+      "toolName": "read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "hi\n"
+          }
+        ]
+      },
+      "isError": false,
+      "parentToolCallId": "call_mock_1"
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-1>",
+      "toolName": "greet",
+      "args": {
+        "name": "yapi"
+      },
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "after"
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "<id-1>",
+      "toolName": "greet",
+      "args": {
+        "name": "yapi"
+      },
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "between"
+          }
+        ]
+      }
     },
     {
       "type": "message_start",
@@ -453,11 +543,34 @@
         "content": [
           {
             "type": "text",
-            "text": "Hi yapi"
+            "text": "Hello, yapi!"
           }
         ],
         "isError": false,
-        "timestamp": "<timestamp>"
+        "timestamp": "<timestamp>",
+        "nestedCalls": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "read",
+              "status": "ok",
+              "arguments": {
+                "path": "hello.txt"
+              },
+              "durationMs": "<durationMs>"
+            },
+            {
+              "id": "<id-4>",
+              "name": "read",
+              "status": "ok",
+              "arguments": {
+                "path": "hello.txt"
+              },
+              "durationMs": "<durationMs>"
+            }
+          ],
+          "complete": true
+        }
       }
     },
     {
@@ -469,11 +582,34 @@
         "content": [
           {
             "type": "text",
-            "text": "Hi yapi"
+            "text": "Hello, yapi!"
           }
         ],
         "isError": false,
-        "timestamp": "<timestamp>"
+        "timestamp": "<timestamp>",
+        "nestedCalls": {
+          "calls": [
+            {
+              "id": "<id-3>",
+              "name": "read",
+              "status": "ok",
+              "arguments": {
+                "path": "hello.txt"
+              },
+              "durationMs": "<durationMs>"
+            },
+            {
+              "id": "<id-4>",
+              "name": "read",
+              "status": "ok",
+              "arguments": {
+                "path": "hello.txt"
+              },
+              "durationMs": "<durationMs>"
+            }
+          ],
+          "complete": true
+        }
       }
     },
     {
@@ -522,11 +658,34 @@
           "content": [
             {
               "type": "text",
-              "text": "Hi yapi"
+              "text": "Hello, yapi!"
             }
           ],
           "isError": false,
-          "timestamp": "<timestamp>"
+          "timestamp": "<timestamp>",
+          "nestedCalls": {
+            "calls": [
+              {
+                "id": "<id-3>",
+                "name": "read",
+                "status": "ok",
+                "arguments": {
+                  "path": "hello.txt"
+                },
+                "durationMs": "<durationMs>"
+              },
+              {
+                "id": "<id-4>",
+                "name": "read",
+                "status": "ok",
+                "arguments": {
+                  "path": "hello.txt"
+                },
+                "durationMs": "<durationMs>"
+              }
+            ],
+            "complete": true
+          }
         }
       ]
     },
@@ -771,9 +930,6 @@
               "description": "Greets someone",
               "parameters": {
                 "type": "object",
-                "required": [
-                  "name"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -836,11 +992,34 @@
           "content": [
             {
               "type": "text",
-              "text": "Hi yapi"
+              "text": "Hello, yapi!"
             }
           ],
           "isError": false,
-          "timestamp": "<timestamp>"
+          "timestamp": "<timestamp>",
+          "nestedCalls": {
+            "calls": [
+              {
+                "id": "<id-3>",
+                "name": "read",
+                "status": "ok",
+                "arguments": {
+                  "path": "hello.txt"
+                },
+                "durationMs": "<durationMs>"
+              },
+              {
+                "id": "<id-4>",
+                "name": "read",
+                "status": "ok",
+                "arguments": {
+                  "path": "hello.txt"
+                },
+                "durationMs": "<durationMs>"
+              }
+            ],
+            "complete": true
+          }
         },
         {
           "role": "assistant",
@@ -1066,9 +1245,6 @@
               "description": "Greets someone",
               "parameters": {
                 "type": "object",
-                "required": [
-                  "name"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -1118,7 +1294,7 @@
           },
           {
             "role": "tool",
-            "content": "Hi yapi",
+            "content": "Hello, yapi!",
             "tool_call_id": "call_mock_1"
           }
         ],
@@ -1284,9 +1460,6 @@
               "description": "Greets someone",
               "parameters": {
                 "type": "object",
-                "required": [
-                  "name"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"

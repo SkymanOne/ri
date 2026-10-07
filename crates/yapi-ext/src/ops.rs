@@ -1,5 +1,6 @@
 //! Host work the guest starts: timers, processes and HTTP requests. Each
 //! takes the JSON payload the Node shims send and returns their result shape.
+//! Operations of a running tool call run as jobs on the call's own task.
 
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -10,9 +11,11 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use futures_util::future::BoxFuture;
+use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt as _, StreamExt as _};
 use serde_json::{Map, Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use yapi_types::sync::lock;
 
 /// How long a killed process gets between SIGTERM and SIGKILL, as in pi.
@@ -97,6 +100,63 @@ impl Spawn {
                 .collect()
         })
     }
+}
+
+/// An operation that runs on the task of the call that started it.
+pub(crate) type Job = BoxFuture<'static, ()>;
+
+/// Queues `operation` on `jobs`, the queue of the call that started it; the
+/// returned future gives its result. Once that call has ended, `operation`
+/// runs where the returned future is polled.
+pub(crate) fn queue(
+    jobs: &mpsc::UnboundedSender<Job>,
+    operation: BoxFuture<'static, Result<Value, String>>,
+) -> BoxFuture<'static, Result<Value, String>> {
+    let (reply, result) = oneshot::channel();
+    let job: Job = Box::pin(async move {
+        let _ = reply.send(operation.await);
+    });
+    let unsent = jobs.send(job).err().map(|error| error.0);
+    Box::pin(async move {
+        if let Some(job) = unsent {
+            job.await;
+        }
+        result
+            .await
+            .unwrap_or_else(|_| Err("The operation was dropped".to_owned()))
+    })
+}
+
+/// Runs `call` and the jobs it queues on `jobs` on the current task, which
+/// yields after each step: what a step published goes out before the next
+/// step, as pi emits it before the caller resumes. Jobs still running when
+/// `call` ends finish on their own.
+pub(crate) async fn drive<T>(
+    call: impl Future<Output = T>,
+    mut jobs: mpsc::UnboundedReceiver<Job>,
+) -> T {
+    tokio::pin!(call);
+    let mut running = FuturesUnordered::new();
+    let output = loop {
+        tokio::select! {
+            biased;
+            output = &mut call => break output,
+            Some(()) = running.next(), if !running.is_empty() => {}
+            Some(job) = jobs.recv() => running.push(job),
+        }
+        tokio::task::yield_now().await;
+    };
+    jobs.close();
+    while let Ok(job) = jobs.try_recv() {
+        running.push(job);
+    }
+    // Jobs of the call's last step, such as its last updates, take their
+    // first step with it.
+    while let Some(Some(())) = running.next().now_or_never() {}
+    if !running.is_empty() {
+        tokio::spawn(async move { while running.next().await.is_some() {} });
+    }
+    output
 }
 
 /// Waits `{ms}` milliseconds.

@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use yapi_core::packages::{PackageManager, npm::default_registry};
+use yapi_core::packages::{PackageManager, npm};
 use yapi_core::settings::SettingsManager;
 use yapi_ext::{Engine, ExtensionHost, Grants, Options};
 use yapi_types::rpc::SourceInfo;
@@ -130,8 +130,7 @@ async fn load(
         json!({"packages": [format!("npm:{name}@{version}")]}).to_string(),
     )?;
     let settings = SettingsManager::load(&agent, &cwd, false);
-    let mut packages =
-        PackageManager::new(cwd.clone(), agent.clone(), settings, default_registry());
+    let mut packages = PackageManager::new(cwd.clone(), agent.clone(), settings, npm::config());
     let mut install_errors = Vec::new();
     packages
         .install_missing(|error| install_errors.push(error))

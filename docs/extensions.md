@@ -39,7 +39,7 @@ yapi does not need Node.js. TypeScript and JavaScript extensions run in `yapi-js
 - Providers added with `ctx.ui.addAutocompleteProvider` wrap yapi's built-in completions, as in Pi. yapi asks them in the background, as it does for `@` file search.
 - Components match keys against the user's `keybindings.json`.
 - Commands change the session with `ctx.newSession`, `ctx.fork`, `ctx.navigateTree`, `ctx.switchSession` and `ctx.reload` in every mode, as in Pi. `setup` and `withSession` run on the replacement, and a `pi` or `ctx` captured before the change throws once the session is replaced. `setup` runs after the new session's `session_start`, as [Differences from Pi](compat.md#open-gaps) notes.
-- `ctx.ui.setTheme` switches to a theme by name and saves it, as `/settings` does.
+- `ctx.ui.setTheme` switches to a theme by name and saves it, as `/settings` does. Given a `Theme` object, from `ctx.ui.getTheme` or Pi's `Theme` constructor, it switches for this run without saving. yapi checks the object's colors first and returns an error when a color is missing or invalid.
 
 Some Node features have no counterpart in the runtime. Native addons, `net` and `tls` servers and `worker_threads` fail when used, and the rest of the extension keeps working. [Differences from Pi](compat.md) lists the details.
 
@@ -55,7 +55,7 @@ yapi loads extensions from:
 
 - `~/.yapi/agent/extensions`, and `.yapi/extensions` in a trusted project
 - packages and files added with `yapi install`, which accepts npm and git sources, local folders and single `.ts`, `.js` or `.wasm` files
-- `-e <path>` for one run, which accepts a file or a package folder
+- `-e <source>` for one run, which accepts a file, a package folder, or an npm or git source that yapi installs without adding it to settings
 
 `yapi -ne` starts without extensions.
 

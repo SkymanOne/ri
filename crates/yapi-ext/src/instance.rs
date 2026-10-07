@@ -81,6 +81,11 @@ pub trait Bridge: Send + Sync {
         Box::pin(async move { Err(message) })
     }
 
+    /// Ends a guest step: called on the instance's thread after each guest
+    /// call, once the operations it began have started and before its results
+    /// are delivered.
+    fn step_ended(&self) {}
+
     /// The request hooks of running extension stream `id`, for the requests
     /// it makes through yapi's wire APIs.
     fn stream_hooks(&self, _id: u64) -> yapi_ai::stream::RequestHooks {
@@ -535,6 +540,7 @@ impl Actor {
                 for (op, kind, payload) in started {
                     self.start_op(op, &kind, &payload);
                 }
+                self.host.bridge.step_ended();
                 for outcome in outcomes {
                     let (id, result) = match outcome {
                         wit::extension::types::Outcome::Done((id, json)) => (

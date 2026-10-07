@@ -620,8 +620,9 @@ impl super::App {
                 self.text_item(info, true, (1, 0));
             }
             "/changelog" => {
-                self.push(super::Item::Render(Box::new(|width, ctx| {
-                    framed_markdown("What's New", "No changelog entries found.", width, ctx)
+                let text = super::changelog::all();
+                self.push(super::Item::Render(Box::new(move |width, ctx| {
+                    framed_markdown("What's New", &text, width, ctx)
                 })));
             }
             "/hotkeys" => {

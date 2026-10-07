@@ -22,6 +22,7 @@ use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
 use yapi_ai::stream::{Hook, RequestHeaders, RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
+use yapi_types::extension_event::{ExtensionEvent, TreePreparation};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
     ThinkingLevel, ToolCall, UserMessage,
@@ -34,7 +35,8 @@ use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
 use crate::extensions::{
-    BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, SessionActions, Tools,
+    BashOperations, Extension, ExtensionUi, Loadout, LoadoutChanges, Mode, NoUi, SessionActions,
+    Tools,
 };
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
@@ -248,6 +250,8 @@ struct Inner {
     run_options: Mutex<Option<PromptOptions>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
     forced_prompt: Mutex<Option<String>>,
+    /// Declared tools the last loadout left out of requests.
+    hidden_tools: Mutex<std::collections::HashSet<String>>,
     /// Extension messages sent with the next prompt.
     next_turn: Mutex<Vec<Message>>,
     /// Extension messages sent during a turn, appended when it ends.
@@ -453,6 +457,7 @@ impl AgentSession {
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print, None)),
                 run_options: Mutex::new(None),
                 forced_prompt: Mutex::new(None),
+                hidden_tools: Mutex::default(),
                 next_turn: Mutex::new(Vec::new()),
                 pending_custom: Mutex::new(Vec::new()),
                 resources: RwLock::new(resources),
@@ -548,8 +553,9 @@ impl AgentSession {
             session.name()
         });
         self.emit(&AgentEvent::SessionInfoChanged { name: name.clone() });
-        let event = serde_json::json!({"type": "session_info_changed", "name": name});
-        self.announce(extensions::defined(event, &["name"]));
+        self.announce(ExtensionEvent::SessionInfoChanged {
+            name: name.as_deref(),
+        });
     }
 
     /// A snapshot of the merged settings.
@@ -759,12 +765,13 @@ impl AgentSession {
         if handlers.is_empty() {
             return Ok(UserBash::Local);
         }
-        let event = serde_json::json!({
-            "type": "user_bash",
-            "command": command,
-            "excludeFromContext": exclude_from_context,
-            "cwd": self.with_session(|session| session.cwd().to_path_buf()),
-        });
+        let cwd = self.with_session(|session| session.cwd().to_path_buf());
+        let event = ExtensionEvent::UserBash {
+            command,
+            exclude_from_context,
+            cwd: &cwd,
+        }
+        .to_value();
         let ctx = self.extension_context(CancellationToken::new());
         for extension in handlers {
             let Some(result) = extension.handle(&ctx, &event).await else {
@@ -1091,7 +1098,8 @@ impl AgentSession {
             .clone()
             .unwrap_or_else(|| self.base_prompt_options());
         options.selected_tools = active.to_vec();
-        for tool in self.active_tools(active) {
+        let declared = self.active_tools(active);
+        for tool in &declared {
             let name = tool.tool.declaration().name.clone();
             if let Some(snippet) = &tool.snippet {
                 options
@@ -1106,20 +1114,37 @@ impl AgentSession {
                     .or_insert_with(|| tool.guidelines.clone());
             }
         }
+        // The prompt lists only the tools requests declare.
+        let (_, changes) = self.loadout_changes(declared);
+        options
+            .tool_snippets
+            .retain(|name, _| !changes.hidden.contains(name));
         options
     }
 
-    /// The `declared` tools as the model sees them, with the descriptions
-    /// the extensions' loadout hooks give them; pi's `_applyToolLoadout`.
-    fn loadout(&self, declared: Vec<RegisteredTool>) -> Vec<Arc<dyn Tool>> {
+    /// The extensions' loadout hooks' changes for `declared` tools, with the
+    /// loadout they saw.
+    fn loadout_changes(&self, declared: Vec<RegisteredTool>) -> (Loadout, LoadoutChanges) {
         let loadout = Loadout {
             declared,
             callable: self.callable_tools(),
         };
-        let mut descriptions = std::collections::HashMap::new();
+        let mut changes = LoadoutChanges::default();
         for extension in &self.inner.extensions {
-            descriptions.extend(extension.prepare_loadout(&loadout));
+            let next = extension.prepare_loadout(&loadout);
+            changes.descriptions.extend(next.descriptions);
+            changes.hidden.extend(next.hidden);
         }
+        (loadout, changes)
+    }
+
+    /// The `declared` tools as the model sees them, with the descriptions
+    /// the extensions' loadout hooks give them, and records the tools the
+    /// hooks hide from requests; pi's `_applyToolLoadout`.
+    fn loadout(&self, declared: Vec<RegisteredTool>) -> Vec<Arc<dyn Tool>> {
+        let (loadout, changes) = self.loadout_changes(declared);
+        let mut descriptions = changes.descriptions;
+        *lock(&self.inner.hidden_tools) = changes.hidden;
         loadout
             .declared
             .into_iter()
@@ -1329,7 +1354,7 @@ impl AgentSession {
         *lock(&self.inner.cancel) = None;
         // Extensions hear it first, as in pi.
         self.emit_extension_event(
-            &serde_json::json!({"type": "agent_settled"}),
+            &ExtensionEvent::AgentSettled.to_value(),
             CancellationToken::new(),
         )
         .await;
@@ -1394,11 +1419,11 @@ impl AgentSession {
                 "after_provider_response",
                 cancel,
                 |session, response: yapi_ai::stream::ProviderResponse, cancel| {
-                    let event = serde_json::json!({
-                        "type": "after_provider_response",
-                        "status": response.status,
-                        "headers": response.headers,
-                    });
+                    let event = ExtensionEvent::AfterProviderResponse {
+                        status: response.status,
+                        headers: &response.headers,
+                    }
+                    .to_value();
                     Box::pin(async move {
                         session.emit_extension_event(&event, cancel).await;
                     })
@@ -1567,26 +1592,20 @@ impl AgentSession {
         let mut summary = None;
         let mut from_extension = false;
         if self.has_handlers("session_before_tree") {
-            let mut preparation = serde_json::json!({
-                "targetId": target_id,
-                "oldLeafId": old_leaf,
-                "commonAncestorId": common,
-                "entriesToSummarize": entries,
-                "userWantsSummary": options.summarize,
-            });
-            if let Some(instructions) = &options.custom_instructions {
-                preparation["customInstructions"] = instructions.clone().into();
-            }
-            if options.replace_instructions {
-                preparation["replaceInstructions"] = true.into();
-            }
-            if let Some(label) = &options.label {
-                preparation["label"] = label.clone().into();
-            }
-            let event =
-                serde_json::json!({"type": "session_before_tree", "preparation": preparation});
+            let event = ExtensionEvent::SessionBeforeTree {
+                preparation: TreePreparation {
+                    target_id,
+                    old_leaf_id: old_leaf.as_deref(),
+                    common_ancestor_id: common.as_deref(),
+                    entries_to_summarize: &entries,
+                    user_wants_summary: options.summarize,
+                    custom_instructions: options.custom_instructions.as_deref(),
+                    replace_instructions: options.replace_instructions,
+                    label: options.label.as_deref(),
+                },
+            };
             if let Some(result) = self
-                .emit_extension_event(&event, CancellationToken::new())
+                .emit_extension_event(&event.to_value(), CancellationToken::new())
                 .await
             {
                 if result["cancel"] == true {
@@ -1720,16 +1739,14 @@ impl AgentSession {
         })?;
         self.restore_tools_from_transcript();
         // pi's `session_tree` event, after the leaf has moved.
-        let mut event = serde_json::json!({
-            "type": "session_tree",
-            "newLeafId": self.with_session(|session| session.leaf_id().map(str::to_owned)),
-            "oldLeafId": old_leaf,
-        });
-        if let Some(entry) = &summary_entry {
-            event["summaryEntry"] = serde_json::to_value(entry).unwrap_or_default();
-            event["fromExtension"] = from_extension.into();
-        }
-        self.emit_extension_event(&event, CancellationToken::new())
+        let new_leaf = self.with_session(|session| session.leaf_id().map(str::to_owned));
+        let event = ExtensionEvent::SessionTree {
+            new_leaf_id: new_leaf.as_deref(),
+            old_leaf_id: old_leaf.as_deref(),
+            summary_entry: summary_entry.as_ref(),
+            from_extension: summary_entry.is_some().then_some(from_extension),
+        };
+        self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
         Ok(TreeOutcome {
             editor_text,
