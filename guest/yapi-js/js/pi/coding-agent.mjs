@@ -90,9 +90,35 @@ export const createLsTool = (cwd, options) => builtinTool("ls", cwd, options);
 export const createLsToolDefinition = createLsTool;
 export const createCodingTools = (cwd) => ["read", "bash", "edit", "write"].map((name) => builtinTool(name, cwd));
 export const createReadOnlyTools = (cwd) => ["read", "grep", "find", "ls"].map((name) => builtinTool(name, cwd));
+/** pi's local shell: runs `command` with bash, streaming its output to `onData`. */
 export function createLocalBashOperations() {
+	const { child_process, fs, os } = globalThis.__yapi_builtins;
 	return {
-		exec: (command, cwd, options) => yapi.op("exec", { command: "/bin/sh", args: ["-c", command], cwd, timeout: options?.timeout }),
+		async exec(command, cwd, { onData, signal, timeout, env }) {
+			if (signal?.aborted) throw new Error("aborted");
+			if (!fs.existsSync(cwd)) throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
+			const shell = fs.existsSync("/bin/bash") ? "/bin/bash" : "sh";
+			const child = child_process.spawn(shell, ["-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+			let timedOut = false;
+			const kill = () => child.kill("SIGKILL");
+			const timer = timeout > 0 ? setTimeout(() => ((timedOut = true), kill()), timeout * 1000) : undefined;
+			child.stdout.on("data", onData);
+			child.stderr.on("data", onData);
+			signal?.addEventListener("abort", kill, { once: true });
+			try {
+				const exitCode = await new Promise((resolve, reject) => {
+					child.on("error", reject);
+					child.on("close", resolve);
+				});
+				if (signal?.aborted) throw new Error("aborted");
+				if (timedOut) throw new Error(`timeout:${timeout}`);
+				// A shell a signal ended reports 128 plus the signal's number, as in pi.
+				return { exitCode: exitCode ?? (child.signalCode ? 128 + (os.constants.signals[child.signalCode] ?? 0) : 1) };
+			} finally {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", kill);
+			}
+		},
 	};
 }
 

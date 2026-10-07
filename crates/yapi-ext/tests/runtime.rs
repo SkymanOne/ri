@@ -678,14 +678,16 @@ async fn join_stopped_waits_for_dropped_instances() {
 }
 
 /// `child_process.spawn` streams output, takes input and signals, as in
-/// Node; `pi.exec` stops at its signal; `process.execPath` is the yapi
-/// binary; and a tool's `signal` aborts when the host aborts the call.
+/// Node; `pi.exec` stops at its signal; Pi's local bash operations stream
+/// their output; `process.execPath` is the yapi binary; and a tool's
+/// `signal` aborts when the host aborts the call.
 #[tokio::test(flavor = "multi_thread")]
 async fn spawns_streaming_processes_and_aborts_tools() {
     let dir = scratch("processes");
     let main = r#"
 import fs from "node:fs";
 import { spawn } from "node:child_process";
+import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 const closed = (child, event = "close") => new Promise((resolve) => child.on(event, (...args) => resolve(args)));
 export default function (pi) {
 	pi.registerTool({
@@ -704,7 +706,9 @@ export default function (pi) {
 			const controller = new AbortController();
 			setTimeout(() => controller.abort(), 50);
 			const exec = await pi.exec("sleep", ["10"], { signal: controller.signal });
-			const text = [out, code, sleeper.stdin, killed, signal, exec.killed, fs.existsSync(process.execPath), process.argv.length].join(",");
+			let shellOutput = "";
+			const shell = await createLocalBashOperations().exec("echo hi; exit 3", process.cwd(), { onData: (data) => (shellOutput += data) });
+			const text = [out, code, sleeper.stdin, killed, signal, exec.killed, fs.existsSync(process.execPath), process.argv.length, shellOutput.trim(), shell.exitCode].join(",");
 			return { content: [{ type: "text", text }] };
 		},
 	});
@@ -723,7 +727,7 @@ export default function (pi) {
     let result = instance.call("tool", &call("processes", 1)).await.unwrap();
     assert_eq!(
         result["content"][0]["text"],
-        "one two,0,,true,SIGTERM,true,true,1"
+        "one two,0,,true,SIGTERM,true,true,1,hi,3"
     );
     let (wait, abort) = (call("wait", 2), json!({"id": 2}));
     let (result, _) = tokio::join!(instance.call("tool", &wait), instance.call("abort", &abort));

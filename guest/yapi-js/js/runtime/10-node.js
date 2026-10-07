@@ -618,7 +618,8 @@
 		networkInterfaces: () => ({}),
 		endianness: () => "LE",
 		userInfo: () => ({ username: process.env.USER || "user", uid: 0, gid: 0, shell: process.env.SHELL || "/bin/sh", homedir: home }),
-		constants: { signals: {}, errno: {} },
+		// The signals whose numbers Linux and macOS share.
+		constants: { signals: { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGILL: 4, SIGTRAP: 5, SIGABRT: 6, SIGFPE: 8, SIGKILL: 9, SIGSEGV: 11, SIGPIPE: 13, SIGALRM: 14, SIGTERM: 15 }, errno: {} },
 		devNull: "/dev/null",
 	};
 	os.default = os;
