@@ -55,13 +55,25 @@ const docs = {
 	numbers: "3. three\n4. four",
 	trailing: "ends with blank lines\n\n\n",
 };
+// Bare URLs and email addresses, with links underlined so the lines show where each starts and ends.
+const underlined = { ...theme, underline: (text) => `\x1b[4m${text}\x1b[24m` };
+const autolinks = {
+	bareUrls: "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+	bareEmails: "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+	urlParens: "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+	urlPunctuation: "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+	urlContext: "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+	urlEdges: "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+	urlBlocks: "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+};
 const markdown = [];
-for (const [name, text] of Object.entries(docs)) {
+for (const [name, text] of [...Object.entries(docs), ...Object.entries(autolinks)]) {
+	const underline = name in autolinks || undefined;
 	for (const [width, paddingX, paddingY] of [[40, 0, 0], [24, 1, 0], [80, 1, 1]]) {
 		for (const preserve of [false, true]) {
 			const options = preserve ? { preserveOrderedListMarkers: true, preserveBackslashEscapes: true } : {};
-			const component = new Markdown(text, paddingX, paddingY, theme, undefined, options);
-			markdown.push({ name, text, width, paddingX, paddingY, preserve, lines: component.render(width) });
+			const component = new Markdown(text, paddingX, paddingY, underline ? underlined : theme, undefined, options);
+			markdown.push({ name, text, width, paddingX, paddingY, preserve, underline, lines: component.render(width) });
 		}
 	}
 }
