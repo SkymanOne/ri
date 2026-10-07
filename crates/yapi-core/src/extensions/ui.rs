@@ -83,9 +83,10 @@ pub trait ComponentHost: Send + Sync {
 
     /// Sends `op` to editor component `handle`, after the input delivered
     /// before it: `{"op": "setText", "text"}`, `{"op": "addToHistory",
-    /// "text"}`, or `{"op": "configure", "border", "paddingX",
-    /// "autocompleteMaxVisible", "focused", "rows"}`, where `border` is a
-    /// thinking level or `bashMode`.
+    /// "text"}`, `{"op": "insertTextAtCursor", "text", "apart"}`, or
+    /// `{"op": "configure", "border", "paddingX", "autocompleteMaxVisible",
+    /// "focused", "rows"}`. `apart` sets the text apart from the words
+    /// around the cursor, and `border` is a thinking level or `bashMode`.
     fn editor_op(&self, handle: u32, op: &Value);
 
     /// Runs the runtime's `onTerminalInput` listeners over raw input `keys`,

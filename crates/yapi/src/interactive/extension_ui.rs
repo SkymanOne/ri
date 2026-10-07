@@ -550,6 +550,13 @@ impl CustomEditor {
         self.view
             .editor_op(&json!({"op": "addToHistory", "text": text}));
     }
+
+    /// pi-tui's `insertTextAtCursor`. `apart` sets the text apart from the
+    /// words around the cursor, as pi does for copied files' paths.
+    pub fn insert_text_at_cursor(&self, text: &str, apart: bool) {
+        let op = json!({"op": "insertTextAtCursor", "text": text, "apart": apart});
+        self.view.editor_op(&op);
+    }
 }
 
 /// A widget as shown: pi's `Container` of `Text` rows for lines, or a

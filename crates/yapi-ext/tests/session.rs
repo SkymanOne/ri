@@ -11,9 +11,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::{cli_source, custom_entries, engine, options, scratch, session, text_of};
-use serde_json::json;
+use serde_json::{Value, json};
 use yapi_ai::faux::{Faux, Response};
-use yapi_core::extensions::{Mode, NoUi};
+use yapi_core::extensions::{ExtensionUi, Mode, NoUi, NotifyKind, RemoteComponent};
 use yapi_ext::ExtensionHost;
 use yapi_types::event::AgentEvent;
 use yapi_types::message::Message;
@@ -466,4 +466,86 @@ async fn tool_updates_and_nested_calls_report_in_pi_order() {
         ]
     );
     assert!(log.iter().all(|(task, _)| *task == log[0].0), "{log:?}");
+}
+
+/// A terminal that keeps the editor an extension puts in place and the
+/// text it last reported.
+#[derive(Default)]
+struct Screen {
+    editor: std::sync::Mutex<Option<RemoteComponent>>,
+    text: std::sync::Mutex<String>,
+}
+
+impl ExtensionUi for Screen {
+    fn has_ui(&self) -> bool {
+        true
+    }
+
+    fn notify(&self, _message: &str, _kind: NotifyKind) {}
+
+    fn shows_components(&self) -> bool {
+        true
+    }
+
+    fn keybindings(&self) -> Value {
+        json!({"bindings": {"tui.editor.cursorLeft": ["left"]}})
+    }
+
+    fn set_editor(&self, editor: Option<RemoteComponent>, _embeds_status: bool) {
+        *self.editor.lock().unwrap() = editor;
+    }
+
+    fn editor_changed(&self, text: &str) {
+        text.clone_into(&mut self.text.lock().unwrap());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pastes_go_in_at_the_cursor_of_an_extension_editor() {
+    let dir = scratch("editor-paste");
+    let path = dir.join("editor.ts");
+    std::fs::write(
+        &path,
+        r#"
+import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	pi.on("session_start", (_event, ctx) => {
+		ctx.ui.setEditorComponent((tui, theme, keybindings) => new CustomEditor(tui, theme, keybindings));
+	});
+}
+"#,
+    )
+    .unwrap();
+    let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let screen = Arc::new(Screen::default());
+    session
+        .bind_extensions(screen.clone(), Mode::Tui, None, None)
+        .await;
+    let editor = screen.editor.lock().unwrap().clone().unwrap();
+    // The text and rows once the editor has taken the insertion.
+    let insert = async |text: &str, apart: bool| {
+        editor.editor_op(&json!({"op": "insertTextAtCursor", "text": text, "apart": apart}));
+        let rows = editor.render(80).await;
+        (screen.text.lock().unwrap().clone(), rows)
+    };
+
+    // A saved image's path goes in as it is. A paste would put a space before it.
+    editor.input("see");
+    let (text, _) = insert("/tmp/yapi-clipboard-1.png", false).await;
+    assert_eq!(text, "see/tmp/yapi-clipboard-1.png");
+    // Long text goes in whole, without a paste's marker.
+    editor.editor_op(&json!({"op": "setText", "text": ""}));
+    let long: Vec<String> = (1..=11).map(|line| line.to_string()).collect();
+    let (text, rows) = insert(&long.join("\n"), false).await;
+    assert_eq!(text, long.join("\n"));
+    assert!(!rows.iter().any(|row| row.contains("[paste")), "{rows:?}");
+    // Copied files' paths are set apart from the words at the editor's cursor.
+    editor.editor_op(&json!({"op": "setText", "text": "ab"}));
+    editor.input("\x1b[D");
+    let (text, _) = insert("/tmp/photo.png", true).await;
+    assert_eq!(text, "a /tmp/photo.png b");
 }

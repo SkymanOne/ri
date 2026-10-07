@@ -1306,7 +1306,14 @@
 			const editor = components.get(payload.handle);
 			if (payload.op === "setText") editor?.setText?.(payload.text ?? "");
 			else if (payload.op === "addToHistory") editor?.addToHistory?.(payload.text ?? "");
-			else if (payload.op === "configure" && editor) {
+			else if (payload.op === "insertTextAtCursor" && editor) {
+				// pi's `handleClipboardPaste` sets the text apart at the editor's own cursor.
+				const cursor = payload.apart ? editor.getCursor?.() : undefined;
+				const line = cursor ? (editor.getText().split("\n")[cursor.line] ?? "") : "";
+				const space = (char) => (char && !/\s/.test(char) ? " " : "");
+				const before = cursor && cursor.col > 0 ? line[cursor.col - 1] : "";
+				editor.insertTextAtCursor?.(`${space(before)}${payload.text ?? ""}${space(cursor ? line[cursor.col] : "")}`);
+			} else if (payload.op === "configure" && editor) {
 				editor.borderColor = payload.border === "bashMode" ? theme.getBashModeBorderColor() : theme.getThinkingBorderColor(payload.border);
 				editor.setPaddingX?.(payload.paddingX);
 				editor.setAutocompleteMaxVisible?.(payload.autocompleteMaxVisible);
