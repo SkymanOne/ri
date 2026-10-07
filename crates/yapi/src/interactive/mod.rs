@@ -2521,6 +2521,10 @@ impl App {
                 } else {
                     paths.join("\n")
                 };
+                if let Some(editor) = &self.ext.editor {
+                    // An extension's editor sets them apart at its own cursor.
+                    return editor.insert_text_at_cursor(&paths, true);
+                }
                 let (line, col) = self.editor.cursor();
                 let line = self.editor.lines().get(line).map_or("", String::as_str);
                 let (before, after) = line.split_at(line.floor_char_boundary(col));
@@ -2534,10 +2538,7 @@ impl App {
             }
         };
         match &self.ext.editor {
-            // An extension's editor takes the text as a paste. It cannot end the paste early.
-            Some(editor) => editor
-                .view
-                .input(&format!("\x1b[200~{}\x1b[201~", text.replace('\x1b', ""))),
+            Some(editor) => editor.insert_text_at_cursor(&text, false),
             None => self.editor.insert_text_at_cursor(&text),
         }
     }
