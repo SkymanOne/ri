@@ -19,7 +19,8 @@ use yapi_ai::auth::{
 use yapi_ai::model_catalog::RefreshOptions;
 use yapi_ai::registry::ModelRegistry;
 use yapi_ai::stream::{
-    EventSender, EventStream, Provider, Request, StreamEvent, new_output, now_ms, send_error,
+    EventSender, EventStream, Provider, ProviderResponse, Request, RequestHooks, StreamEvent,
+    new_output, now_ms, send_error,
 };
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
@@ -252,17 +253,28 @@ impl ExtensionHost {
         let id = self.next_id();
         let cancel = request.options.cancel.clone();
         let output = new_output(&request.model, now_ms());
-        lock(&self.bridge.streams).insert(id, (sender.clone(), Some(output)));
+        let hooks = &request.options.hooks;
         let payload = json!({
             "id": id,
             "model": request.model,
             "context": {"messages": request.messages},
             "options": crate::streams::options_json(&request.options),
+            "hooks": {
+                "payload": hooks.payload.is_some(),
+                "response": hooks.response.is_some(),
+                "streamEvent": hooks.stream_event.is_some(),
+            },
         });
+        let stream = RunningStream {
+            sender: sender.clone(),
+            output: Some(output),
+            hooks: hooks.clone(),
+        };
+        lock(&self.bridge.streams).insert(id, stream);
         let result = self.call_abortable("stream", &payload, &cancel).await;
         let running = lock(&self.bridge.streams)
             .remove(&id)
-            .and_then(|(_, output)| output);
+            .and_then(|stream| stream.output);
         if let (Err(err), Some(output)) = (result, running) {
             send_error(&sender, output, &cancel, err.to_string());
         }
@@ -355,6 +367,15 @@ pub struct RegisteredProvider {
     pub stream: Option<Arc<dyn Provider>>,
     /// Its `oauth` sign-in.
     pub oauth: Option<Arc<dyn OAuthProvider>>,
+}
+
+/// An extension stream the host is running.
+struct RunningStream {
+    sender: EventSender,
+    /// An empty message for failures, until the final event.
+    output: Option<AssistantMessage>,
+    /// The request's hooks, which the stream's pi options call.
+    hooks: RequestHooks,
 }
 
 /// An extension provider's `oauth`: pi's legacy sign-in, whose login,
@@ -1061,9 +1082,8 @@ struct SessionBridge {
     bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
     /// Interactions of running extension sign-ins, by id.
     logins: Mutex<HashMap<u64, Interaction>>,
-    /// Running extension streams by id, with an empty message for failures
-    /// until their final event.
-    streams: Mutex<HashMap<u64, (EventSender, Option<AssistantMessage>)>>,
+    /// Running extension streams by id.
+    streams: Mutex<HashMap<u64, RunningStream>>,
     /// The next id of an operation the host may abort in the guest: a
     /// stream, a sign-in or a model refresh.
     next_id: AtomicU64,
@@ -1420,26 +1440,24 @@ impl Bridge for SessionBridge {
         }
         if kind == "provider.event" {
             let mut streams = lock(&self.streams);
-            let Some((sender, running)) =
-                payload["id"].as_u64().and_then(|id| streams.get_mut(&id))
-            else {
+            let Some(stream) = payload["id"].as_u64().and_then(|id| streams.get_mut(&id)) else {
                 return Ok(Value::Null);
             };
             // Events after the final one are dropped, as pi's streams drop them.
-            if running.is_none() {
+            if stream.output.is_none() {
                 return Ok(Value::Null);
             }
             match crate::streams::event_from_json(payload) {
                 Ok(event) => {
                     if matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_)) {
-                        *running = None;
+                        stream.output = None;
                     }
-                    sender.send(event);
+                    stream.sender.send(event);
                 }
                 // An invalid event fails the stream, without an abort.
                 Err(message) => {
-                    if let Some(output) = running.take() {
-                        send_error(sender, output, &CancellationToken::new(), message);
+                    if let Some(output) = stream.output.take() {
+                        send_error(&stream.sender, output, &CancellationToken::new(), message);
                     }
                 }
             }
@@ -1599,7 +1617,48 @@ impl Bridge for SessionBridge {
         }
     }
 
+    fn stream_hooks(&self, id: u64) -> RequestHooks {
+        lock(&self.streams)
+            .get(&id)
+            .map(|stream| stream.hooks.clone())
+            .unwrap_or_default()
+    }
+
     fn start(&self, kind: &str, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
+        if matches!(
+            kind,
+            "provider.payload" | "provider.response" | "provider.streamEvent"
+        ) {
+            // A stream's `onPayload`, `onResponse` and `onProviderStreamEvent`.
+            let hooks = payload["id"]
+                .as_u64()
+                .map(|id| self.stream_hooks(id))
+                .unwrap_or_default();
+            let kind = kind.to_owned();
+            return Box::pin(async move {
+                match kind.as_str() {
+                    "provider.payload" => Ok(hooks.payload(payload["payload"].clone()).await),
+                    "provider.response" => {
+                        if let Some(response) = &hooks.response {
+                            response(ProviderResponse {
+                                status: payload["status"]
+                                    .as_u64()
+                                    .and_then(|status| u16::try_from(status).ok())
+                                    .unwrap_or_default(),
+                                headers: serde_json::from_value(payload["headers"].clone())
+                                    .unwrap_or_default(),
+                            })
+                            .await;
+                        }
+                        Ok(Value::Null)
+                    }
+                    _ => {
+                        hooks.stream_event(&payload["data"]).await;
+                        Ok(Value::Null)
+                    }
+                }
+            });
+        }
         if kind == "oauth.prompt" {
             let interaction = payload["id"]
                 .as_u64()

@@ -1006,6 +1006,24 @@
 			}
 		}
 	}
+	/**
+	 * pi's `onPayload`, `onResponse` and `onProviderStreamEvent` options for
+	 * stream `id`, those of the session's hooks that `hooks` names. pi-ai's
+	 * facade passes them on to yapi's providers by `yapiStream`.
+	 */
+	function requestHooks(id, hooks = {}) {
+		const hook = (kind, toPayload) => Object.assign(async (value) => yapi.op(`provider.${kind}`, { id, ...toPayload(value) }), { yapiStream: id });
+		const options = {};
+		if (hooks.payload) options.onPayload = hook("payload", (body) => ({ payload: plain(body) ?? null }));
+		if (hooks.response) {
+			options.onResponse = hook("response", (response) => ({
+				status: response?.status,
+				headers: response?.headers instanceof Headers ? Object.fromEntries(response.headers) : (plain(response?.headers) ?? {}),
+			}));
+		}
+		if (hooks.streamEvent) options.onProviderStreamEvent = hook("streamEvent", (data) => ({ data: plain(data) ?? null }));
+		return options;
+	}
 	/** Runs `run` with an abort signal that the host's `abort` of `id` fires. */
 	async function abortable(id, run) {
 		const controller = new AbortController();
@@ -1210,7 +1228,7 @@
 			await abortable(id, async (signal) => {
 				try {
 					const config = providerConfig(model.provider);
-					const options = { ...payload.options, signal };
+					const options = { ...payload.options, signal, ...requestHooks(id, payload.hooks) };
 					let events;
 					if (typeof config?.streamSimple === "function" && config.api === model.api) events = config.streamSimple(model, context, options);
 					else {

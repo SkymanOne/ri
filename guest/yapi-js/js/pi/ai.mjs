@@ -122,8 +122,10 @@ export function createAssistantMessageEventStream() {
 function hostStream(model, context, options, api) {
 	const stream = new AssistantMessageEventStream();
 	const { signal, onPayload, onResponse, onProviderStreamEvent, ...rest } = options ?? {};
+	// The session's hooks of the extension stream this request serves.
+	const hooks = [onPayload, onResponse, onProviderStreamEvent].find((hook) => hook?.yapiStream !== undefined)?.yapiStream;
 	(async () => {
-		const id = await yapi.op("ai.stream", { api, model, context: normalizeContext(context), options: rest });
+		const id = await yapi.op("ai.stream", { api, model, context: normalizeContext(context), options: rest, hooks });
 		const abort = () => yapi.request("ai.abort", { id });
 		if (signal?.aborted) abort();
 		else signal?.addEventListener("abort", abort, { once: true });

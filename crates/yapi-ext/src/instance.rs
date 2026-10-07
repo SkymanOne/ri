@@ -81,6 +81,12 @@ pub trait Bridge: Send + Sync {
         Box::pin(async move { Err(message) })
     }
 
+    /// The request hooks of running extension stream `id`, for the requests
+    /// it makes through yapi's wire APIs.
+    fn stream_hooks(&self, _id: u64) -> yapi_ai::stream::RequestHooks {
+        yapi_ai::stream::RequestHooks::default()
+    }
+
     /// Console output from extensions, at `level` `debug`, `info`, `warn` or
     /// `error`.
     fn log(&self, _level: &str, message: &str) {

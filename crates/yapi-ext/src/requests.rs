@@ -18,7 +18,7 @@ use sha2::Digest as _;
 
 use tokio_util::sync::CancellationToken;
 use yapi_ai::api::Apis;
-use yapi_ai::stream::{EventStream, Request, StreamEvent};
+use yapi_ai::stream::{EventStream, Request, RequestHooks, StreamEvent};
 use yapi_core::tools::{RegisteredTool, ToolEnv};
 use yapi_types::message::Message;
 use yapi_types::model::Model;
@@ -52,14 +52,15 @@ impl AiStreams {
     /// implementation of `api`, or with the model's provider and API as
     /// pi-ai's `streamSimple` does without one, and returns the stream's id.
     /// A request without a key takes the provider's key variable when
-    /// `env_keys` allows it.
-    fn start(&self, payload: &Value, env_keys: bool) -> Result<Value, String> {
+    /// `env_keys` allows it. `hooks` observe the request.
+    fn start(&self, payload: &Value, env_keys: bool, hooks: RequestHooks) -> Result<Value, String> {
         let model: Model = serde_json::from_value(payload["model"].clone())
             .map_err(|err| format!("Invalid model: {err}"))?;
         let messages: Vec<Message> = serde_json::from_value(payload["context"]["messages"].clone())
             .map_err(|err| format!("Invalid context: {err}"))?;
         let cancel = CancellationToken::new();
         let mut options = crate::streams::options_from_json(&payload["options"], cancel.clone());
+        options.hooks = hooks;
         if env_keys
             && options
                 .api_key
@@ -274,8 +275,14 @@ impl Host {
             "ai.stream" if self.options.grants.network => {
                 let streams = self.ai_streams.clone();
                 let env_keys = self.reads_process_env();
+                // A stream that passes on the hooks of the extension stream it
+                // serves reports to that stream's session.
+                let hooks = payload["hooks"]
+                    .as_u64()
+                    .map(|id| self.bridge.stream_hooks(id))
+                    .unwrap_or_default();
                 // The stream starts on the runtime.
-                Box::pin(async move { streams.start(&payload, env_keys) })
+                Box::pin(async move { streams.start(&payload, env_keys, hooks) })
             }
             "ai.stream" => Box::pin(async { Err(denied("Network access")) }),
             "ai.next" => {
