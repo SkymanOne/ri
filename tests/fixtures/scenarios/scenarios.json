@@ -240,6 +240,13 @@
     "tty": {"cols": 100, "rows": 40, "keys": ["Read hello.txt", "\r"]}
   },
   {
+    "name": "tui-compact-reads",
+    "cassette": "anthropic-messages/read-resources.json",
+    "args": ["--model", "anthropic/claude-sonnet-4-5"],
+    "files": {"AGENTS.md": "Be brief.\n", "demo/SKILL.md": "---\nname: demo\ndescription: Demo skill\n---\nHidden skill text\n"},
+    "tty": {"cols": 100, "rows": 40, "keys": ["Read the instructions", "\r"]}
+  },
+  {
     "name": "tui-session-info",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--model", "anthropic/claude-sonnet-4-5", "--no-session"],
