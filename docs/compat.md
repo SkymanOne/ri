@@ -28,6 +28,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 |---|---|---|
 | Directories | `~/.pi/agent`, project `.pi/`, `PI_CODING_AGENT_DIR` | `~/.yapi/agent`, project `.yapi/`, `YAPI_CODING_AGENT_DIR`, and `YAPI_` in place of `PI_` for the session directory variable. Same formats, and `yapi import pi` copies Pi's state. |
 | Package installs | `npm install`, with lifecycle scripts | A built-in npm client that skips lifecycle scripts. `npmCommand` applies to npm sources only. |
+| npm configuration | npm reads all its configuration files and settings | Registries and credentials from `~/.npmrc`, or the file `npm_config_userconfig` names, and from `npm_config_*` variables. Other settings, such as `cafile`, are ignored. |
 | Package manifests | The `pi` key | A `yapi` key of the same shape takes precedence, so one package can ship a native build for yapi. |
 | Self-update | `pi update` | `yapi update` updates packages and models only. See [Install](install.md#upgrade). |
 | `new` | `pi new ...` is a prompt | `yapi new` creates a native extension. Quote a prompt that starts with `new`. |
@@ -37,6 +38,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 | Area | Pi | yapi |
 |---|---|---|
 | `/share` and `/bug` | Use Pi's services | Not available. |
+| Clipboard paste | Copied files, images and text on every platform | Nothing on Windows, and images copied in Windows do not reach WSL. |
 | Word motions in Chinese, Japanese and Thai | By dictionary word | By character, to keep ICU's dictionaries out of the binary. |
 | Tree label times | Local time | UTC, with no time zone database. |
 | Codex transport | WebSocket, then compressed SSE | Uncompressed SSE, the same requests and events as Pi's fallback. |
@@ -49,23 +51,16 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Area | Pi | yapi today | Issue |
 |---|---|---|---|
 | MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
-| Temporary packages | `-e npm:<name>` and `-e git:<url>` install a package for one run | Not supported. | [#29](https://github.com/SkymanOne/yapi/issues/29) |
 | Entry renderers and markdown transformers | `registerEntryRenderer` and `registerMarkdownTransformer` change how entries and markdown render | Recorded but unused. | [#30](https://github.com/SkymanOne/yapi/issues/30) |
-| Markdown | LaTeX as Unicode math, bare URLs as links, highlighted code blocks, Mermaid diagrams | LaTeX as written, bare URLs as plain text, code blocks and Mermaid source in the code block color. | [#31](https://github.com/SkymanOne/yapi/issues/31) |
+| Markdown | LaTeX as Unicode math, highlighted code blocks, Mermaid diagrams | LaTeX as written, code blocks and Mermaid source in the code block color. | [#31](https://github.com/SkymanOne/yapi/issues/31) |
 | Syntax highlighting in tool rows | `read` results, `write` previews and codemode scripts are highlighted | Shown in the default color. | [#32](https://github.com/SkymanOne/yapi/issues/32) |
 | Cache warming | Refreshes the prompt cache while the model streams (`cacheWarming`) and reports cache misses | Sends no refresh requests. The setting is saved and ignored. | [#33](https://github.com/SkymanOne/yapi/issues/33) |
 | Images in the terminal | Inline images, with the "Show images" and "Image width" settings | Not shown. | [#34](https://github.com/SkymanOne/yapi/issues/34) |
-| Clipboard image paste | `app.clipboard.pasteImage` attaches the clipboard's image | The key does nothing. | [#35](https://github.com/SkymanOne/yapi/issues/35) |
 | Mouse selection | Selects text in fullscreen mode, and `fullscreenCopyOnSelect` | No mouse selection. The setting is saved and ignored. | [#36](https://github.com/SkymanOne/yapi/issues/36) |
 | Update notices | Checks at startup for new versions and package updates and shows a notice | Makes no such checks and shows no update notices. `/changelog` and the list of changes after an upgrade work as in Pi. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
-| Codemode | `codemode.mode: "only"` hides direct tools, scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | `only` acts as `on`, scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
+| Codemode | Scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | Scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
 | OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |
-| Private npm registries | npm reads `.npmrc`, including registry credentials | `npm_config_registry` or the public registry, without credentials. | [#40](https://github.com/SkymanOne/yapi/issues/40) |
 | Streamed `fetch` responses | `fetch` streams the response body | `fetch` resolves once the whole response has arrived, so a provider extension that streams over `fetch` shows its events when the response ends. | [#53](https://github.com/SkymanOne/yapi/issues/53) |
 | Full extension providers | `registerProvider` also takes a complete pi-ai `Provider` object, image and classifier models with their implementations, and the legacy `oauth.modifyModels` | A provider configuration only. Those parts are ignored. | [#54](https://github.com/SkymanOne/yapi/issues/54) |
-| Extension providers in `--list-models` | `--list-models` lists the models extensions register | Lists built-in and `models.json` models only. | [#55](https://github.com/SkymanOne/yapi/issues/55) |
 | `newSession` setup | `setup` gets the new session's writable session manager before its extensions start | `setup` runs after the new session's `session_start` and gets the read-only session manager. | [#67](https://github.com/SkymanOne/yapi/issues/67) |
 | Theme objects | `ctx.ui.setTheme` takes a theme name or a `Theme` object | A theme name only. A `Theme` object returns an error. | [#66](https://github.com/SkymanOne/yapi/issues/66) |
-| Compact reads | Reads of its docs, skills and resource files show in a compact form | Every `read` shows a full tool box. | [#50](https://github.com/SkymanOne/yapi/issues/50) |
-| Extension tool event order | A tool that publishes updates and calls `ctx.executeTool()` reports its events in order | The updates and the nested call's events can come out in a different order. | [#59](https://github.com/SkymanOne/yapi/issues/59) |
-| Bedrock payloads in `before_provider_request` | Extensions see the Bedrock command input, with `modelId` | Extensions see the HTTP body, without `modelId`. | [#62](https://github.com/SkymanOne/yapi/issues/62) |

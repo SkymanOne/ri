@@ -140,8 +140,8 @@ def handle(message, notify):
             {
                 "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": True}, "resources": {}},
-                "serverInfo": {"name": "ri-test-server", "version": "1.0.0"},
-                "instructions": "Test tools for ri.\nThey echo, add and fail.",
+                "serverInfo": {"name": "yapi-test-server", "version": "1.0.0"},
+                "instructions": "Test tools for yapi.\nThey echo, add and fail.",
             }
         )
     if method == "ping":
