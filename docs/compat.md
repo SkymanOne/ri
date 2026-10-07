@@ -67,5 +67,4 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | `newSession` setup | `setup` gets the new session's writable session manager before its extensions start | `setup` runs after the new session's `session_start` and gets the read-only session manager. | [#67](https://github.com/SkymanOne/yapi/issues/67) |
 | Theme objects | `ctx.ui.setTheme` takes a theme name or a `Theme` object | A theme name only. A `Theme` object returns an error. | [#66](https://github.com/SkymanOne/yapi/issues/66) |
 | Compact reads | Reads of its docs, skills and resource files show in a compact form | Every `read` shows a full tool box. | [#50](https://github.com/SkymanOne/yapi/issues/50) |
-| Extension tool event order | A tool that publishes updates and calls `ctx.executeTool()` reports its events in order | The updates and the nested call's events can come out in a different order. | [#59](https://github.com/SkymanOne/yapi/issues/59) |
 | Bedrock payloads in `before_provider_request` | Extensions see the Bedrock command input, with `modelId` | Extensions see the HTTP body, without `modelId`. | [#62](https://github.com/SkymanOne/yapi/issues/62) |
