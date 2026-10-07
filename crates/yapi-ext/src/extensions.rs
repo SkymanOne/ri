@@ -1045,10 +1045,10 @@ impl Tool for JsTool {
                 })
                 .collect();
             let payload = json!({
-                "extension": self.extension, "name": self.declaration.name,
+                "id": shared.next_id(), "extension": self.extension, "name": self.declaration.name,
                 "toolCallId": call_id, "params": args, "ctx": ctx, "tools": tools,
             });
-            let result = shared.instance.call("tool", &payload).await;
+            let result = shared.call_abortable("tool", &payload, &cancel).await;
             lock(&bridge.updates).remove(&call_id);
             tool_result(result.map_err(|err| err.to_string())?)
         })

@@ -678,10 +678,10 @@ async fn join_stopped_waits_for_dropped_instances() {
 }
 
 /// `child_process.spawn` streams output, takes input and signals, as in
-/// Node; `pi.exec` stops at its signal; and `process.execPath` is the yapi
-/// binary.
+/// Node; `pi.exec` stops at its signal; `process.execPath` is the yapi
+/// binary; and a tool's `signal` aborts when the host aborts the call.
 #[tokio::test(flavor = "multi_thread")]
-async fn spawns_streaming_processes() {
+async fn spawns_streaming_processes_and_aborts_tools() {
     let dir = scratch("processes");
     let main = r#"
 import fs from "node:fs";
@@ -708,6 +708,12 @@ export default function (pi) {
 			return { content: [{ type: "text", text }] };
 		},
 	});
+	pi.registerTool({
+		name: "wait", label: "wait", description: "", parameters: { type: "object", properties: {} },
+		execute(_id, _params, signal) {
+			return new Promise((resolve) => signal.addEventListener("abort", () => resolve({ content: [{ type: "text", text: "aborted" }] })));
+		},
+	});
 }
 "#;
     let (instance, extension) = load(&dir, &[("main.ts", main)]).await;
@@ -719,4 +725,7 @@ export default function (pi) {
         result["content"][0]["text"],
         "one two,0,,true,SIGTERM,true,true,1"
     );
+    let (wait, abort) = (call("wait", 2), json!({"id": 2}));
+    let (result, _) = tokio::join!(instance.call("tool", &wait), instance.call("abort", &abort));
+    assert_eq!(result.unwrap()["content"][0]["text"], "aborted");
 }

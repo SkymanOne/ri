@@ -284,3 +284,56 @@ async fn session_manager_reads_children() {
         [json!({"ofFirst": ["second"], "roots": ["model_change"], "label": true})]
     );
 }
+
+/// Aborting the session aborts a running extension tool's `signal`, as Esc
+/// does in Pi, so a tool that waits for it ends instead of blocking the run.
+#[tokio::test(flavor = "multi_thread")]
+async fn aborting_the_session_aborts_extension_tools() {
+    let dir = scratch("abort-tool");
+    let path = dir.join("wait.ts");
+    std::fs::write(
+        &path,
+        r#"export default function (pi) {
+	pi.registerTool({
+		name: "wait", label: "Wait", description: "Waits", parameters: { type: "object", properties: {} },
+		execute: (_id, _params, signal, onUpdate) =>
+			new Promise((resolve) => {
+				signal.addEventListener("abort", () => resolve({ content: [{ type: "text", text: "stopped" }] }));
+				onUpdate({ content: [{ type: "text", text: "waiting" }] });
+			}),
+	});
+}
+"#,
+    )
+    .unwrap();
+    let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let faux = Faux::new([
+        Response::tool_call("call-1", "wait", json!({})),
+        Response::text("done"),
+    ]);
+    let session = session(&faux, &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    let started = Arc::new(tokio::sync::Notify::new());
+    let notify = started.clone();
+    session.subscribe(Box::new(move |event| {
+        if matches!(
+            event,
+            yapi_types::event::AgentEvent::ToolExecutionUpdate { .. }
+        ) {
+            notify.notify_one();
+        }
+    }));
+    let running = session.clone();
+    let prompt = tokio::spawn(async move { running.prompt("wait", Vec::new()).await });
+    started.notified().await;
+    session.abort();
+    tokio::time::timeout(std::time::Duration::from_secs(10), prompt)
+        .await
+        .expect("the tool ignored the abort")
+        .unwrap()
+        .unwrap();
+}

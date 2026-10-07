@@ -1212,15 +1212,18 @@
 			const extension = extensionOf(payload.extension);
 			const tool = extension.tools.get(payload.name);
 			if (!tool) throw new Error(`Tool ${payload.name} is not registered by ${extension.path}`);
-			const ctx = createContext(payload.ctx, {
-				tools: payload.tools ?? [],
-				executeTool: (name, args) => yapi.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
+			return abortable(payload.id, async (signal) => {
+				const ctx = createContext(payload.ctx, {
+					signal: payload.ctx?.aborted ? AbortSignal.abort() : signal,
+					tools: payload.tools ?? [],
+					executeTool: (name, args) => yapi.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
+				});
+				const onUpdate = (partial) => yapi.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
+				let params = payload.params;
+				if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+				const result = await tool.execute(payload.toolCallId, params, ctx.signal, onUpdate, ctx);
+				return plain(result) ?? { content: [] };
 			});
-			const onUpdate = (partial) => yapi.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
-			let params = payload.params;
-			if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
-			const result = await tool.execute(payload.toolCallId, params, ctx.signal, onUpdate, ctx);
-			return plain(result) ?? { content: [] };
 		},
 		async command(payload) {
 			const command = extensionOf(payload.extension).commands.get(payload.name);
