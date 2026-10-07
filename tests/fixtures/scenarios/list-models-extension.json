@@ -1,0 +1,6 @@
+{
+  "exitCode": 0,
+  "stdout": "provider  model     context  max-out  thinking  images\nzq-corp   zq-large  200K     32K      yes       yes   \nzq-corp   zq-small  1K       100      no        no    \n",
+  "stderr": "",
+  "requests": []
+}

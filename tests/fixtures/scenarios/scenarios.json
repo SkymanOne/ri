@@ -116,6 +116,12 @@
     "args": ["--list-models", "zzzz"]
   },
   {
+    "name": "list-models-extension",
+    "cassette": "none.json",
+    "args": ["--list-models", "zq", "-e", "ext.ts", "-e", "broken.ts"],
+    "files": {"broken.ts": "export default function () {\n\tthrow new Error(\"broken\");\n}\n", "ext.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\n\nexport default function (pi: ExtensionAPI) {\n\tpi.registerProvider(\"zq-corp\", {\n\t\tbaseUrl: \"http://127.0.0.1:9/v1\",\n\t\tapiKey: \"zq-key\",\n\t\tapi: \"openai-completions\",\n\t\tmodels: [\n\t\t\t{ id: \"zq-large\", name: \"ZQ Large\", reasoning: true, input: [\"text\", \"image\"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 32000 },\n\t\t\t{ id: \"zq-small\", name: \"ZQ Small\", reasoning: false, input: [\"text\"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 },\n\t\t],\n\t});\n}\n"}
+  },
+  {
     "name": "anthropic-tool-call-json",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--mode", "json", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "Read hello.txt"],
