@@ -126,7 +126,8 @@ fn manager(dir: &Path, url: &str) -> PackageManager {
     let agent = dir.join("agent");
     std::fs::create_dir_all(&cwd).unwrap();
     let settings = SettingsManager::load(&agent, &cwd, false);
-    PackageManager::new(cwd, agent, settings, format!("{url}/"))
+    let config = [("registry".to_owned(), format!("{url}/"))];
+    PackageManager::new(cwd, agent, settings, config.into())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -415,4 +416,67 @@ async fn installs_native_extensions() {
         [file, folder.join("extensions/shout.wasm"), installed]
     );
     server.finish().unwrap();
+}
+
+/// Credentials from npm's configuration go to the registry their key names:
+/// a scoped package's packument and tarball carry them, and the public
+/// registry on another host never sees them.
+#[tokio::test(flavor = "multi_thread")]
+async fn sends_npmrc_credentials_to_their_registry_only() {
+    let dir = scratch("npmrc");
+    let private = tarball(&[("package.json", r#"{"name": "@acme/ext"}"#)]);
+    let public = tarball(&[("package.json", r#"{"name": "left-pad"}"#)]);
+    let scoped = registry(|base| {
+        let mut all = publish(
+            base,
+            "@acme/ext",
+            &[(
+                "1.0.0",
+                json!({"dependencies": {"left-pad": "^1.0.0"}}),
+                private.clone(),
+            )],
+            "1.0.0",
+        );
+        all[0].request.path = "/@acme%2fext".into();
+        all
+    })
+    .await;
+    let npmjs = registry(|base| {
+        publish(
+            base,
+            "left-pad",
+            &[("1.0.0", json!({}), public.clone())],
+            "1.0.0",
+        )
+    })
+    .await;
+    let host = scoped.url().trim_start_matches("http:").to_owned();
+    let config = [
+        ("registry".to_owned(), npmjs.url()),
+        ("@acme:registry".to_owned(), scoped.url()),
+        (format!("{host}/:_authToken"), "secret".to_owned()),
+    ];
+    let cwd = dir.join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let settings = SettingsManager::load(&dir.join("agent"), &cwd, false);
+    let mut packages = PackageManager::new(cwd, dir.join("agent"), settings, config.into());
+    packages.install("npm:@acme/ext", false).await.unwrap();
+
+    let scoped_requests = scoped.finish().unwrap();
+    assert_eq!(scoped_requests.len(), 2, "packument and tarball");
+    for request in &scoped_requests {
+        assert_eq!(
+            request.headers.get("authorization").map(String::as_str),
+            Some(yapi_mock::REDACTED),
+            "{request:?}"
+        );
+    }
+    let public_requests = npmjs.finish().unwrap();
+    assert_eq!(public_requests.len(), 2, "packument and tarball");
+    for request in &public_requests {
+        assert!(
+            !request.headers.contains_key("authorization"),
+            "{request:?}"
+        );
+    }
 }

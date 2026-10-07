@@ -28,6 +28,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 |---|---|---|
 | Directories | `~/.pi/agent`, project `.pi/`, `PI_CODING_AGENT_DIR` | `~/.yapi/agent`, project `.yapi/`, `YAPI_CODING_AGENT_DIR`, and `YAPI_` in place of `PI_` for the session directory variable. Same formats, and `yapi import pi` copies Pi's state. |
 | Package installs | `npm install`, with lifecycle scripts | A built-in npm client that skips lifecycle scripts. `npmCommand` applies to npm sources only. |
+| npm configuration | npm reads all its configuration files and settings | Registries and credentials from `~/.npmrc`, or the file `npm_config_userconfig` names, and from `npm_config_*` variables. Other settings, such as `cafile`, are ignored. |
 | Package manifests | The `pi` key | A `yapi` key of the same shape takes precedence, so one package can ship a native build for yapi. |
 | Self-update | `pi update` | `yapi update` updates packages and models only. See [Install](install.md#upgrade). |
 | `new` | `pi new ...` is a prompt | `yapi new` creates a native extension. Quote a prompt that starts with `new`. |
@@ -60,7 +61,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | `/changelog` and update notices | Shows the changelog and notices of new versions and package updates | `/changelog` reports no entries, and no notices are shown. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
 | Codemode | Scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | Scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
 | OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |
-| Private npm registries | npm reads `.npmrc`, including registry credentials | `npm_config_registry` or the public registry, without credentials. | [#40](https://github.com/SkymanOne/yapi/issues/40) |
 | Streamed `fetch` responses | `fetch` streams the response body | `fetch` resolves once the whole response has arrived, so a provider extension that streams over `fetch` shows its events when the response ends. | [#53](https://github.com/SkymanOne/yapi/issues/53) |
 | Full extension providers | `registerProvider` also takes a complete pi-ai `Provider` object, image and classifier models with their implementations, and the legacy `oauth.modifyModels` | A provider configuration only. Those parts are ignored. | [#54](https://github.com/SkymanOne/yapi/issues/54) |
 | `newSession` setup | `setup` gets the new session's writable session manager before its extensions start | `setup` runs after the new session's `session_start` and gets the read-only session manager. | [#67](https://github.com/SkymanOne/yapi/issues/67) |
