@@ -2,7 +2,7 @@
 
 Notable changes to yapi, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). yapi follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-10-06
+## [0.1.0] - 2026-10-07
 
 Yet Another Pi (in Rust) - Fast, Portable, Compatible.
 
