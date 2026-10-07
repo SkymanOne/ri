@@ -60,3 +60,5 @@ Prompt templates, skills (`/skill:name`) and extension commands appear in the sa
 ## Display modes
 
 yapi draws in fullscreen mode by default. Regular mode keeps the transcript in the terminal's scrollback instead. Switch with `/settings` or `--tui-mode regular`.
+
+In fullscreen mode yapi handles the mouse itself. The wheel scrolls the transcript, five times as far with Alt held. Drag to select text. A double click selects a word, keeping a path or a hyphenated name whole, and a triple click selects a line. Dragging past the top or bottom of the transcript scrolls it. Releasing the button copies the selection and shows "Copied!" at the top right. With "Fullscreen copy on select" off in `/settings`, the selection stays highlighted until Ctrl+X copies it.

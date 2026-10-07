@@ -226,7 +226,8 @@ pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine
 /// drawn over `base` from column `col`; the base shows before and after it.
 /// A wide character cut by the left edge becomes spaces; one cut by the
 /// right edge is dropped, so the rest of the base moves left and the line is
-/// padded at its end. The result is no wider than `total`.
+/// padded at its end. Spaces that reach `col` keep the style of the base's
+/// last cell before it, as pi's do. The result is no wider than `total`.
 pub(crate) fn composite(
     base: &Line<'_>,
     top: &Line<'_>,
@@ -234,13 +235,13 @@ pub(crate) fn composite(
     width: usize,
     total: usize,
 ) -> StyledLine {
-    let space = || Cell {
+    let space = |style: Style| Cell {
         text: " ".to_owned(),
-        style: Style::default(),
+        style,
     };
     let base = cells(base);
     let end = col + width;
-    let mut out = Vec::new();
+    let mut out: Vec<Cell> = Vec::new();
     let mut column = 0;
     for cell in &base {
         let cell_width = grapheme_width(&cell.text);
@@ -250,7 +251,8 @@ pub(crate) fn composite(
         out.push(cell.clone());
         column += cell_width;
     }
-    out.extend(std::iter::repeat_with(space).take(col.saturating_sub(column)));
+    let style = out.last().map_or_else(Style::default, |cell| cell.style);
+    out.extend(std::iter::repeat_with(|| space(style)).take(col.saturating_sub(column)));
     let mut used = 0;
     for cell in cells(top) {
         let cell_width = grapheme_width(&cell.text);
@@ -260,7 +262,7 @@ pub(crate) fn composite(
         used += cell_width;
         out.push(cell);
     }
-    out.extend(std::iter::repeat_with(space).take(width - used));
+    out.extend(std::iter::repeat_with(|| space(Style::default())).take(width - used));
     let mut column = 0;
     for cell in &base {
         let cell_width = grapheme_width(&cell.text);
@@ -270,12 +272,66 @@ pub(crate) fn composite(
         column += cell_width;
     }
     let filled = cells_width(&out);
-    out.extend(std::iter::repeat_with(space).take(total.saturating_sub(filled)));
+    out.extend(
+        std::iter::repeat_with(|| space(Style::default())).take(total.saturating_sub(filled)),
+    );
     let mut line = from_cells(&out);
     if cells_width(&out) > total {
         line = truncate(&line, total, "");
     }
     line
+}
+
+/// Whether a grapheme `width` wide at `column` lies within columns
+/// `from..to`, as pi-tui's `sliceByColumn` with `strict` keeps it.
+fn within(column: usize, width: usize, from: usize, to: usize) -> bool {
+    column >= from && column < to && column + width <= to
+}
+
+/// `line` with `style` over its graphemes within columns `from..to`.
+pub(crate) fn restyle_columns(line: &Line<'_>, from: usize, to: usize, style: Style) -> StyledLine {
+    let mut cells = cells(line);
+    let mut column = 0;
+    for cell in &mut cells {
+        let cell_width = grapheme_width(&cell.text);
+        if within(column, cell_width, from, to) {
+            cell.style = cell.style.patch(style);
+        }
+        column += cell_width;
+    }
+    from_cells(&cells)
+}
+
+/// The text of `line`'s graphemes within columns `from..to`.
+pub(crate) fn text_in_columns(line: &Line<'_>, from: usize, to: usize) -> String {
+    let mut column = 0;
+    let mut out = String::new();
+    for span in &line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let cell_width = grapheme_width(grapheme);
+            if within(column, cell_width, from, to) {
+                out.push_str(grapheme);
+            }
+            column += cell_width;
+        }
+    }
+    out
+}
+
+/// pi-tui's `getGraphemeCellRange`: the columns of the grapheme that covers
+/// `column`.
+pub(crate) fn cell_range(line: &Line<'_>, column: usize) -> Option<(usize, usize)> {
+    let mut at = 0;
+    for span in &line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let cell_width = grapheme_width(grapheme);
+            if cell_width > 0 && column >= at && column < at + cell_width {
+                return Some((at, at + cell_width));
+            }
+            at += cell_width;
+        }
+    }
+    None
 }
 
 /// Pads a line with spaces to `width` columns.
