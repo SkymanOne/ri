@@ -882,14 +882,13 @@ impl super::App {
                     self.quit = true;
                 }
             }
+            // pi saves a theme that loads, when it is not the saved one.
+            Request::Theme(Some(name))
+                if self.session.settings().theme.as_deref() != Some(name.as_str()) =>
+            {
+                self.apply_setting("theme", &name);
+            }
             Request::Theme(name) => {
-                if let Some(name) = &name
-                    && self.session.settings().theme.as_deref() != Some(name.as_str())
-                {
-                    let _ = self
-                        .session
-                        .set_global_setting("theme", Some(Value::String(name.clone())));
-                }
                 self.theme_override = None;
                 let name = name.unwrap_or_else(|| yapi_tui::theme::SYSTEM_THEME_NAME.to_owned());
                 self.use_theme(Some(&name));
