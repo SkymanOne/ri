@@ -37,6 +37,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 | Area | Pi | yapi |
 |---|---|---|
 | `/share` and `/bug` | Use Pi's services | Not available. |
+| Clipboard paste | Copied files, images and text on every platform | Nothing on Windows, and images copied in Windows do not reach WSL. |
 | Word motions in Chinese, Japanese and Thai | By dictionary word | By character, to keep ICU's dictionaries out of the binary. |
 | Tree label times | Local time | UTC, with no time zone database. |
 | Codex transport | WebSocket, then compressed SSE | Uncompressed SSE, the same requests and events as Pi's fallback. |
@@ -55,7 +56,6 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Syntax highlighting in tool rows | `read` results, `write` previews and codemode scripts are highlighted | Shown in the default color. | [#32](https://github.com/SkymanOne/yapi/issues/32) |
 | Cache warming | Refreshes the prompt cache while the model streams (`cacheWarming`) and reports cache misses | Sends no refresh requests. The setting is saved and ignored. | [#33](https://github.com/SkymanOne/yapi/issues/33) |
 | Images in the terminal | Inline images, with the "Show images" and "Image width" settings | Not shown. | [#34](https://github.com/SkymanOne/yapi/issues/34) |
-| Clipboard image paste | `app.clipboard.pasteImage` attaches the clipboard's image | The key does nothing. | [#35](https://github.com/SkymanOne/yapi/issues/35) |
 | Mouse selection | Selects text in fullscreen mode, and `fullscreenCopyOnSelect` | No mouse selection. The setting is saved and ignored. | [#36](https://github.com/SkymanOne/yapi/issues/36) |
 | `/changelog` and update notices | Shows the changelog and notices of new versions and package updates | `/changelog` reports no entries, and no notices are shown. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
 | Codemode | Scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | Scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
