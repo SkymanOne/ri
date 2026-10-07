@@ -446,6 +446,18 @@ impl Editor {
         self.set_text_internal(&normalized, false);
     }
 
+    /// Inserts `text` at the cursor as one undoable change.
+    pub fn insert_text_at_cursor(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.cancel_autocomplete();
+        self.push_undo();
+        self.last_action = None;
+        self.exit_history();
+        self.insert_text(text);
+    }
+
     fn valid_ids(&self) -> Vec<u32> {
         self.pastes.keys().copied().collect()
     }

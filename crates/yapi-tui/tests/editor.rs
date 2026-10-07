@@ -1,4 +1,5 @@
-//! The editor against pi-tui's Editor on the same key sequences, recorded by
+//! The editor against pi-tui's Editor on the same key sequences and
+//! `insertTextAtCursor` calls, recorded by
 //! `tests/fixtures/pi/generator/editor.mjs`.
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
@@ -46,9 +47,14 @@ fn edits_like_pi() {
         editor.render(width);
         let mut submitted = Vec::new();
         for (step, state) in case["states"].as_array().unwrap().iter().enumerate() {
-            let key = state["key"].as_str().unwrap();
-            if let EditorEvent::Submit(text) = editor.handle_input(key, &keybindings) {
-                submitted.push(text);
+            let key = &state["key"];
+            match key.as_str() {
+                Some(key) => {
+                    if let EditorEvent::Submit(text) = editor.handle_input(key, &keybindings) {
+                        submitted.push(text);
+                    }
+                }
+                None => editor.insert_text_at_cursor(key["insert"].as_str().unwrap()),
             }
             let render: Vec<String> = editor
                 .render(width)
