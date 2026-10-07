@@ -3908,13 +3908,18 @@ impl App {
         });
     }
 
-    /// Lets extensions set themes by name from the session's theme files.
+    /// Lets extensions load themes by name from the session's theme files,
+    /// or from their colors.
     fn share_themes(&self) {
         let (files, agent_dir) = (self.theme_files.clone(), self.agent_dir.clone());
         let (colors, mode) = (self.colors.clone(), self.color_mode);
-        yapi_types::sync::lock(&self.ext.shared).check_theme = Some(Arc::new(move |name| {
-            theme_named(name, &files, &agent_dir, &colors, mode).map(|_| ())
-        }));
+        yapi_types::sync::lock(&self.ext.shared).load_theme =
+            Some(Arc::new(move |theme: &Value| match theme.as_str() {
+                Some(name) => theme_named(name, &files, &agent_dir, &colors, mode),
+                // pi's in-memory themes, which nothing saves.
+                None => Theme::from_json("<in-memory>", &yapi_types::json::stringify(theme), mode)
+                    .map_err(|error| error.to_string()),
+            }));
     }
 
     /// Carries out an extension command's session change as pi's
@@ -4120,6 +4125,34 @@ mod tests {
         let colors = yapi_tui::terminal::TerminalColors::default();
         let (app, _) = App::new(session, PathBuf::from("/agent"), options, tx, colors, false);
         (app, rx)
+    }
+
+    #[tokio::test]
+    async fn a_theme_object_applies_without_being_saved() {
+        use yapi_core::extensions::ExtensionUi as _;
+        let (mut app, mut events) = app();
+        app.share_themes();
+        let ui = extension_ui::InteractiveUi {
+            tx: app.tx.clone(),
+            epoch: app.epoch,
+            shared: app.ext.shared.clone(),
+        };
+        let light = ui.get_theme("light");
+        assert_eq!(ui.get_theme("missing"), Value::Null);
+        let theme = json!({"name": "mine", "colors": light["colors"]});
+        assert_eq!(ui.set_theme(&theme), Ok(()));
+        app.on_event(events.try_recv().unwrap());
+        assert_eq!(app.theme.name.as_deref(), Some("mine"));
+        let builtin = Theme::builtin("light", app.color_mode).unwrap();
+        assert_eq!(app.theme.color("accent"), builtin.color("accent"));
+        assert_eq!(app.session.settings().theme, None);
+        // pi does not check a Theme object's colors. yapi reports what is
+        // missing and keeps its theme.
+        let error = ui
+            .set_theme(&json!({"colors": {"accent": "#ffffff"}}))
+            .unwrap_err();
+        assert!(error.contains("Missing required color tokens"), "{error}");
+        assert!(events.try_recv().is_err());
     }
 
     #[tokio::test]

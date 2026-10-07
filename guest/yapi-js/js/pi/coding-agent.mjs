@@ -1,7 +1,7 @@
 // `@earendil-works/pi-coding-agent` for extensions in yapi: the API helpers
 // extensions use, built-in tools backed by yapi's own, and stubs for the rest of
 // pi's exports so every import links. A stub throws when called.
-import { Container, Editor, Text } from "@earendil-works/pi-tui";
+import { Container, Editor, Text, backgroundAnsi, foregroundAnsi, parseColor } from "@earendil-works/pi-tui";
 
 const yapi = globalThis.__yapi;
 
@@ -231,6 +231,8 @@ export function copyToClipboard(text) {
 // ----- theme and key hints --------------------------------------------------------------------
 const identity = (text) => text;
 export const Theme = yapi.Theme;
+// pi's `Theme` constructor turns colors into escape sequences as pi-tui does.
+yapi.colorAnsi = (value, mode, background) => (background ? backgroundAnsi : foregroundAnsi)(parseColor(value), mode);
 const theme = globalThis.__yapi_theme;
 export function initTheme() {}
 export function getMarkdownTheme() {

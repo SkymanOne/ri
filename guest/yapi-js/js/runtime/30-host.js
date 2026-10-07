@@ -378,9 +378,12 @@
 
 	// ----- theme ------------------------------------------------------------------------------------------
 	const THINKING_TOKENS = { minimal: "thinkingMinimal", low: "thinkingLow", medium: "thinkingMedium", high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax" };
+	// What `setTheme` sends for each theme: its name, appearance and colors.
+	const themeColors = new WeakMap();
 	/**
-	 * pi's `Theme` over the escape sequences the host reports for each token
-	 * (yapi: `load`). Without them text stays plain.
+	 * pi's `Theme` over the escape sequences of each token. pi's constructor
+	 * computes them from colors; yapi's hosts report them (`new Theme(spec)`).
+	 * Without them text stays plain.
 	 */
 	class Theme {
 		#fg = {};
@@ -388,10 +391,29 @@
 		#dim = new Set();
 		#styled = false;
 		#mode = "truecolor";
-		constructor(spec) {
-			this.load(spec);
+		constructor(fgColors, bgColors, mode, options = {}) {
+			if (bgColors === undefined) {
+				this.load(fgColors);
+				return;
+			}
+			const fg = {
+				...fgColors,
+				scrollbarTrack: fgColors.scrollbarTrack ?? fgColors.muted,
+				scrollbarThumb: fgColors.scrollbarThumb ?? fgColors.text,
+				thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh,
+				searchMatchText: fgColors.searchMatchText ?? fgColors.text,
+			};
+			const bg = { ...bgColors, searchMatchBg: bgColors.searchMatchBg ?? bgColors.selectedBg };
+			// "" is the terminal's default color.
+			const sequences = (colors, background) =>
+				Object.fromEntries(
+					Object.entries(colors).map(([token, value]) => [token, value === "" ? `\x1b[${background ? 49 : 39}m` : yapi.colorAnsi(value, mode, background)]),
+				);
+			this.load({ name: options.name, mode, fg: sequences(fg, false), bg: sequences(bg, true), dim: options.dim, appearance: options.appearance, colors: { ...fg, ...bg } });
+			this.sourcePath = options.sourcePath;
+			this.sourceInfo = options.sourceInfo;
 		}
-		/** Takes the host's `{ name, mode, fg, bg, dim }`, or `null` for plain text. */
+		/** Takes the host's `{ name, mode, fg, bg, dim, colors }`, or `null` for plain text. */
 		load(spec) {
 			this.#styled = !!spec;
 			this.#fg = spec?.fg ?? {};
@@ -399,6 +421,7 @@
 			this.#dim = new Set(spec?.dim ?? []);
 			this.#mode = spec?.mode ?? "truecolor";
 			this.name = spec?.name;
+			themeColors.set(this, spec?.colors && { name: spec.name, appearance: spec.appearance, colors: spec.colors });
 		}
 		#sequence(map, token) {
 			const sequence = map[token];
@@ -683,11 +706,12 @@
 			getEditorComponent: () => (shown ? editorSlot.factory : undefined),
 			theme,
 			getAllThemes: () => request("getAllThemes", {}) ?? [],
-			getTheme: () => undefined,
-			setTheme: (theme) =>
-				typeof theme === "string"
-					? yapi.request("ui.setTheme", { name: theme })
-					: { success: false, error: "yapi sets themes by name, not Theme objects" },
+			getTheme(name) {
+				const spec = request("getTheme", { name });
+				return spec ? new Theme(spec) : undefined;
+			},
+			// A `Theme` object goes to the host as its colors, never its escape sequences.
+			setTheme: (theme) => request("setTheme", { theme: typeof theme === "string" ? theme : (themeColors.get(theme) ?? null) }),
 			getToolsExpanded: () => !!request("getToolsExpanded", {}),
 			setToolsExpanded: (expanded) => request("setToolsExpanded", { expanded }),
 		};
