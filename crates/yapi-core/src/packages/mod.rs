@@ -13,6 +13,7 @@ pub mod source;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sha2::Digest as _;
 use yapi_types::settings::FilteredPackage;
 
 use crate::config::PROJECT_DIR;
@@ -165,20 +166,34 @@ fn run_git(args: &[&str], dir: Option<&Path>) -> Result<(), PackageError> {
     )))
 }
 
+/// pi's `resolveManagedPath`: `parts` resolved against `root`, which it
+/// must not leave.
+fn managed_path(root: &Path, parts: &Path) -> Result<PathBuf, PackageError> {
+    let path = crate::tools::path::resolve_lexically(root, parts);
+    if path.starts_with(root) {
+        Ok(path)
+    } else {
+        Err(PackageError::Message(format!(
+            "Refusing to use path outside package install root: {}",
+            path.display()
+        )))
+    }
+}
+
 impl PackageManager {
-    /// A manager for `cwd`, reading and writing `settings`, with packages from
-    /// `registry`.
+    /// A manager for `cwd`, reading and writing `settings`, with npm's
+    /// configuration `npm_config`, as [`npm::config`] reads it.
     pub fn new(
         cwd: PathBuf,
         agent_dir: PathBuf,
         settings: SettingsManager,
-        registry: String,
+        npm_config: std::collections::HashMap<String, String>,
     ) -> PackageManager {
         PackageManager {
             cwd,
             agent_dir,
             settings,
-            npm: npm::Npm::new(registry),
+            npm: npm::Npm::new(npm_config),
             progress: Box::new(|_| {}),
         }
     }
@@ -233,7 +248,8 @@ impl PackageManager {
         let parsed = parse(source);
         match &parsed {
             Source::Npm { name, version, .. } => {
-                self.install_npm(name, version.as_deref(), scope).await?;
+                self.install_npm(&self.npm_root(scope), name, version.as_deref())
+                    .await?;
             }
             Source::Git {
                 repo, reference, ..
@@ -254,13 +270,13 @@ impl PackageManager {
         self.add_to_settings(source, scope)
     }
 
+    /// Installs `name` (at `version`) into the npm root `root`.
     async fn install_npm(
         &mut self,
+        root: &Path,
         name: &str,
         version: Option<&str>,
-        scope: Scope,
     ) -> Result<(), PackageError> {
-        let root = self.npm_root(scope);
         if let Some(command) = self.settings.settings().npm_command.clone() {
             // pi's `npmCommand` runs a real package manager, scripts and all.
             let (program, args) = command.split_first().ok_or_else(|| {
@@ -270,12 +286,12 @@ impl PackageManager {
             })?;
             let spec =
                 version.map_or_else(|| name.to_owned(), |version| format!("{name}@{version}"));
-            std::fs::create_dir_all(&root).map_err(|err| PackageError::Message(err.to_string()))?;
+            std::fs::create_dir_all(root).map_err(|err| PackageError::Message(err.to_string()))?;
             let status = std::process::Command::new(program)
                 .envs(crate::config::child_env())
                 .args(args)
                 .args(["install", &spec, "--prefix"])
-                .arg(&root)
+                .arg(root)
                 .arg("--legacy-peer-deps")
                 .status()
                 .map_err(|err| PackageError::Message(format!("{program}: {err}")))?;
@@ -287,7 +303,7 @@ impl PackageManager {
             }
             return Ok(());
         }
-        npm::install(&mut self.npm, &root, name, version).await?;
+        npm::install(&mut self.npm, root, name, version).await?;
         Ok(())
     }
 
@@ -318,12 +334,36 @@ impl PackageManager {
         Ok(())
     }
 
-    /// Removes `dir` and the empty directories above it, up to the git root.
+    /// Moves the checkout in `dir` to the latest commit of `reference`, else
+    /// of its upstream branch, and installs its dependencies.
+    async fn update_git(
+        &mut self,
+        dir: &Path,
+        reference: Option<&str>,
+    ) -> Result<(), PackageError> {
+        match reference {
+            Some(reference) => {
+                run_git(&["fetch", "origin", reference], Some(dir))?;
+                run_git(&["checkout", "FETCH_HEAD"], Some(dir))?;
+            }
+            None => {
+                run_git(&["fetch", "--prune", "origin"], Some(dir))?;
+                run_git(&["reset", "--hard", "@{upstream}"], Some(dir))?;
+            }
+        }
+        npm::install_dependencies(&mut self.npm, dir).await?;
+        Ok(())
+    }
+
+    /// Removes `dir` and the empty directories above it, up to the git root
+    /// or the temporary packages folder.
     fn remove_dir(&self, dir: &Path) {
         let _ = std::fs::remove_dir_all(dir);
+        let temporary = self.agent_dir.join("tmp").join("extensions");
         let mut current = dir.parent();
         while let Some(parent) = current {
             if parent.file_name().is_some_and(|name| name == "git")
+                || parent == temporary
                 || std::fs::remove_dir(parent).is_err()
             {
                 break;
@@ -498,28 +538,99 @@ impl PackageManager {
                         None => true,
                     };
                     if stale {
-                        self.install_npm(&name, version.as_deref(), scope).await?;
+                        self.install_npm(&self.npm_root(scope), &name, version.as_deref())
+                            .await?;
                     }
                 }
                 Source::Git { reference, .. } => {
                     (self.progress)(&format!("Updating {configured}..."));
                     let dir = self.install_path(&parse(&configured), scope);
-                    match reference {
-                        Some(reference) => {
-                            run_git(&["fetch", "origin", &reference], Some(&dir))?;
-                            run_git(&["checkout", "FETCH_HEAD"], Some(&dir))?;
-                        }
-                        None => {
-                            run_git(&["fetch", "--prune", "origin"], Some(&dir))?;
-                            run_git(&["reset", "--hard", "@{upstream}"], Some(&dir))?;
-                        }
-                    }
-                    npm::install_dependencies(&mut self.npm, &dir).await?;
+                    self.update_git(&dir, reference.as_deref()).await?;
                 }
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    /// pi's temporary package for `-e`: where `source` is for this run. npm
+    /// and git sources live under `<agent>/tmp/extensions` and are not added
+    /// to settings. A missing package is installed, an npm package whose
+    /// installed version is outside the source's range is reinstalled, and an
+    /// unpinned git checkout is refreshed, kept as it is when that fails.
+    /// `offline` skips all three, and a missing package is then `None`.
+    pub async fn install_temporary(
+        &mut self,
+        source: &str,
+        offline: bool,
+    ) -> Result<Option<PathBuf>, PackageError> {
+        match parse(source) {
+            Source::Npm { name, version, .. } => {
+                let root = self.temporary_dir("npm", "", None)?;
+                let dir = root.join("node_modules").join(&name);
+                // A dist-tag such as `latest` is no range, so it never
+                // reinstalls an installed package.
+                let stale = npm::installed_version(&dir).is_none_or(|installed| {
+                    version.as_deref().is_some_and(|range| {
+                        npm::is_range(range) && !npm::satisfies(&installed, range)
+                    })
+                });
+                if stale {
+                    if offline {
+                        return Ok(None);
+                    }
+                    self.install_npm(&root, &name, version.as_deref()).await?;
+                }
+                Ok(Some(dir))
+            }
+            Source::Git {
+                repo,
+                host,
+                path,
+                reference,
+            } => {
+                let dir =
+                    self.temporary_dir(&format!("git-{host}"), &path, reference.as_deref())?;
+                if !dir.exists() {
+                    if offline {
+                        return Ok(None);
+                    }
+                    self.install_git(&repo, reference.as_deref(), &dir).await?;
+                } else if reference.is_none() && !offline {
+                    let _ = self.update_git(&dir, None).await;
+                }
+                Ok(Some(dir))
+            }
+            Source::Local { path } => Ok(Some(source::local_path(&path, &self.cwd))),
+        }
+    }
+
+    /// pi's `getTemporaryDir`: `<agent>/tmp/extensions/<prefix>/<hash>/<suffix>`,
+    /// where `hash` starts the SHA-256 of `<prefix>-<suffix>[@<reference>]`.
+    /// The `extensions` folder is readable by the user only.
+    fn temporary_dir(
+        &self,
+        prefix: &str,
+        suffix: &str,
+        reference: Option<&str>,
+    ) -> Result<PathBuf, PackageError> {
+        let folder = self.agent_dir.join("tmp").join("extensions");
+        let failed =
+            |err: std::io::Error| PackageError::Message(format!("{}: {err}", folder.display()));
+        std::fs::create_dir_all(&folder).map_err(failed)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700))
+                .map_err(failed)?;
+        }
+        let key = match reference {
+            Some(reference) => format!("{prefix}-{suffix}@{reference}"),
+            None => format!("{prefix}-{suffix}"),
+        };
+        let hash = crate::time::hex(&sha2::Sha256::digest(key));
+        let root = managed_path(&folder, Path::new(prefix))?;
+        managed_path(&root, &Path::new(&hash[..8]).join(suffix))
     }
 
     /// pi's startup install: the configured npm and git packages that are
@@ -542,7 +653,8 @@ impl PackageManager {
                 let installed = match &parsed {
                     _ if root.exists() => Ok(()),
                     Source::Npm { name, version, .. } => {
-                        self.install_npm(name, version.as_deref(), scope).await
+                        self.install_npm(&self.npm_root(scope), name, version.as_deref())
+                            .await
                     }
                     Source::Git {
                         repo, reference, ..
@@ -554,5 +666,43 @@ impl PackageManager {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temporary_dirs_are_pis() {
+        let agent = std::env::temp_dir().join(format!("yapi-temporary-{}", std::process::id()));
+        let manager = PackageManager::new(
+            agent.clone(),
+            agent.clone(),
+            SettingsManager::in_memory(),
+            Default::default(),
+        );
+        let extensions = agent.join("tmp/extensions");
+        let dir = |prefix: &str, suffix: &str, reference| {
+            manager
+                .temporary_dir(prefix, suffix, reference)
+                .map_err(|err| err.to_string())
+        };
+        // Hashes from pi's `getTemporaryDir`.
+        assert_eq!(
+            dir("npm", "", None).unwrap(),
+            extensions.join("npm/f35b2129")
+        );
+        assert_eq!(
+            dir("git-github.com", "user/repo", None).unwrap(),
+            extensions.join("git-github.com/338a1076/user/repo")
+        );
+        assert_eq!(
+            dir("git-github.com", "user/repo", Some("v1")).unwrap(),
+            extensions.join("git-github.com/18093e51/user/repo")
+        );
+        let escape = dir("git-github.com", "../../../outside", None).unwrap_err();
+        assert!(escape.starts_with("Refusing to use path outside package install root: "));
+        std::fs::remove_dir_all(&agent).unwrap();
     }
 }

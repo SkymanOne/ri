@@ -13,7 +13,7 @@ mod run;
 pub(crate) use models::{model_type, models_of_type, run_model};
 pub(crate) use run::Runner;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -22,11 +22,14 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::{Tool, UpdateSink};
 use yapi_core::agent_session::WeakSession;
-use yapi_core::extensions::{Context, Extension, Loadout, Tools, builtin_source, codemode};
+use yapi_core::extensions::{
+    Context, Extension, Loadout, LoadoutChanges, Tools, builtin_source, codemode,
+};
 use yapi_core::tools::{Exposure, RegisteredTool};
 use yapi_types::event::ToolResult;
 use yapi_types::message::ToolDeclaration;
 use yapi_types::rpc::SourceInfo;
+use yapi_types::settings::CodemodeMode;
 use yapi_types::sync::lock;
 
 use declarations::Declaration;
@@ -183,24 +186,28 @@ impl Extension for CodemodeExtension {
         Box::pin(async {})
     }
 
-    /// pi's `prepareCodemodeLoadout` in `on` mode: declared tools that scripts
-    /// may call say how, and the description lists the callable tools that
-    /// are not declared directly.
-    fn prepare_loadout(&self, loadout: &Loadout) -> HashMap<String, String> {
-        let mut descriptions = HashMap::new();
+    /// pi's `prepareCodemodeLoadout`. In `on` mode, declared tools that
+    /// scripts may call say how, and the description lists the callable
+    /// tools that are not declared directly. In `only` mode, the description
+    /// lists every callable tool, and requests leave out the direct tools
+    /// scripts may call.
+    fn prepare_loadout(&self, loadout: &Loadout) -> LoadoutChanges {
+        let mut changes = LoadoutChanges::default();
         let Some(own) = loadout.declared.iter().find(|tool| tool.name() == NAME) else {
-            return descriptions;
+            return changes;
         };
         if !is_codemode(own) {
-            return descriptions;
+            return changes;
         }
         let settings = lock(&self.session)
             .upgrade()
             .map(|session| session.settings())
-            .unwrap_or_default();
-        let budget = settings
+            .unwrap_or_default()
             .codemode
-            .and_then(|codemode| codemode.inline_budget)
+            .unwrap_or_default();
+        let only = settings.mode == Some(CodemodeMode::Only);
+        let budget = settings
+            .inline_budget
             .unwrap_or(declarations::DEFAULT_INLINE_BUDGET);
         let callable: Vec<&RegisteredTool> = loadout
             .callable
@@ -208,19 +215,24 @@ impl Extension for CodemodeExtension {
             .filter(|tool| tool.name() != NAME)
             .collect();
         for tool in &loadout.declared {
-            if callable
+            if !callable
                 .iter()
                 .any(|callable| callable.name() == tool.name())
             {
-                descriptions.insert(
+                continue;
+            }
+            if !only {
+                changes.descriptions.insert(
                     tool.name().to_owned(),
                     declarations::script_call(&declaration(tool)),
                 );
+            } else if tool.exposure == Exposure::Direct {
+                changes.hidden.insert(tool.name().to_owned());
             }
         }
         let listed: Vec<&RegisteredTool> = callable
             .into_iter()
-            .filter(|tool| tool.exposure != Exposure::Direct)
+            .filter(|tool| only || tool.exposure != Exposure::Direct)
             .collect();
         let deferred: HashSet<String> = listed
             .iter()
@@ -228,10 +240,10 @@ impl Extension for CodemodeExtension {
             .map(|tool| tool.name().to_owned())
             .collect();
         let listed: Vec<Declaration> = listed.into_iter().map(declaration).collect();
-        descriptions.insert(
+        changes.descriptions.insert(
             NAME.to_owned(),
             declarations::description(&listed, &deferred, Some(budget), self.docs.as_deref()),
         );
-        descriptions
+        changes
     }
 }

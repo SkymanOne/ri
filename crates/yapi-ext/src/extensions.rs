@@ -1027,7 +1027,8 @@ impl Tool for JsTool {
                 .upgrade()
                 .ok_or("The extension runtime has stopped")?;
             let bridge = &shared.bridge;
-            lock(&bridge.updates).insert(call_id.clone(), (updates, cancel.clone()));
+            let (jobs, queued) = tokio::sync::mpsc::unbounded_channel();
+            lock(&bridge.updates).insert(call_id.clone(), (updates, cancel.clone(), jobs));
             let session = bridge.session();
             let (ui, mode) = session
                 .as_ref()
@@ -1048,7 +1049,10 @@ impl Tool for JsTool {
                 "id": shared.next_id(), "extension": self.extension, "name": self.declaration.name,
                 "toolCallId": call_id, "params": args, "ctx": ctx, "tools": tools,
             });
-            let result = shared.call_abortable("tool", &payload, &cancel).await;
+            // The tool's nested calls run on this task, which also emits the
+            // tool's updates, so they report in the order the tool made them.
+            let result =
+                crate::ops::drive(shared.call_abortable("tool", &payload, &cancel), queued).await;
             lock(&bridge.updates).remove(&call_id);
             tool_result(result.map_err(|err| err.to_string())?)
         })
@@ -1063,6 +1067,10 @@ fn tool_result(mut value: Value) -> Result<ToolResult, String> {
     serde_json::from_value(value).map_err(|err| format!("Invalid tool result: {err}"))
 }
 
+/// Where a running extension tool's operations go: [`crate::ops::drive`]
+/// runs them on the tool call's task.
+type Jobs = tokio::sync::mpsc::UnboundedSender<crate::ops::Job>;
+
 /// Numbers the runtimes of a process, so their component handles stay apart.
 static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 
@@ -1073,8 +1081,12 @@ struct SessionBridge {
     /// Where actions that outlive a request run.
     runtime: tokio::runtime::Handle,
     session: Mutex<WeakSession>,
-    /// Update sinks and cancellation of running extension tools, by call id.
-    updates: Mutex<HashMap<String, (UpdateSink, CancellationToken)>>,
+    /// Update sinks, cancellation and job queues of running extension tools,
+    /// by call id.
+    updates: Mutex<HashMap<String, (UpdateSink, CancellationToken, Jobs)>>,
+    /// Updates running tools published in the current guest step, held until
+    /// the step ends.
+    held_updates: Mutex<Vec<(Jobs, crate::ops::Job)>>,
     /// Custom components shown as blocking dialogs, by handle.
     prompts: Mutex<std::collections::HashSet<u64>>,
     /// Where the output of `!` commands that bash operations run goes, by
@@ -1108,6 +1120,7 @@ impl SessionBridge {
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
+            held_updates: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
             logins: Mutex::default(),
@@ -1426,11 +1439,13 @@ impl Bridge for SessionBridge {
             return Ok(Value::Null);
         }
         if kind == "tool.update" {
-            let sink = lock(&self.updates)
+            let caller = lock(&self.updates)
                 .get(payload["toolCallId"].as_str().unwrap_or_default())
-                .map(|(sink, _)| sink.clone());
-            if let (Some(sink), Ok(partial)) = (sink, tool_result(payload["partial"].clone())) {
-                sink(partial);
+                .map(|(sink, _, jobs)| (sink.clone(), jobs.clone()));
+            if let (Some((sink, jobs)), Ok(partial)) =
+                (caller, tool_result(payload["partial"].clone()))
+            {
+                lock(&self.held_updates).push((jobs, Box::pin(async move { sink(partial) })));
             }
             return Ok(Value::Null);
         }
@@ -1629,6 +1644,20 @@ impl Bridge for SessionBridge {
         }
     }
 
+    /// pi emits a tool's update a few microtasks after the tool publishes it:
+    /// after the start of a nested call the tool began in the same step, and
+    /// before that call ends. So the step's updates queue behind the jobs of
+    /// its nested calls. This relies on [`crate::ops::drive`] polling a tool's
+    /// jobs first in, first out: a nested call reports its start on its first
+    /// poll, and the update goes out once that call waits, unless the call
+    /// ends without waiting.
+    fn step_ended(&self) {
+        for (jobs, update) in std::mem::take(&mut *lock(&self.held_updates)) {
+            // An update after the tool ended is dropped, as in pi.
+            let _ = jobs.send(update);
+        }
+    }
+
     fn stream_hooks(&self, id: u64) -> RequestHooks {
         lock(&self.streams)
             .get(&id)
@@ -1687,14 +1716,22 @@ impl Bridge for SessionBridge {
         let Some(session) = self.session() else {
             return Box::pin(async { Err(not_bound()) });
         };
-        // Nested calls and scripts take the calling tool's cancellation.
-        let (caller_updates, caller_cancel) = lock(&self.updates)
+        // Nested calls and scripts take the calling tool's cancellation, and
+        // run as its jobs.
+        let caller = lock(&self.updates)
             .get(payload["toolCallId"].as_str().unwrap_or_default())
-            .cloned()
-            .unwrap_or_else(|| (Arc::new(|_| {}), CancellationToken::new()));
+            .cloned();
+        let (caller_updates, caller_cancel, caller_jobs) = match caller {
+            Some((updates, cancel, jobs)) => (updates, cancel, Some(jobs)),
+            None => (
+                Arc::new(|_| {}) as UpdateSink,
+                CancellationToken::new(),
+                None,
+            ),
+        };
         let codemode = self.codemode.clone();
         let kind = kind.to_owned();
-        Box::pin(async move {
+        let operation = Box::pin(async move {
             match kind.as_str() {
                 "ui.suggestions" => {
                     let (ui, _) = session.extension_binding();
@@ -1875,6 +1912,10 @@ impl Bridge for SessionBridge {
                 }
                 other => Err(format!("{other} is not available in yapi extensions yet")),
             }
-        })
+        });
+        match caller_jobs {
+            Some(jobs) => crate::ops::queue(&jobs, operation),
+            None => operation,
+        }
     }
 }

@@ -5,8 +5,9 @@
     reason = "test helpers; each test file uses some"
 )]
 
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// The repository root.
 pub fn repo() -> PathBuf {
@@ -44,4 +45,31 @@ pub fn yapi(home: &Path) -> Command {
         .env("HOME", home)
         .env("YAPI_CODING_AGENT_DIR", home.join("agent"));
     command
+}
+
+/// The commands `yapi --mode rpc` started by `command` reports, failing on
+/// an extension error.
+pub fn rpc_commands(command: &mut Command) -> serde_json::Value {
+    let mut child = command
+        .args(["--mode", "rpc"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    writeln!(stdin, r#"{{"id":"commands","type":"get_commands"}}"#).unwrap();
+    let mut commands = None;
+    for line in BufReader::new(child.stdout.take().unwrap()).lines() {
+        let event: serde_json::Value = serde_json::from_str(&line.unwrap()).unwrap();
+        assert_ne!(event["type"], "extension_error", "{event}");
+        if event["type"] == "response" && event["id"] == "commands" {
+            commands = Some(event["data"]["commands"].clone());
+            break;
+        }
+    }
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    commands.expect("no get_commands response")
 }

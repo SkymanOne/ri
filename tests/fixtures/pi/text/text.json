@@ -2152,6 +2152,758 @@
 				"                                                                                ",
 				"                                                                                "
 			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"Visit \u001b[4mhttps://example.com/docs\u001b[24m, or      ",
+				"\u001b[4mhttp://x.io\u001b[24m. Also \u001b[4mwww.example.com\u001b[24m       ",
+				"(http://www.example.com) and            ",
+				"\u001b[4mftp://files.example.org/a.txt\u001b[24m!          "
+			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"Visit \u001b[4mhttps://example.com/docs\u001b[24m, or      ",
+				"\u001b[4mhttp://x.io\u001b[24m. Also \u001b[4mwww.example.com\u001b[24m       ",
+				"(http://www.example.com) and            ",
+				"\u001b[4mftp://files.example.org/a.txt\u001b[24m!          "
+			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" Visit                  ",
+				" \u001b[4mhttps://example.com/do\u001b[24m ",
+				" \u001b[4mcs\u001b[24m, or \u001b[4mhttp://x.io\u001b[24m.    ",
+				" Also \u001b[4mwww.example.com\u001b[24m   ",
+				" (http://www.example.co ",
+				" m) and                 ",
+				" \u001b[4mftp://files.example.or\u001b[24m ",
+				" \u001b[4mg/a.txt\u001b[24m!               "
+			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" Visit                  ",
+				" \u001b[4mhttps://example.com/do\u001b[24m ",
+				" \u001b[4mcs\u001b[24m, or \u001b[4mhttp://x.io\u001b[24m.    ",
+				" Also \u001b[4mwww.example.com\u001b[24m   ",
+				" (http://www.example.co ",
+				" m) and                 ",
+				" \u001b[4mftp://files.example.or\u001b[24m ",
+				" \u001b[4mg/a.txt\u001b[24m!               "
+			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Visit \u001b[4mhttps://example.com/docs\u001b[24m, or \u001b[4mhttp://x.io\u001b[24m. Also \u001b[4mwww.example.com\u001b[24m           ",
+				" (http://www.example.com) and \u001b[4mftp://files.example.org/a.txt\u001b[24m!                    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "bareUrls",
+			"text": "Visit https://example.com/docs, or http://x.io. Also www.example.com and ftp://files.example.org/a.txt!",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Visit \u001b[4mhttps://example.com/docs\u001b[24m, or \u001b[4mhttp://x.io\u001b[24m. Also \u001b[4mwww.example.com\u001b[24m           ",
+				" (http://www.example.com) and \u001b[4mftp://files.example.org/a.txt\u001b[24m!                    ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"Mail \u001b[4mme@example.com\u001b[24m or                  ",
+				"\u001b[4mfirst.last+tag@sub.example.co.uk\u001b[24m. Not   ",
+				"a@b or user@host_ or a@b.c- here.       "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"Mail \u001b[4mme@example.com\u001b[24m or                  ",
+				"\u001b[4mfirst.last+tag@sub.example.co.uk\u001b[24m. Not   ",
+				"a@b or user@host_ or a@b.c- here.       "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" Mail \u001b[4mme@example.com\u001b[24m or ",
+				" \u001b[4mfirst.last+tag@sub.exa\u001b[24m ",
+				" \u001b[4mmple.co.uk\u001b[24m. Not a@b or ",
+				" user@host_ or a@b.c-   ",
+				" here.                  "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" Mail \u001b[4mme@example.com\u001b[24m or ",
+				" \u001b[4mfirst.last+tag@sub.exa\u001b[24m ",
+				" \u001b[4mmple.co.uk\u001b[24m. Not a@b or ",
+				" user@host_ or a@b.c-   ",
+				" here.                  "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Mail \u001b[4mme@example.com\u001b[24m or \u001b[4mfirst.last+tag@sub.example.co.uk\u001b[24m. Not a@b or user@host_ ",
+				" or a@b.c- here.                                                                ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "bareEmails",
+			"text": "Mail me@example.com or first.last+tag@sub.example.co.uk. Not a@b or user@host_ or a@b.c- here.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Mail \u001b[4mme@example.com\u001b[24m or \u001b[4mfirst.last+tag@sub.example.co.uk\u001b[24m. Not a@b or user@host_ ",
+				" or a@b.c- here.                                                                ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"(see                                    ",
+				"\u001b[4mhttps://en.wikipedia.org/wiki/Rust_(prog\u001b[24m",
+				"\u001b[4mramming_language)\u001b[24m) and \u001b[4mhttps://x.com/a\u001b[24m(b",
+				"and \u001b[4mhttps://x.com/q?a=1&b=2\u001b[24m; done       "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"(see                                    ",
+				"\u001b[4mhttps://en.wikipedia.org/wiki/Rust_(prog\u001b[24m",
+				"\u001b[4mramming_language)\u001b[24m) and \u001b[4mhttps://x.com/a\u001b[24m(b",
+				"and \u001b[4mhttps://x.com/q?a=1&b=2\u001b[24m; done       "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" (see                   ",
+				" \u001b[4mhttps://en.wikipedia.o\u001b[24m ",
+				" \u001b[4mrg/wiki/Rust_(programm\u001b[24m ",
+				" \u001b[4ming_language)\u001b[24m) and     ",
+				" \u001b[4mhttps://x.com/a\u001b[24m(b and  ",
+				" \u001b[4mhttps://x.com/q?a=1&b=\u001b[24m ",
+				" \u001b[4m2\u001b[24m; done                "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" (see                   ",
+				" \u001b[4mhttps://en.wikipedia.o\u001b[24m ",
+				" \u001b[4mrg/wiki/Rust_(programm\u001b[24m ",
+				" \u001b[4ming_language)\u001b[24m) and     ",
+				" \u001b[4mhttps://x.com/a\u001b[24m(b and  ",
+				" \u001b[4mhttps://x.com/q?a=1&b=\u001b[24m ",
+				" \u001b[4m2\u001b[24m; done                "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" (see \u001b[4mhttps://en.wikipedia.org/wiki/Rust_(programming_language)\u001b[24m) and            ",
+				" \u001b[4mhttps://x.com/a\u001b[24m(b and \u001b[4mhttps://x.com/q?a=1&b=2\u001b[24m; done                            ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlParens",
+			"text": "(see https://en.wikipedia.org/wiki/Rust_(programming_language)) and https://x.com/a(b and https://x.com/q?a=1&b=2; done",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" (see \u001b[4mhttps://en.wikipedia.org/wiki/Rust_(programming_language)\u001b[24m) and            ",
+				" \u001b[4mhttps://x.com/a\u001b[24m(b and \u001b[4mhttps://x.com/q?a=1&b=2\u001b[24m; done                            ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"End \u001b[4mhttps://example.com/path\u001b[24m... and     ",
+				"\u001b[4mhttps://example.com/a_b\u001b[24m_ and            ",
+				"'\u001b[4mhttps://example.com/q?x=1\u001b[24m'             ",
+				"\"\u001b[4mwww.quoted.com\u001b[24m (http://www.quoted.com)\""
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"End \u001b[4mhttps://example.com/path\u001b[24m... and     ",
+				"\u001b[4mhttps://example.com/a_b\u001b[24m_ and            ",
+				"'\u001b[4mhttps://example.com/q?x=1\u001b[24m'             ",
+				"\"\u001b[4mwww.quoted.com\u001b[24m (http://www.quoted.com)\""
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" End                    ",
+				" \u001b[4mhttps://example.com/pa\u001b[24m ",
+				" \u001b[4mth\u001b[24m... and              ",
+				" \u001b[4mhttps://example.com/a_\u001b[24m ",
+				" \u001b[4mb\u001b[24m_ and                 ",
+				" '\u001b[4mhttps://example.com/q\u001b[24m ",
+				" \u001b[4m?x=1\u001b[24m' \"\u001b[4mwww.quoted.com\u001b[24m  ",
+				" (http://www.quoted.com ",
+				" )\"                     "
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" End                    ",
+				" \u001b[4mhttps://example.com/pa\u001b[24m ",
+				" \u001b[4mth\u001b[24m... and              ",
+				" \u001b[4mhttps://example.com/a_\u001b[24m ",
+				" \u001b[4mb\u001b[24m_ and                 ",
+				" '\u001b[4mhttps://example.com/q\u001b[24m ",
+				" \u001b[4m?x=1\u001b[24m' \"\u001b[4mwww.quoted.com\u001b[24m  ",
+				" (http://www.quoted.com ",
+				" )\"                     "
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" End \u001b[4mhttps://example.com/path\u001b[24m... and \u001b[4mhttps://example.com/a_b\u001b[24m_ and               ",
+				" '\u001b[4mhttps://example.com/q?x=1\u001b[24m' \"\u001b[4mwww.quoted.com\u001b[24m (http://www.quoted.com)\"           ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlPunctuation",
+			"text": "End https://example.com/path... and https://example.com/a_b_ and 'https://example.com/q?x=1' \"www.quoted.com\"",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" End \u001b[4mhttps://example.com/path\u001b[24m... and \u001b[4mhttps://example.com/a_b\u001b[24m_ and               ",
+				" '\u001b[4mhttps://example.com/q?x=1\u001b[24m' \"\u001b[4mwww.quoted.com\u001b[24m (http://www.quoted.com)\"           ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"Midword x\u001b[4mhttps://example.com\u001b[24m and        ",
+				"a\u001b[4mwww.example.com\u001b[24m                        ",
+				"(http://www.example.com),               ",
+				"https://code.example.com, \u001b[4mlink\u001b[24m          ",
+				"\u001b[4mhttps://in.link\u001b[24m (https://target.com),   ",
+				"\u001b[4mhttps://bold.example.com\u001b[24m and            ",
+				"\u001b[4mhttps://auto.example.com\u001b[24m.               "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"Midword x\u001b[4mhttps://example.com\u001b[24m and        ",
+				"a\u001b[4mwww.example.com\u001b[24m                        ",
+				"(http://www.example.com),               ",
+				"https://code.example.com, \u001b[4mlink\u001b[24m          ",
+				"\u001b[4mhttps://in.link\u001b[24m (https://target.com),   ",
+				"\u001b[4mhttps://bold.example.com\u001b[24m and            ",
+				"\u001b[4mhttps://auto.example.com\u001b[24m.               "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" Midword                ",
+				" x\u001b[4mhttps://example.com\u001b[24m   ",
+				" and a\u001b[4mwww.example.com\u001b[24m   ",
+				" (http://www.example.co ",
+				" m),                    ",
+				" https://code.example.c ",
+				" om, \u001b[4mlink\u001b[24m               ",
+				" \u001b[4mhttps://in.link\u001b[24m        ",
+				" (https://target.com),  ",
+				" \u001b[4mhttps://bold.example.c\u001b[24m ",
+				" \u001b[4mom\u001b[24m and                 ",
+				" \u001b[4mhttps://auto.example.c\u001b[24m ",
+				" \u001b[4mom\u001b[24m.                    "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" Midword                ",
+				" x\u001b[4mhttps://example.com\u001b[24m   ",
+				" and a\u001b[4mwww.example.com\u001b[24m   ",
+				" (http://www.example.co ",
+				" m),                    ",
+				" https://code.example.c ",
+				" om, \u001b[4mlink\u001b[24m               ",
+				" \u001b[4mhttps://in.link\u001b[24m        ",
+				" (https://target.com),  ",
+				" \u001b[4mhttps://bold.example.c\u001b[24m ",
+				" \u001b[4mom\u001b[24m and                 ",
+				" \u001b[4mhttps://auto.example.c\u001b[24m ",
+				" \u001b[4mom\u001b[24m.                    "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Midword x\u001b[4mhttps://example.com\u001b[24m and a\u001b[4mwww.example.com\u001b[24m (http://www.example.com),    ",
+				" https://code.example.com, \u001b[4mlink https://in.link\u001b[24m (https://target.com),           ",
+				" \u001b[4mhttps://bold.example.com\u001b[24m and \u001b[4mhttps://auto.example.com\u001b[24m.                         ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlContext",
+			"text": "Midword xhttps://example.com and awww.example.com, `https://code.example.com`, [link https://in.link](https://target.com), **https://bold.example.com** and <https://auto.example.com>.",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" Midword x\u001b[4mhttps://example.com\u001b[24m and a\u001b[4mwww.example.com\u001b[24m (http://www.example.com),    ",
+				" https://code.example.com, \u001b[4mlink https://in.link\u001b[24m (https://target.com),           ",
+				" \u001b[4mhttps://bold.example.com\u001b[24m and \u001b[4mhttps://auto.example.com\u001b[24m.                         ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"\u001b[4mHTTPS://EXAMPLE.COM\u001b[24m, Www.example.com,   ",
+				"http:// and \u001b[4mwww.-x\u001b[24m (http://www.-x).     ",
+				"\u001b[4mhttps://example.com/?a=1\u001b[24m&amp;           ",
+				"x!\u001b[4mfoo@bar.com\u001b[24m a*\u001b[4mb@c.com\u001b[24m \u001b[4ma@b.com.c\u001b[24m@d.com "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"\u001b[4mHTTPS://EXAMPLE.COM\u001b[24m, Www.example.com,   ",
+				"http:// and \u001b[4mwww.-x\u001b[24m (http://www.-x).     ",
+				"\u001b[4mhttps://example.com/?a=1\u001b[24m&amp;           ",
+				"x!\u001b[4mfoo@bar.com\u001b[24m a*\u001b[4mb@c.com\u001b[24m \u001b[4ma@b.com.c\u001b[24m@d.com "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" \u001b[4mHTTPS://EXAMPLE.COM\u001b[24m,   ",
+				" Www.example.com,       ",
+				" http:// and \u001b[4mwww.-x\u001b[24m     ",
+				" (http://www.-x).       ",
+				" \u001b[4mhttps://example.com/?a\u001b[24m ",
+				" \u001b[4m=1\u001b[24m&amp; x!\u001b[4mfoo@bar.com\u001b[24m  ",
+				" a*\u001b[4mb@c.com\u001b[24m              ",
+				" \u001b[4ma@b.com.c\u001b[24m@d.com        "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" \u001b[4mHTTPS://EXAMPLE.COM\u001b[24m,   ",
+				" Www.example.com,       ",
+				" http:// and \u001b[4mwww.-x\u001b[24m     ",
+				" (http://www.-x).       ",
+				" \u001b[4mhttps://example.com/?a\u001b[24m ",
+				" \u001b[4m=1\u001b[24m&amp; x!\u001b[4mfoo@bar.com\u001b[24m  ",
+				" a*\u001b[4mb@c.com\u001b[24m              ",
+				" \u001b[4ma@b.com.c\u001b[24m@d.com        "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" \u001b[4mHTTPS://EXAMPLE.COM\u001b[24m, Www.example.com, http:// and \u001b[4mwww.-x\u001b[24m (http://www.-x).      ",
+				" \u001b[4mhttps://example.com/?a=1\u001b[24m&amp; x!\u001b[4mfoo@bar.com\u001b[24m a*\u001b[4mb@c.com\u001b[24m \u001b[4ma@b.com.c\u001b[24m@d.com          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlEdges",
+			"text": "HTTPS://EXAMPLE.COM, Www.example.com, http:// and www.-x. https://example.com/?a=1&amp; x!foo@bar.com a*b@c.com a@b.com.c@d.com",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" \u001b[4mHTTPS://EXAMPLE.COM\u001b[24m, Www.example.com, http:// and \u001b[4mwww.-x\u001b[24m (http://www.-x).      ",
+				" \u001b[4mhttps://example.com/?a=1\u001b[24m&amp; x!\u001b[4mfoo@bar.com\u001b[24m a*\u001b[4mb@c.com\u001b[24m \u001b[4ma@b.com.c\u001b[24m@d.com          ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"See \u001b[4mwww.heading.com\u001b[24m                     ",
+				"(http://www.heading.com)                ",
+				"                                        ",
+				"- item \u001b[4mhttps://example.com/list\u001b[24m         ",
+				"- mail \u001b[4mlist@example.com\u001b[24m                 ",
+				"                                        ",
+				"┌─────────────────────┬────────────────┐",
+				"│ Site                │ Mail           │",
+				"├─────────────────────┼────────────────┤",
+				"│ \u001b[4mwww.cell.com\u001b[24m\u001b[22;23;24;25;27;28;29;39m        │ \u001b[4mcell@example.c\u001b[24m\u001b[22;23;24;25;27;28;29;39m │",
+				"│ (http://www.cell.co\u001b[22;23;24;25;27;28;29;39m │ \u001b[4mom\u001b[24m             │",
+				"│ m)                  │                │",
+				"└─────────────────────┴────────────────┘"
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 40,
+			"paddingX": 0,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"See \u001b[4mwww.heading.com\u001b[24m                     ",
+				"(http://www.heading.com)                ",
+				"                                        ",
+				"- item \u001b[4mhttps://example.com/list\u001b[24m         ",
+				"- mail \u001b[4mlist@example.com\u001b[24m                 ",
+				"                                        ",
+				"┌─────────────────────┬────────────────┐",
+				"│ Site                │ Mail           │",
+				"├─────────────────────┼────────────────┤",
+				"│ \u001b[4mwww.cell.com\u001b[24m\u001b[22;23;24;25;27;28;29;39m        │ \u001b[4mcell@example.c\u001b[24m\u001b[22;23;24;25;27;28;29;39m │",
+				"│ (http://www.cell.co\u001b[22;23;24;25;27;28;29;39m │ \u001b[4mom\u001b[24m             │",
+				"│ m)                  │                │",
+				"└─────────────────────┴────────────────┘"
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				" See \u001b[4mwww.heading.com\u001b[24m    ",
+				" (http://www.heading.co ",
+				" m)                     ",
+				"                        ",
+				" - item                 ",
+				"   \u001b[4mhttps://example.com/\u001b[24m ",
+				"   \u001b[4mlist\u001b[24m                 ",
+				" - mail                 ",
+				"   \u001b[4mlist@example.com\u001b[24m     ",
+				"                        ",
+				" ┌───────────┬────────┐ ",
+				" │ Site      │ Mail   │ ",
+				" ├───────────┼────────┤ ",
+				" │ \u001b[4mwww.cell.\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ \u001b[4mcell@e\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ \u001b[4mcom\u001b[24m\u001b[22;23;24;25;27;28;29;39m       │ \u001b[4mxample\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ (http://w\u001b[22;23;24;25;27;28;29;39m │ \u001b[4m.com\u001b[24m   │ ",
+				" │ ww.cell.c\u001b[22;23;24;25;27;28;29;39m │        │ ",
+				" │ om)       │        │ ",
+				" └───────────┴────────┘ "
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 24,
+			"paddingX": 1,
+			"paddingY": 0,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				" See \u001b[4mwww.heading.com\u001b[24m    ",
+				" (http://www.heading.co ",
+				" m)                     ",
+				"                        ",
+				" - item                 ",
+				"   \u001b[4mhttps://example.com/\u001b[24m ",
+				"   \u001b[4mlist\u001b[24m                 ",
+				" - mail                 ",
+				"   \u001b[4mlist@example.com\u001b[24m     ",
+				"                        ",
+				" ┌───────────┬────────┐ ",
+				" │ Site      │ Mail   │ ",
+				" ├───────────┼────────┤ ",
+				" │ \u001b[4mwww.cell.\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ \u001b[4mcell@e\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ \u001b[4mcom\u001b[24m\u001b[22;23;24;25;27;28;29;39m       │ \u001b[4mxample\u001b[24m\u001b[22;23;24;25;27;28;29;39m │ ",
+				" │ (http://w\u001b[22;23;24;25;27;28;29;39m │ \u001b[4m.com\u001b[24m   │ ",
+				" │ ww.cell.c\u001b[22;23;24;25;27;28;29;39m │        │ ",
+				" │ om)       │        │ ",
+				" └───────────┴────────┘ "
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": false,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" See \u001b[4mwww.heading.com\u001b[24m (http://www.heading.com)                                   ",
+				"                                                                                ",
+				" - item \u001b[4mhttps://example.com/list\u001b[24m                                                ",
+				" - mail \u001b[4mlist@example.com\u001b[24m                                                        ",
+				"                                                                                ",
+				" ┌────────────────────────────────────┬──────────────────┐                      ",
+				" │ Site                               │ Mail             │                      ",
+				" ├────────────────────────────────────┼──────────────────┤                      ",
+				" │ \u001b[4mwww.cell.com\u001b[24m (http://www.cell.com) │ \u001b[4mcell@example.com\u001b[24m │                      ",
+				" └────────────────────────────────────┴──────────────────┘                      ",
+				"                                                                                "
+			]
+		},
+		{
+			"name": "urlBlocks",
+			"text": "## See www.heading.com\n\n- item https://example.com/list\n- mail list@example.com\n\n| Site | Mail |\n|---|---|\n| www.cell.com | cell@example.com |",
+			"width": 80,
+			"paddingX": 1,
+			"paddingY": 1,
+			"preserve": true,
+			"underline": true,
+			"lines": [
+				"                                                                                ",
+				" See \u001b[4mwww.heading.com\u001b[24m (http://www.heading.com)                                   ",
+				"                                                                                ",
+				" - item \u001b[4mhttps://example.com/list\u001b[24m                                                ",
+				" - mail \u001b[4mlist@example.com\u001b[24m                                                        ",
+				"                                                                                ",
+				" ┌────────────────────────────────────┬──────────────────┐                      ",
+				" │ Site                               │ Mail             │                      ",
+				" ├────────────────────────────────────┼──────────────────┤                      ",
+				" │ \u001b[4mwww.cell.com\u001b[24m (http://www.cell.com) │ \u001b[4mcell@example.com\u001b[24m │                      ",
+				" └────────────────────────────────────┴──────────────────┘                      ",
+				"                                                                                "
+			]
 		}
 	]
 }

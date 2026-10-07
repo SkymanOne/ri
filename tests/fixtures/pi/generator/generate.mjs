@@ -3,7 +3,7 @@
 // No network access is needed after the install. See ../README.md.
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,15 +13,19 @@ const piDir = join(here, "node_modules/@earendil-works/pi-coding-agent");
 const legacySource = process.env.PI_SOURCE; // optional: pi checkout providing test/fixtures/*.jsonl
 
 // A fixed root keeps paths inside the fixtures stable across runs.
-const root = "/tmp/ri-pi-fixtures";
+const root = "/tmp/yapi-pi-fixtures";
 const home = join(root, "home");
 const agentDir = join(root, "agent");
 const cwd = join(root, "project");
 rmSync(root, { recursive: true, force: true });
 for (const dir of [home, agentDir, cwd]) mkdirSync(dir, { recursive: true });
+// The system prompt names pi's docs in its package directory: a link keeps the checkout's path out.
+const packageDir = join(root, "pi-coding-agent");
+symlinkSync(piDir, packageDir);
 Object.assign(process.env, {
 	HOME: home,
 	PI_CODING_AGENT_DIR: agentDir,
+	PI_PACKAGE_DIR: packageDir,
 	PI_OFFLINE: "1",
 	PI_SKIP_VERSION_CHECK: "1",
 });
@@ -59,7 +63,7 @@ writeJson(join(agentDir, "keybindings.json"), {
 });
 cli("--offline", "--help");
 cli("mcp", "add", "files", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", ".");
-cli("mcp", "add", "docs", "--url", "https://example.com/mcp", "--header", "X-Team=ri", "--exposure", "direct");
+cli("mcp", "add", "docs", "--url", "https://example.com/mcp", "--header", "X-Team=yapi", "--exposure", "direct");
 cli("mcp", "add", "local", "-l", "--", "node", "server.js", "--verbose");
 
 // --- SDK imports (after env setup, so pi reads the temp agent dir) ----------
@@ -223,7 +227,7 @@ const models = {
 			baseUrl: "http://localhost:11434/v1",
 			api: "openai-completions",
 			apiKey: "$LOCAL_LLM_KEY",
-			headers: { "X-Client": "!echo ri" },
+			headers: { "X-Client": "!echo yapi" },
 			compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
 			authHeader: true,
 			models: [

@@ -2,7 +2,10 @@
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
+use ratatui_core::style::Modifier;
+use ratatui_core::text::Line;
 use serde_json::Value;
+use yapi_tui::ansi::parse_line;
 use yapi_tui::lines::{plain, raw, truncate, wrap};
 use yapi_tui::markdown::{MarkdownOptions, MarkdownTheme, render};
 
@@ -57,6 +60,25 @@ fn wraps_and_truncates_like_pi() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// A line's text with its underlined runs, the links of the cases that
+/// underline them, in brackets.
+fn underlined(line: &Line) -> String {
+    let mut out = String::new();
+    let mut open = false;
+    for span in line.spans.iter().filter(|span| !span.content.is_empty()) {
+        let underline = span.style.add_modifier.contains(Modifier::UNDERLINED);
+        if underline != open {
+            out.push(if underline { '⟨' } else { '⟩' });
+            open = underline;
+        }
+        out.push_str(&span.content);
+    }
+    if open {
+        out.push('⟩');
+    }
+    out
+}
+
 #[test]
 fn renders_markdown_like_pi() {
     let fixture = fixture();
@@ -73,6 +95,7 @@ fn renders_markdown_like_pi() {
             preserve_backslash_escapes: preserve,
             ..MarkdownOptions::default()
         };
+        let underline = case["underline"].as_bool() == Some(true);
         let actual: Vec<String> = render(
             case["text"].as_str().unwrap(),
             width,
@@ -82,12 +105,21 @@ fn renders_markdown_like_pi() {
             options,
         )
         .iter()
-        .map(plain)
+        .map(|line| {
+            if underline {
+                underlined(line)
+            } else {
+                plain(line)
+            }
+        })
         .collect();
         // pi closes styles inside wrapped table cells even with an identity theme.
         let expected: Vec<String> = strings(&case["lines"])
             .iter()
-            .map(|line| line.replace("\x1b[22;23;24;25;27;28;29;39m", ""))
+            .map(|line| match underline {
+                true => underlined(&parse_line(line).0),
+                false => line.replace("\x1b[22;23;24;25;27;28;29;39m", ""),
+            })
             .collect();
         if actual != expected {
             failures.push(format!(
