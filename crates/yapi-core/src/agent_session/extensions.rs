@@ -373,7 +373,13 @@ impl AgentHooks for Hooks {
                 .ok()
                 .flatten();
                 if let Some(content) = normalized {
-                    patch.get_or_insert_default().content = Some(content);
+                    // New images alone keep the structured content, as in pi.
+                    patch
+                        .get_or_insert_with(|| yapi_agent::hooks::ResultPatch {
+                            structured_content: call.result.structured_content.clone(),
+                            ..Default::default()
+                        })
+                        .content = Some(content);
                 }
             }
             patch
@@ -445,7 +451,9 @@ impl Hooks {
             input: call.args,
             content: &call.result.content,
             details: call.result.details.as_ref(),
+            structured_content: call.result.structured_content.as_ref(),
             is_error: call.is_error,
+            usage: call.result.usage.as_ref(),
         }
         .to_value();
         let mut modified = false;
@@ -453,8 +461,23 @@ impl Hooks {
             let Some(result) = extension.handle(&ctx, &event).await else {
                 continue;
             };
-            for key in ["content", "details", "isError"] {
-                if let Some(value) = result.get(key).filter(|value| !value.is_null()) {
+            let given = |key: &str| result.get(key).filter(|value| !value.is_null());
+            // As in pi, structured content not replaced along with the
+            // content may no longer match it.
+            if given("content").is_some()
+                && given("structuredContent").is_none()
+                && let Some(event) = event.as_object_mut()
+            {
+                event.shift_remove("structuredContent");
+            }
+            for key in [
+                "content",
+                "details",
+                "structuredContent",
+                "isError",
+                "usage",
+            ] {
+                if let Some(value) = given(key) {
                     event[key] = value.clone();
                     modified = true;
                 }
@@ -463,7 +486,9 @@ impl Hooks {
         modified.then(|| yapi_agent::hooks::ResultPatch {
             content: serde_json::from_value(event["content"].clone()).ok(),
             details: Some(event["details"].clone()).filter(|details| !details.is_null()),
+            structured_content: event.get("structuredContent").cloned(),
             is_error: event["isError"].as_bool(),
+            usage: serde_json::from_value(event["usage"].clone()).ok(),
             terminate: None,
         })
     }

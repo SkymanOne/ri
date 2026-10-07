@@ -4,7 +4,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 use yapi_ai::registry::Auth;
 use yapi_types::event::{AgentEvent, ToolResult};
-use yapi_types::message::{AssistantMessage, Message, ToolCall, ToolResultMessage};
+use yapi_types::message::{AssistantMessage, Message, ToolCall, ToolResultMessage, Usage};
 use yapi_types::model::Model;
 
 /// A tool call about to run.
@@ -52,12 +52,17 @@ pub struct AfterToolCall<'a> {
 /// Replacement fields for a tool result; `None` keeps the original.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResultPatch {
-    /// New content.
+    /// New content. It drops the structured content, which may no longer
+    /// match, unless `structured_content` replaces that too.
     pub content: Option<Vec<yapi_types::message::ContentBlock>>,
     /// New details.
     pub details: Option<Value>,
+    /// New structured content.
+    pub structured_content: Option<Value>,
     /// New error flag.
     pub is_error: Option<bool>,
+    /// New usage.
+    pub usage: Option<Usage>,
     /// New terminate flag.
     pub terminate: Option<bool>,
 }
