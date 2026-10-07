@@ -28,10 +28,9 @@ fn format_token_count(count: u64) -> String {
     }
 }
 
-/// Prints the table, to stderr when `to_stderr` is set, and returns the exit
-/// code.
-pub fn run(pattern: Option<&str>, to_stderr: bool) -> u8 {
-    let registry = ModelRegistry::load(&agent_dir());
+/// Prints the table of `registry`'s models, to stderr when `to_stderr` is
+/// set, and returns the exit code.
+pub fn run(registry: &ModelRegistry, pattern: Option<&str>, to_stderr: bool) -> u8 {
     if let Some(error) = registry.error() {
         eprintln!("Warning: errors loading models.json:\n{error}");
     }
