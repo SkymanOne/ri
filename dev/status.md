@@ -61,7 +61,7 @@ Deferred: pi's wait, before a codemode script runs, for the MCP servers it names
 
 Done.
 
-- `yapi-js`: QuickJS-NG, Node shims, pi's extension API with pi's loading errors, and the vendored `pi-tui` and `typebox`. CI checks the committed artifact against its inputs.
+- `yapi-js`: QuickJS-NG, Node shims with a `fetch` that streams responses, pi's extension API with pi's loading errors, and the vendored `pi-tui` and `typebox`. CI checks the committed artifact against its inputs.
 - `yapi-ext`: one actor thread per instance, a compiled-component cache, compute and memory limits, restart after a trap, and grants for files, processes, network and environment.
 - The host-side module loader: Node resolution, TypeScript stripping, ES module and CommonJS interop, and a transpile cache.
 - Extension tools, commands, flags, events and actions in every mode, with errors reported as pi reports them.
