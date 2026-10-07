@@ -5,6 +5,7 @@ members = [
     "examples/permission-gate",
     "examples/protected-paths",
     "examples/repo-status",
+    "examples/subagent",
     "examples/todo",
     "yapi-extension-api",
     "yapi-js",

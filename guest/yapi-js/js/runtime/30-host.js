@@ -233,12 +233,38 @@
 		};
 	}
 
-	async function execCommand(command, args, cwd, options = {}) {
-		// As pi's execCommand: a process that cannot start reports code 1.
-		const result = await yapi
-			.op("exec", { command, args: args ?? [], cwd, timeout: options.timeout, env: options.env, input: options.input })
-			.catch(() => ({ stdout: "", stderr: "", code: 1, killed: false }));
-		return { stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0, killed: !!result.killed };
+	/** pi's execCommand: a timeout or `signal` kills the process, and a process that cannot start reports code 1. */
+	function execCommand(command, args, cwd, options = {}) {
+		return new Promise((resolve) => {
+			const proc = globalThis.__yapi_builtins.child_process.spawn(command, args ?? [], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+			let stdout = "";
+			let stderr = "";
+			let killed = false;
+			const killProcess = () => {
+				if (killed) return;
+				killed = true;
+				proc.kill("SIGTERM");
+				setTimeout(() => {
+					if (!proc.killed) proc.kill("SIGKILL");
+				}, 5000);
+			};
+			if (options.signal?.aborted) killProcess();
+			else options.signal?.addEventListener("abort", killProcess, { once: true });
+			const timeout = options.timeout > 0 ? setTimeout(killProcess, options.timeout) : undefined;
+			proc.stdout.on("data", (data) => {
+				stdout += data.toString();
+			});
+			proc.stderr.on("data", (data) => {
+				stderr += data.toString();
+			});
+			const finish = (code) => {
+				clearTimeout(timeout);
+				options.signal?.removeEventListener("abort", killProcess);
+				resolve({ stdout, stderr, code, killed });
+			};
+			proc.on("close", (code) => finish(code ?? 0));
+			proc.on("error", () => finish(1));
+		});
 	}
 
 	// ----- descriptions sent to the host -----------------------------------------------
@@ -929,14 +955,18 @@
 				break;
 			}
 			case "before_agent_start": {
+				// As in pi, handlers share the live prompt options and may edit them; a
+				// returned `systemPrompt` forces the prompt through `forceSystemPrompt`.
 				const messages = [];
-				let systemPrompt;
+				const options = event.systemPromptOptions;
+				const rendered = event.systemPrompt;
+				Object.defineProperty(event, "systemPrompt", { enumerable: true, get: () => options.forceSystemPrompt ?? rendered });
 				for (const handler of handlers) {
 					const handlerResult = await guard(() => handler(event, ctx));
 					if (handlerResult?.message) messages.push(handlerResult.message);
-					if (handlerResult?.systemPrompt !== undefined) systemPrompt = handlerResult.systemPrompt;
+					if (handlerResult?.systemPrompt !== undefined) options.forceSystemPrompt = handlerResult.systemPrompt;
 				}
-				result = { messages, systemPrompt };
+				result = { messages, systemPrompt: options.forceSystemPrompt, systemPromptOptions: plain(options) };
 				break;
 			}
 			case "context":
@@ -1186,15 +1216,18 @@
 			const extension = extensionOf(payload.extension);
 			const tool = extension.tools.get(payload.name);
 			if (!tool) throw new Error(`Tool ${payload.name} is not registered by ${extension.path}`);
-			const ctx = createContext(payload.ctx, {
-				tools: payload.tools ?? [],
-				executeTool: (name, args) => yapi.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
+			return abortable(payload.id, async (signal) => {
+				const ctx = createContext(payload.ctx, {
+					signal: payload.ctx?.aborted ? AbortSignal.abort() : signal,
+					tools: payload.tools ?? [],
+					executeTool: (name, args) => yapi.op("tool.execute", { toolCallId: payload.toolCallId, name, args: plain(args) }),
+				});
+				const onUpdate = (partial) => yapi.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
+				let params = payload.params;
+				if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+				const result = await tool.execute(payload.toolCallId, params, ctx.signal, onUpdate, ctx);
+				return plain(result) ?? { content: [] };
 			});
-			const onUpdate = (partial) => yapi.request("tool.update", { toolCallId: payload.toolCallId, partial: plain(partial) });
-			let params = payload.params;
-			if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
-			const result = await tool.execute(payload.toolCallId, params, ctx.signal, onUpdate, ctx);
-			return plain(result) ?? { content: [] };
 		},
 		async command(payload) {
 			const command = extensionOf(payload.extension).commands.get(payload.name);

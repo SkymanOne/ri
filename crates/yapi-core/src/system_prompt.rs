@@ -7,8 +7,9 @@
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
+use serde_json::{Map, Value, json};
 
-use crate::resources::{ContextFile, Skill, format_skills};
+use crate::resources::{ContextFile, Skill, SourceInfo, format_skills};
 
 /// Inputs for the prompt.
 #[derive(Clone, Debug, Default)]
@@ -36,6 +37,111 @@ pub struct PromptOptions {
     pub context_files: Vec<ContextFile>,
     /// Skills.
     pub skills: Vec<Skill>,
+}
+
+impl PromptOptions {
+    /// pi's normalized `BuildSystemPromptOptions`, as `before_agent_start`
+    /// hands them to extensions, with `forced` as `forceSystemPrompt`.
+    pub fn to_json(&self, forced: Option<&str>) -> Value {
+        let mut out = Map::new();
+        if let Some(prompt) = &self.custom_prompt {
+            out.insert("customPrompt".into(), json!(prompt));
+        }
+        if let Some(forced) = forced {
+            out.insert("forceSystemPrompt".into(), json!(forced));
+        }
+        out.insert("selectedTools".into(), json!(self.selected_tools));
+        out.insert("toolSnippets".into(), json!(self.tool_snippets));
+        out.insert("toolGuidelines".into(), json!(self.tool_guidelines));
+        out.insert("promptGuidelines".into(), json!(self.prompt_guidelines));
+        out.insert(
+            "appendSystemPrompt".into(),
+            json!(self.append.as_deref().unwrap_or_default()),
+        );
+        out.insert("sections".into(), json!(self.sections));
+        out.insert("cwd".into(), json!(self.cwd));
+        out.insert(
+            "contextFiles".into(),
+            self.context_files
+                .iter()
+                .map(|file| json!({"path": file.path, "content": file.content}))
+                .collect(),
+        );
+        out.insert(
+            "skills".into(),
+            self.skills
+                .iter()
+                .map(|skill| {
+                    json!({
+                        "name": skill.name,
+                        "description": skill.description,
+                        "filePath": skill.file_path,
+                        "baseDir": skill.base_dir,
+                        "sourceInfo": skill.source,
+                        "disableModelInvocation": skill.disable_model_invocation,
+                    })
+                })
+                .collect(),
+        );
+        Value::Object(out)
+    }
+
+    /// Takes the options an extension edited in `value`, pi's shape from
+    /// [`PromptOptions::to_json`]. A field it sent malformed keeps its value.
+    /// Returns the `forceSystemPrompt` it left.
+    pub fn apply_json(&mut self, value: &Value) -> Option<String> {
+        fn field<T: serde::de::DeserializeOwned>(value: &Value, key: &str) -> Option<T> {
+            serde_json::from_value(value.get(key)?.clone()).ok()
+        }
+        self.custom_prompt = field(value, "customPrompt");
+        self.append = field::<String>(value, "appendSystemPrompt").filter(|text| !text.is_empty());
+        if let Some(tools) = field(value, "selectedTools") {
+            self.selected_tools = tools;
+        }
+        if let Some(snippets) = field(value, "toolSnippets") {
+            self.tool_snippets = snippets;
+        }
+        if let Some(guidelines) = field(value, "toolGuidelines") {
+            self.tool_guidelines = guidelines;
+        }
+        if let Some(guidelines) = field(value, "promptGuidelines") {
+            self.prompt_guidelines = guidelines;
+        }
+        if let Some(sections) = field(value, "sections") {
+            self.sections = sections;
+        }
+        if let Some(cwd) = field(value, "cwd") {
+            self.cwd = cwd;
+        }
+        if let Some(files) = field::<Vec<Value>>(value, "contextFiles") {
+            self.context_files = files
+                .iter()
+                .filter_map(|file| {
+                    Some(ContextFile {
+                        path: field(file, "path")?,
+                        content: field(file, "content")?,
+                    })
+                })
+                .collect();
+        }
+        if let Some(skills) = field::<Vec<Value>>(value, "skills") {
+            self.skills = skills
+                .iter()
+                .filter_map(|skill| {
+                    Some(Skill {
+                        name: field(skill, "name")?,
+                        description: field(skill, "description")?,
+                        file_path: field(skill, "filePath")?,
+                        base_dir: field(skill, "baseDir")?,
+                        disable_model_invocation: field(skill, "disableModelInvocation")
+                            .unwrap_or(false),
+                        source: field::<SourceInfo>(skill, "sourceInfo")?,
+                    })
+                })
+                .collect();
+        }
+        field(value, "forceSystemPrompt")
+    }
 }
 
 fn rules(options: &PromptOptions) -> String {

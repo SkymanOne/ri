@@ -19,7 +19,7 @@ fn init(api: &mut Api) {
                 "properties": {"text": {"type": "string", "description": "What to shout"}},
                 "required": ["text"],
             }),
-            |params, _ctx| {
+            |params, _ctx| async move {
                 let text = params["text"].as_str().unwrap_or_default().to_uppercase();
                 let suffix = get_flag("shout-suffix")
                     .and_then(|value| value.as_str().map(str::to_owned))
@@ -31,18 +31,16 @@ fn init(api: &mut Api) {
         .label("Shout")
         .prompt_snippet("Shout text back in capitals"),
     );
-    api.register_command("hello", "Says hello", |args, _ctx| {
-        notify(
-            &format!("Hello, {}!", if args.is_empty() { "world" } else { args }),
-            "info",
-        );
+    api.register_command("hello", "Says hello", |args, _ctx| async move {
+        let name = if args.is_empty() { "world" } else { &args };
+        notify(&format!("Hello, {name}!"), "info");
         Ok(())
     });
-    api.on("session_start", |_event, ctx| {
+    api.on("session_start", |_event, ctx| async move {
         append_entry("hello-started", json!({"mode": ctx.mode()}))?;
         Ok(None)
     });
-    api.on("tool_call", |event, _ctx| {
+    api.on("tool_call", |event, _ctx| async move {
         if event["toolName"] == "shout" && event["input"]["text"] == "" {
             return Ok(Some(json!({"block": true, "reason": "Nothing to shout"})));
         }

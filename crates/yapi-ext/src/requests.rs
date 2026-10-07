@@ -1,8 +1,7 @@
 //! Requests and operations the runtime itself answers: modules, the process
 //! environment, randomness, hashing, processes, HTTP, yapi's wire APIs and
-//! JSON helpers. Grants
-//! gate the ones that reach outside the instance; everything else goes to the
-//! [`Bridge`](crate::Bridge).
+//! JSON helpers. Grants gate the ones that reach outside the instance;
+//! everything else goes to the [`Bridge`](crate::Bridge).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,6 +33,14 @@ pub(crate) struct Host {
     pub(crate) bridge: Arc<dyn Bridge>,
     pub(crate) options: Options,
     pub(crate) ai_streams: AiStreams,
+    pub(crate) processes: ops::Processes,
+}
+
+impl Drop for Host {
+    /// Processes end with the instance that started them.
+    fn drop(&mut self) {
+        self.processes.clear();
+    }
 }
 
 /// A running stream of one of yapi's wire APIs, with its cancellation. The
@@ -220,7 +227,22 @@ impl Host {
             }
             "hash" => hash(text(payload, "algorithm"), text(payload, "data")),
             "exec.sync" if self.options.grants.process => ops::exec_sync(payload),
-            "exec.sync" => Err(denied("Running processes")),
+            "process.spawn" if self.options.grants.process => self.processes.spawn(payload),
+            "exec.sync" | "process.spawn" => Err(denied("Running processes")),
+            "process.end" => {
+                self.processes.end(payload);
+                Ok(Value::Null)
+            }
+            "process.kill" => Ok(self.processes.kill(payload)),
+            "process.release" => {
+                self.processes.release(payload);
+                Ok(Value::Null)
+            }
+            "execPath" => Ok(json!(
+                std::env::current_exe()
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned())
+            )),
             "json.repair" => Ok(Value::String(yapi_ai::json_parse::repair_json(text(
                 payload, "text",
             )))),
@@ -266,8 +288,12 @@ impl Host {
     ) -> BoxFuture<'static, Result<Value, String>> {
         match kind {
             "timer" => Box::pin(ops::timer(payload)),
-            "exec" if self.options.grants.process => Box::pin(ops::exec(payload)),
-            "exec" => Box::pin(async { Err(denied("Running processes")) }),
+            "process.write" => self.processes.write(&payload),
+            "process.next" => {
+                let processes = self.processes.clone();
+                let id = ops::process_id(&payload);
+                Box::pin(async move { Ok(processes.next(id).await) })
+            }
             "fetch" if self.options.grants.network => Box::pin(ops::fetch(payload)),
             "fetch" => Box::pin(async { Err(denied("Network access")) }),
             "dns.lookup" if self.options.grants.network => Box::pin(ops::dns_lookup(payload)),

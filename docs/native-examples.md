@@ -1,14 +1,15 @@
 # Native extension examples
 
-The repository has five native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Four are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. Each one is tested in `crates/yapi-ext/tests/native.rs`.
+The repository has six native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Five are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
 | [`hello`](#hello) | A tool, a command, a flag and two event handlers | `hello.ts` |
-| [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, a boolean flag | `permission-gate.ts` |
+| [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, asking in a dialog | `permission-gate.ts` |
 | [`protected-paths`](#protected-paths) | Inspecting tool input, notifications | `protected-paths.ts` |
 | [`todo`](#todo) | State kept in tool results and rebuilt from the session branch | `todo.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
+| [`subagent`](#subagent) | A process read as it runs, tool progress, background work that reports in a new turn | `subagent/` |
 
 ## Build and try them
 
@@ -27,7 +28,7 @@ Cargo names the file after the crate with underscores in place of dashes. `yapi 
 The smallest complete extension. It registers a `shout` tool that repeats text in capitals, a `/hello` command, a `--shout-suffix` flag that the tool reads, a `session_start` handler that stores an entry in the session, and a `tool_call` handler that blocks empty input.
 
 ```rust
-api.on("tool_call", |event, _ctx| {
+api.on("tool_call", |event, _ctx| async move {
     if event["toolName"] == "shout" && event["input"]["text"] == "" {
         return Ok(Some(json!({"block": true, "reason": "Nothing to shout"})));
     }
@@ -37,26 +38,28 @@ api.on("tool_call", |event, _ctx| {
 
 ## permission-gate
 
-Blocks dangerous `bash` commands: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. Starting yapi with `--allow-dangerous` turns the check off.
+Asks before dangerous `bash` commands run: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. The handler awaits a dialog with `op`, and blocks the command when no one can answer, in print and JSON modes.
 
 ```rust
-api.register_flag("allow-dangerous", FlagType::Boolean, json!(false), "Let dangerous bash commands run");
-api.on("tool_call", |event, _ctx| {
-    if event["toolName"] != "bash" || get_flag("allow-dangerous") == Some(Value::Bool(true)) {
-        return Ok(None);
-    }
+api.on("tool_call", |event, ctx| async move {
     let command = event["input"]["command"].as_str().unwrap_or_default();
-    if !is_dangerous(command) {
+    if event["toolName"] != "bash" || !is_dangerous(command) {
         return Ok(None);
     }
-    Ok(Some(json!({
-        "block": true,
-        "reason": "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.",
-    })))
+    if !ctx.has_ui() {
+        return Ok(Some(json!({
+            "block": true,
+            "reason": "Dangerous command blocked (no UI for confirmation)",
+        })));
+    }
+    let title = format!("⚠️ Dangerous command:\n\n  {command}\n\nAllow?");
+    let choice = op("ui.select", &json!({"title": title, "options": ["Yes", "No"]})).await?;
+    if choice != "Yes" {
+        return Ok(Some(json!({"block": true, "reason": "Blocked by user"})));
+    }
+    Ok(None)
 });
 ```
-
-Pi's version asks for confirmation in a dialog. Native handlers run synchronously, so this one blocks instead.
 
 ## protected-paths
 
@@ -65,7 +68,7 @@ Blocks `write` and `edit` calls on `.env`, `.git/` and `node_modules/`, and tell
 ```rust
 const PROTECTED: [&str; 3] = [".env", ".git/", "node_modules/"];
 
-api.on("tool_call", |event, ctx| {
+api.on("tool_call", |event, ctx| async move {
     if event["toolName"] != "write" && event["toolName"] != "edit" {
         return Ok(None);
     }
@@ -100,8 +103,8 @@ fn rebuild() -> Result<(), String> {
     Ok(())
 }
 
-api.on("session_start", |_event, _ctx| rebuild().map(|()| None));
-api.on("session_tree", |_event, _ctx| rebuild().map(|()| None));
+api.on("session_start", |_event, _ctx| async { rebuild().map(|()| None) });
+api.on("session_tree", |_event, _ctx| async { rebuild().map(|()| None) });
 ```
 
 The extension keeps its state in a `thread_local`, since each native extension runs in an instance of its own and calls into it one at a time.
@@ -123,3 +126,25 @@ fn status(ctx: &Context) -> Option<(String, Vec<String>)> {
 ```
 
 `exec` needs the process grant, which every extension has by default.
+
+## subagent
+
+A `subagent` tool that hands a task to another yapi run, with a context window of its own. The tool starts yapi in JSON mode with `Process` and reads its events as they arrive, as Pi's `subagent` example does with Pi. In the foreground the tool shows each answer of the subagent as progress and returns the last one. With `background`, the tool returns at once and `spawn` keeps the subagent running. Its answer arrives later as a message that starts a turn.
+
+```rust
+spawn(async move {
+    let content = match run(&task, model.as_deref(), cwd.as_deref(), |_| {}).await {
+        Ok(answer) => format!("Subagent finished:\n\n{answer}"),
+        Err(error) => error,
+    };
+    let _ = request(
+        "session.sendMessage",
+        &json!({
+            "message": {"customType": "subagent", "content": content, "display": true},
+            "options": {"triggerTurn": true, "deliverAs": "followUp"},
+        }),
+    );
+});
+```
+
+`request("execPath", ...)` names the running yapi binary, so the subagent runs the same version. When the user aborts the run, yapi drops the foreground tool's future, and dropping the `Process` kills the subagent. Pi's own TypeScript example also runs unchanged in yapi, with each agent defined in `~/.yapi/agent/agents`.

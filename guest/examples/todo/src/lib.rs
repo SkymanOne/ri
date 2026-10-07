@@ -115,8 +115,12 @@ fn apply(state: &mut State, params: &Value) -> (String, Option<String>) {
 }
 
 fn init(api: &mut Api) {
-    api.on("session_start", |_event, _ctx| rebuild().map(|()| None));
-    api.on("session_tree", |_event, _ctx| rebuild().map(|()| None));
+    api.on("session_start", |_event, _ctx| async {
+        rebuild().map(|()| None)
+    });
+    api.on("session_tree", |_event, _ctx| async {
+        rebuild().map(|()| None)
+    });
     api.register_tool(
         Tool::new(
             "todo",
@@ -130,10 +134,10 @@ fn init(api: &mut Api) {
                 },
                 "required": ["action"],
             }),
-            |params, _ctx| {
+            |params, _ctx| async move {
                 STATE.with(|cell| {
                     let mut state = cell.borrow_mut();
-                    let (text, error) = apply(&mut state, params);
+                    let (text, error) = apply(&mut state, &params);
                     let mut details = json!({
                         "action": params["action"],
                         "todos": state.todos,
@@ -151,7 +155,7 @@ fn init(api: &mut Api) {
     api.register_command(
         "todos",
         "Show all todos on the current branch",
-        |_args, _ctx| {
+        |_args, _ctx| async {
             let todos = STATE.with(|cell| cell.borrow().todos.clone());
             let done = todos.iter().filter(|todo| todo["done"] == true).count();
             notify(

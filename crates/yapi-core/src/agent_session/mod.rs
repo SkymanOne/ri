@@ -245,7 +245,7 @@ struct Inner {
     /// for their commands.
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode, Option<SessionActions>)>,
     /// Extension sections of the current run's system prompt.
-    run_sections: Mutex<IndexMap<String, String>>,
+    run_options: Mutex<Option<PromptOptions>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
     forced_prompt: Mutex<Option<String>>,
     /// Extension messages sent with the next prompt.
@@ -451,7 +451,7 @@ impl AgentSession {
                 tools: tool_registry,
                 extensions,
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print, None)),
-                run_sections: Mutex::new(IndexMap::new()),
+                run_options: Mutex::new(None),
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),
                 pending_custom: Mutex::new(Vec::new()),
@@ -1068,28 +1068,42 @@ impl AgentSession {
         expanded
     }
 
-    fn prompt_options(&self, active: &[String]) -> PromptOptions {
+    /// The prompt's options from the session's resources, without the
+    /// sections a run adds.
+    fn base_prompt_options(&self) -> PromptOptions {
         let resources = self.resources();
-        let mut options = PromptOptions {
+        PromptOptions {
             custom_prompt: resources.custom_prompt,
-            selected_tools: active.to_vec(),
             append: resources.append_prompt,
             cwd: self.inner.cwd.clone(),
             docs: self.inner.docs.clone(),
             context_files: resources.context_files,
             skills: resources.skills,
-            sections: lock(&self.inner.run_sections).clone(),
             ..PromptOptions::default()
-        };
+        }
+    }
+
+    /// The prompt's options for `active` tools: the current run's, as
+    /// `before_agent_start` left them, with the snippets and guidelines of
+    /// active tools it did not set.
+    fn prompt_options(&self, active: &[String]) -> PromptOptions {
+        let mut options = lock(&self.inner.run_options)
+            .clone()
+            .unwrap_or_else(|| self.base_prompt_options());
+        options.selected_tools = active.to_vec();
         for tool in self.active_tools(active) {
             let name = tool.tool.declaration().name.clone();
             if let Some(snippet) = &tool.snippet {
-                options.tool_snippets.insert(name.clone(), snippet.clone());
+                options
+                    .tool_snippets
+                    .entry(name.clone())
+                    .or_insert_with(|| snippet.clone());
             }
             if !tool.guidelines.is_empty() {
                 options
                     .tool_guidelines
-                    .insert(name, tool.guidelines.clone());
+                    .entry(name)
+                    .or_insert_with(|| tool.guidelines.clone());
             }
         }
         options
@@ -1150,7 +1164,12 @@ impl AgentSession {
 
     /// The system prompt for `active` tools as the model reads it.
     fn system_prompt_text(&self, active: &[String]) -> Result<String, String> {
-        let sections = build_sections(&self.prompt_options(active))?;
+        Self::prompt_text(&self.prompt_options(active))
+    }
+
+    /// The system prompt `options` describe, as the model reads it.
+    fn prompt_text(options: &PromptOptions) -> Result<String, String> {
+        let sections = build_sections(options)?;
         Ok(SystemMessage {
             content: Content::Text(String::new()),
             sections: Some(
@@ -1238,16 +1257,20 @@ impl AgentSession {
         for extension in &self.inner.extensions {
             extension.before_agent_start(&ctx, &mut sections).await;
         }
-        *lock(&self.inner.run_sections) = sections;
-        let active = self.inner.tools.active();
+        *lock(&self.inner.run_options) = Some(PromptOptions {
+            sections,
+            ..self.base_prompt_options()
+        });
         let (custom, forced) = if self.has_handlers("before_agent_start") {
-            let prompt = self.system_prompt_text(&active)?;
-            self.before_agent_start_handlers(&expanded, &images, &prompt)
+            let options = self.prompt_options(&self.inner.tools.active());
+            self.before_agent_start_handlers(&expanded, &images, options)
                 .await
         } else {
             (Vec::new(), None)
         };
         *lock(&self.inner.forced_prompt) = forced;
+        // Handlers may have changed the active tools.
+        let active = self.inner.tools.active();
         // After the handlers, so a model they select sets the resize profile.
         let (images, hints) = if images.is_empty() {
             (images, Vec::new())
