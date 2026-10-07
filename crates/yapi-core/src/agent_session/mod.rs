@@ -32,6 +32,7 @@ use yapi_types::rpc::{PromptDisposition, StreamingBehavior};
 use yapi_types::session::FileEntry;
 use yapi_types::settings::QueueMode;
 use yapi_types::sync::{lock, read, write};
+use yapi_types::system_prompt::SystemPromptOptions;
 
 use crate::compaction::{BranchSummary, CompactionSettings};
 use crate::extensions::{
@@ -40,7 +41,7 @@ use crate::extensions::{
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
 use crate::settings::SettingsManager;
-use crate::system_prompt::{PromptOptions, build_sections, diff_sections};
+use crate::system_prompt::{build_sections, diff_sections};
 use crate::time::now_ms;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::{BUILTIN_TOOLS, Described, Exposure, RegisteredTool, Runtime, ToolEnv, builtin};
@@ -246,7 +247,7 @@ struct Inner {
     /// for their commands.
     binding: Mutex<(Arc<dyn ExtensionUi>, Mode, Option<SessionActions>)>,
     /// Extension sections of the current run's system prompt.
-    run_options: Mutex<Option<PromptOptions>>,
+    run_options: Mutex<Option<SystemPromptOptions>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
     forced_prompt: Mutex<Option<String>>,
     /// Extension messages sent with the next prompt.
@@ -1073,23 +1074,22 @@ impl AgentSession {
 
     /// The prompt's options from the session's resources, without the
     /// sections a run adds.
-    fn base_prompt_options(&self) -> PromptOptions {
+    fn base_prompt_options(&self) -> SystemPromptOptions {
         let resources = self.resources();
-        PromptOptions {
+        SystemPromptOptions {
             custom_prompt: resources.custom_prompt,
-            append: resources.append_prompt,
+            append_system_prompt: resources.append_prompt.unwrap_or_default(),
             cwd: self.inner.cwd.clone(),
-            docs: self.inner.docs.clone(),
             context_files: resources.context_files,
             skills: resources.skills,
-            ..PromptOptions::default()
+            ..SystemPromptOptions::default()
         }
     }
 
     /// The prompt's options for `active` tools: the current run's, as
     /// `before_agent_start` left them, with the snippets and guidelines of
     /// active tools it did not set.
-    fn prompt_options(&self, active: &[String]) -> PromptOptions {
+    fn prompt_options(&self, active: &[String]) -> SystemPromptOptions {
         let mut options = lock(&self.inner.run_options)
             .clone()
             .unwrap_or_else(|| self.base_prompt_options());
@@ -1150,7 +1150,7 @@ impl AgentSession {
         messages: &[Message],
         active: &[String],
     ) -> Result<Option<Message>, String> {
-        let sections = build_sections(&self.prompt_options(active))?;
+        let sections = build_sections(&self.prompt_options(active), &self.inner.docs)?;
         let current = yapi_ai::transcript::current_system_message(messages)
             .and_then(|system| system.sections)
             .unwrap_or_default();
@@ -1167,12 +1167,12 @@ impl AgentSession {
 
     /// The system prompt for `active` tools as the model reads it.
     fn system_prompt_text(&self, active: &[String]) -> Result<String, String> {
-        Self::prompt_text(&self.prompt_options(active))
+        self.prompt_text(&self.prompt_options(active))
     }
 
     /// The system prompt `options` describe, as the model reads it.
-    fn prompt_text(options: &PromptOptions) -> Result<String, String> {
-        let sections = build_sections(options)?;
+    fn prompt_text(&self, options: &SystemPromptOptions) -> Result<String, String> {
+        let sections = build_sections(options, &self.inner.docs)?;
         Ok(SystemMessage {
             content: Content::Text(String::new()),
             sections: Some(
@@ -1260,7 +1260,7 @@ impl AgentSession {
         for extension in &self.inner.extensions {
             extension.before_agent_start(&ctx, &mut sections).await;
         }
-        *lock(&self.inner.run_options) = Some(PromptOptions {
+        *lock(&self.inner.run_options) = Some(SystemPromptOptions {
             sections,
             ..self.base_prompt_options()
         });

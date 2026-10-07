@@ -11,17 +11,9 @@ use std::sync::LazyLock;
 use regex_lite::Regex;
 use serde_json::Value;
 pub use yapi_types::rpc::SourceInfo;
+pub use yapi_types::system_prompt::{ContextFile, Skill};
 
 use crate::config::PROJECT_DIR;
-
-/// A context file and its text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ContextFile {
-    /// Where it was found.
-    pub path: PathBuf,
-    /// Its text, without a byte order mark.
-    pub content: String,
-}
 
 /// A problem found while loading skills, prompt templates or themes: pi's
 /// `ResourceDiagnostic`, listed under the startup `[... conflicts]` sections.
@@ -50,23 +42,6 @@ pub enum Diagnostic {
         /// The skipped file.
         loser: PathBuf,
     },
-}
-
-/// A skill: instructions the model reads on demand.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Skill {
-    /// Name from frontmatter, else the directory name.
-    pub name: String,
-    /// When to use it.
-    pub description: String,
-    /// The skill file.
-    pub file_path: PathBuf,
-    /// Its directory, for relative references.
-    pub base_dir: PathBuf,
-    /// Hidden from the prompt; only usable as `/skill:name`.
-    pub disable_model_invocation: bool,
-    /// Where it was found.
-    pub source: SourceInfo,
 }
 
 /// A prompt template, expanded by `/name args`.
