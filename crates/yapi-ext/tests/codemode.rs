@@ -164,6 +164,62 @@ async fn scripts_call_tools_and_print_output() {
     drop(session);
 }
 
+/// In `only` mode, requests declare codemode alone and its description
+/// lists every callable tool. The transcript still records the direct tools,
+/// and scripts still call them.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_mode_hides_direct_tools() {
+    let dir = scratch("codemode-only");
+    std::fs::write(dir.join("a.txt"), "alpha").unwrap();
+    let faux = Faux::new([
+        Response::tool_call(
+            "toolu_1",
+            "codemode",
+            json!({"code": "return await tools.read({path: 'a.txt'})"}),
+        ),
+        Response::text("done"),
+    ]);
+    let session = session(&faux, &dir, vec![codemode()]);
+    session
+        .set_global_setting("codemode", Some(json!({"mode": "only"})))
+        .unwrap();
+    session.set_active_tools(vec!["read".into(), "bash".into(), "codemode".into()]);
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    session.prompt("go", Vec::new()).await.unwrap();
+
+    let names = |system: &yapi_types::message::SystemMessage| -> Vec<String> {
+        let tools = system.tools_added.iter().flatten();
+        tools.map(|tool| tool.name.clone()).collect()
+    };
+    let requests = faux.requests();
+    for request in &requests {
+        let Some(Message::System(system)) = request.first() else {
+            panic!("no system message");
+        };
+        assert_eq!(names(system), ["codemode"]);
+        let codemode = &system.tools_added.as_ref().unwrap()[0].description;
+        assert!(codemode.contains("### `read`") && codemode.contains("### `bash`"));
+        let prompt = system.text();
+        assert!(prompt.contains("- codemode: "), "{prompt}");
+        assert!(!prompt.contains("- read: ") && !prompt.contains("- bash: "));
+    }
+    let messages = session.messages();
+    let Some(Message::System(recorded)) = messages.first() else {
+        panic!("no system message");
+    };
+    assert_eq!(names(recorded), ["read", "bash", "codemode"]);
+    let result = messages
+        .iter()
+        .find_map(|message| match message {
+            Message::ToolResult(result) => Some(result),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(output(result), ["alpha"]);
+}
+
 /// Nested calls and the script's progress rows report in pi's order: a
 /// call's start, its running row, its end, its finished row. They report from
 /// the task that runs codemode, so no scheduling can reorder them (#41).

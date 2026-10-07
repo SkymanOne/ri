@@ -995,6 +995,9 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
         messages.push(format!("Unknown option{plural}: {}", unknown.join(", ")));
     }
     let extensions = Extensions {
+        warnings: replaced_builtin(&hosts, args, &run.settings)
+            .into_iter()
+            .collect(),
         hosts,
         skills,
         prompts,
@@ -1046,12 +1049,47 @@ fn conflicts(hosts: &[Arc<ExtensionHost>]) -> Vec<String> {
     messages
 }
 
+/// pi's `omitReplacedExtensions` for codemode, the built-in that yields to
+/// an extension's tool of its name: the built-in's path and the warning, when
+/// an extension registers `codemode` while the built-in is enabled.
+fn replaced_builtin(
+    hosts: &[Arc<ExtensionHost>],
+    args: &Args,
+    settings: &SettingsManager,
+) -> Option<(String, String)> {
+    let name = yapi_core::extensions::codemode::NAME;
+    if !builtin_enabled(name, args, &extension_settings(settings)) {
+        return None;
+    }
+    let owner = hosts
+        .iter()
+        .flat_map(|host| host.registrations())
+        .find(|extension| {
+            let mut tools = extension["tools"].as_array().into_iter().flatten();
+            tools.any(|tool| tool["name"] == name)
+        })?;
+    let path = owner["path"].as_str().unwrap_or_default();
+    Some((
+        format!("{BUILTIN_PREFIX}{name}"),
+        format!(
+            "Extension {path} registers tool `{name}`, so built-in extension `{name}` was not loaded. To use `{name}`, run `yapi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time."
+        ),
+    ))
+}
+
+/// pi's startup diagnostic for an extension warning.
+pub fn extension_warning(path: &str, warning: &str) -> String {
+    format!("Extension package \"{path}\": {warning}")
+}
+
 /// The run's loaded extensions, and the skills, prompt templates and themes
 /// its packages provide.
 #[derive(Default)]
 pub struct Extensions {
     /// Instances with loaded extensions.
     pub hosts: Vec<Arc<ExtensionHost>>,
+    /// Warnings about extensions that were not loaded, by path.
+    pub warnings: Vec<(String, String)>,
     /// Package skills with their packages as sources.
     pub skills: Vec<SourceInfo>,
     /// Package prompt templates with their packages as sources.
