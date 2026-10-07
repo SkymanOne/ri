@@ -1473,8 +1473,9 @@
 		}
 	}
 	class Response {
+		#body;
 		constructor(body = null, init = {}) {
-			this._bytes = body == null ? new Uint8Array() : typeof body === "string" ? utf8Encode(body) : body instanceof Uint8Array ? body : utf8Encode(String(body));
+			this.#body = body == null || body instanceof ReadableStream ? body : new Blob([body]).stream();
 			this.status = init.status ?? 200;
 			this.statusText = init.statusText ?? "";
 			this.headers = new Headers(init.headers);
@@ -1484,32 +1485,32 @@
 			this.bodyUsed = false;
 			this.type = "basic";
 		}
-		async text() {
+		get body() {
+			return this.#body;
+		}
+		async bytes() {
+			if (this.bodyUsed) throw new TypeError("Body is unusable: Body has already been read");
 			this.bodyUsed = true;
-			return utf8Decode(this._bytes);
+			const chunks = [];
+			if (this.#body) for await (const chunk of this.#body) chunks.push(chunk);
+			return new Blob(chunks)._bytes;
+		}
+		async text() {
+			return utf8Decode(await this.bytes());
 		}
 		async json() {
 			return JSON.parse(await this.text());
 		}
 		async arrayBuffer() {
-			this.bodyUsed = true;
-			return this._bytes.slice().buffer;
+			return (await this.bytes()).buffer;
 		}
-		async bytes() {
-			this.bodyUsed = true;
-			return this._bytes.slice();
-		}
-		get body() {
-			const bytes = this._bytes;
-			return new ReadableStream({
-				start(controller) {
-					if (bytes.length > 0) controller.enqueue(bytes);
-					controller.close();
-				},
-			});
+		async blob() {
+			return new Blob([await this.bytes()], { type: this.headers.get("content-type") ?? "" });
 		}
 		clone() {
-			return new Response(this._bytes.slice(), { status: this.status, statusText: this.statusText, headers: this.headers, url: this.url });
+			let body = this.#body;
+			if (body) [this.#body, body] = body.tee();
+			return new Response(body, { status: this.status, statusText: this.statusText, headers: this.headers, url: this.url });
 		}
 	}
 	class Request {
@@ -1524,6 +1525,8 @@
 	globalThis.Headers = Headers;
 	globalThis.Response = Response;
 	globalThis.Request = Request;
+	// A body nobody reads to its end is released once it is collected, as in Node.
+	const unreadBodies = new FinalizationRegistry((id) => yapi.request("fetch.release", { id }));
 	globalThis.fetch = async (input, init = {}) => {
 		const request = new Request(input, init);
 		request.signal?.throwIfAborted?.();
@@ -1537,27 +1540,63 @@
 			bodyBase64 = base64Encode(body instanceof ArrayBuffer ? new Uint8Array(body) : body);
 			body = undefined;
 		}
-		const response = yapi.op("fetch", {
+		const started = yapi.op("fetch.stream", {
 			url: request.url,
 			method: request.method,
 			headers: Object.fromEntries(request.headers),
 			body: typeof body === "string" ? body : undefined,
 			bodyBase64,
 		});
-		// An abort rejects at once; the host finishes the request unread.
+		// An abort rejects at once. A response that arrives later is released unread.
 		const signal = request.signal;
-		const result = await (signal
+		const { id, ...head } = await (signal
 			? new Promise((resolve, reject) => {
-					const onAbort = () => reject(signal.reason);
+					const onAbort = () => {
+						reject(signal.reason);
+						started.then(({ id }) => yapi.request("fetch.release", { id }), () => {});
+					};
 					signal.addEventListener("abort", onAbort, { once: true });
-					response.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+					started.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
 				})
-			: response);
-		return new Response(base64Decode(result.bodyBase64), {
-			status: result.status,
-			statusText: result.statusText,
-			headers: result.headers,
-			url: request.url,
+			: started);
+		// The body streams from the host, which holds a few chunks until they are read.
+		let open = true;
+		let controller;
+		const release = () => {
+			if (open) yapi.request("fetch.release", { id });
+			open = false;
+		};
+		const stream = new ReadableStream({
+			start(streamController) {
+				controller = streamController;
+			},
+			async pull() {
+				const events = await yapi.op("fetch.next", { id });
+				if (!open) return;
+				if (events.length === 0) {
+					open = false;
+					controller.close();
+				}
+				for (const event of events) {
+					if (event.type === "error") {
+						release();
+						return controller.error(new TypeError(event.message));
+					}
+					controller.enqueue(base64Decode(event.data));
+				}
+			},
+			cancel: release,
 		});
+		unreadBodies.register(stream, id);
+		signal?.addEventListener(
+			"abort",
+			() => {
+				if (!open) return;
+				release();
+				controller.error(signal.reason);
+			},
+			{ once: true },
+		);
+		return new Response(stream, { ...head, url: request.url });
 	};
 })();

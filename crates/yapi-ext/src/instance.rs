@@ -253,7 +253,7 @@ impl Instance {
             bridge,
             options,
             ai_streams: AiStreams::default(),
-            processes: crate::ops::Processes::new(runtime.clone()),
+            streams: crate::ops::Streams::new(runtime.clone()),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
@@ -587,7 +587,7 @@ impl Actor {
         self.host
             .bridge
             .log("error", &format!("Extension runtime stopped: {reason}"));
-        self.host.processes.clear();
+        self.host.streams.clear();
         for (_, reply) in self.pending.drain() {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }
