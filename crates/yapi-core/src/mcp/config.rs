@@ -185,6 +185,16 @@ pub enum Scope {
     Project,
 }
 
+impl Scope {
+    /// pi's name for the scope.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Scope::Global => "global",
+            Scope::Project => "project",
+        }
+    }
+}
+
 /// A configured server.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerEntry {
@@ -196,6 +206,20 @@ pub struct ServerEntry {
     pub source: PathBuf,
     /// Which file that is.
     pub scope: Scope,
+}
+
+impl ServerEntry {
+    /// pi's `describeTransport`: the URL, or the command line.
+    pub fn describe_transport(&self) -> String {
+        match &self.config.transport {
+            ServerTransport::Http { url, .. } => url.clone(),
+            ServerTransport::Stdio { command, args, .. } => std::iter::once(command)
+                .chain(args)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
+    }
 }
 
 /// Everything `mcp.json` files configure, and their problems.
@@ -608,6 +632,65 @@ pub fn remove_server_config(path: &Path, name: &str) -> Result<bool, String> {
     Ok(removed)
 }
 
+/// A setting `/mcp` changes; pi's `McpServerConfigPatch`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigPatch {
+    /// `enabled`.
+    Enabled(bool),
+    /// `exposure`.
+    Exposure(McpExposure),
+}
+
+impl ConfigPatch {
+    /// Applies the patch to a loaded config.
+    pub fn apply(self, config: &mut ServerConfig) {
+        match self {
+            ConfigPatch::Enabled(enabled) => config.enabled = Some(enabled),
+            ConfigPatch::Exposure(exposure) => config.exposure = Some(exposure),
+        }
+    }
+}
+
+/// pi's `updateMcpServerConfig`: changes one setting of server `name` in the
+/// `mcp.json` at `path`. The defaults, `enabled: true` and
+/// `exposure: "codemode"`, remove the key.
+pub fn update_server_config(path: &Path, name: &str, patch: ConfigPatch) -> Result<(), String> {
+    let mut found = false;
+    edit_servers(path, |document| {
+        let Some(Value::Object(server)) = document
+            .get_mut("mcpServers")
+            .and_then(|servers| servers.get_mut(name))
+        else {
+            return false;
+        };
+        found = true;
+        let (key, value) = match patch {
+            ConfigPatch::Enabled(enabled) => ("enabled", (!enabled).then_some(Value::Bool(false))),
+            ConfigPatch::Exposure(exposure) => (
+                "exposure",
+                (exposure != McpExposure::Codemode).then(|| Value::from(exposure.as_str())),
+            ),
+        };
+        match value {
+            Some(value) => {
+                server.insert(key.to_owned(), value);
+            }
+            None => {
+                server.shift_remove(key);
+            }
+        }
+        true
+    })?;
+    if found {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} does not define MCP server \"{name}\"",
+            path.display()
+        ))
+    }
+}
+
 /// Reads an `mcp.json` (empty when missing), lets `edit` change it, and
 /// writes it back with its own indentation when `edit` returns true. Other
 /// content is kept.
@@ -753,6 +836,17 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "{\n\t\"other\": 1,\n\t\"mcpServers\": {}\n}\n"
+        );
+        assert_eq!(
+            update_server_config(&path, "a", ConfigPatch::Enabled(false)).unwrap_err(),
+            format!("{} does not define MCP server \"a\"", path.display())
+        );
+        add_server_config(&path, "a", json!({"command": "a", "enabled": false})).unwrap();
+        update_server_config(&path, "a", ConfigPatch::Exposure(McpExposure::Direct)).unwrap();
+        update_server_config(&path, "a", ConfigPatch::Enabled(true)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\n\t\"other\": 1,\n\t\"mcpServers\": {\n\t\t\"a\": {\n\t\t\t\"command\": \"a\",\n\t\t\t\"exposure\": \"direct\"\n\t\t}\n\t}\n}\n"
         );
         assert_eq!(
             resolve_exposure_aliases(

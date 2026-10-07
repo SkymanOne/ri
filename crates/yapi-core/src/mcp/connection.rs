@@ -304,6 +304,11 @@ impl Connection {
         lock(&self.snapshot).clone()
     }
 
+    /// Where it stands.
+    pub fn state(&self) -> State {
+        lock(&self.snapshot).state
+    }
+
     /// Whether `read_mcp_resource` reaches this server.
     pub fn readable_resources(&self) -> bool {
         (self.readable_resources)(&self.entry.name)
