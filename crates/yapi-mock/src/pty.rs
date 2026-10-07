@@ -20,10 +20,56 @@ pub const SETTLE_LIMIT: Duration = Duration::from_secs(15);
 
 struct Screen {
     parser: vt100::Parser,
+    /// The screen as of the last complete frame: outside a synchronized
+    /// update (DEC mode 2026), which pi-tui and yapi wrap each frame in.
+    shown: vt100::Screen,
+    /// Whether a synchronized update has begun and not yet ended.
+    in_frame: bool,
     /// Everything the program wrote.
     output: Vec<u8>,
     last_output: Instant,
     seen_output: bool,
+}
+
+const FRAME_START: &[u8] = b"\x1b[?2026h";
+const FRAME_END: &[u8] = b"\x1b[?2026l";
+
+impl Screen {
+    /// Takes a chunk of output, keeping [`Screen::shown`] at the last
+    /// complete frame. A frame marker may span chunks.
+    fn process(&mut self, chunk: &[u8]) {
+        let before = self.output.len();
+        self.output.extend_from_slice(chunk);
+        let window = before.saturating_sub(FRAME_START.len() - 1);
+        let markers: Vec<(usize, bool)> = self.output[window..]
+            .windows(FRAME_START.len())
+            .enumerate()
+            .filter_map(|(at, bytes)| {
+                let end = window + at + bytes.len();
+                let start = if bytes == FRAME_START {
+                    true
+                } else if bytes == FRAME_END {
+                    false
+                } else {
+                    return None;
+                };
+                (end > before).then_some((end - before, start))
+            })
+            .collect();
+        let mut from = 0;
+        for (to, start) in markers {
+            self.parser.process(&chunk[from..to]);
+            from = to;
+            self.in_frame = start;
+            if !start {
+                self.shown = self.parser.screen().clone();
+            }
+        }
+        self.parser.process(&chunk[from..]);
+        if !self.in_frame {
+            self.shown = self.parser.screen().clone();
+        }
+    }
 }
 
 /// A running program attached to a terminal of a fixed size.
@@ -104,8 +150,11 @@ impl Pty {
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(io_error)?;
         let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(io_error)?));
+        let parser = vt100::Parser::new(rows, cols, 0);
         let screen = Arc::new(Mutex::new(Screen {
-            parser: vt100::Parser::new(rows, cols, 0),
+            shown: parser.screen().clone(),
+            parser,
+            in_frame: false,
             output: Vec::new(),
             last_output: Instant::now(),
             seen_output: false,
@@ -130,8 +179,7 @@ impl Pty {
                         }
                         {
                             let mut screen = shared.lock().unwrap_or_else(PoisonError::into_inner);
-                            screen.parser.process(&buffer[..count]);
-                            screen.output.extend_from_slice(&buffer[..count]);
+                            screen.process(&buffer[..count]);
                             screen.last_output = Instant::now();
                             screen.seen_output = true;
                         }
@@ -168,9 +216,9 @@ impl Pty {
         writer.flush()
     }
 
-    /// The screen, one string per row.
+    /// The screen as of the last complete frame, one string per row.
     pub fn rows(&self) -> Vec<String> {
-        self.lock().parser.screen().rows(0, self.cols).collect()
+        self.lock().shown.rows(0, self.cols).collect()
     }
 
     /// The OSC 9;4 progress sequences the program wrote so far, in order,
@@ -228,5 +276,36 @@ impl Pty {
                 -1
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The screen changes only when a frame completes, also when the frame
+    /// and its markers span chunks.
+    #[test]
+    fn shows_only_complete_frames() {
+        let parser = vt100::Parser::new(2, 12, 0);
+        let mut screen = Screen {
+            shown: parser.screen().clone(),
+            parser,
+            in_frame: false,
+            output: Vec::new(),
+            last_output: Instant::now(),
+            seen_output: false,
+        };
+        let row = |screen: &Screen| screen.shown.rows(0, 12).next().unwrap_or_default();
+        screen.process(b"plain");
+        assert_eq!(row(&screen), "plain");
+        screen.process(b"\x1b[?2026h\x1b[Hfra");
+        assert_eq!(row(&screen), "plain");
+        screen.process(b"me\x1b[?20");
+        assert_eq!(row(&screen), "plain");
+        screen.process(b"26l\x1b[?2026hnext");
+        assert_eq!(row(&screen), "frame");
+        screen.process(b"\x1b[?2026l");
+        assert_eq!(row(&screen), "framenext");
     }
 }
