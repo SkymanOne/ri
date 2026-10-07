@@ -1649,6 +1649,16 @@ impl Bridge for SessionBridge {
             }
             "agent.isIdle" => Ok(Value::Bool(!session.is_streaming())),
             "agent.systemPromptOptions" => Ok(to_json(session.base_prompt_options())),
+            // A command's edits to options the base has replaced since are
+            // lost, as in pi.
+            "agent.setSystemPromptOptions" => {
+                if payload["fetched"] == to_json(session.base_prompt_options())
+                    && let Ok(options) = serde_json::from_value(payload["options"].clone())
+                {
+                    session.set_base_prompt_options(options);
+                }
+                Ok(Value::Null)
+            }
             "agent.abort" => {
                 session.abort();
                 Ok(Value::Null)

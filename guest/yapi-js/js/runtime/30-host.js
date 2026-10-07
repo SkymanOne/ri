@@ -1283,7 +1283,24 @@
 		async command(payload) {
 			const command = extensionOf(payload.extension).commands.get(payload.name);
 			if (!command) throw new Error(`Command /${payload.name} is not registered`);
-			await command.handler(payload.args ?? "", createCommandContext(payload.ctx));
+			// pi hands commands its live base prompt options, so the host
+			// keeps what the command edited in them, unless the session was
+			// replaced.
+			const born = generation;
+			let fetched, options;
+			const getSystemPromptOptions = () => {
+				const current = yapi.request("agent.systemPromptOptions", {}) ?? {};
+				const json = JSON.stringify(current);
+				if (json !== fetched) [fetched, options] = [json, current];
+				return options;
+			};
+			try {
+				await command.handler(payload.args ?? "", createCommandContext(payload.ctx, { getSystemPromptOptions }));
+			} finally {
+				if (options && !born.stale && JSON.stringify(options) !== fetched) {
+					yapi.request("agent.setSystemPromptOptions", { fetched: JSON.parse(fetched), options });
+				}
+			}
 			return null;
 		},
 		async complete(payload) {
