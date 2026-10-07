@@ -54,7 +54,7 @@ const cases = [
 	[["@\"guide"], 0, 7, false, true], [["@read"], 0, 5, false, true], [["@tests/fix"], 0, 10, false, true],
 ];
 
-const base = mkdtempSync(join(tmpdir(), "ri-autocomplete-"));
+const base = mkdtempSync(join(tmpdir(), "yapi-autocomplete-"));
 for (const path of tree) {
 	if (path.endsWith("/")) mkdirSync(join(base, path), { recursive: true });
 	else writeFileSync(join(base, path), "");

@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const agentDir = "/tmp/ri-pi-mcp-auth/agent";
+const agentDir = "/tmp/yapi-pi-mcp-auth/agent";
 rmSync(dirname(agentDir), { recursive: true, force: true });
 mkdirSync(agentDir, { recursive: true });
 process.env.PI_CODING_AGENT_DIR = agentDir;

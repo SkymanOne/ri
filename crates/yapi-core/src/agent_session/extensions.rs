@@ -11,6 +11,7 @@ use yapi_agent::Tool;
 use yapi_agent::hooks::AgentHooks;
 use yapi_ai::registry::Auth;
 use yapi_types::event::AgentEvent;
+use yapi_types::extension_event::{ExtensionEvent, UiPrompt};
 use yapi_types::message::{
     Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage, ToolResultMessage,
 };
@@ -27,13 +28,6 @@ use crate::time::now_ms;
 
 use super::{AgentSession, InputSource, Replacement, SessionChange, drain};
 
-fn behavior_name(behavior: StreamingBehavior) -> &'static str {
-    match behavior {
-        StreamingBehavior::Steer => "steer",
-        StreamingBehavior::FollowUp => "followUp",
-    }
-}
-
 pub(super) struct Hooks {
     pub(super) session: AgentSession,
     pub(super) steering_mode: Option<QueueMode>,
@@ -43,18 +37,12 @@ pub(super) struct Hooks {
     pub(super) turn_index: std::sync::atomic::AtomicU64,
 }
 
-fn ui_prompt_event(kind_of_event: &str, kind: &str, title: Option<String>) -> Value {
-    let event = serde_json::json!({"type": kind_of_event, "reason": "ui_prompt", "kind": kind, "title": title});
-    defined(event, &["title"])
-}
-
-/// `event` without the fields in `keys` that are null, which pi leaves
-/// undefined.
-pub(super) fn defined(mut event: Value, keys: &[&str]) -> Value {
-    if let Some(object) = event.as_object_mut() {
-        object.retain(|key, value| !(value.is_null() && keys.contains(&key.as_str())));
+fn ui_prompt<'a>(kind: &'a str, title: Option<&'a str>) -> UiPrompt<'a> {
+    UiPrompt {
+        reason: "ui_prompt",
+        kind,
+        title,
     }
-    event
 }
 
 /// A loop event as pi's extension event (`_emitExtensionEvent` in pi's agent
@@ -332,15 +320,13 @@ impl AgentHooks for Hooks {
                     });
                 }
             }
-            let mut event = serde_json::json!({
-                "type": "tool_call",
-                "toolName": call.tool_call.name,
-                "toolCallId": call.tool_call.id,
-            });
-            if let Some(parent) = call.parent_tool_call_id {
-                event["parentToolCallId"] = Value::String(parent.to_owned());
+            let mut event = ExtensionEvent::ToolCall {
+                tool_name: &call.tool_call.name,
+                tool_call_id: &call.tool_call.id,
+                parent_tool_call_id: call.parent_tool_call_id,
+                input: call.args,
             }
-            event["input"] = call.args.clone();
+            .to_value();
             // Handlers change the call's arguments by editing `event.input`,
             // which later handlers see, as in pi.
             for extension in self.session.handlers_of("tool_call") {
@@ -451,18 +437,16 @@ impl Hooks {
             return None;
         }
         let ctx = self.session.extension_context(self.cancel.clone());
-        let mut event = serde_json::json!({
-            "type": "tool_result",
-            "toolName": call.tool_call.name,
-            "toolCallId": call.tool_call.id,
-        });
-        if let Some(parent) = call.parent_tool_call_id {
-            event["parentToolCallId"] = Value::String(parent.to_owned());
+        let mut event = ExtensionEvent::ToolResult {
+            tool_name: &call.tool_call.name,
+            tool_call_id: &call.tool_call.id,
+            parent_tool_call_id: call.parent_tool_call_id,
+            input: call.args,
+            content: &call.result.content,
+            details: call.result.details.as_ref(),
+            is_error: call.is_error,
         }
-        event["input"] = call.args.clone();
-        event["content"] = serde_json::json!(call.result.content);
-        event["details"] = serde_json::json!(call.result.details);
-        event["isError"] = Value::Bool(call.is_error);
+        .to_value();
         let mut modified = false;
         for extension in handlers {
             let Some(result) = extension.handle(&ctx, &event).await else {
@@ -557,23 +541,23 @@ impl AgentSession {
     /// pi's `session_before_switch` or `session_before_fork`: whether an
     /// extension cancels `change`.
     pub async fn cancels(&self, change: &SessionChange) -> bool {
+        let reason = change.reason().as_str();
         let event = match change {
-            SessionChange::New => {
-                serde_json::json!({"type": change.event(), "reason": change.reason().as_str()})
-            }
-            SessionChange::Resume(target) => serde_json::json!({
-                "type": change.event(),
-                "reason": change.reason().as_str(),
-                "targetSessionFile": target,
-            }),
-            SessionChange::Fork { entry_id, at } => serde_json::json!({
-                "type": change.event(),
-                "entryId": entry_id,
-                "position": if *at { "at" } else { "before" },
-            }),
+            SessionChange::New => ExtensionEvent::SessionBeforeSwitch {
+                reason,
+                target_session_file: None,
+            },
+            SessionChange::Resume(target) => ExtensionEvent::SessionBeforeSwitch {
+                reason,
+                target_session_file: Some(target),
+            },
+            SessionChange::Fork { entry_id, at } => ExtensionEvent::SessionBeforeFork {
+                entry_id,
+                position: if *at { "at" } else { "before" },
+            },
         };
         let result = self
-            .emit_extension_event(&event, CancellationToken::new())
+            .emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
         result.is_some_and(|result| result["cancel"] == true)
     }
@@ -595,7 +579,7 @@ impl AgentSession {
         let mut current = serde_json::json!(message);
         let mut replaced_by = None;
         for extension in handlers {
-            let event = serde_json::json!({"type": "message_end", "message": current});
+            let event = ExtensionEvent::MessageEnd { message: &current }.to_value();
             let Some(next) = extension
                 .handle(&ctx, &event)
                 .await
@@ -673,7 +657,7 @@ impl AgentSession {
                 .filter(|message| !matches!(message, Message::System(_)))
                 .cloned()
                 .collect();
-            let event = serde_json::json!({"type": "context", "messages": visible});
+            let event = ExtensionEvent::Context { messages: &visible }.to_value();
             if let Some(result) = extension.handle(&ctx, &event).await
                 && let Ok(returned) =
                     serde_json::from_value::<Vec<Message>>(result["messages"].clone())
@@ -689,7 +673,10 @@ impl AgentSession {
         }
         for extension in self.handlers_of("context_with_system") {
             let had_head = matches!(messages.first(), Some(Message::System(_)));
-            let event = serde_json::json!({"type": "context_with_system", "messages": messages});
+            let event = ExtensionEvent::ContextWithSystem {
+                messages: &messages,
+            }
+            .to_value();
             if let Some(result) = extension.handle(&ctx, &event).await
                 && let Ok(returned) = serde_json::from_value(result["messages"].clone())
             {
@@ -740,7 +727,10 @@ impl AgentSession {
             }
             prompts.1 = Some((kind.to_owned(), title.clone()));
         }
-        self.announce(ui_prompt_event("ui_prompt_start", kind, title));
+        self.announce(ExtensionEvent::UiPromptStart(ui_prompt(
+            kind,
+            title.as_deref(),
+        )));
     }
 
     /// A blocking extension dialog closed; when it was the outermost,
@@ -757,14 +747,18 @@ impl AgentSession {
                 None => return,
             }
         };
-        self.announce(ui_prompt_event("ui_prompt_end", &kind, title));
+        self.announce(ExtensionEvent::UiPromptEnd(ui_prompt(
+            &kind,
+            title.as_deref(),
+        )));
     }
 
     /// Delivers `event` to extensions in the background, after the events
     /// announced before it, as pi's runner delivers events it does not wait
     /// for. Outside a tokio runtime it waits for the next
     /// [`AgentSession::flush_announcements`].
-    pub(super) fn announce(&self, event: Value) {
+    pub(super) fn announce(&self, event: ExtensionEvent<'_>) {
+        let event = event.to_value();
         let kind = event["type"].as_str().unwrap_or_default();
         if !self.has_handlers(kind) {
             return;
@@ -806,12 +800,13 @@ impl AgentSession {
         let mut text = text.to_owned();
         let mut images = images;
         for extension in handlers {
-            let mut event = serde_json::json!({
-                "type": "input", "text": text, "images": images, "source": source.as_str(),
-            });
-            if let Some(behavior) = streaming {
-                event["streamingBehavior"] = behavior_name(behavior).into();
+            let event = ExtensionEvent::Input {
+                text: &text,
+                images: &images,
+                source: source.as_str(),
+                streaming_behavior: streaming,
             }
+            .to_value();
             let Some(result) = extension.handle(&ctx, &event).await else {
                 continue;
             };
@@ -852,13 +847,13 @@ impl AgentSession {
                 Some(forced) => forced.clone(),
                 None => Self::prompt_text(&options).unwrap_or_default(),
             };
-            let event = serde_json::json!({
-                "type": "before_agent_start",
-                "prompt": prompt,
-                "images": images,
-                "systemPrompt": system_prompt,
-                "systemPromptOptions": options.to_json(forced.as_deref()),
-            });
+            let event = ExtensionEvent::BeforeAgentStart {
+                prompt,
+                images,
+                system_prompt: &system_prompt,
+                system_prompt_options: options.to_json(forced.as_deref()),
+            }
+            .to_value();
             let Some(result) = extension.handle(&ctx, &event).await else {
                 continue;
             };
@@ -923,17 +918,17 @@ impl AgentSession {
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;
         }
-        let mut event = serde_json::json!({"type": "session_start", "reason": "startup"});
-        let mut reload = false;
-        if let Some((reason, previous)) = replaced {
-            event["reason"] = reason.as_str().into();
-            if let Some(previous) = reason.reported(previous) {
-                event["previousSessionFile"] = previous.into();
-            }
-            reload = reason == Replacement::Reload;
-        }
-        self.emit_extension_event(&event, CancellationToken::new())
+        let (reason, previous) = match replaced {
+            Some((reason, previous)) => (Some(reason), reason.reported(previous)),
+            None => (None, None),
+        };
+        let event = ExtensionEvent::SessionStart {
+            reason: reason.map_or("startup", Replacement::as_str),
+            previous_session_file: previous.as_deref(),
+        };
+        self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
+        let reload = reason == Some(Replacement::Reload);
         self.discover_resources(if reload { "reload" } else { "startup" })
             .await;
     }
@@ -946,7 +941,11 @@ impl AgentSession {
         if handlers.is_empty() {
             return;
         }
-        let event = serde_json::json!({"type": "resources_discover", "cwd": self.inner.cwd, "reason": reason});
+        let event = ExtensionEvent::ResourcesDiscover {
+            cwd: &self.inner.cwd,
+            reason,
+        }
+        .to_value();
         let ctx = self.extension_context(CancellationToken::new());
         let mut found: [Vec<SourceInfo>; 3] = Default::default();
         for extension in handlers {
@@ -1015,23 +1014,27 @@ impl AgentSession {
     /// Stops extensions before the session ends: pi's `session_shutdown`
     /// with the reason `quit`.
     pub async fn shutdown(&self) {
-        self.stop_extensions(serde_json::json!({"type": "session_shutdown", "reason": "quit"}))
-            .await;
+        self.stop_extensions(ExtensionEvent::SessionShutdown {
+            reason: "quit",
+            target_session_file: None,
+        })
+        .await;
     }
 
     /// Stops extensions before a session replaces this one for `reason`;
     /// `target` is the replacement's session file, which pi does not report
     /// on reload.
     pub async fn shutdown_for(&self, reason: Replacement, target: Option<String>) {
-        let mut event = serde_json::json!({"type": "session_shutdown", "reason": reason.as_str()});
-        if let Some(target) = reason.reported(target) {
-            event["targetSessionFile"] = target.into();
-        }
-        self.stop_extensions(event).await;
+        let target = reason.reported(target);
+        self.stop_extensions(ExtensionEvent::SessionShutdown {
+            reason: reason.as_str(),
+            target_session_file: target.as_deref(),
+        })
+        .await;
     }
 
-    async fn stop_extensions(&self, event: Value) {
-        self.emit_extension_event(&event, CancellationToken::new())
+    async fn stop_extensions(&self, event: ExtensionEvent<'_>) {
+        self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {

@@ -268,6 +268,37 @@ fn scratch_base() -> PathBuf {
     base.canonicalize().unwrap_or(base)
 }
 
+/// The length of the package directory path pi runs with. pi's system prompt
+/// names its README, docs and examples there, and before the first response
+/// the footer's context percentage counts the prompt, so the checkout's
+/// location would move it. This length, that of a Linux checkout at
+/// `/home/user/yapi`, reproduces the goldens.
+const PI_PACKAGE_DIR_LEN: usize = 88;
+
+/// A link under `root` to the package directory of the pi executable `pi`,
+/// padded to [`PI_PACKAGE_DIR_LEN`] for `PI_PACKAGE_DIR`. `None` when `pi` is
+/// in no package.
+fn pi_package_link(pi: &Path, root: &Path) -> std::io::Result<Option<PathBuf>> {
+    let Some(package) = pi
+        .ancestors()
+        .find(|dir| dir.join("package.json").is_file())
+    else {
+        return Ok(None);
+    };
+    let len = PI_PACKAGE_DIR_LEN.saturating_sub(root.to_string_lossy().chars().count() + 1);
+    let name: String = "pi-package"
+        .chars()
+        .chain(std::iter::repeat('-'))
+        .take(len)
+        .collect();
+    let link = root.join(name);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(package, &link)?;
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(package, &link)?;
+    Ok(Some(link))
+}
+
 /// Runs a scenario: starts the mock server, prepares the directories, runs the
 /// program to completion and collects its output and the requests.
 pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
@@ -368,7 +399,12 @@ pub async fn run(scenario: &Scenario, program: &Program) -> Result<Run, Error> {
         None => (executable, scenario.args.clone()),
     };
     let executable = &executable;
-    let env = clean_env(dir_var, &agent_dir, &root);
+    let mut env = clean_env(dir_var, &agent_dir, &root);
+    if let Program::Pi(pi) = program
+        && let Some(link) = pi_package_link(pi, &root).map_err(io(&root))?
+    {
+        env.push(("PI_PACKAGE_DIR", link.into()));
+    }
     let mut progress = None;
     let (exit_code, stdout, stderr, screen) = match &scenario.tty {
         Some(tty) => {
@@ -1056,5 +1092,23 @@ mod tests {
                 root.display()
             );
         }
+    }
+
+    #[test]
+    fn pi_package_links_have_a_fixed_length() {
+        let root = scratch_dir("pi-package-link");
+        let cli = root.join("deep/checkout/pi-coding-agent/dist/bundle/cli.js");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, "").unwrap();
+        std::fs::write(
+            root.join("deep/checkout/pi-coding-agent/package.json"),
+            "{}",
+        )
+        .unwrap();
+        let link = pi_package_link(&cli, &root).unwrap().unwrap();
+        assert_eq!(link.to_string_lossy().chars().count(), PI_PACKAGE_DIR_LEN);
+        assert!(link.join("dist/bundle/cli.js").is_file());
+        assert_eq!(pi_package_link(Path::new("/pi"), &root).unwrap(), None);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

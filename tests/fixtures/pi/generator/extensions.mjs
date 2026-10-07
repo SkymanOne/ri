@@ -11,7 +11,7 @@ import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const examples = path.join(here, "node_modules/@earendil-works/pi-coding-agent/examples/extensions");
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "ri-pi-extensions-"));
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "yapi-pi-extensions-"));
 const agentDir = path.join(scratch, "agent");
 const cwd = path.join(scratch, "project");
 fs.mkdirSync(agentDir, { recursive: true });
