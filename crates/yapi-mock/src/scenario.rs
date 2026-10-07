@@ -712,6 +712,7 @@ impl Normalizer<'_> {
             .replace("Usage: yapi ", "Usage: pi ")
             .replace("yapi mcp ", "pi mcp ")
             .replace("yapi config ", "pi config ")
+            .replace("`yapi config`", "`pi config`")
             .replace("this session: yapi --session", "this session: pi --session")
             .replace(".yapi/mcp.json", ".pi/mcp.json")
             .replace(".yapi/settings.json", ".pi/settings.json")

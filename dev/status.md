@@ -113,15 +113,13 @@ Deferred:
 
 Done.
 
-- Codemode: each script runs in a fresh `yapi-js` instance without grants, holding only pi's prelude, so its globals behave and fail as in pi. Nested tool calls carry pi's ids, events and hooks. MCP servers with `codemode` exposure activate it. `codemode.mode: "only"` leaves the direct tools scripts call out of requests.
+- Codemode: each script runs in a fresh `yapi-js` instance without grants, holding only pi's prelude, so its globals behave and fail as in pi. Nested tool calls carry pi's ids, events and hooks. MCP servers with `codemode` exposure activate it. `codemode.mode: "only"` leaves the direct tools scripts call out of requests, and a package's `codemode` that replaces the built-in earns pi's warning.
 - `yapi import pi` copies pi's agent directory and the current project's `.pi` into yapi's, keeping files yapi already has.
 - A tag-triggered release workflow builds stripped binaries for Linux and macOS on x86_64 and arm64. Each `yapi-<target>.tar.gz` holds the binary and its license files, with no version in the name. `install.sh`, `curl | tar`, `cargo binstall --git` and `cargo install --git` install it. Linux releases build on Ubuntu 22.04, so they run with glibc 2.35 or newer.
 - `yapi new` creates a native extension package from `crates/yapi/templates/extension`, which `cargo generate` also reads.
 - `cargo xtask bench` measures startup, keystroke latency, memory and binary size against pi. [docs/performance.md](../docs/performance.md) has the results. The wasm engine starts only when an extension loads or a codemode script runs.
 
-Exit criterion. Scripts cannot reach files, processes, the network, the environment, modules or host natives: `crates/yapi-ext/tests/codemode.rs` checks every global a script sees against pi's list and that imports fail. Scenarios recorded from pi match: nested calls with the store, a script error, the interactive rendering, and `only` mode's requests.
-
-Deferred: the warning pi prints when a package's `codemode` replaces the built-in.
+Exit criterion. Scripts cannot reach files, processes, the network, the environment, modules or host natives: `crates/yapi-ext/tests/codemode.rs` checks every global a script sees against pi's list and that imports fail. Scenarios recorded from pi match: nested calls with the store, a script error, the interactive rendering, `only` mode's requests, and the replacement warning in print and interactive modes.
 
 ## Final end-to-end pass
 

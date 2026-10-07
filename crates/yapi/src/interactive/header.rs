@@ -539,19 +539,28 @@ fn path_with_source(source: &SourceInfo, home: Option<&Path>) -> String {
     format!("{label} {}", short_path(source, home))
 }
 
-/// pi's `[Extension issues]` section: each issue under the extension it
-/// concerns. Empty without issues.
+/// pi's `[Extension issues]` section: the warnings about extensions that
+/// were not loaded under their paths, then each issue under the extension it
+/// concerns. Empty without either.
 pub fn extension_issues(
     theme: &Theme,
+    warnings: &[(String, String)],
     issues: &[(SourceInfo, String)],
     home: Option<&Path>,
     width: usize,
 ) -> Vec<StyledLine> {
-    if issues.is_empty() {
+    if warnings.is_empty() && issues.is_empty() {
         return Vec::new();
     }
     let warning = theme.fg("warning");
     let mut content = vec![lines::styled("[Extension issues]", warning)];
+    for (path, message) in warnings {
+        content.push(lines::styled(
+            format!("  {}", display_path(path, home)),
+            warning,
+        ));
+        content.push(lines::styled(format!("    {message}"), warning));
+    }
     for (source, message) in issues {
         content.push(lines::styled(
             format!("  {}", path_with_source(source, home)),
