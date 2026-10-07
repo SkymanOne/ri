@@ -1,0 +1,20 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " Exposure of demo",
+    " Saved to <agent>/mcp.json.",
+    "",
+    "→ ✓ codemode                      called from codemode scripts, which find them with searchTools()",
+    "    deferred                      not declared until tool_search loads them, then called directly; no codemode needed",
+    "    direct                        declared to the model like built-in tools",
+    "",
+    " enter save • escape/ctrl+c back",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

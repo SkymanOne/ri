@@ -322,6 +322,13 @@ pub trait ExtensionUi: Send + Sync {
     /// Removes the custom component `component`.
     fn close(&self, _component: RemoteComponent) {}
 
+    /// Shows a screen of the `/mcp` manager with keyboard focus, opening the
+    /// manager; [`McpScreen::Close`] closes it. Without the TUI the screen
+    /// is dropped, which closes its menu.
+    ///
+    /// [`McpScreen::Close`]: crate::mcp::extension::McpScreen::Close
+    fn mcp_manager(&self, _screen: crate::mcp::extension::McpScreen) {}
+
     /// Components changed and need rendering.
     fn request_render(&self) {}
 

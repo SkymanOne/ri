@@ -5,25 +5,29 @@
 //! Connections run in the background. The first prompt waits only for servers
 //! with `direct` tools; `tool_search` and the resource tools wait for the
 //! servers they need when they run. Servers whose tools are not declared are
-//! listed in the `mcp_servers` system prompt section. `/mcp login` signs in to
-//! OAuth servers. The `/mcp` manager is not ported; `/mcp` reports the status.
+//! listed in the `mcp_servers` system prompt section. In the TUI `/mcp` opens
+//! a manager to sign in, reconnect, enable or disable servers and change
+//! their exposure, saved to the `mcp.json` that defines the server. Elsewhere
+//! it reports the status; `/mcp login` signs in to OAuth servers.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::config::ConfigFile;
 use yapi_types::rpc::SourceInfo;
 use yapi_types::sync::lock;
 
-use super::config::{self, McpExposure, ServerEntry, namespace};
+use super::config::{self, ConfigPatch, McpExposure, ServerEntry, namespace};
 use super::connection::{Connection, State};
 use super::http::ProviderToken;
+use super::jsonrpc::McpError;
 use super::sign_in::SignInPrompt;
 use super::tools::{
     LIST_MCP_RESOURCE_TEMPLATES_TOOL, LIST_MCP_RESOURCES_TOOL, McpTool, READ_MCP_RESOURCE_TOOL,
@@ -45,6 +49,60 @@ const MAX_SERVER_DESCRIPTION_CHARS: usize = 250;
 const MAX_SERVERS_SECTION_CHARS: usize = 4096;
 const USAGE: &str =
     "Usage: /mcp, /mcp login [server], /mcp logout [server], /mcp reconnect [server]";
+/// How often an open `/mcp` menu looks for changes.
+const MENU_REFRESH: Duration = Duration::from_millis(100);
+/// pi's `EXPOSURE_DESCRIPTIONS`: the exposures `/mcp` offers.
+const EXPOSURES: [(McpExposure, &str); 3] = [
+    (
+        McpExposure::Codemode,
+        "called from codemode scripts, which find them with searchTools()",
+    ),
+    (
+        McpExposure::Deferred,
+        "not declared until tool_search loads them, then called directly; no codemode needed",
+    ),
+    (
+        McpExposure::Direct,
+        "declared to the model like built-in tools",
+    ),
+];
+
+/// A menu of the `/mcp` manager; pi's `McpMenu`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct McpMenu {
+    /// The title.
+    pub title: String,
+    /// Shown below the title.
+    pub details: Option<String>,
+    /// Shown below the details in the error color.
+    pub error: Option<String>,
+    /// The items.
+    pub items: Vec<AutocompleteItem>,
+    /// Shown when there are no items.
+    pub empty: String,
+    /// Value of the item selected when the menu opens.
+    pub selected: Option<String>,
+    /// What the confirm key does, for the key hint.
+    pub confirm_label: String,
+    /// What the cancel key does, for the key hint.
+    pub cancel_label: String,
+}
+
+/// A screen of the `/mcp` manager; pi's `McpUi`.
+#[derive(Debug)]
+pub enum McpScreen {
+    /// A menu, rebuilt through the receiver while it is open, keeping the
+    /// selected item. The reply is the chosen item's value, or `None` when
+    /// cancelled.
+    Menu(watch::Receiver<McpMenu>, oneshot::Sender<Option<String>>),
+    /// A title and a message, shown while an operation runs.
+    Status(String, String),
+    /// A title, the authorization URL, and a field for the URL the browser
+    /// was redirected to. The reply is that URL, or `None` when cancelled.
+    RedirectUrl(String, String, oneshot::Sender<Option<String>>),
+    /// Closes the manager.
+    Close,
+}
 
 /// A configured server; disabled servers have no connection.
 struct Server {
@@ -52,6 +110,8 @@ struct Server {
     connection: Option<Arc<Connection>>,
     /// True once the connection started for the server connected or failed.
     ready: Option<watch::Receiver<bool>>,
+    /// Why the last `/mcp` action failed, shown in the manager.
+    message: Option<String>,
 }
 
 #[derive(Default)]
@@ -315,17 +375,25 @@ impl McpExtension {
         self.sync_resource_tools();
     }
 
-    /// Enabled, non-hidden servers with resources: what the resource tools reach.
-    fn resource_servers(&self) -> Vec<Arc<Connection>> {
+    /// Enabled, non-hidden servers with resources, with their exposure: what
+    /// the resource tools reach.
+    fn servers_with_resources(&self) -> Vec<(McpExposure, Arc<Connection>)> {
         lock(&self.shared)
             .servers
             .iter()
-            .filter(|server| {
-                server.entry.config.is_enabled()
-                    && server.entry.config.exposure() != McpExposure::Hidden
+            .map(|server| (server.entry.config.exposure(), server))
+            .filter(|(exposure, server)| {
+                server.entry.config.is_enabled() && *exposure != McpExposure::Hidden
             })
-            .filter_map(|server| server.connection.clone())
-            .filter(|connection| connection.snapshot().has_resources)
+            .filter_map(|(exposure, server)| Some((exposure, server.connection.clone()?)))
+            .filter(|(_, connection)| connection.snapshot().has_resources)
+            .collect()
+    }
+
+    fn resource_servers(&self) -> Vec<Arc<Connection>> {
+        self.servers_with_resources()
+            .into_iter()
+            .map(|(_, connection)| connection)
             .collect()
     }
 
@@ -336,9 +404,9 @@ impl McpExtension {
             return;
         };
         let exposures: HashSet<&'static str> = self
-            .resource_servers()
+            .servers_with_resources()
             .iter()
-            .map(|connection| connection.entry().config.exposure().as_str())
+            .map(|(exposure, _)| exposure.as_str())
             .collect();
         let next = [
             McpExposure::Direct,
@@ -575,13 +643,10 @@ impl McpExtension {
     }
 
     /// The plain status `/mcp` shows without the TUI.
-    fn format_status(&self, agent_dir: &std::path::Path) -> String {
+    fn format_status(&self, agent_dir: &Path) -> String {
         let shared = lock(&self.shared);
         if shared.servers.is_empty() && shared.config_errors.is_empty() {
-            return format!(
-                "No MCP servers configured. Add them to {} or .yapi/mcp.json.",
-                agent_dir.join(ConfigFile::Mcp.file_name()).display()
-            );
+            return no_servers(agent_dir);
         }
         let mut lines: Vec<String> = shared
             .servers
@@ -704,41 +769,12 @@ impl McpExtension {
 
     /// pi's `signIn`: a failure message, or `None` once signed in and
     /// reconnected.
-    async fn sign_in(&self, name: &str, ctx: &Context) -> Option<String> {
+    async fn sign_in(&self, name: &str, prompt: SignInPrompt) -> Option<String> {
         let Some(connection) = self
             .connection(name)
             .filter(|connection| connection.oauth_url().is_some())
         else {
             return Some(format!("MCP server \"{name}\" does not use OAuth."));
-        };
-        let (ui, server, tui) = (Arc::clone(&ctx.ui), name.to_owned(), ctx.mode == Mode::Tui);
-        let show_authorization_url = Box::new(move |url: &str| {
-            // pi links both lines; yapi shows the text and the terminal detects the URL.
-            let lines = match tui {
-                true if cfg!(target_os = "macos") => format!("{url}\nCmd+click to open"),
-                true => format!("{url}\nCtrl+click to open"),
-                false => url.to_owned(),
-            };
-            ui.notify(
-                &format!("Sign in to MCP server \"{server}\" in your browser:\n{lines}"),
-                NotifyKind::Info,
-            );
-            yapi_ai::auth::open_browser(url);
-        });
-        let (ui, server) = (Arc::clone(&ctx.ui), name.to_owned());
-        let redirect_url = Box::new(move |cancel| {
-            ui.input(
-                &format!("Waiting for sign-in to \"{server}\". If the browser cannot reach this machine, paste the URL it was redirected to."),
-                Some("http://127.0.0.1:.../callback?code=..."),
-                DialogOptions {
-                    cancel: Some(cancel),
-                    ..DialogOptions::default()
-                },
-            )
-        });
-        let prompt = SignInPrompt {
-            show_authorization_url,
-            redirect_url,
         };
         match connection.sign_in(&prompt).await {
             Err(yapi_ai::auth::AuthError::Cancelled) => return Some("Sign-in cancelled.".into()),
@@ -751,6 +787,528 @@ impl McpExtension {
         }
     }
 
+    /// pi's `signOut`: removes the stored credentials and disconnects;
+    /// whether any were stored.
+    async fn sign_out(&self, name: &str) -> Result<bool, McpError> {
+        let Some(connection) = self.connection(name) else {
+            return Ok(false);
+        };
+        let removed = connection.remove_credentials().await?;
+        connection.sign_out().await;
+        Ok(removed)
+    }
+
+    /// pi's `/mcp` manager, `manage`: the servers menu and each server's
+    /// menu, until closed.
+    async fn manage(&self, ctx: &Context) {
+        let ui = ctx.ui.as_ref();
+        while let Some(Some(name)) = Self::menu(ui, || self.servers_menu(&ctx.agent_dir)).await {
+            loop {
+                let Some(action) = Self::menu(ui, || self.server_menu(&name)).await else {
+                    return;
+                };
+                let Some(action) = action.filter(|_| self.server(&name, |_| ()).is_some()) else {
+                    break;
+                };
+                if self.run_action(ctx, &name, &action).await.is_none() {
+                    return;
+                }
+            }
+        }
+    }
+
+    /// pi's `McpUi.menu`: shows the menu `build` makes, kept current while it
+    /// is open. The chosen value, `Some(None)` when cancelled, or `None` when
+    /// the manager closed.
+    async fn menu(ui: &dyn ExtensionUi, build: impl Fn() -> McpMenu) -> Option<Option<String>> {
+        let (menus, receiver) = watch::channel(build());
+        let (reply, mut answer) = oneshot::channel();
+        ui.mcp_manager(McpScreen::Menu(receiver, reply));
+        // ponytail: polls instead of pi's change events; a listener on
+        // `Connection` state changes if polling ever shows in a profile.
+        let mut refresh = tokio::time::interval(MENU_REFRESH);
+        loop {
+            tokio::select! {
+                answer = &mut answer => return answer.ok(),
+                _ = refresh.tick() => {
+                    let next = build();
+                    menus.send_if_modified(|menu| {
+                        let changed = *menu != next;
+                        *menu = next;
+                        changed
+                    });
+                }
+            }
+        }
+    }
+
+    /// `read` applied to server `name`.
+    fn server<T>(&self, name: &str, read: impl FnOnce(&Server) -> T) -> Option<T> {
+        lock(&self.shared)
+            .servers
+            .iter()
+            .find(|server| server.entry.name == name)
+            .map(read)
+    }
+
+    /// pi's `serversMenu`: servers that need the user first.
+    fn servers_menu(&self, agent_dir: &Path) -> McpMenu {
+        let shared = lock(&self.shared);
+        let mut servers: Vec<&Server> = shared.servers.iter().collect();
+        servers.sort_by(|a, b| {
+            attention_rank(a)
+                .cmp(&attention_rank(b))
+                .then_with(|| yapi_types::collate::locale_compare(&a.entry.name, &b.entry.name))
+        });
+        let notices: Vec<String> = shared
+            .config_errors
+            .iter()
+            .map(|error| format!("config: {error}"))
+            .collect();
+        McpMenu {
+            title: "MCP servers".into(),
+            error: (!notices.is_empty()).then(|| notices.join("\n")),
+            items: servers
+                .iter()
+                .map(|server| {
+                    let description = format!(
+                        "{} · {} · {}",
+                        describe_state(server, true),
+                        server.entry.config.exposure().as_str(),
+                        server.entry.scope.as_str()
+                    );
+                    item(&server.entry.name, &server.entry.name, Some(description))
+                })
+                .collect(),
+            empty: no_servers(agent_dir),
+            confirm_label: "manage".into(),
+            cancel_label: "close".into(),
+            ..McpMenu::default()
+        }
+    }
+
+    /// pi's `serverMenu`: the actions the server's state allows.
+    fn server_menu(&self, name: &str) -> McpMenu {
+        let menu = self.server(name, |server| {
+            let entry = &server.entry;
+            let saved = format!("saved to the {} mcp.json", entry.scope.as_str());
+            let snapshot = server
+                .connection
+                .as_ref()
+                .map(|connection| connection.snapshot());
+            let state = snapshot.as_ref().map(|snapshot| snapshot.state);
+            let mut items = Vec::new();
+            if !entry.config.is_enabled() {
+                items.push(item("enable", "Enable", Some(saved)));
+            } else {
+                if state == Some(State::NeedsAuth) {
+                    items.push(item("signin", "Sign in", Some("opens the browser".into())));
+                }
+                if let Some(snapshot) = snapshot
+                    .as_ref()
+                    .filter(|snapshot| snapshot.state == State::Connected)
+                {
+                    let offered = format!("{} offered", snapshot.tools.len());
+                    items.push(item("tools", "Tools", Some(offered)));
+                }
+                if matches!(
+                    state,
+                    Some(State::Failed | State::Disconnected | State::Connected | State::NeedsAuth)
+                ) {
+                    items.push(item("reconnect", "Reconnect", None));
+                }
+                let oauth = server
+                    .connection
+                    .as_ref()
+                    .is_some_and(|connection| connection.oauth_url().is_some());
+                if state == Some(State::Connected) && oauth {
+                    let deletes = "deletes the stored credentials".to_owned();
+                    items.push(item("signout", "Sign out", Some(deletes)));
+                }
+                let exposure = entry.config.exposure().as_str().to_owned();
+                items.push(item("exposure", "Exposure", Some(exposure)));
+                items.push(item("disable", "Disable", Some(saved)));
+            }
+            let details = [
+                entry.describe_transport(),
+                format!("{}: {}", entry.scope.as_str(), entry.source.display()),
+                format!("State: {}", describe_state(server, false)),
+            ];
+            let connection_error = snapshot
+                .as_ref()
+                .filter(|snapshot| snapshot.state != State::Connected)
+                .and_then(|snapshot| snapshot.error.clone());
+            let error: Vec<String> = server
+                .message
+                .clone()
+                .into_iter()
+                .chain(connection_error)
+                .collect();
+            McpMenu {
+                title: format!("MCP server {name}"),
+                details: Some(details.join("\n")),
+                error: (!error.is_empty()).then(|| error.join("\n")),
+                selected: items.first().map(|item| item.value.clone()),
+                items,
+                confirm_label: "select".into(),
+                cancel_label: "back".into(),
+                ..McpMenu::default()
+            }
+        });
+        menu.unwrap_or_else(|| McpMenu {
+            title: name.into(),
+            empty: "This server is no longer configured.".into(),
+            cancel_label: "back".into(),
+            ..McpMenu::default()
+        })
+    }
+
+    /// pi's `showTools`; `None` when the manager closed.
+    async fn show_tools(&self, ui: &dyn ExtensionUi, name: &str) -> Option<()> {
+        let build = || {
+            self.server(name, |server| {
+                let config = &server.entry.config;
+                let exposure = config.exposure();
+                let overridden = if config.tool_exposure.is_empty() {
+                    ""
+                } else {
+                    "\nSome tools override it with toolExposure."
+                };
+                let tools = server
+                    .connection
+                    .as_ref()
+                    .map(|connection| connection.snapshot().tools)
+                    .unwrap_or_default();
+                McpMenu {
+                    title: format!("Tools of {name}"),
+                    details: Some(format!(
+                        "Exposure {}: {}{overridden}",
+                        exposure.as_str(),
+                        describe_exposure(exposure)
+                    )),
+                    items: tools
+                        .iter()
+                        .map(|tool| {
+                            let description =
+                                first_line(tool.description.as_deref().unwrap_or_default());
+                            let description = match config.tool_exposure(&tool.name) {
+                                own if own == exposure => description.to_owned(),
+                                own => format!("[{}] {description}", own.as_str()),
+                            };
+                            item(&tool.name, &tool.name, Some(description))
+                        })
+                        .collect(),
+                    empty: "The server offers no tools.".into(),
+                    confirm_label: "back".into(),
+                    cancel_label: "back".into(),
+                    ..McpMenu::default()
+                }
+            })
+            .unwrap_or_default()
+        };
+        Self::menu(ui, build).await.map(drop)
+    }
+
+    /// pi's `chooseExposure`: why the choice could not be saved; `None` when
+    /// the manager closed.
+    async fn choose_exposure(&self, ctx: &Context, name: &str) -> Option<Option<String>> {
+        let Some((current, source)) = self.server(name, |server| {
+            (server.entry.config.exposure(), server.entry.source.clone())
+        }) else {
+            return Some(None);
+        };
+        let build = || McpMenu {
+            title: format!("Exposure of {name}"),
+            details: Some(format!("Saved to {}.", source.display())),
+            items: EXPOSURES
+                .iter()
+                .map(|(exposure, description)| {
+                    let mark = if *exposure == current { "✓ " } else { "  " };
+                    let label = format!("{mark}{}", exposure.as_str());
+                    item(exposure.as_str(), &label, Some((*description).into()))
+                })
+                .collect(),
+            selected: Some(current.as_str().into()),
+            confirm_label: "save".into(),
+            cancel_label: "back".into(),
+            ..McpMenu::default()
+        };
+        let choice = Self::menu(ctx.ui.as_ref(), build).await?;
+        let exposure = EXPOSURES
+            .iter()
+            .map(|(exposure, _)| *exposure)
+            .find(|exposure| choice.as_deref() == Some(exposure.as_str()))
+            .filter(|exposure| *exposure != current);
+        Some(exposure.and_then(|exposure| self.set_exposure(ctx, name, exposure)))
+    }
+
+    /// pi's `runAction`; `None` when the manager closed.
+    async fn run_action(&self, ctx: &Context, name: &str, action: &str) -> Option<()> {
+        let ui = ctx.ui.as_ref();
+        let status = |title: String, message: &str| {
+            ui.mcp_manager(McpScreen::Status(title, message.to_owned()));
+        };
+        let message = match action {
+            "signin" => {
+                let title = format!("Sign in to {name}");
+                status(title.clone(), "Contacting the authorization server…");
+                self.sign_in(name, manager_prompt(&ctx.ui, title)).await
+            }
+            "reconnect" => {
+                // A failure shows as the connection's state and error.
+                status(format!("MCP server {name}"), "Reconnecting…");
+                if let Some(connection) = self.connection(name) {
+                    let _ = connection.reconnect().await;
+                }
+                None
+            }
+            "signout" => {
+                let _ = self.sign_out(name).await;
+                None
+            }
+            "tools" => {
+                self.show_tools(ui, name).await?;
+                None
+            }
+            "exposure" => self.choose_exposure(ctx, name).await?,
+            "enable" | "disable" => {
+                let enable = action == "enable";
+                let doing = if enable {
+                    "Connecting…"
+                } else {
+                    "Disconnecting…"
+                };
+                status(format!("MCP server {name}"), doing);
+                self.set_enabled(ctx, name, enable).await
+            }
+            _ => None,
+        };
+        if let Some(server) = lock(&self.shared)
+            .servers
+            .iter_mut()
+            .find(|server| server.entry.name == name)
+        {
+            server.message = message;
+        }
+        self.ensure_discovery_active(ctx);
+        Some(())
+    }
+
+    /// pi's `saveConfig`: saves `patch` to the `mcp.json` that defines the
+    /// server and applies it; why it could not be saved.
+    fn save_config(&self, name: &str, patch: ConfigPatch) -> Option<String> {
+        let source = self.server(name, |server| server.entry.source.clone())?;
+        if let Err(error) = config::update_server_config(&source, name, patch) {
+            return Some(format!("Could not update {}: {error}", source.display()));
+        }
+        if let Some(server) = lock(&self.shared)
+            .servers
+            .iter_mut()
+            .find(|server| server.entry.name == name)
+        {
+            patch.apply(&mut server.entry.config);
+        }
+        None
+    }
+
+    /// pi's `setEnabled`: why the config could not be saved; connection
+    /// errors show in the state.
+    async fn set_enabled(&self, ctx: &Context, name: &str, enabled: bool) -> Option<String> {
+        if let Some(failed) = self.save_config(name, ConfigPatch::Enabled(enabled)) {
+            return Some(failed);
+        }
+        if !enabled {
+            let connection = lock(&self.shared)
+                .servers
+                .iter_mut()
+                .find(|server| server.entry.name == name)
+                .and_then(|server| server.connection.take());
+            self.hide_tools(name);
+            if let Some(connection) = connection {
+                connection.close().await;
+            }
+            return None;
+        }
+        let (index, generation) = {
+            let shared = lock(&self.shared);
+            let index = shared
+                .servers
+                .iter()
+                .position(|server| server.entry.name == name);
+            (index, shared.generation)
+        };
+        if let Some(handle) = index.and_then(|index| self.start(index, ctx, generation)) {
+            let _ = handle.await;
+        }
+        None
+    }
+
+    /// pi's `setExposure`: why the config could not be saved.
+    fn set_exposure(&self, ctx: &Context, name: &str, exposure: McpExposure) -> Option<String> {
+        if let Some(failed) = self.save_config(name, ConfigPatch::Exposure(exposure)) {
+            return Some(failed);
+        }
+        if let Some(connection) = self
+            .connection(name)
+            .filter(|connection| connection.state() == State::Connected)
+        {
+            self.register_tools(&connection);
+        }
+        self.sync_resource_tools();
+        // Tools no longer exposed directly leave the declared set; direct
+        // tools are activated on registration.
+        let indirect: HashSet<String> = ctx
+            .tools
+            .all()
+            .into_iter()
+            .filter(|tool| tool.exposure != Exposure::Direct)
+            .map(|tool| tool.name)
+            .collect();
+        let own = lock(&self.shared)
+            .server_tools
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        let active = ctx
+            .tools
+            .active()
+            .into_iter()
+            .filter(|tool| !own.contains(tool) || !indirect.contains(tool))
+            .collect();
+        ctx.tools.set_active(active);
+        None
+    }
+
+    /// pi's `hideTools`: makes a disabled server's tools unreachable.
+    fn hide_tools(&self, name: &str) {
+        let Some(tools) = self.tools() else {
+            return;
+        };
+        let hidden: Vec<RegisteredTool> = {
+            let mut shared = lock(&self.shared);
+            let names = shared
+                .server_tools
+                .insert(name.to_owned(), Vec::new())
+                .unwrap_or_default();
+            names
+                .iter()
+                .filter_map(|tool| shared.definitions.get(tool))
+                .map(|definition| RegisteredTool {
+                    exposure: Exposure::Hidden,
+                    ..definition.clone()
+                })
+                .collect()
+        };
+        for definition in hidden {
+            tools.register(definition);
+        }
+        self.sync_resource_tools();
+    }
+}
+
+/// The sign-in prompt of `/mcp login`: notifications and an input dialog.
+fn login_prompt(ctx: &Context, name: &str) -> SignInPrompt {
+    let (ui, server, tui) = (Arc::clone(&ctx.ui), name.to_owned(), ctx.mode == Mode::Tui);
+    let show_authorization_url = Box::new(move |url: &str| {
+        // pi links both lines; yapi shows the text and the terminal detects the URL.
+        let lines = match tui {
+            true if cfg!(target_os = "macos") => format!("{url}\nCmd+click to open"),
+            true => format!("{url}\nCtrl+click to open"),
+            false => url.to_owned(),
+        };
+        ui.notify(
+            &format!("Sign in to MCP server \"{server}\" in your browser:\n{lines}"),
+            NotifyKind::Info,
+        );
+        yapi_ai::auth::open_browser(url);
+    });
+    let (ui, server) = (Arc::clone(&ctx.ui), name.to_owned());
+    let redirect_url = Box::new(move |cancel| {
+        ui.input(
+            &format!("Waiting for sign-in to \"{server}\". If the browser cannot reach this machine, paste the URL it was redirected to."),
+            Some("http://127.0.0.1:.../callback?code=..."),
+            DialogOptions {
+                cancel: Some(cancel),
+                ..DialogOptions::default()
+            },
+        )
+    });
+    SignInPrompt {
+        show_authorization_url,
+        redirect_url,
+    }
+}
+
+/// The sign-in prompt of the `/mcp` manager: its screen for the redirect URL.
+fn manager_prompt(ui: &Arc<dyn ExtensionUi>, title: String) -> SignInPrompt {
+    let url = Arc::new(Mutex::new(String::new()));
+    let shown = Arc::clone(&url);
+    let ui = Arc::clone(ui);
+    SignInPrompt {
+        show_authorization_url: Box::new(move |link: &str| {
+            link.clone_into(&mut lock(&shown));
+            yapi_ai::auth::open_browser(link);
+        }),
+        redirect_url: Box::new(move |cancel| {
+            let (ui, title, url) = (Arc::clone(&ui), title.clone(), lock(&url).clone());
+            Box::pin(async move {
+                let (reply, answer) = oneshot::channel();
+                ui.mcp_manager(McpScreen::RedirectUrl(title.clone(), url, reply));
+                let value = tokio::select! {
+                    value = answer => value.ok().flatten(),
+                    () = cancel.cancelled() => None,
+                };
+                ui.mcp_manager(McpScreen::Status(title, "Connecting…".into()));
+                value
+            })
+        }),
+    }
+}
+
+/// A menu item.
+fn item(value: &str, label: &str, description: Option<String>) -> AutocompleteItem {
+    AutocompleteItem {
+        value: value.to_owned(),
+        label: label.to_owned(),
+        description,
+    }
+}
+
+/// pi's `attentionRank`: servers that need the user first.
+fn attention_rank(server: &Server) -> u8 {
+    if !server.entry.config.is_enabled() {
+        return 5;
+    }
+    match server
+        .connection
+        .as_ref()
+        .map(|connection| connection.state())
+    {
+        Some(State::NeedsAuth) => 0,
+        Some(State::Failed) => 1,
+        Some(State::Disconnected) => 2,
+        Some(State::Connected) => 4,
+        _ => 3,
+    }
+}
+
+/// What an exposure means, for the tools menu.
+fn describe_exposure(exposure: McpExposure) -> &'static str {
+    EXPOSURES
+        .iter()
+        .find(|(known, _)| *known == exposure)
+        .map_or("unreachable", |(_, description)| description)
+}
+
+/// What `/mcp` shows without servers.
+fn no_servers(agent_dir: &Path) -> String {
+    format!(
+        "No MCP servers configured. Add them to {} or .yapi/mcp.json.",
+        agent_dir.join(ConfigFile::Mcp.file_name()).display()
+    )
+}
+
+impl McpExtension {
     /// Reconnects servers that need a sign-in when their credentials were
     /// stored since, as by `yapi mcp login` in another process.
     async fn reconnect_signed_in(&self, ctx: &Context) {
@@ -786,9 +1344,13 @@ impl McpExtension {
         Self::wait_for(startup.into_iter().collect(), &ctx.cancel).await;
         let words: Vec<&str> = args.split_whitespace().collect();
         let Some((action, rest)) = words.split_first() else {
-            // pi opens a manager in the TUI; yapi shows the status in every mode.
-            ctx.ui
-                .notify(&self.format_status(&ctx.agent_dir), NotifyKind::Info);
+            if ctx.mode == Mode::Tui {
+                self.manage(ctx).await;
+                ctx.ui.mcp_manager(McpScreen::Close);
+            } else {
+                ctx.ui
+                    .notify(&self.format_status(&ctx.agent_dir), NotifyKind::Info);
+            }
             return;
         };
         if rest.len() > 1 {
@@ -818,7 +1380,7 @@ impl McpExtension {
                     );
                     return;
                 }
-                if let Some(failure) = self.sign_in(&name, ctx).await {
+                if let Some(failure) = self.sign_in(&name, login_prompt(ctx, &name)).await {
                     let kind = if failure == "Sign-in cancelled." {
                         NotifyKind::Info
                     } else {
@@ -840,17 +1402,13 @@ impl McpExtension {
                 let Some(name) = self.pick(name, ctx, oauth, needs_auth, none).await else {
                     return;
                 };
-                let Some(connection) = self.connection(&name) else {
-                    return;
-                };
-                let removed = match connection.remove_credentials().await {
+                let removed = match self.sign_out(&name).await {
                     Ok(removed) => removed,
                     Err(error) => {
                         ctx.ui.notify(&error.to_string(), NotifyKind::Error);
                         return;
                     }
                 };
-                connection.sign_out().await;
                 let message = if removed {
                     format!("Signed out of MCP server \"{name}\".")
                 } else {
@@ -1015,6 +1573,7 @@ impl Extension for McpExtension {
                         entry,
                         connection: None,
                         ready: None,
+                        message: None,
                     })
                     .collect();
                 shared.generation

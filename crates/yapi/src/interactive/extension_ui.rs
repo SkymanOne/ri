@@ -14,6 +14,7 @@ use yapi_core::extensions::{
     ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement,
     RemoteComponent, ShortcutBinding, Widget, WorkingIndicator,
 };
+use yapi_core::mcp::extension::McpScreen;
 use yapi_tui::color::Color;
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::theme::{Paint, Theme};
@@ -57,6 +58,8 @@ pub(super) enum Request {
     EditorText(String),
     Paste(String),
     Custom(RemoteComponent, CustomOptions),
+    /// A screen of the `/mcp` manager.
+    Mcp(McpScreen),
     Close(RemoteComponent),
     /// An extension's editor, and whether it embeds the working status.
     SetEditor(Option<RemoteComponent>, bool),
@@ -310,6 +313,24 @@ impl ExtensionUi for InteractiveUi {
 
     fn custom(&self, component: RemoteComponent, options: CustomOptions) {
         self.send(Request::Custom(component, options));
+    }
+
+    fn mcp_manager(&self, screen: McpScreen) {
+        // A menu redraws when it changes.
+        if let McpScreen::Menu(menus, _) = &screen {
+            let (mut menus, tx, epoch) = (menus.clone(), self.tx.clone(), self.epoch);
+            tokio::spawn(async move {
+                while menus.changed().await.is_ok() {
+                    if tx
+                        .send(Event::Ui(epoch, Box::new(Request::Render)))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+        self.send(Request::Mcp(screen));
     }
 
     fn close(&self, component: RemoteComponent) {
@@ -734,6 +755,7 @@ impl super::App {
     /// Handles a request from an extension of the current session.
     pub(super) fn on_ui_request(&mut self, request: Request) {
         use super::ExtensionReply;
+        use super::mcp_manager::McpManager;
         use super::selectors::{ChoiceDialog, Countdown, InputDialog, Selector, TextDialog};
         let countdown = |timeout: Option<Duration>| {
             timeout.map(|timeout| Countdown(std::time::Instant::now() + timeout))
@@ -871,6 +893,17 @@ impl super::App {
                 self.open_extension_dialog(Selector::Remote(Box::new(view)), None);
                 self.overlay = options.overlay.then_some(options.overlay_options);
             }
+            Request::Mcp(screen) => match McpManager::new(screen) {
+                Some(manager) => match &mut self.selector {
+                    Some(Selector::Mcp(open)) => **open = manager,
+                    _ => self.open_extension_dialog(Selector::Mcp(Box::new(manager)), None),
+                },
+                None => {
+                    if matches!(self.selector, Some(Selector::Mcp(_))) {
+                        self.selector = None;
+                    }
+                }
+            },
             Request::Close(component) => {
                 if matches!(&self.selector, Some(Selector::Remote(view)) if view.key() == component.key())
                 {

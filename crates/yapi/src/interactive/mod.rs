@@ -17,6 +17,7 @@ mod footer;
 mod header;
 pub mod keybindings;
 mod login;
+mod mcp_manager;
 pub mod picker;
 mod scoped_models;
 mod selectors;

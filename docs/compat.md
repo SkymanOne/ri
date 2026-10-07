@@ -50,7 +50,7 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 
 | Area | Pi | yapi today | Issue |
 |---|---|---|---|
-| MCP manager | `/mcp` opens a manager, and `pi.registerMcpServer` adds servers | `/mcp` shows the status only, and `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
+| Extension MCP servers | `pi.registerMcpServer` adds servers | `pi.registerMcpServer` has no effect. | [#28](https://github.com/SkymanOne/yapi/issues/28) |
 | Entry renderers and markdown transformers | `registerEntryRenderer` and `registerMarkdownTransformer` change how entries and markdown render | Recorded but unused. | [#30](https://github.com/SkymanOne/yapi/issues/30) |
 | Markdown | LaTeX as Unicode math, highlighted code blocks, Mermaid diagrams | LaTeX as written, code blocks and Mermaid source in the code block color. | [#31](https://github.com/SkymanOne/yapi/issues/31) |
 | Syntax highlighting in tool rows | `read` results, `write` previews and codemode scripts are highlighted | Shown in the default color. | [#32](https://github.com/SkymanOne/yapi/issues/32) |

@@ -1,0 +1,26 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " Tools of demo",
+    " Exposure codemode: called from codemode scripts, which find them with searchTools()",
+    "",
+    "→ echo                            Echo the given text back.",
+    "  add                             Add two numbers and return the sum as structured content.",
+    "  fail                            Always fails.",
+    "  progress                        Report progress twice, then finish.",
+    "  picture                         Return an image and resources.",
+    "  big                             Return a long text.",
+    "  sleep                           Wait, then answer.",
+    "  exit                            End the server.",
+    "  env                             Read an environment variable of the server.",
+    "",
+    " enter back • escape/ctrl+c back",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}
