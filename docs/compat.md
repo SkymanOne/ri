@@ -57,7 +57,7 @@ Pi features yapi does not have yet, or has only in part. Each row links its issu
 | Images in the terminal | Inline images, with the "Show images" and "Image width" settings | Not shown. | [#34](https://github.com/SkymanOne/yapi/issues/34) |
 | Clipboard image paste | `app.clipboard.pasteImage` attaches the clipboard's image | The key does nothing. | [#35](https://github.com/SkymanOne/yapi/issues/35) |
 | Mouse selection | Selects text in fullscreen mode, and `fullscreenCopyOnSelect` | No mouse selection. The setting is saved and ignored. | [#36](https://github.com/SkymanOne/yapi/issues/36) |
-| `/changelog` and update notices | Shows the changelog and notices of new versions and package updates | `/changelog` reports no entries, and no notices are shown. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
+| Update notices | Checks at startup for new versions and package updates and shows a notice | Makes no such checks and shows no update notices. `/changelog` and the list of changes after an upgrade work as in Pi. | [#37](https://github.com/SkymanOne/yapi/issues/37) |
 | Codemode | `codemode.mode: "only"` hides direct tools, scripts use grammar-constrained sampling on the Responses APIs, and a script waits for the MCP servers it names | `only` acts as `on`, scripts are ordinary tool calls, and scripts do not wait for servers. | [#38](https://github.com/SkymanOne/yapi/issues/38) |
 | OpenAI custom tools | Sent as grammar-constrained tools | Sent as function tools. | [#39](https://github.com/SkymanOne/yapi/issues/39) |
 | Private npm registries | npm reads `.npmrc`, including registry credentials | `npm_config_registry` or the public registry, without credentials. | [#40](https://github.com/SkymanOne/yapi/issues/40) |
