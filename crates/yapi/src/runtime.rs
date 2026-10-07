@@ -1,13 +1,21 @@
-//! Session replacement shared by the interactive and RPC modes: the session
-//! files that pi's `AgentSessionRuntime` (`core/agent-session-runtime.ts` in pi
-//! `v1.0.0`) builds for a new session, a fork or clone, and a switch. Each mode
-//! settles the current session first and builds the replacement through its
-//! [`SessionFactory`].
+//! Session replacement shared by the modes: the session files that pi's
+//! `AgentSessionRuntime` (`core/agent-session-runtime.ts` in pi `v1.0.0`)
+//! builds for a new session, a fork or clone, and a switch, and the runtime
+//! of the RPC and print modes. Each mode settles the current session first
+//! and builds the replacement through its [`SessionFactory`].
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use yapi_core::agent_session::AgentSession;
+use futures_util::future::LocalBoxFuture;
+use tokio::sync::{mpsc, oneshot};
+use yapi_core::agent_session::{AgentSession, Replacement, SessionChange};
+use yapi_core::extensions::{SessionAction, SessionActions};
 use yapi_core::session::SessionManager;
+use yapi_types::event::AgentEvent;
 use yapi_types::message::Message;
 use yapi_types::session::FileEntry;
 
@@ -175,4 +183,210 @@ pub fn open_session(
         });
     }
     Ok(manager)
+}
+
+/// An extension command's session change, with where its outcome goes.
+pub type ActionRequest = (SessionAction, oneshot::Sender<Result<bool, String>>);
+
+/// [`SessionActions`] that `send` each change to a mode's loop and wait for
+/// its outcome there; `send` says whether the loop took it.
+pub fn actions(send: impl Fn(ActionRequest) -> bool + Send + Sync + 'static) -> SessionActions {
+    Arc::new(move |action| {
+        let (reply, outcome) = oneshot::channel();
+        let sent = send((action, reply));
+        Box::pin(async move {
+            if !sent {
+                return Err("The session has ended".to_owned());
+            }
+            outcome
+                .await
+                .unwrap_or_else(|_| Err("The session has ended".to_owned()))
+        })
+    })
+}
+
+/// Forwards `session`'s events while it is the newest session `epoch`
+/// counted, so a replaced session's listeners stay silent.
+pub fn forward_newest(
+    session: &AgentSession,
+    epoch: &Arc<AtomicU64>,
+    forward: impl Fn(&AgentEvent) + Send + Sync + 'static,
+) {
+    let current = epoch.fetch_add(1, Ordering::SeqCst) + 1;
+    let epoch = Arc::clone(epoch);
+    session.subscribe(Box::new(move |event| {
+        if epoch.load(Ordering::SeqCst) == current {
+            forward(event);
+        }
+    }));
+}
+
+/// A session file named by an extension or an RPC client: pi resolves it
+/// against the working directory.
+pub fn session_path(path: &str) -> PathBuf {
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| PathBuf::from(path))
+}
+
+/// The session another replaced and why, as `session_start` reports it.
+pub type Replaced = Option<(Replacement, Option<String>)>;
+
+/// Makes a session current in a mode: streams its events and starts its
+/// extensions, telling them the session it replaced.
+pub type Bind = Box<dyn Fn(AgentSession, SessionActions, Replaced) -> LocalBoxFuture<'static, ()>>;
+
+/// pi's `AgentSessionRuntime` for the RPC and print modes: the current
+/// session, which session changes replace through the factory. Runs on a
+/// `LocalSet`.
+pub struct Runtime {
+    /// The current session and the session it replaced.
+    current: RefCell<(AgentSession, Replaced)>,
+    factory: SessionFactory,
+    bind: Bind,
+    actions: SessionActions,
+}
+
+impl Runtime {
+    /// A runtime whose extension commands change sessions through it, which
+    /// starts with `session` current.
+    pub async fn start(session: AgentSession, factory: SessionFactory, bind: Bind) -> Rc<Runtime> {
+        let (sender, mut receiver) = mpsc::unbounded_channel::<ActionRequest>();
+        let runtime = Rc::new(Runtime {
+            current: RefCell::new((session.clone(), None)),
+            factory,
+            bind,
+            actions: actions(move |request| sender.send(request).is_ok()),
+        });
+        let weak = Rc::downgrade(&runtime);
+        tokio::task::spawn_local(async move {
+            while let Some((action, reply)) = receiver.recv().await {
+                let Some(runtime) = weak.upgrade() else {
+                    return;
+                };
+                // Each change runs beside the command that asked for it.
+                tokio::task::spawn_local(async move {
+                    let _ = reply.send(runtime.act(action).await);
+                });
+            }
+        });
+        runtime.bind(session, None).await;
+        runtime
+    }
+
+    /// The current session.
+    pub fn session(&self) -> AgentSession {
+        self.current.borrow().0.clone()
+    }
+
+    /// Makes `session`, which replaced another as `replaced` says, current
+    /// and starts its extensions.
+    async fn bind(&self, session: AgentSession, replaced: Replaced) {
+        *self.current.borrow_mut() = (session.clone(), replaced.clone());
+        (self.bind)(session, Arc::clone(&self.actions), replaced).await;
+    }
+
+    /// Starts the current session's extensions again, as pi's RPC session
+    /// commands do after the runtime did.
+    pub async fn rebind(&self) {
+        let (session, replaced) = self.current.borrow().clone();
+        self.bind(session, replaced).await;
+    }
+
+    /// Carries out an extension command's session change, as pi's RPC and
+    /// print modes do: whether an extension cancelled it.
+    async fn act(&self, action: SessionAction) -> Result<bool, String> {
+        match action {
+            SessionAction::New { parent } => self.new_session(parent).await,
+            SessionAction::Fork { entry_id, at } => Ok(self.fork(&entry_id, at).await?.is_none()),
+            SessionAction::Tree { target_id, options } => self
+                .session()
+                .navigate_tree(&target_id, options)
+                .await
+                .map(|outcome| outcome.cancelled),
+            SessionAction::Switch { path } => self.switch_session(&path).await,
+            SessionAction::Reload => self.reload().await.map(|()| false),
+            SessionAction::Replaced => Ok(false),
+        }
+    }
+
+    /// pi's runtime replacement, unless an extension cancels `change`, which
+    /// this answers.
+    async fn change(
+        &self,
+        change: SessionChange,
+        build: impl FnOnce(&AgentSession) -> Result<SessionManager, String>,
+    ) -> Result<bool, String> {
+        if self.session().cancels(&change).await {
+            return Ok(true);
+        }
+        self.replace(change.reason(), build).await?;
+        Ok(false)
+    }
+
+    /// pi's runtime replacement: `build` makes the session file, the current
+    /// run settles and is persisted, the current session's extensions stop,
+    /// and a session built around the file takes over for `reason`.
+    async fn replace(
+        &self,
+        reason: Replacement,
+        build: impl FnOnce(&AgentSession) -> Result<SessionManager, String>,
+    ) -> Result<(), String> {
+        let current = self.session();
+        let previous = current.with_session(|manager| file_of(manager));
+        let manager = build(&current)?;
+        current.abort();
+        current.abort_bash();
+        current.wait_for_idle().await;
+        current.shutdown_for(reason, file_of(&manager)).await;
+        let session = (self.factory)(manager).map_err(|error| error.to_string())?;
+        if reason == Replacement::Reload {
+            session.keep_selection(&current);
+        }
+        self.bind(session, Some((reason, previous))).await;
+        Ok(())
+    }
+
+    /// pi's `newSession`: whether an extension cancelled it.
+    pub async fn new_session(&self, parent: Option<String>) -> Result<bool, String> {
+        self.change(SessionChange::New, |current| {
+            new_session(current, parent).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// pi's `fork` at `entry_id`, keeping the entry when `at`: the forked
+    /// user message's text, or `None` when an extension cancelled it.
+    pub async fn fork(&self, entry_id: &str, at: bool) -> Result<Option<Option<String>>, String> {
+        let mut text = None;
+        let change = SessionChange::Fork {
+            entry_id: entry_id.to_owned(),
+            at,
+        };
+        let cancelled = self
+            .change(change, |current| {
+                let fork = plan_fork(current, entry_id, at)?;
+                text = fork.text.clone();
+                fork.build(current)
+            })
+            .await?;
+        Ok((!cancelled).then_some(text))
+    }
+
+    /// pi's `switchSession` to `path`, relative to the working directory:
+    /// whether an extension cancelled it.
+    pub async fn switch_session(&self, path: &str) -> Result<bool, String> {
+        let fallback = self.session().cwd().to_path_buf();
+        self.change(SessionChange::Resume(path.to_owned()), |_| {
+            open_session(&session_path(path), None, &fallback).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// pi's `reload`: the session again, with its extensions, resources and
+    /// settings loaded anew, keeping its model and thinking level.
+    pub async fn reload(&self) -> Result<(), String> {
+        self.replace(Replacement::Reload, |current| Ok(current.take_session()))
+            .await
+    }
 }

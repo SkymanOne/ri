@@ -61,7 +61,7 @@ async fn start(dir: &Path, scripts: &[&str]) -> (AgentSession, Faux) {
     let session = session(&faux, dir, vec![codemode()]);
     session.set_active_tools(vec!["read".into(), "bash".into(), "codemode".into()]);
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     (session, faux)
 }
@@ -482,7 +482,7 @@ export default function (pi) {
     let session = session(&faux, &dir, extensions);
     session.set_active_tools(vec!["read".into(), "codemode".into()]);
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     let codemode = session.tools().with(|registry| {
         registry

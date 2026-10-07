@@ -1,0 +1,24 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "id": "<id-1>",
+      "type": "response",
+      "command": "get_messages",
+      "success": true,
+      "data": {
+        "messages": [
+          {
+            "role": "custom",
+            "customType": "note",
+            "content": "started",
+            "display": true,
+            "timestamp": "<timestamp>"
+          }
+        ]
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

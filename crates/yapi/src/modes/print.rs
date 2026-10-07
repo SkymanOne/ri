@@ -3,11 +3,13 @@
 
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use yapi_core::agent_session::failed;
 use yapi_core::extensions::{Mode, NoUi};
 use yapi_types::message::ContentBlock;
 
+use crate::runtime::{Bind, Runtime, SessionFactory, forward_newest};
 use crate::startup::Startup;
 
 /// Writes one line to stdout, ignoring a closed pipe.
@@ -18,8 +20,10 @@ fn write_line(line: &str) {
     let _ = stdout.flush();
 }
 
-/// Runs print mode; returns the process exit code.
-pub async fn run(startup: Startup, json: bool) -> u8 {
+/// Runs print mode; returns the process exit code. Extension commands
+/// replace the session through `factory`, and later prompts go to the
+/// replacement.
+pub async fn run(startup: Startup, json: bool, factory: SessionFactory) -> u8 {
     let Startup {
         session,
         initial_message,
@@ -28,17 +32,27 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
         ..
     } = startup;
     let mode = if json { Mode::Json } else { Mode::Print };
-    session.bind_extensions(Arc::new(NoUi), mode, None).await;
-    if json {
-        if let Some(header) = session.header_json() {
-            write_line(&header);
-        }
-        session.subscribe(Box::new(|event| {
-            if let Ok(line) = yapi_types::json::to_string(event) {
-                write_line(&line);
-            }
-        }));
+    if json && let Some(header) = session.header_json() {
+        write_line(&header);
     }
+    // The current session's number; listeners of older ones stay silent.
+    let epoch = Arc::new(AtomicU64::new(0));
+    // As in pi, a session's events stream once its extensions have started.
+    let bind: Bind = Box::new(move |session, actions, replaced| {
+        let epoch = Arc::clone(&epoch);
+        Box::pin(async move {
+            session
+                .bind_extensions(Arc::new(NoUi), mode, Some(actions), replaced)
+                .await;
+            if json {
+                forward_newest(&session, &epoch, |event| {
+                    if let Ok(line) = yapi_types::json::to_string(event) {
+                        write_line(&line);
+                    }
+                });
+            }
+        })
+    });
 
     let mut prompts = Vec::new();
     // pi skips an empty first message, images included.
@@ -46,13 +60,23 @@ pub async fn run(startup: Startup, json: bool) -> u8 {
         prompts.push((message, initial_images));
     }
     prompts.extend(messages.into_iter().map(|message| (message, Vec::new())));
-    for (message, images) in prompts {
-        if let Err(error) = session.prompt(&message, images).await {
-            eprintln!("{error}");
-            session.shutdown().await;
-            return 1;
-        }
-    }
+    let local = tokio::task::LocalSet::new();
+    let session = local
+        .run_until(async move {
+            let runtime = Runtime::start(session, factory, bind).await;
+            for (message, images) in prompts {
+                if let Err(error) = runtime.session().prompt(&message, images).await {
+                    eprintln!("{error}");
+                    runtime.session().shutdown().await;
+                    return None;
+                }
+            }
+            Some(runtime.session())
+        })
+        .await;
+    let Some(session) = session else {
+        return 1;
+    };
     session.shutdown().await;
 
     if !json

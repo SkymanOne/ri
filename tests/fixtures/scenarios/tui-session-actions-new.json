@@ -1,0 +1,27 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Context]",
+    "  AGENTS.md",
+    "",
+    "[Extensions]",
+    "  actions.ts",
+    "",
+    " [note]",
+    "",
+    " seeded",
+    "",
+    " Warning: start reload",
+    "",
+    " Reloaded keybindings, extensions, skills, prompts, themes, and context files",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

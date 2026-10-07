@@ -375,7 +375,11 @@ async fn run(parsed: &mut args::Args) -> u8 {
     // pi's print mode kills running commands and exits with the signal's
     // code on SIGTERM and SIGHUP. The run stays alive until they are killed:
     // dropping it would stop tracking its commands without killing them.
-    let print = modes::print::run(startup, parsed.mode == Some(Mode::Json));
+    let print = modes::print::run(
+        startup,
+        parsed.mode == Some(Mode::Json),
+        startup::factory(parsed, extensions),
+    );
     tokio::pin!(print);
     tokio::select! {
         code = &mut print => code,

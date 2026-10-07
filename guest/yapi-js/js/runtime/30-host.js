@@ -50,17 +50,33 @@
 		throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading.");
 	};
 	const action = (kind) => (payload) => (bound ? yapi.request(kind, payload) : notInitialized());
+	// The requests behind `sendMessage` and `sendUserMessage`.
+	const messageRequest = (message, options) => ({ message: plain(message), options: plain(options) });
+	const userMessageRequest = (content, options) => ({ content: plain(content), options: plain(options) });
+
+	// ----- staleness ---------------------------------------------------------------------------
+	// pi stops a session's extension API and contexts once another session
+	// replaces it. Each session's extensions belong to one generation.
+	const STALE =
+		"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().";
+	let generation = { stale: false };
+	const assertActive = (born) => {
+		if (born.stale) throw new Error(STALE);
+	};
 
 	// ----- the pi API ------------------------------------------------------------------------
 	function createApi(extension) {
 		const pendingFlagValues = new Map();
 		let state = "loading";
-		// Every method throws once the extension has failed to load.
+		const born = generation;
+		// Every method throws once the extension has failed to load or its
+		// session was replaced.
 		const active = (methods) => {
 			for (const [name, method] of Object.entries(methods)) {
 				if (typeof method !== "function") continue;
 				methods[name] = (...args) => {
 					if (state === "failed") throw new Error(`Extension "${extension.path}" failed to load and its API is no longer active.`);
+					assertActive(born);
 					return method(...args);
 				};
 			}
@@ -124,10 +140,10 @@
 				return flagValues.has(name) ? flagValues.get(name) : pendingFlagValues.get(name);
 			},
 			sendMessage(message, options) {
-				action("session.sendMessage")({ message: plain(message), options: plain(options) });
+				action("session.sendMessage")(messageRequest(message, options));
 			},
 			sendUserMessage(content, options) {
-				action("session.sendUserMessage")({ content: plain(content), options: plain(options) });
+				action("session.sendUserMessage")(userMessageRequest(content, options));
 			},
 			appendEntry(customType, data) {
 				action("session.appendEntry")({ customType, data: plain(data) });
@@ -642,7 +658,10 @@
 			theme,
 			getAllThemes: () => request("getAllThemes", {}) ?? [],
 			getTheme: () => undefined,
-			setTheme: () => ({ success: false, error: "Themes cannot be changed from yapi extensions yet" }),
+			setTheme: (theme) =>
+				typeof theme === "string"
+					? yapi.request("ui.setTheme", { name: theme })
+					: { success: false, error: "yapi sets themes by name, not Theme objects" },
 			getToolsExpanded: () => !!request("getToolsExpanded", {}),
 			setToolsExpanded: (expanded) => request("setToolsExpanded", { expanded }),
 		};
@@ -669,7 +688,13 @@
 	];
 	function createSessionManager() {
 		const manager = {};
-		for (const method of sessionMethods) manager[method] = (...args) => yapi.request("session.read", { method, args: plain(args) });
+		for (const method of sessionMethods) {
+			manager[method] = (...args) => {
+				const value = yapi.request("session.read", { method, args: plain(args) });
+				// pi answers a missing value with undefined, except a missing leaf or header.
+				return value === null && method !== "getLeafId" && method !== "getHeader" ? undefined : value;
+			};
+		}
 		return manager;
 	}
 	function createModelRegistry() {
@@ -740,17 +765,58 @@
 			getSystemPrompt: () => yapi.request("agent.systemPrompt", {}) ?? "",
 			...extra,
 		};
-		return context;
+		// Every member throws once the session is replaced.
+		const born = generation;
+		const guarded = {};
+		for (const [key, value] of Object.entries(context)) {
+			Object.defineProperty(guarded, key, {
+				enumerable: true,
+				get() {
+					assertActive(born);
+					return value;
+				},
+			});
+		}
+		return guarded;
 	}
-	function createCommandContext(data) {
+	function createCommandContext(data, extra = {}) {
+		// pi's session replacements: `setup` and `withSession` run once the
+		// replacement has started, `withSession` with a context bound to it.
+		const replace = async (kind, payload, options) => {
+			const result = await yapi.op(kind, payload);
+			if (!result?.cancelled) {
+				if (typeof options?.setup === "function") await options.setup(createSessionManager());
+				if (typeof options?.withSession === "function") await options.withSession(createReplacedContext());
+				await yapi.op("session.replaced", {});
+			}
+			return { cancelled: !!result?.cancelled };
+		};
 		return createContext(data, {
 			getSystemPromptOptions: () => yapi.request("agent.systemPromptOptions", {}) ?? {},
 			waitForIdle: () => yapi.op("agent.waitForIdle", {}),
-			newSession: (options) => yapi.op("session.new", { parentSession: options?.parentSession }),
-			fork: (entryId, options) => yapi.op("session.fork", { entryId, position: options?.position }),
-			navigateTree: (targetId, options) => yapi.op("session.navigateTree", { targetId, ...plain(options) }),
-			switchSession: (sessionPath) => yapi.op("session.switch", { sessionPath }),
-			reload: () => yapi.op("session.reload", {}),
+			newSession: (options) => replace("session.new", { parentSession: options?.parentSession }, options),
+			fork: (entryId, options) => replace("session.fork", { entryId, position: options?.position }, options),
+			navigateTree: async (targetId, options) => {
+				const result = await yapi.op("session.navigateTree", { targetId, ...plain(options) });
+				return { cancelled: !!result?.cancelled };
+			},
+			switchSession: (sessionPath, options) => replace("session.switch", { sessionPath }, options),
+			reload: async () => {
+				await yapi.op("session.reload", {});
+				await yapi.op("session.replaced", {});
+			},
+			...extra,
+		});
+	}
+	/** pi's `ReplacedSessionContext`: a command context for the session now current. */
+	function createReplacedContext() {
+		return createCommandContext(yapi.request("session.context", {}) ?? {}, {
+			sendMessage: async (message, options) => {
+				yapi.request("session.sendMessage", messageRequest(message, options));
+			},
+			sendUserMessage: async (content, options) => {
+				yapi.request("session.sendUserMessage", userMessageRequest(content, options));
+			},
 		});
 	}
 
@@ -1092,6 +1158,8 @@
 		},
 		async reload() {
 			bound = false;
+			generation.stale = true;
+			generation = { stale: false };
 			for (const handle of [...components.keys()]) unmount(handle);
 			widgetHandles.clear();
 			transcriptViews.clear();

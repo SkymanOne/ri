@@ -6,7 +6,7 @@
 //! or `steer` answer while a prompt runs. Events of a replaced session are
 //! dropped.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,15 +21,14 @@ use yapi_types::sync::lock;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncBufReadExt;
-use yapi_core::agent_session::{AgentSession, InputSource, Replacement, SessionChange, UserBash};
-use yapi_core::session::SessionManager;
+use yapi_core::agent_session::{AgentSession, InputSource, UserBash};
 use yapi_types::message::Message;
 use yapi_types::rpc::{
     self, CommandSource, ContextUsage, ExtensionUiResponse, ForkMessage, RpcCommand, SessionState,
     SessionStats, SlashCommand, StreamingBehavior, TokenTotals, response_line,
 };
 
-use crate::runtime::{self, SessionFactory};
+use crate::runtime::{self, Runtime, SessionFactory};
 
 enum Out {
     Line(String),
@@ -97,10 +96,7 @@ fn value<T: Serialize + ?Sized>(value: &T) -> Result<Value, String> {
 type Reply = Result<Option<String>, String>;
 
 struct Rpc {
-    session: RefCell<AgentSession>,
-    /// The current session's number; listeners of older ones stay silent.
-    epoch: Arc<AtomicU64>,
-    factory: SessionFactory,
+    runtime: Rc<Runtime>,
     out: Output,
     ui: Arc<RpcUi>,
 }
@@ -319,69 +315,15 @@ impl ExtensionUi for RpcUi {
     fn theme(&self) -> Value {
         lock(&self.theme).clone()
     }
+
+    fn set_theme(&self, _name: &str) -> Result<(), String> {
+        Err("Theme switching not supported in RPC mode".into())
+    }
 }
 
 impl Rpc {
     fn session(&self) -> AgentSession {
-        self.session.borrow().clone()
-    }
-
-    /// Streams `session`'s events, makes it current and starts its
-    /// extensions, telling them the session it replaced, if any.
-    async fn bind(&self, session: AgentSession, replaced: Option<(Replacement, Option<String>)>) {
-        let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
-        let current = Arc::clone(&self.epoch);
-        let out = self.out.clone();
-        let ui = Arc::clone(&self.ui);
-        session.subscribe(Box::new(move |event| {
-            if current.load(Ordering::SeqCst) == epoch
-                && let Ok(line) = yapi_types::json::to_string(event)
-            {
-                out.line(line);
-            }
-            if matches!(event, yapi_types::event::AgentEvent::AgentSettled) {
-                ui.check_shutdown();
-            }
-        }));
-        *self.session.borrow_mut() = session.clone();
-        session
-            .bind_extensions(
-                Arc::clone(&self.ui) as Arc<dyn ExtensionUi>,
-                Mode::Rpc,
-                replaced,
-            )
-            .await;
-    }
-
-    /// pi's runtime replacement, unless an extension cancels `change`, which
-    /// this answers: `build` makes the session file, the current run
-    /// settles and is persisted, the current session's extensions stop, and
-    /// a session built around the file takes over.
-    async fn replace(
-        &self,
-        change: SessionChange,
-        build: impl FnOnce(&AgentSession) -> Result<SessionManager, String>,
-    ) -> Result<bool, String> {
-        let current = self.session();
-        if current.cancels(&change).await {
-            return Ok(true);
-        }
-        let reason = change.reason();
-        let previous = current.with_session(|manager| runtime::file_of(manager));
-        let manager = build(&current)?;
-        current.abort();
-        current.abort_bash();
-        current.wait_for_idle().await;
-        current
-            .shutdown_for(reason, runtime::file_of(&manager))
-            .await;
-        let session = (self.factory)(manager).map_err(|error| error.to_string())?;
-        // pi's runtime rebinds the replacement, and then its RPC command
-        // handler binds it again, so extensions see `session_start` twice.
-        self.bind(session.clone(), Some((reason, previous.clone())))
-            .await;
-        self.bind(session, Some((reason, previous))).await;
-        Ok(false)
+        self.runtime.session()
     }
 
     fn reply(&self, id: Option<&Value>, command: Option<&str>, reply: Reply) {
@@ -548,11 +490,10 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             data(&json!({"steering": steering, "followUp": follow_up}))
         }
         RpcCommand::NewSession { parent_session } => {
-            let cancelled = rpc
-                .replace(SessionChange::New, |current| {
-                    runtime::new_session(current, parent_session).map_err(|error| error.to_string())
-                })
-                .await?;
+            let cancelled = rpc.runtime.new_session(parent_session).await?;
+            if !cancelled {
+                rpc.runtime.rebind().await;
+            }
             data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::GetState => data(&state(&session)),
@@ -657,49 +598,27 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
             data(&serde_json::json!({"path": path.display().to_string()}))
         }
         RpcCommand::SwitchSession { session_path } => {
-            let fallback = session.cwd().to_path_buf();
-            // pi resolves the path against the working directory.
-            let path = std::env::current_dir()
-                .map(|cwd| cwd.join(&session_path))
-                .unwrap_or_else(|_| std::path::PathBuf::from(&session_path));
-            let cancelled = rpc
-                .replace(SessionChange::Resume(session_path), |_| {
-                    runtime::open_session(&path, None, &fallback).map_err(|error| error.to_string())
-                })
-                .await?;
+            let cancelled = rpc.runtime.switch_session(&session_path).await?;
+            if !cancelled {
+                rpc.runtime.rebind().await;
+            }
             data(&json!({ "cancelled": cancelled }))
         }
-        RpcCommand::Fork { entry_id } => {
-            let mut text = None;
-            let change = SessionChange::Fork {
-                entry_id: entry_id.clone(),
-                at: false,
-            };
-            let cancelled = rpc
-                .replace(change, |current| {
-                    let fork = runtime::plan_fork(current, &entry_id, false)?;
-                    text = fork.text.clone();
-                    fork.build(current)
-                })
-                .await?;
-            if cancelled {
-                return data(&json!({"cancelled": true}));
+        RpcCommand::Fork { entry_id } => match rpc.runtime.fork(&entry_id, false).await? {
+            None => data(&json!({"cancelled": true})),
+            Some(text) => {
+                rpc.runtime.rebind().await;
+                data(&json!({"text": text, "cancelled": false}))
             }
-            data(&json!({"text": text, "cancelled": false}))
-        }
+        },
         RpcCommand::Clone => {
             let leaf = session
                 .with_session(|manager| manager.leaf_id().map(str::to_owned))
                 .ok_or("Cannot clone session: no current entry selected")?;
-            let change = SessionChange::Fork {
-                entry_id: leaf.clone(),
-                at: true,
-            };
-            let cancelled = rpc
-                .replace(change, |current| {
-                    runtime::plan_fork(current, &leaf, true)?.build(current)
-                })
-                .await?;
+            let cancelled = rpc.runtime.fork(&leaf, true).await?.is_none();
+            if !cancelled {
+                rpc.runtime.rebind().await;
+            }
             data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::GetForkMessages => {
@@ -868,39 +787,65 @@ fn stats(session: &AgentSession) -> SessionStats {
 /// the exit code.
 pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
     let (out, writer) = Output::start();
-    let rpc = Rc::new(Rpc {
-        session: RefCell::new(session.clone()),
-        epoch: Arc::new(AtomicU64::new(0)),
-        factory,
+    let ui = Arc::new(RpcUi {
         out: out.clone(),
-        ui: Arc::new(RpcUi {
-            out: out.clone(),
-            pending: Arc::default(),
-            shutdown: AtomicBool::new(false),
-            exit: tokio::sync::Notify::new(),
-            theme: Mutex::new(crate::interactive::extension_theme(
-                session.settings().theme.as_deref(),
-                &yapi_core::config::agent_dir(),
-            )),
-        }),
+        pending: Arc::default(),
+        shutdown: AtomicBool::new(false),
+        exit: tokio::sync::Notify::new(),
+        theme: Mutex::new(crate::interactive::extension_theme(
+            session.settings().theme.as_deref(),
+            &yapi_core::config::agent_dir(),
+        )),
     });
+    // The current session's number; listeners of older ones stay silent.
+    let epoch = Arc::new(AtomicU64::new(0));
+    let bind: runtime::Bind = {
+        let (out, ui) = (out.clone(), Arc::clone(&ui));
+        // As in pi, a session's events stream once its extensions have
+        // started.
+        Box::new(move |session, actions, replaced| {
+            let (out, ui, epoch) = (out.clone(), Arc::clone(&ui), Arc::clone(&epoch));
+            Box::pin(async move {
+                session
+                    .bind_extensions(
+                        Arc::clone(&ui) as Arc<dyn ExtensionUi>,
+                        Mode::Rpc,
+                        Some(actions),
+                        replaced,
+                    )
+                    .await;
+                runtime::forward_newest(&session, &epoch, move |event| {
+                    if let Ok(line) = yapi_types::json::to_string(event) {
+                        out.line(line);
+                    }
+                    if matches!(event, yapi_types::event::AgentEvent::AgentSettled) {
+                        ui.check_shutdown();
+                    }
+                });
+            })
+        })
+    };
     let local = tokio::task::LocalSet::new();
-    let code = local
+    let (code, rpc) = local
         .run_until(async {
-            rpc.bind(session, None).await;
+            let rpc = Rc::new(Rpc {
+                runtime: Runtime::start(session, factory, bind).await,
+                out: out.clone(),
+                ui,
+            });
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
             let signal = termination();
             tokio::pin!(signal);
-            loop {
+            let code = 'read: loop {
                 buffer.clear();
                 let read = tokio::select! {
                     read = stdin.read_until(b'\n', &mut buffer) => read,
-                    code = &mut signal => return code,
-                    () = rpc.ui.exit.notified() => return 0,
+                    code = &mut signal => break 'read code,
+                    () = rpc.ui.exit.notified() => break 'read 0,
                 };
                 match read {
-                    Ok(0) | Err(_) => return 0,
+                    Ok(0) | Err(_) => break 'read 0,
                     Ok(_) => {
                         let mut line = String::from_utf8_lossy(&buffer).into_owned();
                         if line.ends_with('\n') {
@@ -914,7 +859,8 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
                         tokio::task::yield_now().await;
                     }
                 }
-            }
+            };
+            (code, rpc)
         })
         .await;
     let session = rpc.session();

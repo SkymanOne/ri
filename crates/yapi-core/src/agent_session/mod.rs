@@ -33,7 +33,9 @@ use yapi_types::settings::QueueMode;
 use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
-use crate::extensions::{BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, Tools};
+use crate::extensions::{
+    BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, SessionActions, Tools,
+};
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
 use crate::settings::SettingsManager;
@@ -239,8 +241,9 @@ struct Inner {
     scoped_models: Mutex<Vec<crate::model_resolver::ScopedModel>>,
     tools: Tools,
     extensions: Vec<Arc<dyn Extension>>,
-    /// The UI and mode extensions see.
-    binding: Mutex<(Arc<dyn ExtensionUi>, Mode)>,
+    /// The UI and mode extensions see, and how the mode changes sessions
+    /// for their commands.
+    binding: Mutex<(Arc<dyn ExtensionUi>, Mode, Option<SessionActions>)>,
     /// Extension sections of the current run's system prompt.
     run_sections: Mutex<IndexMap<String, String>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
@@ -447,7 +450,7 @@ impl AgentSession {
                 scoped_models: Mutex::new(Vec::new()),
                 tools: tool_registry,
                 extensions,
-                binding: Mutex::new((Arc::new(NoUi), Mode::Print)),
+                binding: Mutex::new((Arc::new(NoUi), Mode::Print, None)),
                 run_sections: Mutex::new(IndexMap::new()),
                 forced_prompt: Mutex::new(None),
                 next_turn: Mutex::new(Vec::new()),

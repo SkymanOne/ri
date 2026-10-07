@@ -453,6 +453,47 @@ pub trait Extension: Send + Sync {
     }
 }
 
+/// A session change an extension command asks for; one of pi's
+/// `ExtensionCommandContextActions`.
+#[derive(Debug)]
+pub enum SessionAction {
+    /// `newSession`, linked to a parent session file when given.
+    New {
+        /// The parent session file.
+        parent: Option<String>,
+    },
+    /// `fork` at an entry; `at` keeps the entry, as `/clone` does.
+    Fork {
+        /// The entry.
+        entry_id: String,
+        /// Keep the entry.
+        at: bool,
+    },
+    /// `navigateTree` to an entry.
+    Tree {
+        /// The entry.
+        target_id: String,
+        /// How.
+        options: crate::agent_session::TreeNavigation,
+    },
+    /// `switchSession` to a session file.
+    Switch {
+        /// The file, as the extension gave it.
+        path: String,
+    },
+    /// `reload`.
+    Reload,
+    /// The extension finished its `setup` and `withSession` work after a
+    /// replacement; the mode reports the change now, as pi does once they
+    /// return.
+    Replaced,
+}
+
+/// How a mode carries out [`SessionAction`]s: whether an extension
+/// cancelled the change, or why it failed.
+pub type SessionActions =
+    Arc<dyn Fn(SessionAction) -> BoxFuture<'static, Result<bool, String>> + Send + Sync>;
+
 /// Operations a `user_bash` handler returned to run a `!` command with; pi's
 /// `BashOperations`.
 #[derive(Clone)]
