@@ -103,6 +103,30 @@ fn metadata_goes_to_stderr_in_print_and_modes() {
     assert!(stdout.contains("claude-sonnet-4-5"));
 }
 
+/// Help lists the flags of the extensions that loaded when another fails,
+/// without reporting the failure, as in pi.
+#[test]
+fn help_lists_flags_despite_extension_errors() {
+    let home = common::scratch("help-extensions");
+    std::fs::write(
+        home.join("ext.ts"),
+        "export default function (pi) {\n\tpi.registerFlag(\"mood\", { type: \"string\", description: \"Mood\" });\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        home.join("broken.ts"),
+        "export default function () {\n\tthrow new Error(\"broken\");\n}\n",
+    )
+    .unwrap();
+    let output = common::yapi(&home)
+        .args(["--help", "-e", "ext.ts", "-e", "broken.ts"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(String::from_utf8(output.stdout).unwrap().contains("--mood"));
+}
+
 /// pi's RPC mode starts without any model, reporting pi-agent-core's
 /// placeholder, and exits with 143 on SIGTERM even while its input stays
 /// open.
