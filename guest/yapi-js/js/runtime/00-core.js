@@ -836,13 +836,16 @@
 
 	// ----- process --------------------------------------------------------------------------
 	const environment = yapi.request("env") ?? {};
+	// The yapi binary, so extensions such as Pi's subagent example can run it.
+	const execPath = yapi.request("execPath") ?? "yapi";
 	// 10-node.js makes it an EventEmitter, as in Node.
 	globalThis.process = {
 		env: environment,
-		argv: ["yapi", "extension"],
+		// As for `node -e`: no script path.
+		argv: [execPath],
 		execArgv: [],
 		argv0: "yapi",
-		execPath: "/usr/bin/yapi",
+		execPath,
 		platform: yapi.request("platform") ?? "linux",
 		arch: "wasm32",
 		pid: 1,

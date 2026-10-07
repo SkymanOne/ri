@@ -242,16 +242,17 @@ impl Instance {
         options: Options,
         bridge: Arc<dyn Bridge>,
     ) -> Result<Instance, Error> {
+        let runtime = tokio::runtime::Handle::current();
         let host = Arc::new(Host {
             loader: Loader::new(options.cwd.clone(), options.cache_dir.clone()),
             bridge,
             options,
             ai_streams: AiStreams::default(),
+            processes: crate::ops::Processes::new(runtime.clone()),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
         let engine = engine.clone();
-        let runtime = tokio::runtime::Handle::current();
         let sender = commands.clone();
         let interrupt = Arc::new(AtomicBool::new(false));
         let flag = interrupt.clone();
@@ -570,6 +571,7 @@ impl Actor {
         self.host
             .bridge
             .log("error", &format!("Extension runtime stopped: {reason}"));
+        self.host.processes.clear();
         for (_, reply) in self.pending.drain() {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }

@@ -793,21 +793,65 @@
 	builtins.util = util;
 
 	// ----- child_process --------------------------------------------------------------------------
+	/** A child's output: `data` events, decoded once `setEncoding` is called, then `end`. */
+	class ChildOutput extends EventEmitter {
+		setEncoding() {
+			this.decoder = new TextDecoder();
+			return this;
+		}
+		push(bytes) {
+			this.emit("data", this.decoder ? this.decoder.decode(bytes, { stream: true }) : bytes);
+		}
+		resume() {
+			return this;
+		}
+		pause() {
+			return this;
+		}
+		destroy() {
+			return this;
+		}
+	}
+	/** A child's standard input. */
+	class ChildInput extends EventEmitter {
+		constructor(id) {
+			super();
+			this.id = id;
+		}
+		write(chunk, encoding, callback) {
+			if (typeof encoding === "function") callback = encoding;
+			const bytes = typeof chunk === "string" ? Buffer.from(chunk, typeof encoding === "string" ? encoding : undefined) : Buffer.from(chunk);
+			yapi.request("process.write", { id: this.id, data: yapi.base64Encode(bytes) });
+			if (callback) queueMicrotask(callback);
+			return true;
+		}
+		end(chunk, encoding, callback) {
+			if (typeof chunk === "function") callback = chunk;
+			else if (chunk !== undefined && chunk !== null) this.write(chunk, encoding);
+			yapi.request("process.end", { id: this.id });
+			queueMicrotask(() => {
+				this.emit("finish");
+				callback?.();
+			});
+			return this;
+		}
+		destroy() {
+			return this.end();
+		}
+	}
 	class ChildProcess extends EventEmitter {
 		constructor() {
 			super();
-			this.stdout = new EventEmitter();
-			this.stderr = new EventEmitter();
-			this.stdin = Object.assign(new EventEmitter(), { write() {
-				return true;
-			}, end() {} });
-			this.stdout.setEncoding = () => this.stdout;
-			this.stderr.setEncoding = () => this.stderr;
-			this.pid = 0;
+			this.stdin = null;
+			this.stdout = new ChildOutput();
+			this.stderr = new ChildOutput();
+			this.pid = undefined;
 			this.exitCode = null;
+			this.signalCode = null;
 			this.killed = false;
 		}
-		kill() {
+		kill(signal = "SIGTERM") {
+			if (this.id === undefined || !yapi.request("process.kill", { id: this.id, signal })) return false;
 			this.killed = true;
 			return true;
 		}
@@ -818,7 +862,7 @@
 			return this;
 		}
 	}
-	/** The host's `exec` payload: `target`'s command and arguments with Node's spawn `options`. */
+	/** The host's process payload: `target`'s command and arguments with Node's spawn `options`. */
 	const execPayload = (target, options) => ({
 		...target,
 		cwd: options.cwd ? toPath(options.cwd) : process.cwd(),
@@ -827,6 +871,23 @@
 		input: typeof options.input === "string" ? options.input : undefined,
 	});
 	const shell = (command) => ({ command: "/bin/sh", args: ["-c", command] });
+	/** Emits `child`'s output and exit as they arrive, then `close`. */
+	async function follow(child) {
+		for (let events; (events = await yapi.op("process.next", { id: child.id })).length > 0; ) {
+			for (const event of events) {
+				if (event.type !== "exit") {
+					child[event.type].push(Buffer.from(yapi.base64Decode(event.data)));
+					continue;
+				}
+				child.exitCode = event.code;
+				child.signalCode = event.signal ?? null;
+				child.emit("exit", child.exitCode, child.signalCode);
+			}
+		}
+		child.stdout.emit("end");
+		child.stderr.emit("end");
+		child.emit("close", child.exitCode, child.signalCode);
+	}
 	const childProcess = {
 		ChildProcess,
 		spawn(command, args = [], options = {}) {
@@ -836,15 +897,25 @@
 			}
 			const child = new ChildProcess();
 			const target = options.shell ? shell([command, ...args].join(" ")) : { command, args };
-			yapi.op("exec", execPayload(target, options)).then(
-				(result) => {
-					if (result.stdout) child.stdout.emit("data", Buffer.from(result.stdout));
-					if (result.stderr) child.stderr.emit("data", Buffer.from(result.stderr));
-					child.stdout.emit("end");
-					child.stderr.emit("end");
-					child.exitCode = result.code;
-					child.emit("exit", result.code, result.signal ?? null);
-					child.emit("close", result.code, result.signal ?? null);
+			const stdin = (typeof options.stdio === "string" ? options.stdio : options.stdio?.[0]) === "ignore" ? "ignore" : "pipe";
+			let started;
+			try {
+				started = yapi.request("process.spawn", { ...execPayload(target, options), stdin });
+			} catch (error) {
+				queueMicrotask(() => child.emit("error", error));
+				return child;
+			}
+			child.id = started.id;
+			child.pid = started.pid;
+			if (stdin === "pipe") child.stdin = new ChildInput(started.id);
+			const kill = () => child.kill(options.killSignal);
+			const timer = options.timeout > 0 ? setTimeout(kill, options.timeout) : undefined;
+			if (options.signal?.aborted) kill();
+			options.signal?.addEventListener("abort", kill, { once: true });
+			follow(child).then(
+				() => {
+					clearTimeout(timer);
+					options.signal?.removeEventListener("abort", kill);
 				},
 				(error) => child.emit("error", error),
 			);

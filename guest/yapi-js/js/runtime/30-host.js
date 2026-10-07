@@ -233,12 +233,38 @@
 		};
 	}
 
-	async function execCommand(command, args, cwd, options = {}) {
-		// As pi's execCommand: a process that cannot start reports code 1.
-		const result = await yapi
-			.op("exec", { command, args: args ?? [], cwd, timeout: options.timeout, env: options.env, input: options.input })
-			.catch(() => ({ stdout: "", stderr: "", code: 1, killed: false }));
-		return { stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0, killed: !!result.killed };
+	/** pi's execCommand: a timeout or `signal` kills the process, and a process that cannot start reports code 1. */
+	function execCommand(command, args, cwd, options = {}) {
+		return new Promise((resolve) => {
+			const proc = globalThis.__yapi_builtins.child_process.spawn(command, args ?? [], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+			let stdout = "";
+			let stderr = "";
+			let killed = false;
+			const killProcess = () => {
+				if (killed) return;
+				killed = true;
+				proc.kill("SIGTERM");
+				setTimeout(() => {
+					if (!proc.killed) proc.kill("SIGKILL");
+				}, 5000);
+			};
+			if (options.signal?.aborted) killProcess();
+			else options.signal?.addEventListener("abort", killProcess, { once: true });
+			const timeout = options.timeout > 0 ? setTimeout(killProcess, options.timeout) : undefined;
+			proc.stdout.on("data", (data) => {
+				stdout += data.toString();
+			});
+			proc.stderr.on("data", (data) => {
+				stderr += data.toString();
+			});
+			const finish = (code) => {
+				clearTimeout(timeout);
+				options.signal?.removeEventListener("abort", killProcess);
+				resolve({ stdout, stderr, code, killed });
+			};
+			proc.on("close", (code) => finish(code ?? 0));
+			proc.on("error", () => finish(1));
+		});
 	}
 
 	// ----- descriptions sent to the host -----------------------------------------------
