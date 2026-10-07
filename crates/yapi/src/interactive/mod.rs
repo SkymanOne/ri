@@ -6,6 +6,7 @@
 
 mod bash_view;
 mod catalogs;
+mod changelog;
 mod chat;
 mod clipboard;
 mod commands;
@@ -3542,6 +3543,11 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     }
     app.install_autocomplete();
     app.render_history();
+    if let Some(markdown) = changelog::since_last_start(&app.session) {
+        let collapse = app.session.settings().collapse_changelog.unwrap_or(false);
+        let spacer = !app.chat.is_empty();
+        app.push(changelog::notice(markdown, collapse, spacer));
+    }
     for error in app.session.settings_errors() {
         app.warning(error);
     }
