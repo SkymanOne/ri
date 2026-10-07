@@ -580,6 +580,16 @@
     ]
   },
   {
+    "name": "mcp-registered-order-rpc",
+    "cassette": "none.json",
+    "args": ["--mode", "rpc", "--no-session", "--model", "anthropic/claude-sonnet-4-5", "-e", "a.ts", "-e", "b.ts"],
+    "files": {"a.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerMcpServer(\"first\", { command: \"python3\", enabled: false });\n\tpi.registerCommand(\"more\", {\n\t\tdescription: \"Registers another server\",\n\t\thandler: async () => pi.registerMcpServer(\"third\", { command: \"python3\", exposure: \"codemode-deferred\", toolExposure: { t: \"codemode-deferred\" }, enabled: false }),\n\t});\n}\n", "b.ts": "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";\nexport default function (pi: ExtensionAPI) {\n\tpi.registerMcpServer(\"second\", { command: \"python3\", enabled: false });\n\tconst names = (servers) => servers.map(({ name, config }) => ({ name, config }));\n\tlet changed = [];\n\tpi.on(\"mcp_servers_change\", (event) => {\n\t\tchanged = names(event.servers);\n\t});\n\tpi.registerCommand(\"show\", {\n\t\tdescription: \"Shows the registered servers\",\n\t\thandler: async () => pi.sendMessage({ customType: \"servers\", content: JSON.stringify({ changed, servers: names(pi.getMcpServers()) }), display: true }),\n\t});\n}\n"},
+    "rpc": [
+      {"send": {"id": "more", "type": "prompt", "message": "/more"}},
+      {"send": {"id": "show", "type": "prompt", "message": "/show"}, "until": "message_end"}
+    ]
+  },
+  {
     "name": "tui-login-menu",
     "cassette": "anthropic-messages/tool-call.json",
     "args": ["--model", "anthropic/claude-sonnet-4-5"],

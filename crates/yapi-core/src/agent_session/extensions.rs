@@ -801,8 +801,19 @@ impl AgentSession {
     /// report holds the servers registered while it loaded, which the MCP
     /// extension reads when the session starts.
     pub fn set_mcp_servers(&self, owner: u64, servers: Vec<RegisteredMcpServer>) {
-        let previous = lock(&self.inner.mcp_servers).insert(owner, servers.clone());
-        if previous.is_some_and(|previous| previous != servers) {
+        let changed = {
+            let (registered, reported) = &mut *lock(&self.inner.mcp_servers);
+            let before = registered.clone();
+            // As in pi's registry, a server registered again keeps its place.
+            registered.retain(|name, (runtime, _)| {
+                *runtime != owner || servers.iter().any(|server| server.name == *name)
+            });
+            for server in servers {
+                registered.insert(server.name.clone(), (owner, server));
+            }
+            !reported.insert(owner) && *registered != before
+        };
+        if changed {
             let servers = self.mcp_servers();
             self.announce(ExtensionEvent::McpServersChange { servers: &servers });
             self.report_unhandled_mcp_servers();
@@ -829,12 +840,13 @@ impl AgentSession {
         }
     }
 
-    /// pi's `getMcpServers`: the servers extensions registered.
+    /// pi's `getMcpServers`: the servers extensions registered, in
+    /// registration order.
     pub fn mcp_servers(&self) -> Vec<RegisteredMcpServer> {
         lock(&self.inner.mcp_servers)
+            .0
             .values()
-            .flatten()
-            .cloned()
+            .map(|(_, server)| server.clone())
             .collect()
     }
 

@@ -65,11 +65,15 @@
 	};
 
 	// ----- MCP servers -----------------------------------------------------------------------
-	/** pi's `getMcpServers`: the servers the loaded extensions registered. */
+	/** pi's `getMcpServers`: the servers the loaded extensions registered, in registration order. */
+	let mcpServerSeq = 0;
 	const mcpServers = () =>
-		[...extensions.values()].flatMap((extension) =>
-			[...extension.mcpServers].map(([name, config]) => ({ name, config: plain(config), extensionPath: extension.path })),
-		);
+		[...extensions.values()]
+			.flatMap((extension) =>
+				[...extension.mcpServers].map(([name, { config, seq }]) => ({ seq, name, config: plain(config), extensionPath: extension.path })),
+			)
+			.sort((a, b) => a.seq - b.seq)
+			.map(({ seq, ...server }) => server);
 	const mcpNamespace = (name) => `mcp__${name.replace(/-/g, "_")}`;
 	/** The host connects the servers of the bound session. */
 	const reportMcpServers = () => yapi.request("mcp.servers", { servers: mcpServers() });
@@ -208,8 +212,9 @@
 				extension.providers = extension.providers.filter((provider) => provider.name !== name);
 			},
 			registerMcpServer(name, config) {
-				// The host checks the config and the grant its transport needs.
-				yapi.request("mcp.validate", { name, config: plain(config), extension: extension.path });
+				// The host checks the config and the grant its transport needs,
+				// and gives the config with legacy exposure names replaced.
+				const validated = yapi.request("mcp.validate", { name, config: plain(config), extension: extension.path });
 				const owner = mcpServers().find((server) => server.name === name)?.extensionPath;
 				if (owner !== undefined && owner !== extension.path) {
 					throw new Error(`MCP server "${name}" is already registered by extension "${owner}"`);
@@ -217,7 +222,8 @@
 				// Names that differ only in `-` and `_` would share a namespace.
 				const clash = mcpServers().find((server) => server.name !== name && mcpNamespace(server.name) === mcpNamespace(name));
 				if (clash) throw new Error(`MCP server "${name}" conflicts with registered server "${clash.name}"`);
-				extension.mcpServers.set(name, plain(config));
+				// A server registered again keeps its place, as in pi's Map.
+				extension.mcpServers.set(name, { config: validated, seq: extension.mcpServers.get(name)?.seq ?? mcpServerSeq++ });
 				if (bound) reportMcpServers();
 			},
 			unregisterMcpServer(name) {
@@ -349,7 +355,7 @@
 			entryRenderers: [...extension.entryRenderers.keys()],
 			markdownTransformer: typeof extension.markdownTransformer === "function",
 			providers: extension.providers,
-			mcpServers: [...extension.mcpServers].map(([name, config]) => ({ name, config })),
+			mcpServers: [...extension.mcpServers].map(([name, { config }]) => ({ name, config })),
 		};
 	}
 

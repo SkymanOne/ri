@@ -295,15 +295,22 @@ struct Inner {
     /// Blocking extension dialogs open, and the kind and title of the
     /// outermost.
     ui_prompts: Mutex<(usize, Option<UiPrompt>)>,
-    /// MCP servers extensions registered, by the extension runtime that
-    /// reported them.
-    mcp_servers: Mutex<IndexMap<u64, Vec<RegisteredMcpServer>>>,
+    /// MCP servers extensions registered, by name in registration order,
+    /// with the extension runtime that reported each, and the runtimes that
+    /// reported.
+    mcp_servers: Mutex<McpServers>,
     /// Registered MCP servers reported as connected by no extension.
     unhandled_mcp_servers: Mutex<std::collections::HashSet<String>>,
 }
 
 /// A blocking extension dialog's kind and title.
 type UiPrompt = (String, Option<String>);
+
+/// See [`Inner::mcp_servers`].
+type McpServers = (
+    IndexMap<String, (u64, RegisteredMcpServer)>,
+    std::collections::HashSet<u64>,
+);
 
 /// Counts an operation in [`Inner::compacting`] while alive.
 struct Compacting<'a>(&'a AtomicUsize);
