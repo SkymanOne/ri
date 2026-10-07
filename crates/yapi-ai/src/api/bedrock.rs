@@ -447,7 +447,8 @@ fn additional_fields(
     Some(Value::Object(fields))
 }
 
-/// The request body, in the SDK's member order.
+/// The command input pi's `onPayload` sees: `modelId`, then the request
+/// body in the SDK's member order.
 fn build_body(
     model: &Model,
     messages: &[Message],
@@ -460,6 +461,7 @@ fn build_body(
     let retention = options.resolved_cache_retention();
     let caching = supports_prompt_caching(model, &env);
     let mut body = Map::new();
+    body.insert("modelId".into(), json!(model.id));
     body.insert(
         "messages".into(),
         Value::Array(convert_messages(&normalized, model, retention, caching)?),
@@ -540,7 +542,9 @@ struct Target {
     signer: Signer,
 }
 
-async fn target(model: &Model, options: &StreamOptions) -> Result<Target, String> {
+/// `model_id` names the model in the URL. The signing region comes from
+/// `model`'s own id, as in pi.
+async fn target(model: &Model, model_id: &str, options: &StreamOptions) -> Result<Target, String> {
     let env = |name: &str| provider_env_value(name, options.env.as_ref());
     let process_profile = std::env::var("AWS_PROFILE")
         .ok()
@@ -625,7 +629,7 @@ async fn target(model: &Model, options: &StreamOptions) -> Result<Target, String
         url: format!(
             "{}/model/{}/converse-stream",
             endpoint.trim_end_matches('/'),
-            sigv4::escape(&model.id)
+            sigv4::escape(model_id)
         ),
         region,
         signer,
@@ -1252,8 +1256,19 @@ async fn connect(
         configured_region.as_deref(),
     )
     .map_err(Failure::plain)?;
-    let body = yapi_types::json::stringify(&options.hooks.payload(body).await);
-    let target = target(model, options).await.map_err(Failure::plain)?;
+    let mut input = options.hooks.payload(body).await;
+    // The SDK sends `modelId` in the URL path and the other members in the body.
+    let model_id = match input
+        .as_object_mut()
+        .and_then(|input| input.shift_remove("modelId"))
+    {
+        Some(Value::String(id)) => id,
+        _ => model.id.clone(),
+    };
+    let body = yapi_types::json::stringify(&input);
+    let target = target(model, &model_id, options)
+        .await
+        .map_err(Failure::plain)?;
     send(&target, &body, options).await
 }
 

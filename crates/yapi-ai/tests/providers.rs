@@ -577,6 +577,53 @@ async fn bedrock_sends_pi_request_bodies() {
 }
 
 #[tokio::test]
+async fn bedrock_payload_hook_sees_and_sets_the_model_id() {
+    // pi's `onPayload` sees the command input, `modelId` first, and the
+    // SDK sends the returned `modelId` in the URL path.
+    let server = mock(Cassette {
+        interactions: vec![binary_exchange(
+            "/model/global.anthropic.claude-opus-4-6-v1/converse-stream",
+            200,
+            &[("content-type", "application/vnd.amazon.eventstream")],
+            &simple_stream(),
+        )],
+    })
+    .await;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Value::Null));
+    let record = seen.clone();
+    let hooks = yapi_ai::stream::RequestHooks {
+        payload: Some(std::sync::Arc::new(move |mut payload: Value| {
+            *record.lock().unwrap() = payload.clone();
+            payload["modelId"] = json!("global.anthropic.claude-opus-4-6-v1");
+            Box::pin(async move { payload })
+        })),
+        ..Default::default()
+    };
+    let (_, message) = bedrock(
+        &server,
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        vec![user("hi")],
+        StreamOptions {
+            env: Some(bedrock_env(&[])),
+            hooks,
+            ..StreamOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(message.error_message, None);
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen.as_object().unwrap().iter().next(),
+        Some((
+            &"modelId".to_owned(),
+            &json!("us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        ))
+    );
+    let requests = server.finish().unwrap();
+    assert!(requests[0].body.starts_with(r#"{"messages":"#));
+}
+
+#[tokio::test]
 async fn bedrock_streams_tools_reasoning_and_usage() {
     let stream = [
         event("messageStart", &json!({"role": "assistant"})),
