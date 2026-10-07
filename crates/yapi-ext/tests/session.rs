@@ -337,3 +337,55 @@ async fn aborting_the_session_aborts_extension_tools() {
         .unwrap()
         .unwrap();
 }
+
+/// `before_agent_start` hands handlers pi's prompt options. Their edits to
+/// guidelines, sections and selected tools shape the run's prompt and its
+/// active tools.
+#[tokio::test(flavor = "multi_thread")]
+async fn before_agent_start_handlers_edit_the_prompt_options() {
+    let dir = scratch("prompt-options");
+    let path = dir.join("options.ts");
+    std::fs::write(
+        &path,
+        r#"export default function (pi) {
+	pi.on("before_agent_start", (event) => {
+		const options = event.systemPromptOptions;
+		pi.appendEntry("seen", {
+			tools: options.selectedTools,
+			cwd: typeof options.cwd,
+			files: options.contextFiles.length,
+			prompt: event.systemPrompt.includes("- read:"),
+		});
+	});
+	pi.on("before_agent_start", (event) => {
+		event.systemPromptOptions.promptGuidelines.push("Answer in one word.");
+		event.systemPromptOptions.sections.notes = "Remember the notes.";
+		event.systemPromptOptions.selectedTools = ["read"];
+	});
+}
+"#,
+    )
+    .unwrap();
+    let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let faux = Faux::new([Response::text("done")]);
+    let session = common::session_with_tools(&faux, &dir, host.for_session(), &["read", "bash"]);
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    session.prompt("hi", Vec::new()).await.unwrap();
+    assert_eq!(
+        custom_entries(&session, "seen"),
+        [json!({"tools": ["read", "bash"], "cwd": "string", "files": 0, "prompt": true})]
+    );
+    assert_eq!(session.active_tool_names(), ["read"]);
+    let requests = faux.requests();
+    let Some(Message::System(system)) = requests[0].first() else {
+        panic!("no system message: {:?}", requests[0]);
+    };
+    let text = system.text();
+    assert!(text.contains("- Answer in one word."), "{text}");
+    assert!(text.contains("Remember the notes."), "{text}");
+    assert!(!text.contains("- bash:"), "{text}");
+}

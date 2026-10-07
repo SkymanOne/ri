@@ -22,6 +22,7 @@ use yapi_types::sync::{lock, write};
 
 use crate::extensions::{Context, Extension, ExtensionUi, Mode, SessionActions, ToolRenderers};
 use crate::messages::convert_to_llm;
+use crate::system_prompt::PromptOptions;
 use crate::time::now_ms;
 
 use super::{AgentSession, InputSource, Replacement, SessionChange, drain};
@@ -813,29 +814,33 @@ impl AgentSession {
         Some((text, images))
     }
 
-    /// pi's `before_agent_start` event for extensions handling it: the
+    /// pi's `before_agent_start` event for extensions handling it, with the
+    /// run's prompt `options`, which each handler may edit for the next: the
     /// custom messages to send with the prompt, and the system prompt a
-    /// handler forced, if any.
+    /// handler forced, if any. The edited options become the run's, and
+    /// edited `selectedTools` the active tools.
     pub(super) async fn before_agent_start_handlers(
         &self,
         prompt: &str,
         images: &[ImageContent],
-        system_prompt: &str,
+        mut options: PromptOptions,
     ) -> (Vec<Message>, Option<String>) {
         let handlers = self.handlers_of("before_agent_start");
         let mut messages = Vec::new();
         let mut forced: Option<String> = None;
-        if handlers.is_empty() {
-            return (messages, forced);
-        }
+        let selected = options.selected_tools.clone();
         let ctx = self.extension_context(CancellationToken::new());
         for extension in handlers {
+            let system_prompt = match &forced {
+                Some(forced) => forced.clone(),
+                None => Self::prompt_text(&options).unwrap_or_default(),
+            };
             let event = serde_json::json!({
                 "type": "before_agent_start",
                 "prompt": prompt,
                 "images": images,
-                "systemPrompt": forced.as_deref().unwrap_or(system_prompt),
-                "systemPromptOptions": {},
+                "systemPrompt": system_prompt,
+                "systemPromptOptions": options.to_json(forced.as_deref()),
             });
             let Some(result) = extension.handle(&ctx, &event).await else {
                 continue;
@@ -856,10 +861,17 @@ impl AgentSession {
                     timestamp: now_ms(),
                 }));
             }
+            if result["systemPromptOptions"].is_object() {
+                forced = options.apply_json(&result["systemPromptOptions"]);
+            }
             if let Some(prompt) = result["systemPrompt"].as_str() {
                 forced = Some(prompt.to_owned());
             }
         }
+        if options.selected_tools != selected {
+            self.set_active_tools(options.selected_tools.clone());
+        }
+        *lock(&self.inner.run_options) = Some(options);
         (messages, forced)
     }
 
