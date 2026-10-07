@@ -6,9 +6,8 @@
 
 mod common;
 
-use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 fn scratch(name: &str) -> PathBuf {
     common::scratch(&format!("new-{name}"))
@@ -147,34 +146,16 @@ fn the_package_loads_once_built() {
     )
     .unwrap();
     let agent = dir.join("agent");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_yapi"))
-        .args(["--mode", "rpc", "--no-session", "--offline", "-ne", "-e"])
-        .arg(&project)
-        .current_dir(&dir)
-        .env_clear()
-        .env("HOME", &dir)
-        .env("YAPI_CODING_AGENT_DIR", &agent)
-        .env("PI_OFFLINE", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    writeln!(stdin, r#"{{"id":"commands","type":"get_commands"}}"#).unwrap();
-    let mut commands = None;
-    for line in BufReader::new(child.stdout.take().unwrap()).lines() {
-        let event: serde_json::Value = serde_json::from_str(&line.unwrap()).unwrap();
-        assert_ne!(event["type"], "extension_error", "{event}");
-        if event["type"] == "response" && event["id"] == "commands" {
-            commands = Some(event["data"]["commands"].clone());
-            break;
-        }
-    }
-    drop(stdin);
-    let _ = child.kill();
-    let _ = child.wait();
-    let commands = commands.expect("no get_commands response");
+    let commands = common::rpc_commands(
+        Command::new(env!("CARGO_BIN_EXE_yapi"))
+            .args(["--no-session", "--offline", "-ne", "-e"])
+            .arg(&project)
+            .current_dir(&dir)
+            .env_clear()
+            .env("HOME", &dir)
+            .env("YAPI_CODING_AGENT_DIR", &agent)
+            .env("PI_OFFLINE", "1"),
+    );
     let hello = commands
         .as_array()
         .unwrap()

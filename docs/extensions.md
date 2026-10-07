@@ -54,7 +54,7 @@ yapi loads extensions from:
 
 - `~/.yapi/agent/extensions`, and `.yapi/extensions` in a trusted project
 - packages and files added with `yapi install`, which accepts npm and git sources, local folders and single `.ts`, `.js` or `.wasm` files
-- `-e <path>` for one run, which accepts a file or a package folder
+- `-e <source>` for one run, which accepts a file, a package folder, or an npm or git source that yapi installs without adding it to settings
 
 `yapi -ne` starts without extensions.
 

@@ -271,6 +271,42 @@ fn list_tags_extension_kinds() {
     assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
 }
 
+/// `-e npm:` loads the temporary package installed in pi's folder for it, and
+/// offline skips one that is not installed, as pi does.
+#[test]
+fn offline_temporary_packages_load_when_installed() {
+    let root = common::scratch("temporary-packages");
+    let package = root.join("agent/tmp/extensions/npm/f35b2129/node_modules/hello-pkg");
+    std::fs::create_dir_all(package.join("extensions")).unwrap();
+    std::fs::write(
+        package.join("package.json"),
+        r#"{"name": "hello-pkg", "version": "1.0.0"}"#,
+    )
+    .unwrap();
+    std::fs::copy(
+        common::repo().join("crates/yapi-ext/tests/fixtures/hello.wasm"),
+        package.join("extensions/hello.wasm"),
+    )
+    .unwrap();
+    let commands = common::rpc_commands(common::yapi(&root).args([
+        "--no-session",
+        "--offline",
+        "-ne",
+        "-e",
+        "npm:hello-pkg",
+        "-e",
+        "npm:not-installed",
+    ]));
+    let names: Vec<&str> = commands
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|command| command["name"].as_str())
+        .collect();
+    assert!(names.contains(&"hello"), "{names:?}");
+    assert!(!root.join("agent/settings.json").exists());
+}
+
 /// pi's service and easter egg commands report that yapi does not offer them,
 /// without suggesting that a later version will.
 #[test]
