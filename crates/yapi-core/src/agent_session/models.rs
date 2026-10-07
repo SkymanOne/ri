@@ -266,15 +266,27 @@ impl AgentSession {
         };
         let targets = registry.catalog_targets().await;
         let refreshed = yapi_ai::model_catalog::refresh(&targets, &store, &options).await;
+        let mut lists = Vec::new();
+        for extension in &self.inner.extensions {
+            lists.extend(extension.refresh_models(&registry, &options).await);
+        }
+        let mut errors = refreshed.errors;
         // Apply to the registry current now; credentials may have changed.
         let mut slot = write(&self.inner.registry);
         let mut next = (**slot).clone();
         next.apply_catalogs(refreshed.models);
+        for (provider, list) in lists {
+            if let Err(error) = list.and_then(|models| next.replace_models(&provider, models))
+                && !options.cancel.is_cancelled()
+            {
+                errors.push((provider, error));
+            }
+        }
         *slot = Arc::new(next);
         drop(slot);
         CatalogRefresh {
-            errors: refreshed.errors,
-            aborted: refreshed.aborted,
+            errors,
+            aborted: refreshed.aborted || options.cancel.is_cancelled(),
         }
     }
 

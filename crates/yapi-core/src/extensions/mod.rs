@@ -24,7 +24,10 @@ use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
+use yapi_ai::model_catalog::RefreshOptions;
+use yapi_ai::registry::ModelRegistry;
 use yapi_types::autocomplete::ArgumentCompletions;
+use yapi_types::models::ModelDefinition;
 use yapi_types::rpc::SourceInfo;
 
 use crate::agent_session::WeakSession;
@@ -435,6 +438,19 @@ pub trait Extension: Send + Sync {
     ) -> BoxFuture<'a, Result<Option<i32>, String>> {
         Box::pin(async { Err("This extension has no bash operations".to_owned()) })
     }
+
+    /// Refreshes the model lists of the providers it registered with
+    /// `refreshModels` that `options` selects, as pi does: first offline
+    /// with the stored credential, then, when `options` allow the network
+    /// and a credential resolves, online with it. Returns each phase's new
+    /// list, or why it failed, by provider in phase order.
+    fn refresh_models<'a>(
+        &'a self,
+        _registry: &'a ModelRegistry,
+        _options: &'a RefreshOptions,
+    ) -> BoxFuture<'a, Vec<(String, ModelList)>> {
+        Box::pin(async { Vec::new() })
+    }
 }
 
 /// Operations a `user_bash` handler returned to run a `!` command with; pi's
@@ -446,6 +462,9 @@ pub struct BashOperations {
     /// What the extension knows them by.
     pub handle: Value,
 }
+
+/// A provider's model list from its `refreshModels`, or why it failed.
+pub type ModelList = Result<Vec<ModelDefinition>, String>;
 
 /// The built-in extensions each session starts with.
 pub fn builtins() -> Vec<Arc<dyn Extension>> {

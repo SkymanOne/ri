@@ -28,6 +28,8 @@ Run `/login` and choose "Sign in with an account" to use a Claude Pro or Max, Ch
 
 "Sign in with Radius" at the top of `/login` signs in to Pi's Radius gateway. Its models come from the gateway's own catalog, which yapi fetches after the sign-in.
 
+Providers that extensions register can add their own sign-ins to `/login`. See [Providers from extensions](extensions.md#providers-from-extensions).
+
 `/logout` removes a stored credential.
 
 ## Cloud providers
@@ -54,7 +56,7 @@ To remove the provider and `/llama`, disable `llama.cpp` in `yapi config`, or ad
 
 ## Model catalogs
 
-The catalog is built into yapi. Between releases, Pi publishes catalog updates for its providers. yapi fetches them for the providers you have configured: in the background at startup, when the model selector opens, after `/login`, and with `yapi update --models`. Fetched catalogs are kept in `~/.yapi/agent/models-store.json`, so later sessions have them offline. `--offline` or `PI_OFFLINE=1` turns fetching off.
+The catalog is built into yapi. Between releases, Pi publishes catalog updates for its providers. yapi fetches them for the providers you have configured: in the background at startup, when the model selector opens, after `/login`, and with `yapi update --models`. Fetched catalogs are kept in `~/.yapi/agent/models-store.json`, so later sessions have them offline. `--offline` or `PI_OFFLINE=1` turns fetching off. Providers that extensions register with `refreshModels` refresh at the same times.
 
 ## Classifier and image models
 
@@ -73,7 +75,7 @@ Inside yapi, `/model` or Ctrl+L opens the model selector, Ctrl+P cycles through 
 
 ## Custom providers and models
 
-Add providers, models and overrides to `~/.yapi/agent/models.json`. The format is Pi's, described in Pi's [models](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/models.md) and [custom provider](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/custom-provider.md) documentation.
+Add providers, models and overrides to `~/.yapi/agent/models.json`. The format is Pi's, described in Pi's [models](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/models.md) and [custom provider](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/custom-provider.md) documentation. Extensions can register providers too, including ones that implement their own wire API. See [Providers from extensions](extensions.md#providers-from-extensions).
 
 ## Credentials for other tools
 

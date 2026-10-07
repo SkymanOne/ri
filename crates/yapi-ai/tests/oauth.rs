@@ -434,6 +434,75 @@ fn agent_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+/// A sign-in that refreshes to `access-2` and cannot derive a key.
+#[derive(Default)]
+struct NoKey {
+    keys_asked: Mutex<u32>,
+}
+
+impl OAuthProvider for NoKey {
+    fn name(&self) -> &str {
+        "No key"
+    }
+
+    fn login<'a>(
+        &'a self,
+        _interaction: &'a Interaction,
+        _options: &'a LoginOptions,
+    ) -> futures_util::future::BoxFuture<'a, Result<OAuthCredential, yapi_ai::auth::AuthError>>
+    {
+        Box::pin(async { Err(yapi_ai::auth::AuthError::Cancelled) })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+        _cancel: &'a CancellationToken,
+    ) -> futures_util::future::BoxFuture<'a, Result<OAuthCredential, yapi_ai::auth::AuthError>>
+    {
+        Box::pin(async move {
+            Ok(OAuthCredential {
+                access: "access-2".into(),
+                expires: u64::MAX,
+                ..credential.clone()
+            })
+        })
+    }
+
+    fn to_auth<'a>(
+        &'a self,
+        _credential: &'a OAuthCredential,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<yapi_ai::auth::OAuthAuth, yapi_ai::auth::AuthError>,
+    > {
+        *self.keys_asked.lock().unwrap() += 1;
+        Box::pin(async { Err(yapi_ai::auth::AuthError::Failed("no key".into())) })
+    }
+}
+
+/// A catalog refresh's credential is the refreshed OAuth credential, as in
+/// pi, which derives no key for it: a sign-in that cannot derive one still
+/// refreshes.
+#[tokio::test]
+async fn refresh_credentials_refresh_oauth_without_deriving_a_key() {
+    let dir = agent_dir("refresh-credential");
+    std::fs::write(
+        dir.join("auth.json"),
+        r#"{"sso": {"type": "oauth", "refresh": "r", "access": "access-1", "expires": 1}}"#,
+    )
+    .unwrap();
+    let mut registry = ModelRegistry::load(&dir);
+    let flow = Arc::new(NoKey::default());
+    registry.register_oauth("sso", flow.clone());
+    let Some(Credential::OAuth(credential)) = registry.refresh_credential("sso").await else {
+        panic!("no refreshed credential");
+    };
+    assert_eq!(credential.access, "access-2");
+    assert_eq!(*flow.keys_asked.lock().unwrap(), 0);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[tokio::test]
 async fn registry_refreshes_expired_tokens_and_persists_them() {
     let server = mock(vec![Exchange::json(
@@ -610,7 +679,7 @@ async fn kimi_device_login_refresh_and_bearer_header() {
         (credential.access.as_str(), credential.refresh.as_str()),
         ("kimi-access", "kimi-refresh")
     );
-    let auth = oauth.to_auth(&credential);
+    let auth = oauth.to_auth(&credential).await.unwrap();
     assert_eq!(auth.api_key, None);
     assert_eq!(
         auth.headers.get("Authorization"),

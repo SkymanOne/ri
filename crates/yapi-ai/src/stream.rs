@@ -47,6 +47,28 @@ pub enum CacheRetention {
     Long,
 }
 
+impl CacheRetention {
+    /// The name pi uses in its options.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CacheRetention::None => "none",
+            CacheRetention::Short => "short",
+            CacheRetention::Long => "long",
+        }
+    }
+
+    /// Parses a name from [`CacheRetention::as_str`].
+    pub fn parse(name: &str) -> Option<CacheRetention> {
+        [
+            CacheRetention::None,
+            CacheRetention::Short,
+            CacheRetention::Long,
+        ]
+        .into_iter()
+        .find(|retention| retention.as_str() == name)
+    }
+}
+
 /// Request options shared by every wire API.
 #[derive(Clone, Debug, Default)]
 pub struct StreamOptions {

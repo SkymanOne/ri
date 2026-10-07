@@ -13,17 +13,30 @@ use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use yapi_agent::tool::{ExecutionMode, Tool, UpdateSink};
+use yapi_ai::auth::{
+    AuthError, AuthEvent, AuthPrompt, Interaction, LoginOptions, OAuthAuth, OAuthProvider,
+};
+use yapi_ai::model_catalog::RefreshOptions;
+use yapi_ai::registry::ModelRegistry;
+use yapi_ai::stream::{
+    EventSender, EventStream, Provider, ProviderResponse, Request, RequestHooks, StreamEvent,
+    new_output, now_ms, send_error,
+};
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
-    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, NotifyKind,
-    Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget, WorkingIndicator,
+    Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, ModelList,
+    NotifyKind, Placement, RemoteComponent, Renderers, ToolRenderers, Tools, Widget,
+    WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
+use yapi_types::auth::{Credential, OAuthCredential};
 use yapi_types::autocomplete::{ArgumentCompletions, AutocompleteItem};
 use yapi_types::event::ToolResult;
 use yapi_types::message::{
-    Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel, ToolDeclaration,
+    AssistantMessage, Content, ContentBlock, CustomMessage, ImageContent, ThinkingLevel,
+    ToolDeclaration,
 };
+use yapi_types::models::ModelDefinition;
 use yapi_types::rpc::{SourceInfo, StreamingBehavior};
 use yapi_types::sync::lock;
 
@@ -60,6 +73,9 @@ pub struct ExtensionHost {
     sources: Vec<SourceInfo>,
     /// Descriptions of the loaded extensions, as the guest last reported them.
     loaded: Mutex<Vec<Value>>,
+    /// Wire APIs registered with pi-ai's `registerApiProvider` while the
+    /// extensions loaded.
+    apis: Vec<String>,
     errors: Vec<LoadError>,
     /// Sessions handed extensions so far.
     sessions: AtomicU64,
@@ -124,6 +140,7 @@ impl ExtensionHost {
             bridge,
             sources: sources.to_vec(),
             loaded: Mutex::new(loaded),
+            apis: list(&result["apis"]).iter().map(text).collect(),
             errors,
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
@@ -144,25 +161,123 @@ impl ExtensionHost {
     }
 
     /// The providers the loaded extensions registered with
-    /// `pi.registerProvider(name, config)`, as names and configurations in
-    /// `models.json`'s shape. Providers with their own `streamSimple` are
-    /// left out: yapi cannot stream through them.
-    pub fn providers(&self) -> Vec<(String, Value)> {
+    /// `pi.registerProvider(name, config)`, in registration order.
+    pub fn providers(self: &Arc<Self>) -> Vec<RegisteredProvider> {
         lock(&self.loaded)
             .iter()
             .flat_map(|extension| list(&extension["providers"]))
             .filter_map(|provider| {
+                let name = text(&provider["name"]);
                 let mut config = provider["config"].as_object()?.clone();
-                if config.remove("hasStreamSimple") == Some(Value::Bool(true)) {
-                    return None;
-                }
-                // Sign-in and image or classifier implementations are code.
-                for key in ["oauth", "images", "classifiers"] {
+                let streams = config.remove("hasStreamSimple") == Some(Value::Bool(true));
+                config.remove("hasRefreshModels");
+                let oauth = config
+                    .remove("oauth")
+                    .filter(Value::is_object)
+                    .map(|oauth| {
+                        Arc::new(JsOAuth {
+                            host: Arc::downgrade(self),
+                            provider: name.clone(),
+                            name: text(&oauth["name"]),
+                            subscription: oauth["isSubscription"] == true,
+                        }) as Arc<dyn OAuthProvider>
+                    });
+                // Image and classifier implementations are code.
+                for key in ["images", "classifiers"] {
                     config.remove(key);
                 }
-                Some((text(&provider["name"]), Value::Object(config)))
+                let stream = config
+                    .get("api")
+                    .and_then(Value::as_str)
+                    .filter(|_| streams)
+                    .map(|api| self.js_stream(api));
+                Some(RegisteredProvider {
+                    name,
+                    config: Value::Object(config),
+                    stream,
+                    oauth,
+                })
             })
             .collect()
+    }
+
+    /// The wire APIs extensions implement with pi-ai's `registerApiProvider`
+    /// that yapi has no provider for, to stream the session's models of
+    /// those APIs.
+    pub fn apis(self: &Arc<Self>) -> Vec<Arc<dyn Provider>> {
+        self.apis
+            .iter()
+            .filter(|api| yapi_ai::api::builtin(api).is_none())
+            .map(|api| self.js_stream(api))
+            .collect()
+    }
+
+    fn js_stream(self: &Arc<Self>, api: &str) -> Arc<dyn Provider> {
+        Arc::new(JsStream {
+            host: Arc::downgrade(self),
+            api: api.to_owned(),
+        })
+    }
+
+    /// A new id for an operation the host may abort in the guest.
+    fn next_id(&self) -> u64 {
+        self.bridge.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Runs guest call `kind` for operation `payload.id`. When `cancel`
+    /// fires first, aborts the operation's signal and waits for the call to
+    /// end, as pi awaits an aborted operation.
+    async fn call_abortable(
+        &self,
+        kind: &str,
+        payload: &Value,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        let mut call = std::pin::pin!(self.instance.call(kind, payload));
+        match cancel.run_until_cancelled(&mut call).await {
+            Some(result) => result,
+            None => {
+                let _ = self
+                    .instance
+                    .call("abort", &json!({"id": payload["id"]}))
+                    .await;
+                call.await
+            }
+        }
+    }
+
+    /// Streams `request` through the extension that implements its API, as
+    /// the guest emits the events, and aborts the guest's stream when the
+    /// request is cancelled.
+    async fn stream(&self, request: Request, sender: EventSender) {
+        let id = self.next_id();
+        let cancel = request.options.cancel.clone();
+        let output = new_output(&request.model, now_ms());
+        let hooks = &request.options.hooks;
+        let payload = json!({
+            "id": id,
+            "model": request.model,
+            "context": {"messages": request.messages},
+            "options": crate::streams::options_json(&request.options),
+            "hooks": {
+                "payload": hooks.payload.is_some(),
+                "response": hooks.response.is_some(),
+                "streamEvent": hooks.stream_event.is_some(),
+            },
+        });
+        let stream = RunningStream {
+            sender: sender.clone(),
+            output: Some(output),
+            hooks: hooks.clone(),
+        };
+        lock(&self.bridge.streams).insert(id, stream);
+        let result = self.call_abortable("stream", &payload, &cancel).await;
+        let running = lock(&self.bridge.streams)
+            .remove(&id)
+            .and_then(|stream| stream.output);
+        if let (Err(err), Some(output)) = (result, running) {
+            send_error(&sender, output, &cancel, err.to_string());
+        }
     }
 
     /// The flags the loaded extensions registered.
@@ -238,6 +353,177 @@ impl ExtensionHost {
         }
         *bound = generation + 1;
         true
+    }
+}
+
+/// A provider an extension registered with `pi.registerProvider(name, config)`.
+pub struct RegisteredProvider {
+    /// The provider id.
+    pub name: String,
+    /// Its configuration in `models.json`'s shape.
+    pub config: Value,
+    /// Its `streamSimple`, which streams the provider's models of the
+    /// configuration's `api`.
+    pub stream: Option<Arc<dyn Provider>>,
+    /// Its `oauth` sign-in.
+    pub oauth: Option<Arc<dyn OAuthProvider>>,
+}
+
+/// An extension stream the host is running.
+struct RunningStream {
+    sender: EventSender,
+    /// An empty message for failures, until the final event.
+    output: Option<AssistantMessage>,
+    /// The request's hooks, which the stream's pi options call.
+    hooks: RequestHooks,
+}
+
+/// An extension provider's `oauth`: pi's legacy sign-in, whose login,
+/// refresh and API key run in the guest.
+struct JsOAuth {
+    host: Weak<ExtensionHost>,
+    provider: String,
+    name: String,
+    subscription: bool,
+}
+
+impl JsOAuth {
+    /// Runs guest call `kind` for this provider with `payload`, as an
+    /// operation that `cancel` aborts and whose prompts go to `interaction`.
+    async fn call(
+        &self,
+        kind: &str,
+        mut payload: Value,
+        interaction: Option<&Interaction>,
+        cancel: &CancellationToken,
+    ) -> Result<Value, AuthError> {
+        let host = self
+            .host
+            .upgrade()
+            .ok_or_else(|| AuthError::Failed(Error::Stopped.to_string()))?;
+        let id = host.next_id();
+        payload["provider"] = json!(self.provider);
+        payload["id"] = json!(id);
+        if let Some(interaction) = interaction {
+            lock(&host.bridge.logins).insert(id, interaction.clone());
+        }
+        let result = host.call_abortable(kind, &payload, cancel).await;
+        lock(&host.bridge.logins).remove(&id);
+        result.map_err(|err| {
+            if cancel.is_cancelled() {
+                AuthError::Cancelled
+            } else {
+                AuthError::Failed(err.to_string())
+            }
+        })
+    }
+
+    async fn credential(
+        &self,
+        kind: &str,
+        payload: Value,
+        interaction: Option<&Interaction>,
+        cancel: &CancellationToken,
+    ) -> Result<OAuthCredential, AuthError> {
+        let value = self.call(kind, payload, interaction, cancel).await?;
+        let mut credential: OAuthCredential = serde_json::from_value(value)
+            .map_err(|err| AuthError::Failed(format!("Invalid OAuth credentials: {err}")))?;
+        credential.extra.remove("type");
+        Ok(credential)
+    }
+}
+
+impl OAuthProvider for JsOAuth {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_subscription(&self) -> bool {
+        self.subscription
+    }
+
+    fn login<'a>(
+        &'a self,
+        interaction: &'a Interaction,
+        _options: &'a LoginOptions,
+    ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
+        Box::pin(self.credential(
+            "oauthLogin",
+            json!({}),
+            Some(interaction),
+            interaction.cancel(),
+        ))
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+        cancel: &'a CancellationToken,
+    ) -> BoxFuture<'a, Result<OAuthCredential, AuthError>> {
+        Box::pin(self.credential(
+            "oauthRefresh",
+            json!({"credential": credential}),
+            None,
+            cancel,
+        ))
+    }
+
+    fn to_auth<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+    ) -> BoxFuture<'a, Result<OAuthAuth, AuthError>> {
+        Box::pin(async move {
+            let key = self
+                .call(
+                    "oauthApiKey",
+                    json!({"credential": credential}),
+                    None,
+                    &CancellationToken::new(),
+                )
+                .await?;
+            Ok(OAuthAuth {
+                api_key: key.as_str().map(str::to_owned),
+                ..OAuthAuth::default()
+            })
+        })
+    }
+}
+
+/// A sign-in question from the guest. pi asks a prompt of an unknown type
+/// as a text prompt.
+fn auth_prompt(prompt: &Value) -> AuthPrompt {
+    serde_json::from_value(prompt.clone()).unwrap_or_else(|_| AuthPrompt::Text {
+        message: text(&prompt["message"]),
+        placeholder: prompt["placeholder"].as_str().map(str::to_owned),
+    })
+}
+
+/// A wire API an extension implements, with a provider's `streamSimple` or
+/// pi-ai's `registerApiProvider`.
+struct JsStream {
+    host: Weak<ExtensionHost>,
+    api: String,
+}
+
+impl Provider for JsStream {
+    fn api(&self) -> &str {
+        &self.api
+    }
+
+    fn stream(&self, request: Request) -> EventStream {
+        let (sender, stream) = EventStream::channel();
+        match self.host.upgrade() {
+            Some(host) => {
+                tokio::spawn(async move { host.stream(request, sender).await });
+            }
+            None => send_error(
+                &sender,
+                new_output(&request.model, now_ms()),
+                &request.options.cancel,
+                Error::Stopped.to_string(),
+            ),
+        }
+        stream
     }
 }
 
@@ -338,6 +624,44 @@ impl JsExtension {
 
     fn path_text(&self) -> String {
         self.path.to_string_lossy().into_owned()
+    }
+
+    /// One `refreshModels` phase of `provider` in the guest: the model list
+    /// it returned, if any. A catalog it published to persist is written to
+    /// the registry's models store.
+    async fn refresh_phase(
+        &self,
+        provider: &str,
+        registry: &ModelRegistry,
+        credential: Option<Credential>,
+        allow_network: bool,
+        options: &RefreshOptions,
+    ) -> Result<Option<Vec<ModelDefinition>>, String> {
+        let stored = registry
+            .models_store()
+            .and_then(|store| store.read(provider));
+        let payload = json!({
+            "provider": provider, "id": self.shared.next_id(), "credential": credential,
+            "stored": stored, "allowNetwork": allow_network, "force": options.force,
+        });
+        let result = self
+            .shared
+            .call_abortable("refreshModels", &payload, &options.cancel)
+            .await
+            .map_err(|err| err.to_string())?;
+        if let (Some(store), Some(entry)) = (registry.models_store(), result.get("persist")) {
+            match entry {
+                Value::Null => store.delete(provider, &options.cancel).await,
+                entry => store.write(provider, entry.clone(), &options.cancel).await,
+            }?;
+        }
+        let models = &result["models"];
+        if models.is_null() {
+            return Ok(None);
+        }
+        serde_json::from_value(models.clone())
+            .map(Some)
+            .map_err(|err| format!("Invalid models from {provider}: {err}"))
     }
 }
 
@@ -505,6 +829,46 @@ impl Extension for JsExtension {
                 .await
                 .ok()?;
             self.shared.bridge.component(&result["handle"])
+        })
+    }
+
+    fn refresh_models<'a>(
+        &'a self,
+        registry: &'a ModelRegistry,
+        options: &'a RefreshOptions,
+    ) -> BoxFuture<'a, Vec<(String, ModelList)>> {
+        Box::pin(async move {
+            let providers: Vec<String> = list(&self.description["providers"])
+                .iter()
+                .filter(|provider| provider["config"]["hasRefreshModels"] == true)
+                .map(|provider| text(&provider["name"]))
+                .filter(|name| {
+                    options
+                        .providers
+                        .as_ref()
+                        .is_none_or(|selected| selected.contains(name))
+                })
+                .collect();
+            let mut lists = Vec::new();
+            for provider in providers {
+                let credential = registry.store().get(&provider);
+                let offline = self
+                    .refresh_phase(&provider, registry, credential, false, options)
+                    .await;
+                let failed = offline.is_err();
+                lists.extend(offline.transpose().map(|list| (provider.clone(), list)));
+                if failed || !options.allow_network || options.cancel.is_cancelled() {
+                    continue;
+                }
+                let Some(credential) = registry.refresh_credential(&provider).await else {
+                    continue;
+                };
+                let online = self
+                    .refresh_phase(&provider, registry, Some(credential), true, options)
+                    .await;
+                lists.extend(online.transpose().map(|list| (provider.clone(), list)));
+            }
+            lists
         })
     }
 
@@ -716,6 +1080,13 @@ struct SessionBridge {
     /// Where the output of `!` commands that bash operations run goes, by
     /// their operations' id.
     bash: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
+    /// Interactions of running extension sign-ins, by id.
+    logins: Mutex<HashMap<u64, Interaction>>,
+    /// Running extension streams by id.
+    streams: Mutex<HashMap<u64, RunningStream>>,
+    /// The next id of an operation the host may abort in the guest: a
+    /// stream, a sign-in or a model refresh.
+    next_id: AtomicU64,
     owner: OnceLock<Weak<ExtensionHost>>,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
     codemode: Arc<crate::codemode::Runner>,
@@ -739,6 +1110,9 @@ impl SessionBridge {
             updates: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
+            logins: Mutex::default(),
+            streams: Mutex::default(),
+            next_id: AtomicU64::new(1),
             owner: OnceLock::new(),
         })
     }
@@ -1053,6 +1427,42 @@ impl Bridge for SessionBridge {
             }
             return Ok(Value::Null);
         }
+        if kind == "oauth.notify" {
+            let interaction = payload["id"]
+                .as_u64()
+                .and_then(|id| lock(&self.logins).get(&id).cloned());
+            // pi shows no notification of an unknown type.
+            let event = serde_json::from_value::<AuthEvent>(payload["event"].clone()).ok();
+            if let (Some(interaction), Some(event)) = (interaction, event) {
+                interaction.notify(event);
+            }
+            return Ok(Value::Null);
+        }
+        if kind == "provider.event" {
+            let mut streams = lock(&self.streams);
+            let Some(stream) = payload["id"].as_u64().and_then(|id| streams.get_mut(&id)) else {
+                return Ok(Value::Null);
+            };
+            // Events after the final one are dropped, as pi's streams drop them.
+            if stream.output.is_none() {
+                return Ok(Value::Null);
+            }
+            match crate::streams::event_from_json(payload) {
+                Ok(event) => {
+                    if matches!(event, StreamEvent::Done(_) | StreamEvent::Error(_)) {
+                        stream.output = None;
+                    }
+                    stream.sender.send(event);
+                }
+                // An invalid event fails the stream, without an abort.
+                Err(message) => {
+                    if let Some(output) = stream.output.take() {
+                        send_error(&stream.sender, output, &CancellationToken::new(), message);
+                    }
+                }
+            }
+            return Ok(Value::Null);
+        }
         let session = self.session().ok_or_else(not_bound)?;
         match kind {
             "session.sendMessage" => {
@@ -1207,7 +1617,61 @@ impl Bridge for SessionBridge {
         }
     }
 
+    fn stream_hooks(&self, id: u64) -> RequestHooks {
+        lock(&self.streams)
+            .get(&id)
+            .map(|stream| stream.hooks.clone())
+            .unwrap_or_default()
+    }
+
     fn start(&self, kind: &str, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
+        if matches!(
+            kind,
+            "provider.payload" | "provider.response" | "provider.streamEvent"
+        ) {
+            // A stream's `onPayload`, `onResponse` and `onProviderStreamEvent`.
+            let hooks = payload["id"]
+                .as_u64()
+                .map(|id| self.stream_hooks(id))
+                .unwrap_or_default();
+            let kind = kind.to_owned();
+            return Box::pin(async move {
+                match kind.as_str() {
+                    "provider.payload" => Ok(hooks.payload(payload["payload"].clone()).await),
+                    "provider.response" => {
+                        if let Some(response) = &hooks.response {
+                            response(ProviderResponse {
+                                status: payload["status"]
+                                    .as_u64()
+                                    .and_then(|status| u16::try_from(status).ok())
+                                    .unwrap_or_default(),
+                                headers: serde_json::from_value(payload["headers"].clone())
+                                    .unwrap_or_default(),
+                            })
+                            .await;
+                        }
+                        Ok(Value::Null)
+                    }
+                    _ => {
+                        hooks.stream_event(&payload["data"]).await;
+                        Ok(Value::Null)
+                    }
+                }
+            });
+        }
+        if kind == "oauth.prompt" {
+            let interaction = payload["id"]
+                .as_u64()
+                .and_then(|id| lock(&self.logins).get(&id).cloned());
+            return Box::pin(async move {
+                let interaction = interaction.ok_or_else(|| AuthError::Cancelled.to_string())?;
+                interaction
+                    .prompt(auth_prompt(&payload["prompt"]))
+                    .await
+                    .map(Value::String)
+                    .map_err(|err| err.to_string())
+            });
+        }
         let Some(session) = self.session() else {
             return Box::pin(async { Err(not_bound()) });
         };

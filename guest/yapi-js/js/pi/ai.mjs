@@ -114,26 +114,89 @@ export function createAssistantMessageEventStream() {
 }
 
 // ----- completions on yapi's providers --------------------------------------------------------------
-function hostStream(model, context, options) {
+/**
+ * Streams with yapi's implementation of `api`, or of the model's API. The
+ * host sends the events that have arrived each time it is asked; the live
+ * message is rebuilt here from them.
+ */
+function hostStream(model, context, options, api) {
 	const stream = new AssistantMessageEventStream();
-	const { signal, onPayload, ...rest } = options ?? {};
-	yapi.op("ai.complete", { model, context, options: rest }).then(
-		(message) => {
-			stream.push({ type: "start", partial: message });
-			stream.push(message.stopReason === "error" || message.stopReason === "aborted" ? { type: "error", reason: message.stopReason, error: message } : { type: "done", reason: message.stopReason, message });
-		},
-		(error) => stream.push({ type: "error", reason: "error", error: { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: "error", errorMessage: error.message, timestamp: Date.now() } }),
-	);
+	const { signal, onPayload, onResponse, onProviderStreamEvent, ...rest } = options ?? {};
+	// The session's hooks of the extension stream this request serves.
+	const hooks = [onPayload, onResponse, onProviderStreamEvent].find((hook) => hook?.yapiStream !== undefined)?.yapiStream;
+	(async () => {
+		const id = await yapi.op("ai.stream", { api, model, context: normalizeContext(context), options: rest, hooks });
+		const abort = () => yapi.request("ai.abort", { id });
+		if (signal?.aborted) abort();
+		else signal?.addEventListener("abort", abort, { once: true });
+		try {
+			let partial;
+			const arguments_ = [];
+			for (;;) {
+				const batch = await yapi.op("ai.next", { id });
+				if (batch.length === 0) return;
+				for (const wire of batch) {
+					if (wire.type === "start") {
+						partial = wire.message;
+						stream.push({ type: "start", partial });
+					} else if (wire.type === "done") stream.push({ type: "done", reason: wire.message.stopReason, message: wire.message });
+					else if (wire.type === "error") stream.push({ type: "error", reason: wire.message.stopReason, error: wire.message });
+					else {
+						const { id: callId, toolName, ...event } = wire.event;
+						const index = event.contentIndex;
+						const content = partial.content;
+						switch (event.type) {
+							case "text_start":
+								content[index] = { type: "text", text: "" };
+								break;
+							case "text_delta":
+								content[index].text += event.delta;
+								break;
+							case "text_end":
+								content[index].text = event.content;
+								break;
+							case "thinking_start":
+								content[index] = { type: "thinking", thinking: "" };
+								break;
+							case "thinking_delta":
+								content[index].thinking += event.delta;
+								break;
+							case "thinking_end":
+								content[index].thinking = event.content;
+								break;
+							case "toolcall_start":
+								content[index] = { type: "toolCall", id: callId, name: toolName, arguments: {} };
+								arguments_[index] = "";
+								break;
+							case "toolcall_delta":
+								arguments_[index] += event.delta;
+								content[index].arguments = parseStreamingJson(arguments_[index]);
+								break;
+							case "toolcall_end":
+								content[index] = event.toolCall;
+								break;
+						}
+						partial.usage = wire.usage;
+						stream.push({ ...event, partial });
+					}
+				}
+			}
+		} finally {
+			signal?.removeEventListener("abort", abort);
+		}
+	})().catch((error) => stream.push({ type: "error", reason: "error", error: yapi.setupError(model, error) }));
 	return stream;
 }
-/** Every wire API runs on yapi's provider for the model's `api`. */
-const hostApi = { stream: hostStream, streamSimple: hostStream };
+/** yapi's implementation of wire API `api`. */
+const hostApi = (api) => {
+	const run = (model, context, options) => hostStream(model, context, options, api);
+	return { stream: run, streamSimple: run };
+};
 
 // ----- API providers -----------------------------------------------------------------------------
 // pi-ai's registry. A stream an extension registers for an API serves its
-// own calls to `stream` and `streamSimple`. yapi's agent runs a session's model
-// on yapi's providers, so a model whose API only an extension implements cannot
-// be the session's model.
+// own calls to `stream` and `streamSimple`, and the session's models of that
+// API when yapi has no provider for it.
 const BUILTIN_APIS = [
 	"anthropic-messages",
 	"openai-completions",
@@ -146,6 +209,8 @@ const BUILTIN_APIS = [
 	"bedrock-converse-stream",
 ];
 const apiProviders = new Map();
+// The extension host streams session models through these.
+yapi.apiProviders = apiProviders;
 const forApi = (api, fn) => (model, context, options) => {
 	if (model.api !== api) throw new Error(`Mismatched api: ${model.api} expected ${api}`);
 	return fn(model, context, options);
@@ -157,7 +222,7 @@ export function registerApiProvider(provider, sourceId) {
 	});
 }
 export function getApiProvider(api) {
-	return apiProviders.get(api)?.provider ?? (BUILTIN_APIS.includes(api) ? { api, ...hostApi } : undefined);
+	return apiProviders.get(api)?.provider ?? (BUILTIN_APIS.includes(api) ? { api, ...hostApi(api) } : undefined);
 }
 export const getApiProviders = () => Array.from(apiProviders.values(), (entry) => entry.provider);
 export function unregisterApiProviders(sourceId) {
@@ -177,8 +242,6 @@ export function stream(model, context, options) {
 }
 export const complete = (model, context, options) => streamSimple(model, context, options).result();
 export const completeSimple = complete;
-
-const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 
 // ----- models ------------------------------------------------------------------------------------
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -257,6 +320,88 @@ export const repairJson = (json) => yapi.request("json.repair", { text: json });
 export const parseJsonWithRepair = (json) => yapi.request("json.parseWithRepair", { text: json });
 export const parseStreamingJson = (partial) => yapi.request("json.partial", { text: partial ?? "" });
 
+// ----- transcripts ---------------------------------------------------------------------------------
+const isSystemMessage = (message) => message.role === "system";
+
+export function getSystemMessageText(message) {
+	const parts = [contentText(message.content)];
+	for (const text of Object.values(message.sections ?? {})) {
+		if (text !== null) parts.push(text);
+	}
+	return parts.filter((part) => part.length > 0).join("\n\n");
+}
+
+export function createInitialSystemMessage(systemPrompt, tools) {
+	const hasSystemPrompt = systemPrompt !== undefined && systemPrompt.length > 0;
+	const hasTools = tools !== undefined && tools.length > 0;
+	if (!hasSystemPrompt && !hasTools) return undefined;
+	return { role: "system", content: systemPrompt ?? "", ...(hasTools ? { toolsAdded: tools } : {}), timestamp: 0 };
+}
+
+export function normalizeContext(context) {
+	const initialMessage = createInitialSystemMessage(context.systemPrompt, context.tools);
+	return { messages: initialMessage ? [initialMessage, ...context.messages] : context.messages };
+}
+
+export function getInitialSystemMessage(messages) {
+	const first = messages[0];
+	return first && isSystemMessage(first) ? first : undefined;
+}
+
+export function withoutInitialSystemMessage(messages) {
+	return getInitialSystemMessage(messages) ? messages.slice(1) : messages;
+}
+
+export function getCurrentTools(messages) {
+	const tools = new Map();
+	for (const message of messages) {
+		if (!isSystemMessage(message)) continue;
+		for (const tool of message.toolsRemoved ?? []) tools.delete(tool.name);
+		for (const tool of message.toolsAdded ?? []) tools.set(tool.name, tool);
+	}
+	return [...tools.values()];
+}
+
+export function getCurrentSystemMessage(messages) {
+	const content = [];
+	const sections = new Map();
+	let timestamp;
+	for (const message of messages) {
+		if (!isSystemMessage(message)) continue;
+		timestamp ??= message.timestamp;
+		const text = contentText(message.content);
+		if (text.length > 0) content.push(text);
+		for (const [name, value] of Object.entries(message.sections ?? {})) {
+			if (value === null) sections.delete(name);
+			else sections.set(name, value);
+		}
+	}
+	const tools = getCurrentTools(messages);
+	if (timestamp === undefined && tools.length === 0) return undefined;
+	return {
+		role: "system",
+		content: content.join("\n\n"),
+		...(sections.size > 0 ? { sections: Object.fromEntries(sections) } : {}),
+		...(tools.length > 0 ? { toolsAdded: tools } : {}),
+		timestamp: timestamp ?? 0,
+	};
+}
+
+export function getCurrentSystemPrompt(messages) {
+	const message = getCurrentSystemMessage(messages);
+	return message ? getSystemMessageText(message) : "";
+}
+
+export function collapseSystemMessages(context) {
+	const head = getCurrentSystemMessage(context.messages);
+	const messages = context.messages.filter((message) => message.role !== "system");
+	return { messages: head ? [head, ...messages] : messages };
+}
+
+export function resolveTranscript(context, supportsMidConvoSystemMessages) {
+	return supportsMidConvoSystemMessages ? context : collapseSystemMessages(context);
+}
+
 // ----- tool validation ------------------------------------------------------------------------------
 export function validateToolArguments(tool, toolCall) {
 	const args = structuredClone(toolCall.arguments ?? {});
@@ -275,14 +420,12 @@ export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
 
 // ----- not available in yapi ---------------------------------------------------------------------------
 export const { AssistantMessageFrameEncoder, InMemoryCredentialStore, InMemoryModelsStore, appendAssistantMessageDiagnostic, cleanupSessionResources,
-	collapseSystemMessages, createAssistantMessageDiagnostic, createFauxCore, createInitialSystemMessage, createModels, declarationsEqual,
-	defaultProviderAuthContext, extractDiagnosticError, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, findEnvKeys,
-	generateImages, generateImagesOpenRouter, getCurrentSystemMessage, getCurrentSystemPrompt, getCurrentTools, getDeclaredTools, getImageModel,
-	getImageModels, getImageProviders, getImagesApiProvider, getInitialSystemMessage, getOverflowPatterns, getSystemMessageText, getToolStateChanges,
-	hasNonAdditiveToolChanges, hasToolRedefinitions, isContextOverflow, isRecoverableLength, isRetryableAssistantError, normalizeContext,
-	reduceAssistantMessageFrames, registerBuiltInImagesApiProviders, registerFauxProvider, registerImagesApiProvider, registerSessionResourceCleanup,
-	renderSystemMessageUpdate, resolveTranscript, resolveTranscriptTools, retryAssistantCall, retryDelayMs, setBedrockProviderModule, toToolDeclaration,
-	withoutInitialSystemMessage } = yapi.stubs("@earendil-works/pi-ai");
+	createAssistantMessageDiagnostic, createFauxCore, createModels, declarationsEqual, defaultProviderAuthContext, extractDiagnosticError,
+	fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, findEnvKeys, generateImages, generateImagesOpenRouter, getDeclaredTools,
+	getImageModel, getImageModels, getImageProviders, getImagesApiProvider, getOverflowPatterns, getToolStateChanges, hasNonAdditiveToolChanges,
+	hasToolRedefinitions, isContextOverflow, isRecoverableLength, isRetryableAssistantError, reduceAssistantMessageFrames,
+	registerBuiltInImagesApiProviders, registerFauxProvider, registerImagesApiProvider, registerSessionResourceCleanup, renderSystemMessageUpdate,
+	resolveTranscriptTools, retryAssistantCall, retryDelayMs, setBedrockProviderModule, toToolDeclaration } = yapi.stubs("@earendil-works/pi-ai");
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
 export const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
 export const ANTHROPIC_FEDERATION_RULE_ID_ENV = "ANTHROPIC_FEDERATION_RULE_ID";
@@ -299,13 +442,13 @@ export class ModelsError extends Error {
 	}
 }
 export function anthropicMessagesApi() {
-	return hostApi;
+	return hostApi("anthropic-messages");
 }
 export function azureOpenAIResponsesApi() {
-	return hostApi;
+	return hostApi("azure-openai-responses");
 }
 export function bedrockConverseStreamApi() {
-	return hostApi;
+	return hostApi("bedrock-converse-stream");
 }
 const KNOWN_MODEL_TYPES = ["chat", "image", "classifier"];
 export function createProvider(input) {
@@ -420,27 +563,14 @@ export function envApiKeyAuth(name, envVars) {
 	};
 }
 export function googleGenerativeAIApi() {
-	return hostApi;
+	return hostApi("google-generative-ai");
 }
 export function googleVertexApi() {
-	return hostApi;
+	return hostApi("google-vertex");
 }
 const HOST_APIS = ["anthropic-messages", "openai-completions", "openai-responses", "azure-openai-responses", "openai-codex-responses", "google-generative-ai", "mistral-conversations"];
 export function hasApi(api) {
 	return HOST_APIS.includes(api);
-}
-function setupErrorMessage(model, error) {
-	return {
-		role: "assistant",
-		content: [],
-		api: model.api,
-		provider: model.provider,
-		model: model.id,
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-		stopReason: "error",
-		errorMessage: error instanceof Error ? error.message : String(error),
-		timestamp: Date.now(),
-	};
 }
 export function lazyStream(model, setup) {
 	const outer = new AssistantMessageEventStream();
@@ -450,7 +580,7 @@ export function lazyStream(model, setup) {
 			outer.end(typeof inner.result === "function" ? await inner.result() : undefined);
 		})
 		.catch((error) => {
-			const message = setupErrorMessage(model, error);
+			const message = yapi.setupError(model, error);
 			outer.push({ type: "error", reason: "error", error: message });
 			outer.end(message);
 		});
@@ -491,36 +621,36 @@ export function lazyOAuth(input) {
 	};
 }
 export function mistralConversationsApi() {
-	return hostApi;
+	return hostApi("mistral-conversations");
 }
 export function openAICodexResponsesApi() {
-	return hostApi;
+	return hostApi("openai-codex-responses");
 }
 export function openAICompletionsApi() {
-	return hostApi;
+	return hostApi("openai-completions");
 }
 export function openAIResponsesApi() {
-	return hostApi;
+	return hostApi("openai-responses");
 }
 export function piMessagesApi() {
-	return hostApi;
+	return hostApi("pi-messages");
 }
-export const streamAnthropic = hostStream;
-export const streamAzureOpenAIResponses = hostStream;
-export const streamGoogle = hostStream;
-export const streamGoogleVertex = hostStream;
-export const streamMistral = hostStream;
-export const streamOpenAICodexResponses = hostStream;
-export const streamOpenAICompletions = hostStream;
-export const streamOpenAIResponses = hostStream;
-export const streamSimpleAnthropic = hostStream;
-export const streamSimpleAzureOpenAIResponses = hostStream;
-export const streamSimpleGoogle = hostStream;
-export const streamSimpleGoogleVertex = hostStream;
-export const streamSimpleMistral = hostStream;
-export const streamSimpleOpenAICodexResponses = hostStream;
-export const streamSimpleOpenAICompletions = hostStream;
-export const streamSimpleOpenAIResponses = hostStream;
+export const streamAnthropic = hostApi("anthropic-messages").stream;
+export const streamAzureOpenAIResponses = hostApi("azure-openai-responses").stream;
+export const streamGoogle = hostApi("google-generative-ai").stream;
+export const streamGoogleVertex = hostApi("google-vertex").stream;
+export const streamMistral = hostApi("mistral-conversations").stream;
+export const streamOpenAICodexResponses = hostApi("openai-codex-responses").stream;
+export const streamOpenAICompletions = hostApi("openai-completions").stream;
+export const streamOpenAIResponses = hostApi("openai-responses").stream;
+export const streamSimpleAnthropic = hostApi("anthropic-messages").streamSimple;
+export const streamSimpleAzureOpenAIResponses = hostApi("azure-openai-responses").streamSimple;
+export const streamSimpleGoogle = hostApi("google-generative-ai").streamSimple;
+export const streamSimpleGoogleVertex = hostApi("google-vertex").streamSimple;
+export const streamSimpleMistral = hostApi("mistral-conversations").streamSimple;
+export const streamSimpleOpenAICodexResponses = hostApi("openai-codex-responses").streamSimple;
+export const streamSimpleOpenAICompletions = hostApi("openai-completions").streamSimple;
+export const streamSimpleOpenAIResponses = hostApi("openai-responses").streamSimple;
 
 // ----- subpath modules ------------------------------------------------------------------------------
 // pi-ai's subpaths (`/providers/*`, `/api/*`, `/utils/*`, `/models`, `/compat`,

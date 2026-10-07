@@ -172,7 +172,10 @@
 			registerProvider(nameOrProvider, config) {
 				if (typeof nameOrProvider === "string") {
 					if (!config) throw new Error("Provider config is required when registering by name");
-					extension.providers.push({ name: nameOrProvider, config: describeProvider(config) });
+					const provider = { name: nameOrProvider, config: describeProvider(config) };
+					// The code stays here; the host gets the description.
+					Object.defineProperty(provider, "implementation", { value: config });
+					extension.providers.push(provider);
 				} else extension.providers.push({ name: nameOrProvider.id, native: true });
 			},
 			unregisterProvider(name) {
@@ -251,7 +254,16 @@
 			else out[key] = plain(value);
 		}
 		out.hasStreamSimple = typeof config.streamSimple === "function";
+		out.hasRefreshModels = typeof config.refreshModels === "function";
 		return out;
+	}
+	/** The configuration of provider `name` as last registered, with its code. */
+	function providerConfig(name) {
+		let found;
+		for (const extension of extensions.values()) {
+			for (const provider of extension.providers) if (provider.name === name && provider.implementation) found = provider.implementation;
+		}
+		return found;
 	}
 	function describe(extension) {
 		return {
@@ -968,6 +980,79 @@
 		return { result: plain(result), errors };
 	}
 
+	// ----- provider streams --------------------------------------------------------------------
+	/** Aborts of running streams and sign-ins, by the host's id. */
+	const aborts = new Map();
+	/**
+	 * An event for the host: `start` with its message, `done` and `error` with
+	 * the final one, the others without the live message but with its usage.
+	 */
+	function wireEvent(event) {
+		switch (event.type) {
+			case "start":
+				return { type: "start", message: plain(event.partial) };
+			case "done":
+				return { type: "done", message: plain(event.message) };
+			case "error":
+				return { type: "error", message: plain(event.error) };
+			default: {
+				const { partial, ...rest } = event;
+				if (event.type === "toolcall_start") {
+					const block = partial?.content?.[event.contentIndex];
+					rest.id = block?.id;
+					rest.toolName = block?.name;
+				}
+				return { type: "update", event: plain(rest), usage: plain(partial?.usage) };
+			}
+		}
+	}
+	/**
+	 * pi's `onPayload`, `onResponse` and `onProviderStreamEvent` options for
+	 * stream `id`, those of the session's hooks that `hooks` names. pi-ai's
+	 * facade passes them on to yapi's providers by `yapiStream`.
+	 */
+	function requestHooks(id, hooks = {}) {
+		const hook = (kind, toPayload) => Object.assign(async (value) => yapi.op(`provider.${kind}`, { id, ...toPayload(value) }), { yapiStream: id });
+		const options = {};
+		if (hooks.payload) options.onPayload = hook("payload", (body) => ({ payload: plain(body) ?? null }));
+		if (hooks.response) {
+			options.onResponse = hook("response", (response) => ({
+				status: response?.status,
+				headers: response?.headers instanceof Headers ? Object.fromEntries(response.headers) : (plain(response?.headers) ?? {}),
+			}));
+		}
+		if (hooks.streamEvent) options.onProviderStreamEvent = hook("streamEvent", (data) => ({ data: plain(data) ?? null }));
+		return options;
+	}
+	/** Runs `run` with an abort signal that the host's `abort` of `id` fires. */
+	async function abortable(id, run) {
+		const controller = new AbortController();
+		aborts.set(id, controller);
+		try {
+			return await run(controller.signal);
+		} finally {
+			aborts.delete(id);
+		}
+	}
+	/** Runs `run` with provider `payload.provider`'s `oauth` as operation `payload.id`. */
+	function withOAuth(payload, run) {
+		const oauth = providerConfig(payload.provider)?.oauth;
+		if (!oauth) throw new Error(`Provider ${payload.provider} has no OAuth sign-in`);
+		return abortable(payload.id, async (signal) => plain(await run(oauth, signal)) ?? null);
+	}
+	/** pi's `lazyStream` message for a stream that failed; pi-ai's facade uses it too. */
+	const setupError = (yapi.setupError = (model, error) => ({
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "error",
+		errorMessage: errorMessage(error),
+		timestamp: Date.now(),
+	}));
+
 	// ----- dispatch -------------------------------------------------------------------------------
 	const extensionOf = (id) => {
 		const extension = extensions.get(id);
@@ -980,7 +1065,8 @@
 			for (const [name, value] of Object.entries(payload.flags ?? {})) flagValues.set(name, value);
 			const results = [];
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
-			return { extensions: results };
+			// Wire APIs registered with pi-ai's `registerApiProvider`.
+			return { extensions: results, apis: [...(yapi.apiProviders?.keys() ?? [])] };
 		},
 		async bind() {
 			bound = true;
@@ -1128,6 +1214,93 @@
 			if (!shortcut) throw new Error(`Shortcut ${payload.shortcut} is not registered`);
 			await shortcut.handler(createContext(payload.ctx));
 			return null;
+		},
+		/**
+		 * Streams a response for a model whose API an extension implements:
+		 * its provider's `streamSimple` when the API matches, else the API's
+		 * `registerApiProvider` stream, as pi's provider composer picks. Each
+		 * event goes to the host as it arrives. A stream that throws ends
+		 * with pi's setup error.
+		 */
+		async stream(payload) {
+			const { id, model, context } = payload;
+			const send = (event) => yapi.request("provider.event", { id, ...event });
+			await abortable(id, async (signal) => {
+				try {
+					const config = providerConfig(model.provider);
+					const options = { ...payload.options, signal, ...requestHooks(id, payload.hooks) };
+					let events;
+					if (typeof config?.streamSimple === "function" && config.api === model.api) events = config.streamSimple(model, context, options);
+					else {
+						const api = yapi.apiProviders?.get(model.api)?.provider;
+						if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
+						events = api.streamSimple(model, context, options);
+					}
+					for await (const event of events) {
+						send(wireEvent(event));
+						if (event.type === "done" || event.type === "error") break;
+					}
+				} catch (error) {
+					send({ type: "error", message: setupError(model, error) });
+				}
+			});
+			return null;
+		},
+		/** Aborts stream or sign-in `id`. */
+		abort(payload) {
+			aborts.get(payload.id)?.abort();
+			return null;
+		},
+		/**
+		 * Runs provider `provider`'s `oauth.login` with callbacks that reach
+		 * the host's sign-in `id`, as pi's provider composer adapts them.
+		 */
+		oauthLogin(payload) {
+			const notify = (event) => yapi.request("oauth.notify", { id: payload.id, event });
+			const prompt = (question) => yapi.op("oauth.prompt", { id: payload.id, prompt: question });
+			return withOAuth(payload, (oauth, signal) =>
+				oauth.login({
+					onAuth: (info) => notify({ type: "auth_url", ...info }),
+					onDeviceCode: (info) => notify({ type: "device_code", ...info }),
+					onPrompt: (question) => prompt({ type: "text", ...question }),
+					onProgress: (message) => notify({ type: "progress", message }),
+					onManualCodeInput: () => prompt({ type: "manual_code", message: "Paste the authorization code" }),
+					onSelect: (question) => prompt({ type: "select", ...question }),
+					signal,
+				}),
+			);
+		},
+		oauthRefresh(payload) {
+			return withOAuth(payload, (oauth, signal) => oauth.refreshToken(payload.credential, signal));
+		},
+		oauthApiKey(payload) {
+			return withOAuth(payload, (oauth) => oauth.getApiKey(payload.credential));
+		},
+		/**
+		 * Runs one phase of provider `provider`'s `refreshModels`: `{ models }`,
+		 * `null` when it returns none, with the last entry it asked `publish`
+		 * to persist (`null` to delete) as `persist`. The host writes it.
+		 */
+		async refreshModels(payload) {
+			const config = providerConfig(payload.provider);
+			if (typeof config?.refreshModels !== "function") return { models: null };
+			const result = {};
+			const models = await abortable(payload.id, (signal) =>
+				config.refreshModels({
+					credential: payload.credential ?? undefined,
+					stored: payload.stored ?? undefined,
+					allowNetwork: !!payload.allowNetwork,
+					force: payload.allowNetwork ? payload.force : undefined,
+					signal,
+					publish: async (publication) => {
+						if (publication.persist !== undefined) result.persist = plain(publication.persist) ?? null;
+						publication.update?.();
+						return true;
+					},
+				}),
+			);
+			result.models = plain(models) ?? null;
+			return result;
 		},
 		/**
 		 * Builds the component a tool's `renderCall`/`renderResult` or a

@@ -20,14 +20,14 @@ use crate::stream::{
 /// The request's cache retention: the option, else the legacy
 /// `PI_CACHE_RETENTION=long`; the backend's default otherwise.
 fn cache_retention(options: &StreamOptions) -> Option<&'static str> {
-    match options.cache_retention {
-        Some(CacheRetention::None) => Some("none"),
-        Some(CacheRetention::Short) => Some("short"),
-        Some(CacheRetention::Long) => Some("long"),
-        None => (provider_env_value("PI_CACHE_RETENTION", options.env.as_ref()).as_deref()
-            == Some("long"))
-        .then_some("long"),
-    }
+    options
+        .cache_retention
+        .map(CacheRetention::as_str)
+        .or_else(|| {
+            (provider_env_value("PI_CACHE_RETENTION", options.env.as_ref()).as_deref()
+                == Some("long"))
+            .then_some("long")
+        })
 }
 
 fn payload(model: &Model, request: &Request) -> Value {

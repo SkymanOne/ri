@@ -254,12 +254,15 @@ impl OAuthProvider for KimiOAuth {
         Box::pin(self.refresh_kimi(&credential.refresh, cancel))
     }
 
-    fn to_auth(&self, credential: &OAuthCredential) -> OAuthAuth {
+    fn to_auth<'a>(
+        &'a self,
+        credential: &'a OAuthCredential,
+    ) -> BoxFuture<'a, Result<OAuthAuth, AuthError>> {
         let mut auth = OAuthAuth::default();
         auth.headers.insert(
             "Authorization".into(),
             Some(format!("Bearer {}", credential.access)),
         );
-        auth
+        Box::pin(async move { Ok(auth) })
     }
 }

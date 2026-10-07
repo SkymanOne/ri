@@ -74,3 +74,15 @@ export default function (pi: ExtensionAPI) {
 ```
 
 Start yapi and run `/hello Ada`. Pi's [extension documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/extensions.md) covers tools, events, UI components and the rest of the API.
+
+## Providers from extensions
+
+`pi.registerProvider()` adds a provider and its models, as in Pi. Its models appear in `/model`, and `--model` and RPC's `set_model` select them like any other.
+
+A provider configured like a `models.json` entry streams through yapi's implementation of its `api`. A provider with its own `streamSimple` implements an API yapi does not have: yapi sends it each request with the session's credentials and shows its events as they arrive. A stream registered with pi-ai's `registerApiProvider` for an API yapi does not have serves every model of that API, including ones from `models.json`. A `streamSimple` can hand a request to pi-ai's implementation of a built-in API, such as `anthropicMessagesApi()`, which runs on yapi's provider for that API. The `onPayload`, `onResponse` and `onProviderStreamEvent` options a stream receives run the session's `before_provider_request`, `after_provider_response` and `provider_stream_event` handlers, also when the stream passes them on to a built-in API.
+
+A provider with `oauth` adds its sign-in to `/login`. yapi stores the credentials it returns in `auth.json` as Pi does, refreshes them with its `refreshToken` before they expire, and asks its `getApiKey` for the key of each request. A provider with a sign-in and no `apiKey` offers no API key login, as in Pi.
+
+A provider with `refreshModels` gets its model list from the extension whenever yapi refreshes model catalogs, first offline and then with its credential when the network is allowed. The list it returns replaces the registered models. A catalog it saves with `context.publish({ persist })` is kept in `models-store.json`, and later sessions receive it as `context.stored`.
+
+Pi's [custom provider documentation](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/docs/custom-provider.md) describes the configuration.

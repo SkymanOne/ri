@@ -90,10 +90,12 @@ pub fn login_options(registry: &ModelRegistry, kind: Option<LoginKind>) -> Vec<P
                 subscription,
             });
         }
-        // Custom providers take a key; OAuth-only built-ins do not.
+        // Custom providers take a key; OAuth-only built-ins do not, nor
+        // custom ones with a sign-in and no configured key.
         let api_key = match info {
             Some(info) => info.api_key.map(|method| method.name.to_owned()),
             None if id == llama => Some("llama.cpp server".to_owned()),
+            None if flow.is_some() && !registry.configures_api_key(&id) => None,
             None => Some("API key".to_owned()),
         };
         if kind.is_none_or(|kind| kind == LoginKind::ApiKey)
@@ -1233,6 +1235,69 @@ mod tests {
                 .iter()
                 .all(|option| option.kind == LoginKind::OAuth)
         );
+    }
+
+    /// A sign-in that is never run.
+    struct Sso;
+
+    impl yapi_ai::auth::OAuthProvider for Sso {
+        fn name(&self) -> &str {
+            "Corp SSO"
+        }
+
+        fn login<'a>(
+            &'a self,
+            _interaction: &'a yapi_ai::auth::Interaction,
+            _options: &'a yapi_ai::auth::LoginOptions,
+        ) -> futures_util::future::BoxFuture<
+            'a,
+            Result<yapi_types::auth::OAuthCredential, yapi_ai::auth::AuthError>,
+        > {
+            Box::pin(async { Err(yapi_ai::auth::AuthError::Cancelled) })
+        }
+
+        fn refresh<'a>(
+            &'a self,
+            _credential: &'a yapi_types::auth::OAuthCredential,
+            _cancel: &'a CancellationToken,
+        ) -> futures_util::future::BoxFuture<
+            'a,
+            Result<yapi_types::auth::OAuthCredential, yapi_ai::auth::AuthError>,
+        > {
+            Box::pin(async { Err(yapi_ai::auth::AuthError::Cancelled) })
+        }
+    }
+
+    /// An extension provider with a sign-in offers an API key only when it
+    /// configures one, as pi composes its auth.
+    #[test]
+    fn extension_sign_ins_without_keys_offer_no_key_login() {
+        let config = |key: Option<&str>| {
+            serde_json::from_value(serde_json::json!({
+                "baseUrl": "http://127.0.0.1:9", "api": "corp-api", "apiKey": key,
+                "models": [{"id": "corp-1"}],
+            }))
+            .unwrap()
+        };
+        let mut registry = ModelRegistry::builtin();
+        registry.register_config("corp", config(None));
+        registry.register_oauth("corp", std::sync::Arc::new(Sso));
+        let options = find_options(&registry, "corp");
+        assert_eq!(options.len(), 1, "{options:?}");
+        assert_eq!(
+            (
+                options[0].name.as_str(),
+                options[0].kind,
+                options[0].method.as_str()
+            ),
+            ("Corp SSO", LoginKind::OAuth, "Corp SSO")
+        );
+        registry.register_config("corp", config(Some("$CORP_KEY")));
+        let kinds: Vec<LoginKind> = find_options(&registry, "corp")
+            .iter()
+            .map(|option| option.kind)
+            .collect();
+        assert_eq!(kinds, [LoginKind::OAuth, LoginKind::ApiKey]);
     }
 
     #[test]

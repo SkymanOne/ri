@@ -613,13 +613,7 @@ impl ModelRegistry {
     /// or bearer token a request would send, refreshed first when it is an
     /// expiring OAuth token.
     pub async fn provider_token(&self, provider: &str) -> Option<String> {
-        let model = self
-            .models
-            .iter()
-            .find(|model| model.provider == provider)
-            .cloned()
-            .or_else(|| placeholder_model(provider))?;
-        let auth = self.auth(&model).await;
+        let auth = self.provider_auth(provider).await?;
         if auth.error.is_some() {
             return None;
         }
@@ -631,6 +625,18 @@ impl ModelRegistry {
                 .and_then(|value| value.strip_prefix("Bearer "))
                 .map(str::to_owned)
         })
+    }
+
+    /// Credentials for a provider-level call: those of the provider's first
+    /// model, or of a placeholder model of it.
+    async fn provider_auth(&self, provider: &str) -> Option<Auth> {
+        let model = self
+            .models
+            .iter()
+            .find(|model| model.provider == provider)
+            .cloned()
+            .or_else(|| placeholder_model(provider))?;
+        Some(self.auth(&model).await)
     }
 
     /// The catalog alone, with no files.
@@ -887,6 +893,45 @@ impl ModelRegistry {
         }
         self.config.providers.insert(provider.to_owned(), config);
         self.rebuild();
+    }
+
+    /// Replaces the models an extension provider configures with ones its
+    /// `refreshModels` returned. Fails, changing nothing, when a model lacks
+    /// an API or base URL, as pi validates a refreshed list before using it.
+    pub fn replace_models(
+        &mut self,
+        provider: &str,
+        models: Vec<ModelDefinition>,
+    ) -> Result<(), String> {
+        let config = self
+            .config
+            .providers
+            .get_mut(provider)
+            .ok_or_else(|| format!("Unknown provider: {provider}"))?;
+        // Any built-in model supplies the API and base URL a definition leaves out.
+        let defaults = catalog::builtin_models(provider).into_iter().next();
+        for definition in &models {
+            model_from_definition(provider, definition, config, defaults.as_ref())?;
+        }
+        config.models = Some(models);
+        self.rebuild();
+        Ok(())
+    }
+
+    /// The credential a catalog refresh of `provider` passes to the network,
+    /// as pi's `resolveRefreshCredential`: a stored OAuth credential,
+    /// refreshed when it has expired, else the API key a request would use.
+    pub async fn refresh_credential(&self, provider: &str) -> Option<Credential> {
+        if let Some(Credential::OAuth(stored)) = self.credential(provider) {
+            let flow = self.oauth_flow(provider)?;
+            let refreshed = self.refreshed_oauth(provider, flow.as_ref(), stored, 0);
+            return refreshed.await.ok().flatten().map(Credential::OAuth);
+        }
+        let auth = self.provider_auth(provider).await?;
+        Some(Credential::ApiKey(ApiKeyCredential {
+            key: Some(auth.api_key?),
+            env: auth.env,
+        }))
     }
 
     /// Adds models from an extension provider, replacing the provider's models.
@@ -1241,10 +1286,9 @@ impl ModelRegistry {
         auth
     }
 
-    /// Request credentials from a stored OAuth token. A token that expires
-    /// within `min_validity_ms` is refreshed under the `auth.json` lock, after
-    /// checking again that no other process refreshed it. `Ok(None)` means the
-    /// provider was logged out meanwhile.
+    /// Request credentials from a stored OAuth token, refreshed first when
+    /// it expires within `min_validity_ms`. `Ok(None)` means the provider was
+    /// logged out meanwhile.
     async fn oauth_auth(
         &self,
         provider: &str,
@@ -1258,46 +1302,67 @@ impl ModelRegistry {
                 ..OAuthAuth::default()
             }));
         };
+        let refreshed = self.refreshed_oauth(provider, flow.as_ref(), stored, min_validity_ms);
+        let Some(credential) = refreshed.await? else {
+            return Ok(None);
+        };
+        flow.to_auth(&credential)
+            .await
+            .map(Some)
+            .map_err(|err| format!("OAuth auth derivation failed for {provider}: {err}"))
+    }
+
+    /// `stored`, or when it expires within `min_validity_ms`, the credential
+    /// `flow` refreshes it to under the `auth.json` lock, after checking again
+    /// that no other process refreshed it. `Ok(None)` means the provider was
+    /// logged out meanwhile.
+    async fn refreshed_oauth(
+        &self,
+        provider: &str,
+        flow: &dyn OAuthProvider,
+        stored: OAuthCredential,
+        min_validity_ms: u64,
+    ) -> Result<Option<OAuthCredential>, String> {
         let expires_soon = |credential: &OAuthCredential| {
             crate::auth::now_ms() + min_validity_ms >= credential.expires
         };
-        let mut credential = stored;
-        if expires_soon(&credential) {
-            let cancel = CancellationToken::new();
-            let (flow_ref, cancel_ref) = (&flow, &cancel);
-            let refreshed = self
-                .store
-                .modify(
-                    provider,
-                    |current| async move {
-                        let Some(Credential::OAuth(current)) = current else {
-                            return Ok(None);
-                        };
-                        if !expires_soon(&current) {
-                            return Ok(None);
-                        }
-                        let refresh = flow_ref.refresh(&current, cancel_ref);
-                        match tokio::time::timeout(OAUTH_REFRESH_TIMEOUT, refresh).await {
-                            Ok(result) => result.map(|next| Some(Credential::OAuth(next))),
-                            Err(_) => Err(AuthError::failed(
-                                "The operation was aborted due to timeout",
-                            )),
-                        }
-                    },
-                    &cancel,
-                )
-                .await
-                .map_err(|err| format!("OAuth refresh failed for {provider}: {err}"))?;
-            match refreshed {
-                Some(Credential::OAuth(next)) => credential = next,
-                _ => return Ok(None),
-            }
+        if !expires_soon(&stored) {
+            return Ok(Some(stored));
         }
-        Ok(Some(flow.to_auth(&credential)))
+        let cancel = CancellationToken::new();
+        let cancel_ref = &cancel;
+        let refreshed = self
+            .store
+            .modify(
+                provider,
+                |current| async move {
+                    let Some(Credential::OAuth(current)) = current else {
+                        return Ok(None);
+                    };
+                    if !expires_soon(&current) {
+                        return Ok(None);
+                    }
+                    let refresh = flow.refresh(&current, cancel_ref);
+                    match tokio::time::timeout(OAUTH_REFRESH_TIMEOUT, refresh).await {
+                        Ok(result) => result.map(|next| Some(Credential::OAuth(next))),
+                        Err(_) => Err(AuthError::failed(
+                            "The operation was aborted due to timeout",
+                        )),
+                    }
+                },
+                &cancel,
+            )
+            .await
+            .map_err(|err| format!("OAuth refresh failed for {provider}: {err}"))?;
+        Ok(match refreshed {
+            Some(Credential::OAuth(next)) => Some(next),
+            _ => None,
+        })
     }
 
     /// The display name of a provider: its `models.json` or extension
-    /// `name`, else the built-in name, else its id.
+    /// `name`, else the built-in name, else the name of its registered
+    /// sign-in, else its id.
     pub fn provider_name(&self, provider: &str) -> String {
         if let Some(name) = self
             .config
@@ -1307,7 +1372,19 @@ impl ModelRegistry {
         {
             return name.clone();
         }
-        providers::info(provider).map_or_else(|| provider.to_owned(), |info| info.name.to_owned())
+        providers::info(provider)
+            .map(|info| info.name.to_owned())
+            .or_else(|| self.oauth.get(provider).map(|flow| flow.name().to_owned()))
+            .unwrap_or_else(|| provider.to_owned())
+    }
+
+    /// Whether `models.json` or an extension configures an `apiKey` for
+    /// `provider`, even an empty one.
+    pub fn configures_api_key(&self, provider: &str) -> bool {
+        self.config
+            .providers
+            .get(provider)
+            .is_some_and(|config| config.api_key.is_some())
     }
 
     /// Runs a sign-in and stores the credential. An API key login asks for the
@@ -1429,6 +1506,43 @@ mod tests {
             strip_json_comments("[1,\u{a0}\u{feff}] \"a\\\"// b\""),
             "[1\u{a0}\u{feff}] \"a\\\"// b\""
         );
+    }
+
+    /// A refreshed list replaces an extension provider's models only when
+    /// every model has an API and a base URL.
+    #[test]
+    fn replace_models_validates_before_applying() {
+        let config = |value| serde_json::from_value::<ProviderConfig>(value).unwrap();
+        let models = |value| serde_json::from_value::<Vec<ModelDefinition>>(value).unwrap();
+        let ids = |registry: &ModelRegistry, provider: &str| -> Vec<String> {
+            registry
+                .models()
+                .iter()
+                .filter(|model| model.provider == provider)
+                .map(|model| model.id.clone())
+                .collect()
+        };
+        let mut registry = ModelRegistry::builtin();
+        registry.register_config(
+            "x",
+            config(serde_json::json!({"baseUrl": "http://x", "api": "openai-completions", "models": [{"id": "a"}]})),
+        );
+        registry
+            .replace_models("x", models(serde_json::json!([{"id": "b"}, {"id": "c"}])))
+            .unwrap();
+        assert_eq!(ids(&registry, "x"), ["b", "c"]);
+        registry.register_config(
+            "y",
+            config(serde_json::json!({"baseUrl": "http://y", "models": [{"id": "a", "api": "openai-completions"}]})),
+        );
+        let error = registry
+            .replace_models("y", models(serde_json::json!([{"id": "b"}])))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "Provider y, model b: no \"api\" specified. Set at provider or model level."
+        );
+        assert_eq!(ids(&registry, "y"), ["a"]);
     }
 
     /// pi's `/login` labels for each credential source, and names from

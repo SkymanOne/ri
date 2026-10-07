@@ -1534,13 +1534,22 @@
 			bodyBase64 = base64Encode(body instanceof ArrayBuffer ? new Uint8Array(body) : body);
 			body = undefined;
 		}
-		const result = await yapi.op("fetch", {
+		const response = yapi.op("fetch", {
 			url: request.url,
 			method: request.method,
 			headers: Object.fromEntries(request.headers),
 			body: typeof body === "string" ? body : undefined,
 			bodyBase64,
 		});
+		// An abort rejects at once; the host finishes the request unread.
+		const signal = request.signal;
+		const result = await (signal
+			? new Promise((resolve, reject) => {
+					const onAbort = () => reject(signal.reason);
+					signal.addEventListener("abort", onAbort, { once: true });
+					response.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+				})
+			: response);
 		return new Response(base64Decode(result.bodyBase64), {
 			status: result.status,
 			statusText: result.statusText,

@@ -24,7 +24,7 @@ use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxView, WasiView};
 use crate::Error;
 use crate::engine::{Engine, Extension, yapi as wit};
 use crate::loader::Loader;
-use crate::requests::Host;
+use crate::requests::{AiStreams, Host};
 
 /// How long one guest export may compute, not counting time spent in host
 /// requests, before the instance is stopped.
@@ -79,6 +79,12 @@ pub trait Bridge: Send + Sync {
     fn start(&self, kind: &str, _payload: Value) -> BoxFuture<'static, Result<Value, String>> {
         let message = format!("{kind} is not available here");
         Box::pin(async move { Err(message) })
+    }
+
+    /// The request hooks of running extension stream `id`, for the requests
+    /// it makes through yapi's wire APIs.
+    fn stream_hooks(&self, _id: u64) -> yapi_ai::stream::RequestHooks {
+        yapi_ai::stream::RequestHooks::default()
     }
 
     /// Console output from extensions, at `level` `debug`, `info`, `warn` or
@@ -240,6 +246,7 @@ impl Instance {
             loader: Loader::new(options.cwd.clone(), options.cache_dir.clone()),
             bridge,
             options,
+            ai_streams: AiStreams::default(),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
