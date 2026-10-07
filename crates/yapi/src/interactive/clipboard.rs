@@ -387,18 +387,15 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn commands_run_without_blocking_the_runtime() {
-        let started = std::time::Instant::now();
-        let tick = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            started.elapsed()
-        });
+        let tick = tokio::spawn(tokio::time::sleep(Duration::from_millis(20)));
         let script = ["-c", "cat >/dev/null; sleep 0.5"];
         assert!(
             run("sh", &script, Some("text"), COMMAND_TIMEOUT)
                 .await
                 .is_some()
         );
-        assert!(tick.await.unwrap() < Duration::from_millis(400));
+        // The tick ran while the command slept, however long it took to start.
+        assert!(tick.is_finished());
         let echo = run("sh", &["-c", "cat"], None, COMMAND_TIMEOUT).await;
         assert_eq!(echo.as_deref(), Some(&b""[..]));
         let output = run("sh", &["-c", "printf out"], None, COMMAND_TIMEOUT).await;
