@@ -22,6 +22,7 @@ use yapi_ai::api::Apis;
 use yapi_ai::registry::ModelRegistry;
 use yapi_ai::stream::{Hook, RequestHeaders, RequestHooks, StreamOptions, ThinkingBudgets};
 use yapi_types::event::{AgentEvent, SummarySource, ToolResult};
+use yapi_types::extension_event::{ExtensionEvent, TreePreparation};
 use yapi_types::message::{
     AssistantMessage, Content, ContentBlock, ImageContent, Message, StopReason, SystemMessage,
     ThinkingLevel, ToolCall, UserMessage,
@@ -548,8 +549,9 @@ impl AgentSession {
             session.name()
         });
         self.emit(&AgentEvent::SessionInfoChanged { name: name.clone() });
-        let event = serde_json::json!({"type": "session_info_changed", "name": name});
-        self.announce(extensions::defined(event, &["name"]));
+        self.announce(ExtensionEvent::SessionInfoChanged {
+            name: name.as_deref(),
+        });
     }
 
     /// A snapshot of the merged settings.
@@ -759,12 +761,13 @@ impl AgentSession {
         if handlers.is_empty() {
             return Ok(UserBash::Local);
         }
-        let event = serde_json::json!({
-            "type": "user_bash",
-            "command": command,
-            "excludeFromContext": exclude_from_context,
-            "cwd": self.with_session(|session| session.cwd().to_path_buf()),
-        });
+        let cwd = self.with_session(|session| session.cwd().to_path_buf());
+        let event = ExtensionEvent::UserBash {
+            command,
+            exclude_from_context,
+            cwd: &cwd,
+        }
+        .to_value();
         let ctx = self.extension_context(CancellationToken::new());
         for extension in handlers {
             let Some(result) = extension.handle(&ctx, &event).await else {
@@ -1329,7 +1332,7 @@ impl AgentSession {
         *lock(&self.inner.cancel) = None;
         // Extensions hear it first, as in pi.
         self.emit_extension_event(
-            &serde_json::json!({"type": "agent_settled"}),
+            &ExtensionEvent::AgentSettled.to_value(),
             CancellationToken::new(),
         )
         .await;
@@ -1394,11 +1397,11 @@ impl AgentSession {
                 "after_provider_response",
                 cancel,
                 |session, response: yapi_ai::stream::ProviderResponse, cancel| {
-                    let event = serde_json::json!({
-                        "type": "after_provider_response",
-                        "status": response.status,
-                        "headers": response.headers,
-                    });
+                    let event = ExtensionEvent::AfterProviderResponse {
+                        status: response.status,
+                        headers: &response.headers,
+                    }
+                    .to_value();
                     Box::pin(async move {
                         session.emit_extension_event(&event, cancel).await;
                     })
@@ -1567,26 +1570,20 @@ impl AgentSession {
         let mut summary = None;
         let mut from_extension = false;
         if self.has_handlers("session_before_tree") {
-            let mut preparation = serde_json::json!({
-                "targetId": target_id,
-                "oldLeafId": old_leaf,
-                "commonAncestorId": common,
-                "entriesToSummarize": entries,
-                "userWantsSummary": options.summarize,
-            });
-            if let Some(instructions) = &options.custom_instructions {
-                preparation["customInstructions"] = instructions.clone().into();
-            }
-            if options.replace_instructions {
-                preparation["replaceInstructions"] = true.into();
-            }
-            if let Some(label) = &options.label {
-                preparation["label"] = label.clone().into();
-            }
-            let event =
-                serde_json::json!({"type": "session_before_tree", "preparation": preparation});
+            let event = ExtensionEvent::SessionBeforeTree {
+                preparation: TreePreparation {
+                    target_id,
+                    old_leaf_id: old_leaf.as_deref(),
+                    common_ancestor_id: common.as_deref(),
+                    entries_to_summarize: &entries,
+                    user_wants_summary: options.summarize,
+                    custom_instructions: options.custom_instructions.as_deref(),
+                    replace_instructions: options.replace_instructions,
+                    label: options.label.as_deref(),
+                },
+            };
             if let Some(result) = self
-                .emit_extension_event(&event, CancellationToken::new())
+                .emit_extension_event(&event.to_value(), CancellationToken::new())
                 .await
             {
                 if result["cancel"] == true {
@@ -1720,16 +1717,14 @@ impl AgentSession {
         })?;
         self.restore_tools_from_transcript();
         // pi's `session_tree` event, after the leaf has moved.
-        let mut event = serde_json::json!({
-            "type": "session_tree",
-            "newLeafId": self.with_session(|session| session.leaf_id().map(str::to_owned)),
-            "oldLeafId": old_leaf,
-        });
-        if let Some(entry) = &summary_entry {
-            event["summaryEntry"] = serde_json::to_value(entry).unwrap_or_default();
-            event["fromExtension"] = from_extension.into();
-        }
-        self.emit_extension_event(&event, CancellationToken::new())
+        let new_leaf = self.with_session(|session| session.leaf_id().map(str::to_owned));
+        let event = ExtensionEvent::SessionTree {
+            new_leaf_id: new_leaf.as_deref(),
+            old_leaf_id: old_leaf.as_deref(),
+            summary_entry: summary_entry.as_ref(),
+            from_extension: summary_entry.is_some().then_some(from_extension),
+        };
+        self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
         Ok(TreeOutcome {
             editor_text,
