@@ -372,7 +372,13 @@ impl AgentHooks for Hooks {
                 .ok()
                 .flatten();
                 if let Some(content) = normalized {
-                    patch.get_or_insert_default().content = Some(content);
+                    // New images alone keep the structured content, as in pi.
+                    patch
+                        .get_or_insert_with(|| yapi_agent::hooks::ResultPatch {
+                            structured_content: call.result.structured_content.clone(),
+                            ..Default::default()
+                        })
+                        .content = Some(content);
                 }
             }
             patch
