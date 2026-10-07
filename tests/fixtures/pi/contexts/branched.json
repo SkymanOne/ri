@@ -7,10 +7,10 @@
         "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
         "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
         "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
-        "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /home/user/ri/tests/fixtures/pi/generator/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
-        "cwd": "<cwd>\n/tmp/ri-pi-fixtures/project\n</cwd>"
+        "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /tmp/yapi-pi-fixtures/pi-coding-agent/README.md\n- Additional docs: /tmp/yapi-pi-fixtures/pi-coding-agent/docs\n- Examples: /tmp/yapi-pi-fixtures/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
+        "cwd": "<cwd>\n/tmp/yapi-pi-fixtures/project\n</cwd>"
       },
-      "timestamp": 1790947555845,
+      "timestamp": 1791380952844,
       "toolsAdded": [
         {
           "name": "read",
@@ -141,7 +141,7 @@
           "text": "Hello"
         }
       ],
-      "timestamp": 1790947555844
+      "timestamp": 1791380952844
     },
     {
       "role": "assistant",
@@ -166,11 +166,11 @@
       "provider": "anthropic",
       "model": "claude-sonnet-4-5",
       "usage": {
-        "input": 1452,
+        "input": 1416,
         "output": 16,
         "cacheRead": 0,
-        "cacheWrite": 1452,
-        "totalTokens": 2920,
+        "cacheWrite": 1416,
+        "totalTokens": 2848,
         "cost": {
           "input": 0,
           "output": 0,
@@ -181,7 +181,7 @@
       },
       "stopReason": "stop",
       "responseId": "msg_01",
-      "timestamp": 1790947555839,
+      "timestamp": 1791380952843,
       "thinkingLevel": "medium"
     },
     {
@@ -192,7 +192,7 @@
           "text": "Create notes.txt, then fix it."
         }
       ],
-      "timestamp": 1790947555857
+      "timestamp": 1791380952848
     },
     {
       "role": "assistant",
@@ -217,9 +217,9 @@
       "usage": {
         "input": 28,
         "output": 17,
-        "cacheRead": 1452,
+        "cacheRead": 1416,
         "cacheWrite": 28,
-        "totalTokens": 1525,
+        "totalTokens": 1489,
         "cost": {
           "input": 0,
           "output": 0,
@@ -229,7 +229,7 @@
         }
       },
       "stopReason": "toolUse",
-      "timestamp": 1790947555856,
+      "timestamp": 1791380952848,
       "thinkingLevel": "medium"
     },
     {
@@ -243,7 +243,7 @@
         }
       ],
       "isError": false,
-      "timestamp": 1790947555864
+      "timestamp": 1791380952851
     },
     {
       "role": "assistant",
@@ -269,9 +269,9 @@
       "usage": {
         "input": 32,
         "output": 18,
-        "cacheRead": 1480,
+        "cacheRead": 1444,
         "cacheWrite": 33,
-        "totalTokens": 1563,
+        "totalTokens": 1527,
         "cost": {
           "input": 0,
           "output": 0,
@@ -281,7 +281,7 @@
         }
       },
       "stopReason": "toolUse",
-      "timestamp": 1790947555856,
+      "timestamp": 1791380952848,
       "thinkingLevel": "medium"
     },
     {
@@ -300,7 +300,7 @@
         "firstChangedLine": 2
       },
       "isError": false,
-      "timestamp": 1790947555873
+      "timestamp": 1791380952853
     },
     {
       "role": "assistant",
@@ -336,9 +336,9 @@
       "usage": {
         "input": 37,
         "output": 22,
-        "cacheRead": 1512,
+        "cacheRead": 1476,
         "cacheWrite": 37,
-        "totalTokens": 1608,
+        "totalTokens": 1572,
         "cost": {
           "input": 0,
           "output": 0,
@@ -348,7 +348,7 @@
         }
       },
       "stopReason": "toolUse",
-      "timestamp": 1790947555856,
+      "timestamp": 1791380952848,
       "thinkingLevel": "medium"
     },
     {
@@ -362,7 +362,7 @@
         }
       ],
       "isError": false,
-      "timestamp": 1790947556127
+      "timestamp": 1791380952903
     },
     {
       "role": "toolResult",
@@ -371,12 +371,12 @@
       "content": [
         {
           "type": "text",
-          "text": "ENOENT: no such file or directory, access '/tmp/ri-pi-fixtures/project/missing.txt'"
+          "text": "ENOENT: no such file or directory, access '/tmp/yapi-pi-fixtures/project/missing.txt'"
         }
       ],
       "details": {},
       "isError": true,
-      "timestamp": 1790947556128
+      "timestamp": 1791380952904
     },
     {
       "role": "toolResult",
@@ -394,7 +394,7 @@
         }
       ],
       "isError": false,
-      "timestamp": 1790947556128
+      "timestamp": 1791380952904
     },
     {
       "role": "assistant",
@@ -410,9 +410,9 @@
       "usage": {
         "input": 73,
         "output": 9,
-        "cacheRead": 1549,
+        "cacheRead": 1513,
         "cacheWrite": 74,
-        "totalTokens": 1705,
+        "totalTokens": 1669,
         "cost": {
           "input": 0,
           "output": 0,
@@ -422,7 +422,7 @@
         }
       },
       "stopReason": "stop",
-      "timestamp": 1790947555856,
+      "timestamp": 1791380952848,
       "thinkingLevel": "medium"
     },
     {
@@ -438,7 +438,7 @@
           "mimeType": "image/png"
         }
       ],
-      "timestamp": 1790947556231
+      "timestamp": 1791380952926
     },
     {
       "role": "assistant",
@@ -454,9 +454,9 @@
       "usage": {
         "input": 25,
         "output": 7,
-        "cacheRead": 1622,
+        "cacheRead": 1586,
         "cacheWrite": 25,
-        "totalTokens": 1679,
+        "totalTokens": 1643,
         "cost": {
           "input": 0,
           "output": 0,
@@ -466,7 +466,7 @@
         }
       },
       "stopReason": "stop",
-      "timestamp": 1790947556130,
+      "timestamp": 1791380952905,
       "thinkingLevel": "medium"
     },
     {
@@ -476,7 +476,7 @@
       "exitCode": 0,
       "cancelled": false,
       "truncated": false,
-      "timestamp": 1790947556241
+      "timestamp": 1791380952930
     },
     {
       "role": "bashExecution",
@@ -485,7 +485,7 @@
       "exitCode": 0,
       "cancelled": false,
       "truncated": false,
-      "timestamp": 1790947556249,
+      "timestamp": 1791380952933,
       "excludeFromContext": true
     },
     {
@@ -494,8 +494,8 @@
       "output": "partial output",
       "cancelled": true,
       "truncated": true,
-      "fullOutputPath": "/tmp/ri-pi-fixtures/bash-full.log",
-      "timestamp": 1790947556249
+      "fullOutputPath": "/tmp/yapi-pi-fixtures/bash-full.log",
+      "timestamp": 1791380952933
     },
     {
       "role": "custom",
@@ -505,7 +505,7 @@
       "details": {
         "priority": 1
       },
-      "timestamp": 1790947556250
+      "timestamp": 1791380952933
     },
     {
       "role": "user",
@@ -515,7 +515,7 @@
           "text": "Which API is this?"
         }
       ],
-      "timestamp": 1790947556251
+      "timestamp": 1791380952934
     },
     {
       "role": "assistant",
@@ -535,11 +535,11 @@
       "provider": "openai",
       "model": "gpt-5",
       "usage": {
-        "input": 1712,
+        "input": 1677,
         "output": 9,
         "cacheRead": 0,
-        "cacheWrite": 1712,
-        "totalTokens": 3433,
+        "cacheWrite": 1677,
+        "totalTokens": 3363,
         "cost": {
           "input": 0,
           "output": 0,
@@ -549,7 +549,7 @@
         }
       },
       "stopReason": "stop",
-      "timestamp": 1790947556251,
+      "timestamp": 1791380952933,
       "thinkingLevel": "high"
     },
     {
@@ -560,7 +560,7 @@
           "text": "Trigger an error."
         }
       ],
-      "timestamp": 1790947556254
+      "timestamp": 1791380952934
     },
     {
       "role": "assistant",
@@ -576,9 +576,9 @@
       "usage": {
         "input": 18,
         "output": 0,
-        "cacheRead": 1712,
+        "cacheRead": 1677,
         "cacheWrite": 18,
-        "totalTokens": 1748,
+        "totalTokens": 1713,
         "cost": {
           "input": 0,
           "output": 0,
@@ -589,7 +589,7 @@
       },
       "stopReason": "error",
       "errorMessage": "400 invalid_request_error: unsupported parameter",
-      "timestamp": 1790947556251,
+      "timestamp": 1791380952933,
       "thinkingLevel": "high"
     },
     {
@@ -600,7 +600,7 @@
           "text": "Retry please."
         }
       ],
-      "timestamp": 1790947556263
+      "timestamp": 1791380952937
     },
     {
       "role": "assistant",
@@ -616,9 +616,9 @@
       "usage": {
         "input": 0,
         "output": 6,
-        "cacheRead": 1738,
+        "cacheRead": 1703,
         "cacheWrite": 0,
-        "totalTokens": 1744,
+        "totalTokens": 1709,
         "cost": {
           "input": 0,
           "output": 0,
@@ -628,7 +628,7 @@
         }
       },
       "stopReason": "stop",
-      "timestamp": 1790947556262,
+      "timestamp": 1791380952937,
       "thinkingLevel": "medium"
     },
     {
@@ -639,7 +639,7 @@
           "text": "Write something long."
         }
       ],
-      "timestamp": 1790947556269
+      "timestamp": 1791380952941
     },
     {
       "role": "assistant",
@@ -653,11 +653,11 @@
       "provider": "google",
       "model": "gemini-2.5-pro",
       "usage": {
-        "input": 1754,
+        "input": 1719,
         "output": 330,
         "cacheRead": 0,
-        "cacheWrite": 1754,
-        "totalTokens": 3838,
+        "cacheWrite": 1719,
+        "totalTokens": 3768,
         "cost": {
           "input": 0,
           "output": 0,
@@ -667,7 +667,7 @@
         }
       },
       "stopReason": "aborted",
-      "timestamp": 1790947556522,
+      "timestamp": 1791380953094,
       "errorMessage": "Request was aborted",
       "thinkingLevel": "medium"
     }

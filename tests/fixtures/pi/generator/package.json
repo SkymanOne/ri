@@ -1,5 +1,5 @@
 {
-	"name": "ri-pi-fixtures",
+	"name": "yapi-pi-fixtures",
 	"private": true,
 	"type": "module",
 	"dependencies": {

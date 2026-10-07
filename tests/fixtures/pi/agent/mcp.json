@@ -11,7 +11,7 @@
     "docs": {
       "url": "https://example.com/mcp",
       "headers": {
-        "X-Team": "ri"
+        "X-Team": "yapi"
       },
       "exposure": "direct"
     }
