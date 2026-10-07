@@ -15,6 +15,7 @@ use serde_json::json;
 use yapi_ai::faux::{Faux, Response};
 use yapi_core::extensions::{Mode, NoUi};
 use yapi_ext::ExtensionHost;
+use yapi_types::event::AgentEvent;
 use yapi_types::message::Message;
 
 const EXTENSION: &str = r#"
@@ -388,4 +389,77 @@ async fn before_agent_start_handlers_edit_the_prompt_options() {
     assert!(text.contains("- Answer in one word."), "{text}");
     assert!(text.contains("Remember the notes."), "{text}");
     assert!(!text.contains("- bash:"), "{text}");
+}
+
+/// A tool's updates and the calls it makes through `ctx.executeTool()` report
+/// in call order, as pi emits them, from the task that runs the tool (#59).
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_updates_and_nested_calls_report_in_call_order() {
+    let dir = scratch("tool-order");
+    std::fs::write(dir.join("hello.txt"), "hi\n").unwrap();
+    let path = dir.join("relay.ts");
+    std::fs::write(
+        &path,
+        r#"export default function (pi) {
+	pi.registerTool({
+		name: "relay", label: "Relay", description: "Relays", parameters: { type: "object", properties: {} },
+		async execute(_id, _params, _signal, onUpdate, ctx) {
+			onUpdate({ content: [{ type: "text", text: "before" }] });
+			await ctx.executeTool("read", { path: "hello.txt" });
+			onUpdate({ content: [{ type: "text", text: "between" }] });
+			await ctx.executeTool("read", { path: "hello.txt" });
+			return { content: [{ type: "text", text: "done" }] };
+		},
+	});
+}
+"#,
+    )
+    .unwrap();
+    let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let faux = Faux::new([
+        Response::tool_call("call-1", "relay", json!({})),
+        Response::text("done"),
+    ]);
+    let session = session(&faux, &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = log.clone();
+    session.subscribe(Box::new(move |event| {
+        let line = match event {
+            AgentEvent::ToolExecutionStart { tool_call_id, .. } => format!("start {tool_call_id}"),
+            AgentEvent::ToolExecutionUpdate {
+                tool_call_id,
+                partial_result,
+                ..
+            } => format!(
+                "update {tool_call_id} {}",
+                yapi_types::message::blocks_text(&partial_result.content, "|")
+            ),
+            AgentEvent::ToolExecutionEnd { tool_call_id, .. } => format!("end {tool_call_id}"),
+            _ => return,
+        };
+        sink.lock().unwrap().push((tokio::task::try_id(), line));
+    }));
+    session.prompt("go", Vec::new()).await.unwrap();
+
+    let log = log.lock().unwrap();
+    let lines: Vec<&str> = log.iter().map(|(_, line)| line.as_str()).collect();
+    assert_eq!(
+        lines,
+        [
+            "start call-1",
+            "update call-1 before",
+            "start call-1/1",
+            "end call-1/1",
+            "update call-1 between",
+            "start call-1/2",
+            "end call-1/2",
+            "end call-1",
+        ]
+    );
+    assert!(log.iter().all(|(task, _)| *task == log[0].0), "{log:?}");
 }
