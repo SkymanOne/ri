@@ -592,6 +592,12 @@ async fn execute_prepared(
         if let Some(details) = patch.details {
             result.details = Some(details);
         }
+        if let Some(structured) = patch.structured_content {
+            result.structured_content = Some(structured);
+        }
+        if let Some(usage) = patch.usage {
+            result.usage = Some(usage);
+        }
         if let Some(terminate) = patch.terminate {
             result.terminate = Some(terminate);
         }

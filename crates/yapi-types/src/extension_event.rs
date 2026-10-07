@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::event::CompactionReason;
-use crate::message::{ContentBlock, ImageContent, Message, ThinkingLevel};
+use crate::message::{ContentBlock, ImageContent, Message, ThinkingLevel, Usage};
 use crate::model::Model;
 use crate::rpc::StreamingBehavior;
 use crate::session::FileEntry;
@@ -168,7 +168,11 @@ pub enum ExtensionEvent<'a> {
         content: &'a [ContentBlock],
         /// `null` when the tool gave none.
         details: Option<&'a Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        structured_content: Option<&'a Value>,
         is_error: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<&'a Usage>,
     },
 }
 
