@@ -549,14 +549,39 @@ impl ToolView {
         }
         match self.name.as_str() {
             "read" => {
-                let mut spans = vec![title(theme, "read"), Span::raw(" ")];
-                spans.push(path_span(
-                    theme,
-                    string_arg(args, &["file_path", "path"]),
-                    home,
-                    None,
-                ));
+                let path = string_arg(args, &["file_path", "path"]);
+                let compact = path
+                    .flatten()
+                    .filter(|path| !ctx.expanded && !path.is_empty())
+                    .and_then(|path| compact_read(path, ctx));
+                let hint = compact.is_some();
+                let mut spans = match compact {
+                    Some(("skill", label)) => {
+                        let style = theme.fg("customMessageLabel");
+                        vec![
+                            Span::styled("[skill]", style.add_modifier(Modifier::BOLD)),
+                            Span::styled(" ", style),
+                            Span::styled(label, theme.fg("customMessageText")),
+                        ]
+                    }
+                    Some((kind, label)) => vec![
+                        title(theme, &format!("read {kind}")),
+                        Span::raw(" "),
+                        Span::styled(label, theme.fg("accent")),
+                    ],
+                    None => vec![
+                        title(theme, "read"),
+                        Span::raw(" "),
+                        path_span(theme, path, home, None),
+                    ],
+                };
                 spans.extend(read_range(args, theme));
+                if hint {
+                    spans.push(Span::styled(
+                        format!(" ({} to expand)", ctx.expand_key),
+                        theme.fg("dim"),
+                    ));
+                }
                 vec![Line::from(spans)]
             }
             "bash" => {
@@ -1101,6 +1126,44 @@ impl ToolView {
     }
 }
 
+/// Context files a collapsed read names as a resource.
+const COMPACT_RESOURCES: [&str; 5] = [
+    "AGENTS.override.md",
+    "AGENTS.md",
+    "AGENTS.MD",
+    "CLAUDE.md",
+    "CLAUDE.MD",
+];
+
+/// pi's `getCompactReadClassification`: a read of a skill, of the docs or of
+/// a context file, as its kind and label. The docs are yapi's pages and
+/// pi's, labelled without their `pi/` directory as pi labels its own.
+fn compact_read(path: &str, ctx: &RenderContext<'_>) -> Option<(&'static str, String)> {
+    use yapi_core::tools::path::{relative, resolve_to_cwd};
+    let inside = |rel: &str| rel != ".." && !rel.starts_with("../");
+    let path = resolve_to_cwd(path, ctx.cwd);
+    let name = path.file_name()?.to_string_lossy();
+    if name == "SKILL.md" {
+        let dir = path.parent().and_then(|dir| dir.file_name());
+        let label = dir.map_or(name.clone(), |dir| dir.to_string_lossy());
+        return Some(("skill", label.into_owned()));
+    }
+    let docs = relative(&yapi_core::config::docs_dir(ctx.agent_dir), &path);
+    if !docs.is_empty() && inside(&docs) {
+        return Some(("docs", docs.strip_prefix("pi/").unwrap_or(&docs).to_owned()));
+    }
+    if COMPACT_RESOURCES.contains(&name.as_ref()) {
+        let rel = relative(ctx.cwd, &path);
+        let label = if inside(&rel) {
+            rel
+        } else {
+            path.display().to_string()
+        };
+        return Some(("resource", label));
+    }
+    None
+}
+
 fn read_range(args: &Value, theme: &Theme) -> Option<Span<'static>> {
     let offset = args.get("offset").and_then(Value::as_f64);
     let limit = args.get("limit").and_then(Value::as_f64);
@@ -1345,6 +1408,8 @@ pub fn render_diff(diff: &str, theme: &Theme) -> Vec<StyledLine> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     #[test]
     fn reads_image_sizes_as_pi_tui() {
         // A 1×1 PNG and a 3×2 GIF.
@@ -1393,6 +1458,8 @@ mod tests {
             expand_key: "ctrl+o",
             cancel_key: "esc",
             home: None,
+            cwd: Path::new("/work"),
+            agent_dir: Path::new("/agent"),
             thinking_label: "Thinking...",
         };
         let mut view = ToolView::new("mcp__demo__big", Value::Null);
@@ -1444,6 +1511,59 @@ mod tests {
             lines::plain(&view.call_lines(&ctx, 80)[0]),
             "demo/big",
             "the call shows the server/tool label"
+        );
+    }
+
+    #[test]
+    fn shows_skill_docs_and_context_reads_compactly_as_pi() {
+        let theme = Theme::builtin("dark", yapi_tui::color::ColorMode::TrueColor).unwrap();
+        let markdown = yapi_tui::markdown::MarkdownTheme::default();
+        let mut ctx = RenderContext {
+            theme: &theme,
+            markdown: &markdown,
+            expanded: false,
+            hide_thinking: false,
+            output_pad: 1,
+            expand_key: "ctrl+o",
+            cancel_key: "esc",
+            home: None,
+            cwd: Path::new("/work"),
+            agent_dir: Path::new("/agent"),
+            thinking_label: "Thinking...",
+        };
+        let call = |args: Value, ctx: &RenderContext<'_>| {
+            lines::plain(&ToolView::new("read", args).call_lines(ctx, 120)[0])
+        };
+        for (path, compact) in [
+            ("attio/SKILL.md", "[skill] attio"),
+            ("/work/.pi/AGENTS.md", "read resource .pi/AGENTS.md"),
+            (
+                ".pi/AGENTS.override.md",
+                "read resource .pi/AGENTS.override.md",
+            ),
+            ("../AGENTS.md", "read resource /AGENTS.md"),
+            ("/agent/docs/pi/README.md", "read docs README.md"),
+            ("/agent/docs/pi/docs/tui.md", "read docs docs/tui.md"),
+            ("/agent/docs/extensions.md", "read docs extensions.md"),
+        ] {
+            assert_eq!(
+                call(serde_json::json!({"path": path}), &ctx),
+                format!("{compact} (ctrl+o to expand)")
+            );
+        }
+        let ranged = serde_json::json!({"path": "attio/SKILL.md", "offset": 120, "limit": 210});
+        assert_eq!(
+            call(ranged, &ctx),
+            "[skill] attio:120-329 (ctrl+o to expand)"
+        );
+        assert_eq!(
+            call(serde_json::json!({"path": "notes.md"}), &ctx),
+            "read notes.md"
+        );
+        ctx.expanded = true;
+        assert_eq!(
+            call(serde_json::json!({"path": "attio/SKILL.md"}), &ctx),
+            "read attio/SKILL.md"
         );
     }
 
