@@ -344,6 +344,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 verbose: parsed.verbose,
                 initial,
                 initial_images,
+                extension_warnings: extensions.warnings.clone(),
                 factory: startup::factory(parsed, extensions),
                 use_theme: parsed.use_theme.clone(),
                 model_fallback: startup.model_fallback,
@@ -365,6 +366,9 @@ async fn run(parsed: &mut args::Args) -> u8 {
     };
     for error in startup.session.settings_errors() {
         eprintln!("Warning: {error}");
+    }
+    for (path, warning) in &extensions.warnings {
+        eprintln!("Warning: {}", startup::extension_warning(path, warning));
     }
     if rpc {
         // pi refreshes model catalogs in the background for RPC.

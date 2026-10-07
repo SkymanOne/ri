@@ -234,6 +234,23 @@ impl AgentHooks for Hooks {
             let mut messages = session
                 .context_handlers(messages, self.cancel.clone())
                 .await;
+            // pi's hidden declarations projection: requests leave the tools
+            // the loadout hides out of every declaration change.
+            let hidden = lock(&session.inner.hidden_tools).clone();
+            if !hidden.is_empty() {
+                for message in &mut messages {
+                    if let Message::System(system) = message {
+                        system.tools_added = system.tools_added.take().and_then(|mut tools| {
+                            tools.retain(|tool| !hidden.contains(&tool.name));
+                            (!tools.is_empty()).then_some(tools)
+                        });
+                        system.tools_removed = system.tools_removed.take().and_then(|mut tools| {
+                            tools.retain(|tool| !hidden.contains(&tool.name));
+                            (!tools.is_empty()).then_some(tools)
+                        });
+                    }
+                }
+            }
             let forced = lock(&session.inner.forced_prompt).clone();
             if let Some(forced) = forced {
                 // pi's forced prompt projection: one system message with the

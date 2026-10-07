@@ -35,7 +35,8 @@ use yapi_types::sync::{lock, read, write};
 
 use crate::compaction::{BranchSummary, CompactionSettings};
 use crate::extensions::{
-    BashOperations, Extension, ExtensionUi, Loadout, Mode, NoUi, SessionActions, Tools,
+    BashOperations, Extension, ExtensionUi, Loadout, LoadoutChanges, Mode, NoUi, SessionActions,
+    Tools,
 };
 use crate::resources::{ContextFile, PromptTemplate, Skill, expand_prompt_template};
 use crate::session::SessionManager;
@@ -249,6 +250,8 @@ struct Inner {
     run_options: Mutex<Option<PromptOptions>>,
     /// The system prompt a `before_agent_start` handler forced for the run.
     forced_prompt: Mutex<Option<String>>,
+    /// Declared tools the last loadout left out of requests.
+    hidden_tools: Mutex<std::collections::HashSet<String>>,
     /// Extension messages sent with the next prompt.
     next_turn: Mutex<Vec<Message>>,
     /// Extension messages sent during a turn, appended when it ends.
@@ -454,6 +457,7 @@ impl AgentSession {
                 binding: Mutex::new((Arc::new(NoUi), Mode::Print, None)),
                 run_options: Mutex::new(None),
                 forced_prompt: Mutex::new(None),
+                hidden_tools: Mutex::default(),
                 next_turn: Mutex::new(Vec::new()),
                 pending_custom: Mutex::new(Vec::new()),
                 resources: RwLock::new(resources),
@@ -1094,7 +1098,8 @@ impl AgentSession {
             .clone()
             .unwrap_or_else(|| self.base_prompt_options());
         options.selected_tools = active.to_vec();
-        for tool in self.active_tools(active) {
+        let declared = self.active_tools(active);
+        for tool in &declared {
             let name = tool.tool.declaration().name.clone();
             if let Some(snippet) = &tool.snippet {
                 options
@@ -1109,20 +1114,37 @@ impl AgentSession {
                     .or_insert_with(|| tool.guidelines.clone());
             }
         }
+        // The prompt lists only the tools requests declare.
+        let (_, changes) = self.loadout_changes(declared);
+        options
+            .tool_snippets
+            .retain(|name, _| !changes.hidden.contains(name));
         options
     }
 
-    /// The `declared` tools as the model sees them, with the descriptions
-    /// the extensions' loadout hooks give them; pi's `_applyToolLoadout`.
-    fn loadout(&self, declared: Vec<RegisteredTool>) -> Vec<Arc<dyn Tool>> {
+    /// The extensions' loadout hooks' changes for `declared` tools, with the
+    /// loadout they saw.
+    fn loadout_changes(&self, declared: Vec<RegisteredTool>) -> (Loadout, LoadoutChanges) {
         let loadout = Loadout {
             declared,
             callable: self.callable_tools(),
         };
-        let mut descriptions = std::collections::HashMap::new();
+        let mut changes = LoadoutChanges::default();
         for extension in &self.inner.extensions {
-            descriptions.extend(extension.prepare_loadout(&loadout));
+            let next = extension.prepare_loadout(&loadout);
+            changes.descriptions.extend(next.descriptions);
+            changes.hidden.extend(next.hidden);
         }
+        (loadout, changes)
+    }
+
+    /// The `declared` tools as the model sees them, with the descriptions
+    /// the extensions' loadout hooks give them, and records the tools the
+    /// hooks hide from requests; pi's `_applyToolLoadout`.
+    fn loadout(&self, declared: Vec<RegisteredTool>) -> Vec<Arc<dyn Tool>> {
+        let (loadout, changes) = self.loadout_changes(declared);
+        let mut descriptions = changes.descriptions;
+        *lock(&self.inner.hidden_tools) = changes.hidden;
         loadout
             .declared
             .into_iter()
