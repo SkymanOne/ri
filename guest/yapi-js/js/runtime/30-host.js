@@ -955,7 +955,10 @@
 				break;
 			}
 			case "tool_result": {
-				const current = { ...event };
+				// pi's event holds details and usage even when undefined, so
+				// values handlers give them take those places.
+				const { details, structuredContent, isError, usage, ...head } = event;
+				const current = { ...head, details, ...(structuredContent === undefined ? {} : { structuredContent }), isError, usage };
 				let modified = false;
 				for (const handler of handlers) {
 					const handlerResult = await guard(() => handler(current, ctx));
