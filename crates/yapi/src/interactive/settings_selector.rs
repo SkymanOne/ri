@@ -1285,14 +1285,19 @@ impl super::App {
             &self.colors,
             self.color_mode,
         );
+        self.apply_theme(theme);
+        if let Some(error) = error {
+            self.error(error);
+        }
+    }
+
+    /// Redraws with `theme`.
+    pub(super) fn apply_theme(&mut self, theme: yapi_tui::theme::Theme) {
         self.markdown = super::markdown_theme(&theme);
         self.editor.set_theme(super::editor_theme(&theme));
         self.theme = theme;
         self.style_alt_screen();
         self.invalidate_all();
-        if let Some(error) = error {
-            self.error(error);
-        }
     }
 
     /// Applies a `/settings` change and saves it, as pi's callbacks do.

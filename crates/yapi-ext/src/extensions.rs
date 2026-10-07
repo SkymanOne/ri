@@ -1316,7 +1316,7 @@ impl SessionBridge {
             "ui.keybindings" => return ui.keybindings(),
             "ui.requestRender" => ui.request_render(),
             "ui.setTheme" => {
-                return match ui.set_theme(&text(&payload["name"])) {
+                return match ui.set_theme(&payload["theme"]) {
                     Ok(()) => json!({"success": true}),
                     Err(error) => json!({"success": false, "error": error}),
                 };
@@ -1324,6 +1324,7 @@ impl SessionBridge {
             "ui.getToolsExpanded" => return Value::Bool(ui.tools_expanded()),
             "ui.setToolsExpanded" => ui.set_tools_expanded(payload["expanded"] == true),
             "ui.theme" => return ui.theme(),
+            "ui.getTheme" => return ui.get_theme(&text(&payload["name"])),
             "ui.footerData" => return ui.footer_data(),
             // The working indicator's visibility and frames are not shown.
             _ => {}

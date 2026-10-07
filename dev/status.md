@@ -96,7 +96,7 @@ Deferred:
 
 Done.
 
-- `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets, a replaced footer and header, the terminal title, the working indicator, the editor's text and the theme.
+- `ExtensionUi` covers pi's `ExtensionUIContext`: dialogs with timeouts, the editor dialog, footer statuses, widgets, a replaced footer and header, the terminal title, the working indicator, the editor's text and the theme, set by name or as a `Theme` object.
 - Remote components stay in the extension runtime by handle. The TUI paints their last render and asks for a new one when they are stale, so a frame never waits for JS.
 - `ctx.ui.custom` in the editor's place or as an overlay, component widgets, tool `renderCall` and `renderResult`, and message renderers.
 - Extension command argument completions, the startup resource listing and pi's conflict sections.
