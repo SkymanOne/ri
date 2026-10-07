@@ -1071,6 +1071,16 @@ fn tool_result(mut value: Value) -> Result<ToolResult, String> {
 /// runs them on the tool call's task.
 type Jobs = tokio::sync::mpsc::UnboundedSender<crate::ops::Job>;
 
+/// What a running extension tool did in the current guest step, held until
+/// the step ends.
+struct Step {
+    jobs: Jobs,
+    /// The nested calls it began.
+    calls: Vec<crate::ops::Job>,
+    /// The updates it published.
+    updates: Vec<crate::ops::Job>,
+}
+
 /// Numbers the runtimes of a process, so their component handles stay apart.
 static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 
@@ -1084,9 +1094,9 @@ struct SessionBridge {
     /// Update sinks, cancellation and job queues of running extension tools,
     /// by call id.
     updates: Mutex<HashMap<String, (UpdateSink, CancellationToken, Jobs)>>,
-    /// Updates running tools published in the current guest step, held until
-    /// the step ends.
-    held_updates: Mutex<Vec<(Jobs, crate::ops::Job)>>,
+    /// What running extension tools did in the current guest step, by call
+    /// id.
+    steps: Mutex<HashMap<String, Step>>,
     /// Custom components shown as blocking dialogs, by handle.
     prompts: Mutex<std::collections::HashSet<u64>>,
     /// Where the output of `!` commands that bash operations run goes, by
@@ -1120,7 +1130,7 @@ impl SessionBridge {
             runtime: tokio::runtime::Handle::current(),
             session: Mutex::default(),
             updates: Mutex::default(),
-            held_updates: Mutex::default(),
+            steps: Mutex::default(),
             bash: Mutex::default(),
             prompts: Mutex::default(),
             logins: Mutex::default(),
@@ -1136,6 +1146,22 @@ impl SessionBridge {
 
     fn spawn(&self, future: impl std::future::Future<Output = ()> + Send + 'static) {
         self.runtime.spawn(future);
+    }
+
+    /// Holds `job`, an update or a nested call of tool call `id` in the
+    /// current guest step, until the step ends.
+    fn hold(&self, id: &str, jobs: Jobs, job: crate::ops::Job, update: bool) {
+        let mut steps = lock(&self.steps);
+        let step = steps.entry(id.to_owned()).or_insert_with(|| Step {
+            jobs,
+            calls: Vec::new(),
+            updates: Vec::new(),
+        });
+        if update {
+            step.updates.push(job);
+        } else {
+            step.calls.push(job);
+        }
     }
 }
 
@@ -1439,13 +1465,14 @@ impl Bridge for SessionBridge {
             return Ok(Value::Null);
         }
         if kind == "tool.update" {
+            let id = payload["toolCallId"].as_str().unwrap_or_default();
             let caller = lock(&self.updates)
-                .get(payload["toolCallId"].as_str().unwrap_or_default())
+                .get(id)
                 .map(|(sink, _, jobs)| (sink.clone(), jobs.clone()));
             if let (Some((sink, jobs)), Ok(partial)) =
                 (caller, tool_result(payload["partial"].clone()))
             {
-                lock(&self.held_updates).push((jobs, Box::pin(async move { sink(partial) })));
+                self.hold(id, jobs, Box::pin(async move { sink(partial) }), true);
             }
             return Ok(Value::Null);
         }
@@ -1647,15 +1674,22 @@ impl Bridge for SessionBridge {
 
     /// pi emits a tool's update a few microtasks after the tool publishes it:
     /// after the start of a nested call the tool began in the same step, and
-    /// before that call ends. So the step's updates queue behind the jobs of
-    /// its nested calls. This relies on [`crate::ops::drive`] polling a tool's
-    /// jobs first in, first out: a nested call reports its start on its first
-    /// poll, and the update goes out once that call waits, unless the call
-    /// ends without waiting.
+    /// before that call ends. So each tool's step goes to its call as one job
+    /// that polls the step's nested calls, then its updates. A nested call
+    /// reports its start on its first poll and then yields, and the updates
+    /// go out before the job is polled again.
     fn step_ended(&self) {
-        for (jobs, update) in std::mem::take(&mut *lock(&self.held_updates)) {
-            // An update after the tool ended is dropped, as in pi.
-            let _ = jobs.send(update);
+        for (_, step) in std::mem::take(&mut *lock(&self.steps)) {
+            let mut jobs = step.calls;
+            jobs.extend(step.updates);
+            let job: crate::ops::Job = Box::pin(async move {
+                futures_util::future::join_all(jobs).await;
+            });
+            // Once the tool has ended, its calls run on their own and its
+            // updates go nowhere, as in pi.
+            if let Err(unsent) = step.jobs.send(job) {
+                self.spawn(unsent.0);
+            }
         }
     }
 
@@ -1719,9 +1753,8 @@ impl Bridge for SessionBridge {
         };
         // Nested calls and scripts take the calling tool's cancellation, and
         // run as its jobs.
-        let caller = lock(&self.updates)
-            .get(payload["toolCallId"].as_str().unwrap_or_default())
-            .cloned();
+        let caller_id = text(&payload["toolCallId"]);
+        let caller = lock(&self.updates).get(&caller_id).cloned();
         let (caller_updates, caller_cancel, caller_jobs) = match caller {
             Some((updates, cancel, jobs)) => (updates, cancel, Some(jobs)),
             None => (
@@ -1915,7 +1948,11 @@ impl Bridge for SessionBridge {
             }
         });
         match caller_jobs {
-            Some(jobs) => crate::ops::queue(&jobs, operation),
+            Some(jobs) => {
+                let (job, result) = crate::ops::job(operation);
+                self.hold(&caller_id, jobs, job, false);
+                result
+            }
             None => operation,
         }
     }

@@ -105,6 +105,22 @@ impl Spawn {
 /// An operation that runs on the task of the call that started it.
 pub(crate) type Job = BoxFuture<'static, ()>;
 
+/// `operation` as a job, and its result once the job has run.
+pub(crate) fn job(
+    operation: BoxFuture<'static, Result<Value, String>>,
+) -> (Job, BoxFuture<'static, Result<Value, String>>) {
+    let (reply, result) = oneshot::channel();
+    let job: Job = Box::pin(async move {
+        let _ = reply.send(operation.await);
+    });
+    let result = Box::pin(async move {
+        result
+            .await
+            .unwrap_or_else(|_| Err("The operation was dropped".to_owned()))
+    });
+    (job, result)
+}
+
 /// Queues `operation` on `jobs`, the queue of the call that started it; the
 /// returned future gives its result. Once that call has ended, `operation`
 /// runs where the returned future is polled.
@@ -112,18 +128,13 @@ pub(crate) fn queue(
     jobs: &mpsc::UnboundedSender<Job>,
     operation: BoxFuture<'static, Result<Value, String>>,
 ) -> BoxFuture<'static, Result<Value, String>> {
-    let (reply, result) = oneshot::channel();
-    let job: Job = Box::pin(async move {
-        let _ = reply.send(operation.await);
-    });
+    let (job, result) = job(operation);
     let unsent = jobs.send(job).err().map(|error| error.0);
     Box::pin(async move {
         if let Some(job) = unsent {
             job.await;
         }
-        result
-            .await
-            .unwrap_or_else(|_| Err("The operation was dropped".to_owned()))
+        result.await
     })
 }
 
