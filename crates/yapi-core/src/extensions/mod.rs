@@ -302,6 +302,16 @@ pub struct Loadout {
     pub callable: Vec<RegisteredTool>,
 }
 
+/// What a loadout hook changes; pi's `ToolLoadoutChanges`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LoadoutChanges {
+    /// Descriptions for declared tools, by name, replacing their own.
+    pub descriptions: std::collections::HashMap<String, String>,
+    /// Declared tools that stay callable but are left out of requests and
+    /// of the prompt's tool list.
+    pub hidden: std::collections::HashSet<String>,
+}
+
 /// What an extension draws in the transcript.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Renderers {
@@ -395,11 +405,11 @@ pub trait Extension: Send + Sync {
         Box::pin(async { None })
     }
 
-    /// Descriptions for declared tools, by name, replacing their own in the
-    /// next request; pi's `prepareLoadout` hook of a tool it registered. Runs
-    /// before every request.
-    fn prepare_loadout(&self, _loadout: &Loadout) -> std::collections::HashMap<String, String> {
-        std::collections::HashMap::new()
+    /// How the next request presents the declared tools; pi's
+    /// `prepareLoadout` hook of a tool it registered. Runs before every
+    /// request.
+    fn prepare_loadout(&self, _loadout: &Loadout) -> LoadoutChanges {
+        LoadoutChanges::default()
     }
 
     /// What it draws in the transcript.
