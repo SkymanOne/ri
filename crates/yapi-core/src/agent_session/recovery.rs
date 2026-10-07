@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use yapi_ai::errors::{is_context_overflow, is_recoverable_length, is_retryable_assistant_error};
 use yapi_types::event::AgentEvent;
 use yapi_types::event::{CompactionReason, CompactionResult, SummarySource};
+use yapi_types::extension_event::ExtensionEvent;
 use yapi_types::message::{AssistantMessage, Message, StopReason, ThinkingLevel};
 use yapi_types::model::Model;
 use yapi_types::session::FileEntry;
@@ -20,7 +21,6 @@ use crate::compaction::{
 use crate::session::build_projection;
 use crate::time::parse_iso;
 
-use super::extensions::defined;
 use super::{AgentSession, Compacting};
 
 /// What the compaction check decided.
@@ -370,15 +370,17 @@ impl AgentSession {
         let mut from_extension = false;
         let mut supplied = None;
         if self.has_handlers("session_before_compact") {
-            let event = serde_json::json!({
-                "type": "session_before_compact",
-                "preparation": preparation,
-                "branchEntries": self.with_session(|session| serde_json::to_value(session.branch_path(None)).unwrap_or_default()),
-                "customInstructions": custom_instructions,
-                "reason": reason,
-                "willRetry": will_retry,
+            let preparation = serde_json::to_value(preparation).unwrap_or_default();
+            let event = self.with_session(|session| {
+                ExtensionEvent::SessionBeforeCompact {
+                    preparation,
+                    branch_entries: &session.branch_path(None),
+                    custom_instructions,
+                    reason,
+                    will_retry,
+                }
+                .to_value()
             });
-            let event = defined(event, &["customInstructions"]);
             let result = self.emit_extension_event(&event, cancel.clone()).await;
             if result
                 .as_ref()
@@ -436,14 +438,13 @@ impl AgentSession {
             });
             result.estimated_tokens_after = Some(estimate);
             if let Some(entry) = entry {
-                let event = serde_json::json!({
-                    "type": "session_compact",
-                    "compactionEntry": entry,
-                    "fromExtension": from_extension,
-                    "reason": reason,
-                    "willRetry": will_retry,
-                });
-                self.emit_extension_event(&event, CancellationToken::new())
+                let event = ExtensionEvent::SessionCompact {
+                    compaction_entry: &entry,
+                    from_extension,
+                    reason,
+                    will_retry,
+                };
+                self.emit_extension_event(&event.to_value(), CancellationToken::new())
                     .await;
             }
             Ok(result)
@@ -469,16 +470,14 @@ impl AgentSession {
         if !self.has_handlers("session_compact_failed") {
             return;
         }
-        let event = serde_json::json!({
-            "type": "session_compact_failed",
-            "reason": reason,
-            "errorMessage": error_message,
-            "aborted": aborted,
-            "willRetry": false,
-            "fromExtension": from_extension,
-        });
-        let event = defined(event, &["errorMessage"]);
-        self.emit_extension_event(&event, CancellationToken::new())
+        let event = ExtensionEvent::SessionCompactFailed {
+            reason,
+            error_message: error_message.as_deref(),
+            aborted,
+            will_retry: false,
+            from_extension,
+        };
+        self.emit_extension_event(&event.to_value(), CancellationToken::new())
             .await;
     }
 
