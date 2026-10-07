@@ -32,7 +32,7 @@ Use [print, JSON and RPC modes](automation.md) for scripts, editors and other pr
 |---|---|---|
 | Runtime | Node.js 22.19 or newer | One native binary |
 | Extensions | Run in Pi's process with the user's permissions | Run in WebAssembly instances with memory and compute limits. In v0.1 they keep Pi's default file, process, network and environment access, as the [security model](configuration.md#security-model) explains. Pi extensions run unchanged, and native extensions are written in Rust. |
-| Startup and memory | 316 ms to first paint, 116 MB idle and 198 MB after 20 turns, 247 MB installed with Node.js | 11 ms to first paint, 18 MB idle and 35 MB after 20 turns, a 33 MB executable, on the same machine. See [Performance](performance.md). |
+| Startup and memory | 324 ms to first paint, 117 MB idle and 203 MB after 20 turns, 247 MB installed with Node.js | 10 ms to first paint, 19 MB idle and 37 MB after 20 turns, a 35 MB executable, on the same machine. See [Performance](performance.md). |
 
 [Differences from Pi](compat.md) lists every known difference, including the Pi features not ported yet.
 
