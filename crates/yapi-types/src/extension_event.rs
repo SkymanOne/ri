@@ -166,7 +166,7 @@ pub enum ExtensionEvent<'a> {
         parent_tool_call_id: Option<&'a str>,
         input: &'a Value,
         content: &'a [ContentBlock],
-        /// `null` when the tool gave none.
+        #[serde(skip_serializing_if = "Option::is_none")]
         details: Option<&'a Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
         structured_content: Option<&'a Value>,
