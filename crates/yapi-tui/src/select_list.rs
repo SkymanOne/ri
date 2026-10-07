@@ -8,6 +8,7 @@ use ratatui_core::text::{Line, Span};
 use yapi_types::autocomplete::AutocompleteItem;
 
 use crate::keybindings::Keybindings;
+use crate::screen::MouseKind;
 use crate::text::{truncate_to_width, visible_width};
 
 const DEFAULT_PRIMARY_COLUMN_WIDTH: usize = 32;
@@ -101,6 +102,8 @@ pub struct SelectList {
     max_visible: usize,
     theme: SelectListTheme,
     layout: SelectListLayout,
+    /// The item a press highlighted, which the click chooses.
+    pressed: Option<usize>,
 }
 
 /// The first and one-past-last of `count` rows a window of `max_visible`
@@ -155,6 +158,7 @@ impl SelectList {
             max_visible,
             theme,
             layout,
+            pressed: None,
         }
     }
 
@@ -186,6 +190,34 @@ impl SelectList {
         } else {
             SelectEvent::Ignored
         }
+    }
+
+    /// pi's `handleMouse`: the wheel moves the highlight a row without
+    /// wrapping, a press highlights the item under it and a click chooses the
+    /// item pressed. `y` is a row of [`SelectList::render`]'s; `None` when
+    /// the list does not take the event.
+    pub fn mouse(&mut self, kind: MouseKind, y: usize) -> Option<SelectEvent> {
+        let count = self.items.len();
+        if count == 0 {
+            return None;
+        }
+        let (start, end) = visible_range(self.selected, count, self.max_visible);
+        let index = start + y;
+        match kind {
+            MouseKind::Wheel(direction) => {
+                self.selected = nudge(self.selected, count, direction > 0)
+            }
+            _ if index >= end => return None,
+            MouseKind::Press => {
+                self.pressed = Some(index);
+                self.selected = index;
+            }
+            MouseKind::Click => {
+                self.selected = self.pressed.take().unwrap_or(index);
+                return self.selected_item().cloned().map(SelectEvent::Selected);
+            }
+        }
+        Some(SelectEvent::Moved)
     }
 
     fn display_value(item: &SelectItem) -> &str {

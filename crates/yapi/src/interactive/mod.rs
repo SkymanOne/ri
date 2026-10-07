@@ -54,8 +54,8 @@ use yapi_tui::keys::Keys;
 use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::markdown::MarkdownTheme;
 use yapi_tui::screen::{
-    ALT_SCREEN_ENTER, ALT_SCREEN_LEAVE, AltScreen, COPY_ERROR_FLASH_DURATION, FLASH_DURATION,
-    MainScreen, MouseAction,
+    ALT_SCREEN_LEAVE, AltScreen, COPY_ERROR_FLASH_DURATION, FLASH_DURATION, MainScreen,
+    MouseAction, alt_screen_enter,
 };
 use yapi_tui::terminal::{
     BRACKETED_PASTE_DISABLE, BRACKETED_PASTE_ENABLE, ColorQuery, Filtered, KeyboardProtocol,
@@ -408,6 +408,9 @@ struct App {
     markdown: MarkdownTheme,
     keys: Keybindings,
     editor: Editor,
+    /// Where the built-in editor shows in fullscreen mode, when it has focus:
+    /// its first screen row, its first row shown and how many rows show.
+    editor_rows: Option<(usize, usize, usize)>,
     selector: Option<Selector>,
     dialog: Option<Dialog>,
     chat: Vec<Item>,
@@ -1231,7 +1234,16 @@ impl App {
             }
             usize::MAX
         };
-        yapi_tui::screen::fit_stack(parts, cursor, available)
+        let (rows, cursor, placed) = yapi_tui::screen::fit_stack(parts, cursor, available);
+        // The fourth part is the focused built-in editor unless a selector,
+        // an overlay among them, or an extension's editor takes its place.
+        // The dock sits at the bottom of the screen.
+        self.editor_rows = (self.fullscreen
+            && self.selector.is_none()
+            && self.ext.editor.is_none())
+        .then(|| placed[3])
+        .map(|(row, first, count)| (self.size.1.saturating_sub(rows.len()) + row, first, count));
+        (rows, cursor)
     }
 
     /// pi's dock stack: pending messages, status, widgets above, the editor
@@ -2607,7 +2619,15 @@ impl App {
     /// Fullscreen scrolling and mouse selection; returns whether the key was
     /// consumed.
     fn handle_viewport_key(&mut self, data: &str) -> bool {
-        match self.alt.mouse(data, &self.flat) {
+        let (editor, rows) = (&mut self.editor, self.editor_rows);
+        // pi's layout offers the editor the events over its rows.
+        let action = self.alt.mouse(data, &self.flat, |event| match rows {
+            Some((top, first, count)) if (top..top + count).contains(&event.y) => {
+                editor.mouse(event.kind, event.x, event.y - top + first)
+            }
+            _ => false,
+        });
+        match action {
             MouseAction::Unhandled => {}
             MouseAction::Handled => return true,
             MouseAction::Copy(text) => {
@@ -3206,7 +3226,7 @@ impl App {
             return;
         }
         if fullscreen {
-            emit(ALT_SCREEN_ENTER);
+            emit(&alt_screen_enter());
             self.alt.invalidate();
         } else {
             emit(ALT_SCREEN_LEAVE);
@@ -3234,7 +3254,7 @@ impl App {
         let mut out = String::from(BRACKETED_PASTE_ENABLE);
         out.push_str(terminal.protocol.query());
         if self.fullscreen {
-            out.push_str(ALT_SCREEN_ENTER);
+            out.push_str(&alt_screen_enter());
             self.alt.invalidate();
         } else {
             self.main.reset();
@@ -3569,7 +3589,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         ));
     }
     if fullscreen {
-        emit(ALT_SCREEN_ENTER);
+        emit(&alt_screen_enter());
     }
     app.install_autocomplete();
     app.render_history();
@@ -3647,12 +3667,22 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         } else {
             Duration::from_secs(3600)
         };
+        let mut redraw = true;
         tokio::select! {
             event = rx.recv() => {
                 let Some(event) = event else { break };
                 match event {
                     Event::Input(bytes) => {
-                        let keys = decode_input(&mut buffer, &mut terminal.protocol, &bytes);
+                        let mut keys = decode_input(&mut buffer, &mut terminal.protocol, &bytes);
+                        // A pointer move changes at most the scrollbar's
+                        // hover; a frame is drawn only when it does.
+                        let (decoded, mut hovered) = (keys.len(), false);
+                        if app.fullscreen {
+                            keys.retain(|key| {
+                                app.alt.pointer_moved(key).map(|changed| hovered |= changed).is_none()
+                            });
+                        }
+                        redraw = hovered || !keys.is_empty() || decoded == 0;
                         app.on_keys(keys, &mut terminal);
                         if app.kitty != terminal.protocol.kitty {
                             app.keys.set_kitty(terminal.protocol.kitty);
@@ -3670,7 +3700,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
                     }
                     event => app.on_event(event),
                 }
-                dirty = true;
+                dirty |= redraw;
             }
             _ = tokio::time::sleep(input_wait) => {
                 let mut keys: Vec<String> = buffer
@@ -3825,6 +3855,7 @@ impl App {
             editor,
             selector: None,
             dialog: None,
+            editor_rows: None,
             chat: Vec::new(),
             cache: Vec::new(),
             flat: Vec::new(),
@@ -4188,6 +4219,22 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("Missing required color tokens"), "{error}");
         assert!(events.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_click_in_the_fullscreen_editor_moves_its_cursor() {
+        let (mut app, _events) = app();
+        app.fullscreen = true;
+        app.size = (40, 12);
+        app.set_editor_text("hello world");
+        let (dock, _) = app.dock(40);
+        app.alt.frame(&[], &dock, None, 40, 12);
+        // The editor's text row is below its top border; `w` is column 7.
+        let (top, _, _) = app.editor_rows.unwrap();
+        for report in ["\x1b[<0;7;{}M", "\x1b[<0;7;{}m"] {
+            assert!(app.handle_viewport_key(&report.replace("{}", &(top + 2).to_string())));
+        }
+        assert_eq!(app.editor.cursor(), (0, 6));
     }
 
     #[tokio::test]

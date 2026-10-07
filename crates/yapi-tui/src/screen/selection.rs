@@ -1,10 +1,12 @@
-//! Mouse input in fullscreen mode: wheel scrolling and text selection.
+//! Mouse input in fullscreen mode: wheel scrolling, the scrollbar, clicks
+//! and text selection.
 //!
 //! Port of the mouse handling of `packages/tui/src/tui-alt-screen.ts` in pi
 //! `v1.0.0`. A press starts a selection in the transcript, in content rows
 //! so it scrolls with the text, or on the screen elsewhere; a drag extends
 //! it and scrolls the transcript while held at its edge; a release finishes
-//! it. Double and triple clicks select words and lines.
+//! it. Double and triple clicks select words and lines. Components under the
+//! pointer get presses, clicks and the wheel first.
 
 use std::time::{Duration, Instant};
 
@@ -57,7 +59,7 @@ struct Click {
     word: (usize, usize),
 }
 
-/// The selection state of the fullscreen viewport.
+/// The selection and pointer state of the fullscreen viewport.
 #[derive(Debug, Default)]
 pub(super) struct Selection {
     anchor: Option<Point>,
@@ -69,6 +71,36 @@ pub(super) struct Selection {
     /// A drag held at the transcript's edge: direction, pointer column and
     /// row, and when it scrolls next.
     autoscroll: Option<(isize, usize, usize, Instant)>,
+    /// The pointer moved since the press.
+    dragged: bool,
+    /// A press a component took: where, and whether the pointer moved since.
+    press: Option<(usize, usize, bool)>,
+    /// The scrollbar's thumb is being dragged, held this many rows below its
+    /// top.
+    scrollbar_drag: Option<usize>,
+}
+
+/// What a component under the pointer gets: the kinds of pi-tui's
+/// `TuiMouseEvent` that the layout's components handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseKind {
+    /// The left button went down.
+    Press,
+    /// The left button went down and up on one cell without moving.
+    Click,
+    /// The wheel turned up (-1) or down (1).
+    Wheel(isize),
+}
+
+/// A [`MouseKind`] at a column and row of the screen, from zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MouseEvent {
+    /// What happened.
+    pub kind: MouseKind,
+    /// The column.
+    pub x: usize,
+    /// The row.
+    pub y: usize,
 }
 
 /// What [`AltScreen::mouse`] did with its input.
@@ -170,10 +202,18 @@ fn parse(data: &str) -> Option<(usize, usize, usize, bool)> {
 
 impl AltScreen {
     /// pi's `handleViewportInput` for mouse reports and focus changes: the
-    /// wheel scrolls [`AltScreen::wheel_lines`] rows, the left button selects
-    /// text and losing focus mid-press drops the selection. `transcript` is
+    /// wheel scrolls [`AltScreen::wheel_lines`] rows, the left button drags
+    /// the scrollbar, jumps to the latest message from its label or selects
+    /// text, and losing focus mid-press drops the selection. `components`
+    /// gets the events pi's layout offers the components under the pointer
+    /// outside overlays, and says whether one took the event. `transcript` is
     /// the one last drawn.
-    pub fn mouse(&mut self, data: &str, transcript: &[StyledLine]) -> MouseAction {
+    pub fn mouse(
+        &mut self,
+        data: &str,
+        transcript: &[StyledLine],
+        mut components: impl FnMut(MouseEvent) -> bool,
+    ) -> MouseAction {
         if data == FOCUS_OUT {
             let selection = &mut self.selection;
             if selection.pressed {
@@ -184,14 +224,19 @@ impl AltScreen {
             selection.pressed = false;
             selection.autoscroll = None;
             selection.last_click = None;
+            selection.press = None;
+            selection.scrollbar_drag = None;
+            self.set_scrollbar_hover(false);
             return MouseAction::Handled;
         }
-        if data == FOCUS_IN {
+        if data == FOCUS_IN || self.pointer_moved(data).is_some() {
             return MouseAction::Handled;
         }
         let Some((button, x, y, release)) = parse(data) else {
             return MouseAction::Unhandled;
         };
+        let covered = self.overlay_at(x, y);
+        let event = |kind| MouseEvent { kind, x, y };
         if button & 64 != 0 {
             // Wheel up or down; horizontal wheels do nothing.
             let direction = match button & 3 {
@@ -203,7 +248,44 @@ impl AltScreen {
             if button & 8 != 0 {
                 lines *= ALT_WHEEL_MULTIPLIER;
             }
+            // A component under the pointer may take it instead.
+            if !covered && components(event(MouseKind::Wheel(direction))) {
+                return MouseAction::Handled;
+            }
             self.scroll_by(direction * lines as isize);
+            self.update_scrollbar_hover(x, y);
+            return MouseAction::Handled;
+        }
+        if let Some((at_x, at_y, moved)) = &mut self.selection.press {
+            *moved |= (x, y) != (*at_x, *at_y);
+            if release {
+                let click = !*moved;
+                self.selection.press = None;
+                if click {
+                    components(event(MouseKind::Click));
+                }
+            }
+            return MouseAction::Handled;
+        }
+        let left_press = button & (32 | 3) == 0 && !release && !covered;
+        if let Some((row, col, width)) = self.jump_label
+            && left_press
+            && y == row
+            && (col..col + width).contains(&x)
+        {
+            self.bottom();
+            return MouseAction::Handled;
+        }
+        let scrollbar = !covered && self.scrollbar_mouse(button, x, y, release);
+        if self.selection.scrollbar_drag.is_none() {
+            self.update_scrollbar_hover(x, y);
+        }
+        if scrollbar {
+            return MouseAction::Handled;
+        }
+        if left_press && components(event(MouseKind::Press)) {
+            self.clear_selection();
+            self.selection.press = Some((x, y, false));
             return MouseAction::Handled;
         }
         // The left button; some terminals release with button 3.
@@ -225,6 +307,16 @@ impl AltScreen {
                 return MouseAction::Handled;
             }
             self.extend(point, transcript);
+            // A press and release on one cell is a click, which a component
+            // may take instead.
+            let click = !self.selection.dragged
+                && self.selection.anchor.is_some_and(|anchor| {
+                    anchor.transcript == point.transcript && anchor.at() == point.at()
+                });
+            if click && !covered && components(event(MouseKind::Click)) {
+                self.clear_selection();
+                return MouseAction::Handled;
+            }
             return match self.selected_text(transcript) {
                 Some(text) if self.copy_on_select => MouseAction::Copy(text),
                 _ => MouseAction::Handled,
@@ -235,6 +327,7 @@ impl AltScreen {
                 return MouseAction::Handled;
             }
             self.selection.last_click = None;
+            self.selection.dragged = true;
             self.extend(point, transcript);
             self.update_autoscroll(x, y);
             return MouseAction::Handled;
@@ -242,6 +335,7 @@ impl AltScreen {
         // A press starts a selection, in the transcript when no overlay shows.
         self.selection.autoscroll = None;
         self.selection.pressed = true;
+        self.selection.dragged = false;
         let anchor = self.point(x, y, self.overlays.is_empty() && y < self.viewport);
         let word = self.word_at(anchor, transcript);
         let range = match self.click_count(anchor, word) {
@@ -256,6 +350,110 @@ impl AltScreen {
         self.selection.anchor = Some(range.map_or(anchor, |(_, start, _)| start));
         self.selection.focus = Some(range.map_or(anchor, |(_, _, end)| end));
         MouseAction::Handled
+    }
+
+    /// pi's handling of a pointer move with no button held, which changes
+    /// only the scrollbar's hover: for such a report, whether that changed,
+    /// so the screen needs drawing; `None` for any other input.
+    pub fn pointer_moved(&mut self, data: &str) -> Option<bool> {
+        let (button, x, y, release) = parse(data)?;
+        if release
+            || button & (64 | 32 | 3) != 32 | 3
+            || self.selection.press.is_some()
+            || self.selection.scrollbar_drag.is_some()
+        {
+            return None;
+        }
+        let hover = self.scrollbar_hover;
+        self.update_scrollbar_hover(x, y);
+        Some(self.scrollbar_hover != hover)
+    }
+
+    /// pi's `clearTextSelection`.
+    fn clear_selection(&mut self) {
+        let selection = &mut self.selection;
+        selection.anchor = None;
+        selection.focus = None;
+        selection.initial = None;
+        selection.pressed = false;
+        selection.autoscroll = None;
+        selection.dragged = false;
+    }
+
+    fn overlay_at(&self, x: usize, y: usize) -> bool {
+        self.overlays.iter().any(|overlay| {
+            (overlay.col..overlay.col + overlay.width).contains(&x)
+                && (overlay.row..overlay.row + overlay.lines.len()).contains(&y)
+        })
+    }
+
+    /// pi's `updateScrollbarHover`: whether the pointer is over the
+    /// transcript's scrollbar, or where an `auto` one would show, while no
+    /// overlay shows.
+    fn update_scrollbar_hover(&mut self, x: usize, y: usize) {
+        let over = self.overlays.is_empty()
+            && x + 1 == self.size.0
+            && y < self.viewport
+            && self.thumb(true).is_some();
+        self.set_scrollbar_hover(over);
+    }
+
+    /// pi's `setScrollbarActive`: an `auto` scrollbar shows while hovered,
+    /// and for a moment after.
+    fn set_scrollbar_hover(&mut self, hover: bool) {
+        if hover != self.scrollbar_hover {
+            self.scrollbar_hover = hover;
+            self.scrolled();
+        }
+    }
+
+    /// pi's `handleScrollbarMouseEvent`: a left press on the shown scrollbar
+    /// drags its thumb until the release, after moving the thumb's middle
+    /// there when the press is off it.
+    fn scrollbar_mouse(&mut self, button: usize, x: usize, y: usize, release: bool) -> bool {
+        if let Some(grab) = self.selection.scrollbar_drag {
+            if release {
+                self.selection.scrollbar_drag = None;
+            } else {
+                self.drag_scrollbar(y, grab);
+            }
+            return true;
+        }
+        if release || button & (32 | 3) != 0 || !self.overlays.is_empty() {
+            return false;
+        }
+        let Some((offset, thumb)) = self
+            .thumb(false)
+            .filter(|_| x + 1 == self.size.0 && y < self.viewport)
+        else {
+            return false;
+        };
+        self.clear_selection();
+        self.selection.last_click = None;
+        self.set_scrollbar_hover(true);
+        let on_thumb = (offset..offset + thumb).contains(&y);
+        let grab = if on_thumb { y - offset } else { thumb / 2 };
+        if !on_thumb {
+            self.drag_scrollbar(y, grab);
+        }
+        self.selection.scrollbar_drag = Some(grab);
+        true
+    }
+
+    /// pi's `scrollScrollbarToPointer`: scrolls so the thumb's row `grab`
+    /// is at row `y`.
+    fn drag_scrollbar(&mut self, y: usize, grab: usize) {
+        let Some((_, thumb)) = self.thumb(false) else {
+            return;
+        };
+        let max_offset = self.viewport - thumb;
+        let offset = y.saturating_sub(grab).min(max_offset);
+        let top = if max_offset == 0 {
+            0
+        } else {
+            (offset as f64 / max_offset as f64 * self.max_scroll() as f64).round() as usize
+        };
+        self.scroll_to(top);
     }
 
     /// The selected text, one line per row without trailing whitespace;

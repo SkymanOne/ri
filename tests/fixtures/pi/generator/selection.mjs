@@ -1,6 +1,7 @@
-// Records pi-tui's fullscreen mouse selection, for crates/yapi-tui/tests/selection.rs:
-// the screen lines after each mouse report sent to `TuiAltScreen`, and the text it copies.
-// The layout is pi's chat viewport: a scrolling transcript above a dock.
+// Records pi-tui's fullscreen mouse handling, for crates/yapi-tui/tests/selection.rs:
+// the screen lines after each mouse report or key sent to `TuiAltScreen`, and the text it
+// copies. The layout is pi's chat viewport: a scrolling transcript above a dock of lines or
+// a focused editor with slash command completion.
 // Also records the rows `WheelScrollAccelerator` scrolls for timed wheel events.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "node_modules/@earendil-works/pi-coding-agent/package.json"));
 const index = pathToFileURL(require.resolve("@earendil-works/pi-tui")).href;
-const { ScrollView, TuiAltScreen, VStack, setCapabilities } = await import(index);
+const { CombinedAutocompleteProvider, Editor, ScrollView, TuiAltScreen, VStack, setCapabilities } = await import(index);
 const { WheelScrollAccelerator } = await import(index.replace(/index\.js$/, "wheel-scroll.js"));
 setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 
@@ -52,6 +53,15 @@ const press = (x, y) => `\x1b[<0;${x};${y}M`;
 const drag = (x, y) => `\x1b[<32;${x};${y}M`;
 const release = (x, y) => `\x1b[<0;${x};${y}m`;
 const click = (x, y) => [press(x, y), release(x, y)];
+const move = (x, y) => `\x1b[<35;${x};${y}M`;
+const wheelUp = (x, y) => `\x1b[<64;${x};${y}M`;
+const wheelDown = (x, y) => `\x1b[<65;${x};${y}M`;
+const identity = (text) => text;
+const editorTheme = {
+	borderColor: identity,
+	selectList: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity },
+};
+const commands = ["clear", "compact", "copy", "model"].map((name) => ({ name, description: `The ${name} command` }));
 const numbered = (count) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
 
 const cases = [
@@ -151,6 +161,73 @@ const cases = [
 			"\x1b[I",
 		],
 	},
+	{
+		name: "jump to latest",
+		columns: 40,
+		transcript: numbered(10),
+		steps: [wheelUp(1, 1), wheelUp(1, 1), ...click(3, 4), ...click(10, 4), wheelUp(1, 1), ...click(36, 4)],
+	},
+	{
+		name: "scrollbar drag",
+		transcript: numbered(20),
+		scrollbar: "always",
+		steps: [press(20, 1), drag(20, 3), drag(20, 4), release(20, 4), press(20, 4), drag(10, 1), release(10, 1), move(5, 2)],
+	},
+	{
+		name: "scrollbar hover",
+		transcript: numbered(20),
+		scrollbar: "auto",
+		steps: [move(20, 2), move(19, 2), move(20, 3), press(20, 1), release(20, 1), wheelUp(5, 2), move(20, 4)],
+	},
+	{
+		name: "hidden scrollbar",
+		transcript: numbered(10),
+		steps: [move(20, 1), press(20, 1), drag(18, 2), release(18, 2)],
+	},
+	{
+		name: "editor clicks",
+		rows: 8,
+		transcript: ["alpha", "beta"],
+		editor: { text: "hello world\nsecond line" },
+		steps: [
+			...click(8, 6),
+			...click(20, 6),
+			...click(3, 7),
+			...click(5, 5),
+			...click(10, 8),
+			press(2, 6),
+			drag(6, 7),
+			release(6, 6),
+			...click(1, 7),
+			...click(1, 7),
+			...click(3, 6),
+			...click(3, 6),
+			wheelUp(3, 6),
+		],
+	},
+	{
+		name: "editor wrapping",
+		rows: 8,
+		columns: 12,
+		transcript: ["alpha"],
+		editor: { text: "abcdefgh ijklmnop", paddingX: 1 },
+		steps: [...click(12, 6), ...click(1, 7), ...click(4, 7), ...click(12, 7), ...click(5, 6)],
+	},
+	{
+		name: "editor scrolled",
+		rows: 12,
+		transcript: ["alpha"],
+		editor: { text: numbered(8).join("\n") },
+		steps: [...click(3, 7), ...click(3, 11)],
+	},
+	{
+		name: "completion",
+		rows: 10,
+		columns: 40,
+		transcript: ["alpha"],
+		editor: { text: "", commands },
+		steps: ["/", wheelDown(3, 8), wheelDown(3, 8), wheelUp(3, 8), press(3, 10), drag(3, 9), release(3, 9), press(3, 9), release(3, 9)],
+	},
 ];
 
 const out = [];
@@ -169,6 +246,13 @@ for (const testCase of cases) {
 			return true;
 		},
 	});
+	let editor;
+	if (testCase.editor) {
+		editor = new Editor(tui, editorTheme, { paddingX: testCase.editor.paddingX ?? 0 });
+		editor.setText(testCase.editor.text);
+		if (testCase.editor.commands) editor.setAutocompleteProvider(new CombinedAutocompleteProvider(testCase.editor.commands, here));
+		tui.setFocus(editor);
+	}
 	const transcript = new ScrollView(lines(testCase.transcript), {
 		follow: "end",
 		primary: true,
@@ -178,7 +262,7 @@ for (const testCase of cases) {
 	tui.setLayoutRoot(
 		new VStack([
 			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: lines(dock), basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+			{ component: editor ?? lines(dock), basis: "auto", grow: 0, shrink: 1, minSize: 1 },
 		]),
 	);
 	tui.start();
@@ -204,6 +288,7 @@ for (const testCase of cases) {
 		rows,
 		transcript: testCase.transcript,
 		dock,
+		editor: testCase.editor ?? null,
 		scrollbar: testCase.scrollbar ?? "hidden",
 		copyOnSelect: testCase.copyOnSelect ?? true,
 		steps,

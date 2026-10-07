@@ -13,6 +13,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -70,6 +71,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -127,6 +129,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -192,6 +195,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -397,6 +401,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -513,6 +518,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -591,6 +597,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -722,6 +729,7 @@
 			"> some input",
 			"footer text"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -831,6 +839,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -918,6 +927,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -1029,6 +1039,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -1140,6 +1151,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "always",
 		"copyOnSelect": true,
 		"steps": [
@@ -1197,6 +1209,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": false,
 		"steps": [
@@ -1252,6 +1265,7 @@
 			"> dock",
 			"footer"
 		],
+		"editor": null,
 		"scrollbar": "hidden",
 		"copyOnSelect": true,
 		"steps": [
@@ -1386,6 +1400,1232 @@
 					"\u001b[7mdel\u001b[27mta\u001b[0m\u001b]8;;\u0007",
 					"> dock\u001b[0m\u001b]8;;\u0007",
 					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "jump to latest",
+		"columns": 40,
+		"rows": 6,
+		"transcript": [
+			"line 1",
+			"line 2",
+			"line 3",
+			"line 4",
+			"line 5",
+			"line 6",
+			"line 7",
+			"line 8",
+			"line 9",
+			"line 10"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<64;1;1M",
+				"screen": [
+					"line 6\u001b[0m\u001b]8;;\u0007",
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest message · End \u001b[0m\u001b]8;;\u0007    \u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;1;1M",
+				"screen": [
+					"line 5\u001b[0m\u001b]8;;\u0007",
+					"line 6\u001b[0m\u001b]8;;\u0007",
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest message · End \u001b[0m\u001b]8;;\u0007    \u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;4M",
+				"screen": [
+					"line 5\u001b[0m\u001b]8;;\u0007",
+					"line 6\u001b[0m\u001b]8;;\u0007",
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest message · End \u001b[0m\u001b]8;;\u0007    \u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;4m",
+				"screen": [
+					"line 5\u001b[0m\u001b]8;;\u0007",
+					"line 6\u001b[0m\u001b]8;;\u0007",
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest message · End \u001b[0m\u001b]8;;\u0007    \u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;4M",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;4m",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;1;1M",
+				"screen": [
+					"line 6\u001b[0m\u001b]8;;\u0007",
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest message · End \u001b[0m\u001b]8;;\u0007    \u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;36;4M",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;36;4m",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "scrollbar drag",
+		"columns": 20,
+		"rows": 6,
+		"transcript": [
+			"line 1",
+			"line 2",
+			"line 3",
+			"line 4",
+			"line 5",
+			"line 6",
+			"line 7",
+			"line 8",
+			"line 9",
+			"line 10",
+			"line 11",
+			"line 12",
+			"line 13",
+			"line 14",
+			"line 15",
+			"line 16",
+			"line 17",
+			"line 18",
+			"line 19",
+			"line 20"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"scrollbar": "always",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;20;1M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;20;3M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 9             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 10            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 11            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;20;4M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;4m",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;4M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;10;1M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;1m",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<35;5;2M",
+				"screen": [
+					"\u001b[0m\u001b]8;;\u0007line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "scrollbar hover",
+		"columns": 20,
+		"rows": 6,
+		"transcript": [
+			"line 1",
+			"line 2",
+			"line 3",
+			"line 4",
+			"line 5",
+			"line 6",
+			"line 7",
+			"line 8",
+			"line 9",
+			"line 10",
+			"line 11",
+			"line 12",
+			"line 13",
+			"line 14",
+			"line 15",
+			"line 16",
+			"line 17",
+			"line 18",
+			"line 19",
+			"line 20"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"scrollbar": "auto",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<35;20;2M",
+				"screen": [
+					"line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<35;19;2M",
+				"screen": [
+					"line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<35;20;3M",
+				"screen": [
+					"line 17            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 18            \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 19            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 20            \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;1M",
+				"screen": [
+					"line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;1m",
+				"screen": [
+					"line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;5;2M",
+				"screen": [
+					"line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m┃\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<35;20;4M",
+				"screen": [
+					"line 1             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 2             \u001b[0m\u001b]8;;\u0007\u001b[37m█\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"line 3             \u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[39m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007 ↓ Jump to latest m\u001b[0m\u001b]8;;\u0007\u001b[90m│\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "hidden scrollbar",
+		"columns": 20,
+		"rows": 6,
+		"transcript": [
+			"line 1",
+			"line 2",
+			"line 3",
+			"line 4",
+			"line 5",
+			"line 6",
+			"line 7",
+			"line 8",
+			"line 9",
+			"line 10"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<35;20;1M",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;1M",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;18;2M",
+				"screen": [
+					"line 7\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mline 8\u001b[27m\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;18;2m",
+				"screen": [
+					"line 7     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mline 8\u001b[27m\u001b[0m\u001b]8;;\u0007",
+					"line 9\u001b[0m\u001b]8;;\u0007",
+					"line 10\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"\nline 8"
+				]
+			}
+		]
+	},
+	{
+		"name": "editor clicks",
+		"columns": 20,
+		"rows": 8,
+		"transcript": [
+			"alpha",
+			"beta"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": {
+			"text": "hello world\nsecond line"
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;8;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"second line\u001b[7m \u001b[0m        \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;8;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello w\u001b[7mo\u001b[0mrld         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello w\u001b[7mo\u001b[0mrld         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;20;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world\u001b[7m \u001b[0m        \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world\u001b[7m \u001b[0m        \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;8m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;2;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;6;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"h\u001b[7mello world         \u001b[27m\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mse\u001b[7m\u001b[7mc\u001b[0m\u001b[7mond\u001b[27m\u001b_pi:c\u0007\u001b[7m\u001b[0m line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;6;6m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"h\u001b[7mello \u001b[27mworld         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"ello"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;7M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"se\u001b[7mc\u001b[0mond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;7m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"\u001b[7ms\u001b[0mecond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;7M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"\u001b[7m\u001b[7m\u001b[7ms\u001b[0m\u001b[7mecond\u001b[27m\u001b_pi:c\u0007\u001b[7m\u001b[0m line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;7m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"\u001b[7ms\u001b[0mecond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"hello world         \u001b[0m\u001b]8;;\u0007",
+					"\u001b[7ms\u001b[0mecond line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"he\u001b[7ml\u001b[0mlo world         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mhe\u001b[7m\u001b[7ml\u001b[0m\u001b[7mlo\u001b[27m\u001b_pi:c\u0007\u001b[7m\u001b[0m world         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta       \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mhe\u001b[7m\u001b[7ml\u001b[0m\u001b[7mlo\u001b[27m\u001b_pi:c\u0007\u001b[7m\u001b[0m world         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"hello"
+				]
+			},
+			{
+				"input": "\u001b[<64;3;6M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"beta       \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7mhe\u001b[7m\u001b[7ml\u001b[0m\u001b[7mlo\u001b[27m\u001b_pi:c\u0007\u001b[7m\u001b[0m world         \u001b[0m\u001b]8;;\u0007",
+					"second line         \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "editor wrapping",
+		"columns": 12,
+		"rows": 8,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": {
+			"text": "abcdefgh ijklmnop",
+			"paddingX": 1
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;12;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop\u001b[7m \u001b[0m  \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;12;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh\u001b[7m \u001b[0m  \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh\u001b[7m \u001b[0m  \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" \u001b[7mi\u001b[0mjklmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;4;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" \u001b[7mi\u001b[0mjklmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;4;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" ij\u001b[7mk\u001b[0mlmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;12;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" ij\u001b[7mk\u001b[0mlmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;12;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop\u001b[7m \u001b[0m  \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;5;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abcdefgh   \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop\u001b[7m \u001b[0m  \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;5;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007",
+					" abc\u001b[7md\u001b[0mefgh   \u001b[0m\u001b]8;;\u0007",
+					" ijklmnop   \u001b[0m\u001b]8;;\u0007",
+					"────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "editor scrolled",
+		"columns": 20,
+		"rows": 12,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": {
+			"text": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8"
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;3;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"───── ↑ 3 more ─────\u001b[0m\u001b]8;;\u0007",
+					"line 4              \u001b[0m\u001b]8;;\u0007",
+					"line 5              \u001b[0m\u001b]8;;\u0007",
+					"line 6              \u001b[0m\u001b]8;;\u0007",
+					"line 7              \u001b[0m\u001b]8;;\u0007",
+					"line 8\u001b[7m \u001b[0m             \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"───── ↑ 3 more ─────\u001b[0m\u001b]8;;\u0007",
+					"li\u001b[7mn\u001b[0me 4              \u001b[0m\u001b]8;;\u0007",
+					"line 5              \u001b[0m\u001b]8;;\u0007",
+					"line 6              \u001b[0m\u001b]8;;\u0007",
+					"line 7              \u001b[0m\u001b]8;;\u0007",
+					"line 8              \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;11M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"───── ↑ 3 more ─────\u001b[0m\u001b]8;;\u0007",
+					"li\u001b[7mn\u001b[0me 4              \u001b[0m\u001b]8;;\u0007",
+					"line 5              \u001b[0m\u001b]8;;\u0007",
+					"line 6              \u001b[0m\u001b]8;;\u0007",
+					"line 7              \u001b[0m\u001b]8;;\u0007",
+					"line 8              \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;11m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"───── ↑ 3 more ─────\u001b[0m\u001b]8;;\u0007",
+					"line 4              \u001b[0m\u001b]8;;\u0007",
+					"line 5              \u001b[0m\u001b]8;;\u0007",
+					"line 6              \u001b[0m\u001b]8;;\u0007",
+					"line 7              \u001b[0m\u001b]8;;\u0007",
+					"li\u001b[7mn\u001b[0me 8              \u001b[0m\u001b]8;;\u0007",
+					"────────────────────\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "completion",
+		"columns": 40,
+		"rows": 10,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": {
+			"text": "",
+			"commands": [
+				{
+					"name": "clear",
+					"description": "The clear command"
+				},
+				{
+					"name": "compact",
+					"description": "The compact command"
+				},
+				{
+					"name": "copy",
+					"description": "The copy command"
+				},
+				{
+					"name": "model",
+					"description": "The model command"
+				}
+			]
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "/",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"→ clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"  model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<65;3;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"→ compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"  model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<65;3;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"→ copy                                  \u001b[0m\u001b]8;;\u0007",
+					"  model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;3;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"→ compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"  model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;10M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"→ model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;3;9M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"→ model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;9m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"  copy                                  \u001b[0m\u001b]8;;\u0007",
+					"→ model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;9M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/\u001b[7m \u001b[0m                                      \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"  clear                                 \u001b[0m\u001b]8;;\u0007",
+					"  compact                               \u001b[0m\u001b]8;;\u0007",
+					"→ copy                                  \u001b[0m\u001b]8;;\u0007",
+					"  model                                 \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;9m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007",
+					"/copy \u001b[7m \u001b[0m                                 \u001b[0m\u001b]8;;\u0007",
+					"────────────────────────────────────────\u001b[0m\u001b]8;;\u0007"
 				],
 				"copied": []
 			}

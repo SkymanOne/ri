@@ -13,7 +13,7 @@ use ratatui_core::text::{Line, Span};
 
 use crate::ansi::line_to_ansi;
 use crate::lines::{StyledLine, composite, truncate, width as line_width};
-pub use selection::{MouseAction, WheelScroll};
+pub use selection::{MouseAction, MouseEvent, MouseKind, WheelScroll};
 /// pi's `fullscreenScrollbar` setting.
 pub use yapi_types::settings::Scrollbar;
 
@@ -418,17 +418,21 @@ pub(crate) fn shrink_stack(sizes: &[usize], minimums: &[usize], available: usize
 /// One part of a stack: its rows and its minimum height.
 pub type StackPart = (Vec<StyledLine>, usize);
 
+/// Where a stack part landed: its first row in the stack, its first row
+/// shown and how many of its rows show.
+pub type Placement = (usize, usize, usize);
+
 /// Lays out a vertical stack of `parts`, each its rows and minimum height,
 /// in `available` rows, as pi-tui's layout does: a part shorter than its
 /// minimum gets blank rows below it, parts shrink by [`shrink_stack`], and
 /// a cut part keeps its top rows unless the cursor,
-/// given as part, row and column, would fall below them. Returns the rows
-/// and the cursor within them.
+/// given as part, row and column, would fall below them. Returns the rows,
+/// the cursor within them and where each part landed.
 pub fn fit_stack(
     parts: Vec<StackPart>,
     cursor: Option<(usize, usize, usize)>,
     available: usize,
-) -> (Vec<StyledLine>, Option<(usize, usize)>) {
+) -> (Vec<StyledLine>, Option<(usize, usize)>, Vec<Placement>) {
     let natural: Vec<usize> = parts
         .iter()
         .map(|(rows, min)| rows.len().max(*min))
@@ -441,6 +445,7 @@ pub fn fit_stack(
     };
     let mut out = Vec::new();
     let mut frame_cursor = None;
+    let mut placements = Vec::new();
     for (index, ((mut rows, _), size)) in parts.into_iter().zip(sizes).enumerate() {
         let cursor_row = cursor.filter(|(part, _, _)| *part == index);
         let offset = match cursor_row {
@@ -454,11 +459,16 @@ pub fn fit_stack(
             frame_cursor = Some((out.len() + row - offset, col));
         }
         rows.resize(rows.len().max(offset + size), Line::default());
+        placements.push((out.len(), offset, size));
         out.extend(rows.drain(offset..offset + size));
     }
     // Minimums can exceed the room; the stack's rectangle clips its bottom.
     out.truncate(available);
-    (out, frame_cursor.filter(|(row, _)| *row < available))
+    (
+        out,
+        frame_cursor.filter(|(row, _)| *row < available),
+        placements,
+    )
 }
 
 /// Fullscreen mode: the transcript scrolls above a dock pinned to the bottom.
@@ -496,6 +506,10 @@ pub struct AltScreen {
     pub wheel_lines: Option<usize>,
     /// The wheel's acceleration in `auto` mode.
     pub wheel: WheelScroll,
+    /// The pointer is over the scrollbar, which shows its thumb solid.
+    scrollbar_hover: bool,
+    /// The "jump to latest" label's row, first column and width.
+    jump_label: Option<(usize, usize, usize)>,
     /// The rows of the last frame.
     screen: Vec<StyledLine>,
     /// The width and height of the last frame.
@@ -513,10 +527,22 @@ pub const FLASH_DURATION: Duration = Duration::from_millis(1000);
 /// How long pi shows a failed copy's message.
 pub const COPY_ERROR_FLASH_DURATION: Duration = Duration::from_millis(5000);
 
-/// Bytes that enter the alternate screen with mouse reports while a button
-/// is held, and focus reports.
-pub const ALT_SCREEN_ENTER: &str =
-    "\x1b[?1049h\x1b[?7l\x1b[?1000h\x1b[?1002h\x1b[?1004h\x1b[?1006h\x1b[2J\x1b[H\x1b[?25l";
+/// Bytes that enter the alternate screen with mouse and focus reports. As in
+/// pi, the terminal also reports pointer moves without a button held, for
+/// the scrollbar's hover, except in terminal multiplexers, which can lag
+/// forwarding them.
+pub fn alt_screen_enter() -> String {
+    let term = std::env::var("TERM").unwrap_or_default().to_lowercase();
+    let multiplexer = ["TMUX", "ZELLIJ", "STY"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+        || term.starts_with("tmux")
+        || term.starts_with("screen");
+    let moves = if multiplexer { "" } else { "\x1b[?1003h" };
+    format!(
+        "\x1b[?1049h\x1b[?7l\x1b[?1000h\x1b[?1002h{moves}\x1b[?1004h\x1b[?1006h\x1b[2J\x1b[H\x1b[?25l"
+    )
+}
 /// Bytes that leave the alternate screen.
 pub const ALT_SCREEN_LEAVE: &str =
     "\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?7h\x1b[?1049l\x1b[?25h";
@@ -686,9 +712,10 @@ impl AltScreen {
             .cloned()
             .collect();
         rows.resize(viewport, Line::default());
-        let scrollbar = self.paint_scrollbar(&mut rows, top, width);
+        let scrollbar = self.paint_scrollbar(&mut rows, width);
         // pi's `compositeScrollToEndIndicator`: the label centered over the
         // last transcript row, stopping at the scrollbar.
+        self.jump_label = None;
         if self.scroll_top.is_some() && viewport > 0 {
             let label = format!(" ↓ Jump to latest message · {} ", self.bottom_key);
             let label = truncate(&Line::from(label), width, "");
@@ -700,6 +727,7 @@ impl AltScreen {
                 let label = Line::from(crate::lines::under(label.spans, self.jump_label_style));
                 rows[viewport - 1] =
                     composite(&rows[viewport - 1], &label, left, label_width, width);
+                self.jump_label = Some((viewport - 1, left, label_width));
             }
         }
         rows.extend(dock.iter().skip(dock_skip).cloned());
@@ -768,37 +796,50 @@ impl AltScreen {
         }
     }
 
-    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
-    /// last column, scrolled to `top`, while the scrollbar shows.
-    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], top: usize, width: usize) -> bool {
+    /// pi's `getScrollbarGeometry` for the transcript: the thumb's first row
+    /// and height while the scrollbar shows, or when `revealable`, while an
+    /// `auto` one would show for the pointer over it.
+    fn thumb(&self, revealable: bool) -> Option<(usize, usize)> {
         let (track, content) = (self.viewport, self.transcript_len);
         let visible = match self.scrollbar {
             Scrollbar::Always => track > 0,
-            Scrollbar::Auto => content > track && self.scrollbar_deadline().is_some(),
+            Scrollbar::Auto => {
+                content > track
+                    && (revealable || self.scrollbar_hover || self.scrollbar_deadline().is_some())
+            }
             Scrollbar::Hidden => false,
         };
-        if !visible || width == 0 || content == 0 {
-            if self.scrollbar_deadline().is_none() {
-                self.scrollbar_until = None;
-            }
-            return false;
+        if !visible || self.size.0 == 0 || content == 0 {
+            return None;
         }
         let round = |value: f64| value.round() as usize;
-        let thumb = (track * track)
-            .checked_div(content)
-            .map_or(track, |_| round((track * track) as f64 / content as f64))
+        let thumb = round((track * track) as f64 / content as f64)
             .min(track)
             .max(2.min(track));
         let max_top = content.saturating_sub(track);
         let offset = if max_top == 0 {
             0
         } else {
-            round(top.min(max_top) as f64 / max_top as f64 * (track - thumb) as f64)
+            let top = self.scroll_position().min(max_top);
+            round(top as f64 / max_top as f64 * (track - thumb) as f64)
+        };
+        Some((offset, thumb))
+    }
+
+    /// pi's `paintScrollbar`: the track and thumb in the transcript rows'
+    /// last column while the scrollbar shows.
+    fn paint_scrollbar(&mut self, rows: &mut [StyledLine], width: usize) -> bool {
+        let Some((offset, thumb)) = self.thumb(false) else {
+            if self.scrollbar_deadline().is_none() {
+                self.scrollbar_until = None;
+            }
+            return false;
         };
         let keep_background = self.scrollbar != Scrollbar::Always;
-        for (row, line) in rows.iter_mut().take(track).enumerate() {
+        let glyph = if self.scrollbar_hover { "█" } else { "┃" };
+        for (row, line) in rows.iter_mut().take(self.viewport).enumerate() {
             let (glyph, style) = if row >= offset && row < offset + thumb {
-                ("┃", self.scrollbar_thumb)
+                (glyph, self.scrollbar_thumb)
             } else {
                 ("│", self.scrollbar_track)
             };
@@ -886,25 +927,25 @@ mod tests {
     #[test]
     fn fit_stack_keeps_top_rows_or_the_cursor() {
         let parts = vec![(doc(&["a", "b", "c", "d"]), 0), (doc(&["f"]), 0)];
-        let (rows, _) = fit_stack(parts.clone(), None, 3);
+        let (rows, _, _) = fit_stack(parts.clone(), None, 3);
         let text: Vec<String> = rows.iter().map(|line| line.to_string()).collect();
         assert_eq!(text, ["a", "b", "c"]);
-        let (rows, cursor) = fit_stack(parts.clone(), Some((0, 3, 1)), 3);
+        let (rows, cursor, _) = fit_stack(parts.clone(), Some((0, 3, 1)), 3);
         let text: Vec<String> = rows.iter().map(|line| line.to_string()).collect();
         assert_eq!(text, ["b", "c", "d"]);
         assert_eq!(cursor, Some((2, 1)));
-        let (rows, cursor) = fit_stack(parts, Some((0, 1, 1)), 9);
+        let (rows, cursor, _) = fit_stack(parts, Some((0, 1, 1)), 9);
         assert_eq!(rows.len(), 5);
         assert_eq!(cursor, Some((1, 1)));
         // A minimum taller than the room is clipped at the bottom.
         let editor = vec![(doc(&["─", "text", "─"]), 3), (doc(&["footer"]), 0)];
-        let (rows, cursor) = fit_stack(editor, Some((0, 1, 4)), 2);
+        let (rows, cursor, _) = fit_stack(editor, Some((0, 1, 4)), 2);
         let text: Vec<String> = rows.iter().map(|line| line.to_string()).collect();
         assert_eq!(text, ["─", "text"]);
         assert_eq!(cursor, Some((1, 4)));
         // A part shorter than its minimum keeps its rows at the top.
         let component = vec![(doc(&["one line"]), 3), (doc(&["footer"]), 0)];
-        let (rows, _) = fit_stack(component, None, 9);
+        let (rows, _, _) = fit_stack(component, None, 9);
         let text: Vec<String> = rows.iter().map(|line| line.to_string()).collect();
         assert_eq!(text, ["one line", "", "", "footer"]);
     }
