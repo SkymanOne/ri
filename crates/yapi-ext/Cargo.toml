@@ -33,6 +33,7 @@ wasmtime.workspace = true
 wasmtime-wasi.workspace = true
 
 [target.'cfg(unix)'.dependencies]
+libc.workspace = true
 rustix.workspace = true
 
 [build-dependencies]
