@@ -634,6 +634,8 @@ impl App {
             expand_key: &self.expand_key,
             cancel_key: &self.cancel_key,
             home: self.home.as_deref().and_then(Path::to_str),
+            cwd: &self.cwd,
+            agent_dir: &self.agent_dir,
             thinking_label: self.ext.thinking_label.as_deref().unwrap_or("Thinking..."),
         }
     }
