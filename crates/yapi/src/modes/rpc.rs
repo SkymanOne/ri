@@ -326,12 +326,6 @@ impl Rpc {
         self.runtime.session()
     }
 
-    /// pi's RPC session commands bind the replacement again after the
-    /// runtime did, so extensions see `session_start` twice.
-    async fn rebind(&self) {
-        self.runtime.rebind().await;
-    }
-
     fn reply(&self, id: Option<&Value>, command: Option<&str>, reply: Reply) {
         let outcome = match &reply {
             Ok(data) => Ok(data.as_deref()),
@@ -498,7 +492,7 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
         RpcCommand::NewSession { parent_session } => {
             let cancelled = rpc.runtime.new_session(parent_session).await?;
             if !cancelled {
-                rpc.rebind().await;
+                rpc.runtime.rebind().await;
             }
             data(&json!({ "cancelled": cancelled }))
         }
@@ -606,14 +600,14 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
         RpcCommand::SwitchSession { session_path } => {
             let cancelled = rpc.runtime.switch_session(&session_path).await?;
             if !cancelled {
-                rpc.rebind().await;
+                rpc.runtime.rebind().await;
             }
             data(&json!({ "cancelled": cancelled }))
         }
         RpcCommand::Fork { entry_id } => match rpc.runtime.fork(&entry_id, false).await? {
             None => data(&json!({"cancelled": true})),
             Some(text) => {
-                rpc.rebind().await;
+                rpc.runtime.rebind().await;
                 data(&json!({"text": text, "cancelled": false}))
             }
         },
@@ -623,7 +617,7 @@ async fn handle(rpc: &Rpc, id: Option<&Value>, command: RpcCommand) -> Reply {
                 .ok_or("Cannot clone session: no current entry selected")?;
             let cancelled = rpc.runtime.fork(&leaf, true).await?.is_none();
             if !cancelled {
-                rpc.rebind().await;
+                rpc.runtime.rebind().await;
             }
             data(&json!({ "cancelled": cancelled }))
         }
@@ -832,28 +826,26 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
         })
     };
     let local = tokio::task::LocalSet::new();
-    let mut current = None;
-    let code = local
+    let (code, rpc) = local
         .run_until(async {
             let rpc = Rc::new(Rpc {
                 runtime: Runtime::start(session, factory, bind).await,
                 out: out.clone(),
                 ui,
             });
-            current = Some(Rc::clone(&rpc));
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
             let signal = termination();
             tokio::pin!(signal);
-            loop {
+            let code = 'read: loop {
                 buffer.clear();
                 let read = tokio::select! {
                     read = stdin.read_until(b'\n', &mut buffer) => read,
-                    code = &mut signal => return code,
-                    () = rpc.ui.exit.notified() => return 0,
+                    code = &mut signal => break 'read code,
+                    () = rpc.ui.exit.notified() => break 'read 0,
                 };
                 match read {
-                    Ok(0) | Err(_) => return 0,
+                    Ok(0) | Err(_) => break 'read 0,
                     Ok(_) => {
                         let mut line = String::from_utf8_lossy(&buffer).into_owned();
                         if line.ends_with('\n') {
@@ -867,12 +859,10 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
                         tokio::task::yield_now().await;
                     }
                 }
-            }
+            };
+            (code, rpc)
         })
         .await;
-    let Some(rpc) = current else {
-        return code;
-    };
     let session = rpc.session();
     session.abort();
     session.abort_bash();
