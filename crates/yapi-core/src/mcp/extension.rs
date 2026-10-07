@@ -10,7 +10,8 @@
 //! servers they need when they run. Servers whose tools are not declared are
 //! listed in the `mcp_servers` system prompt section. In the TUI `/mcp` opens
 //! a manager to sign in, reconnect, enable or disable servers and change
-//! their exposure, saved to the `mcp.json` that defines the server. Elsewhere
+//! their exposure, saved to the `mcp.json` that defines the server or, for
+//! servers extensions registered, kept for the session. Elsewhere
 //! it reports the status; `/mcp login` signs in to OAuth servers.
 
 use std::collections::{HashMap, HashSet};
@@ -133,19 +134,32 @@ impl Server {
 }
 
 /// pi's `registeredServers`: the servers extensions registered, except names
-/// `configured` in `mcp.json`, which take precedence.
-fn registered_servers(ctx: &Context, configured: &[String]) -> Vec<Server> {
+/// `configured` in `mcp.json`, which take precedence, and a notice for each
+/// registration they override.
+fn registered_servers(ctx: &Context, configured: &[ServerEntry]) -> (Vec<Server>, Vec<String>) {
     let registered = ctx
         .session
         .upgrade()
         .map(|session| session.mcp_servers())
         .unwrap_or_default();
-    registered
+    let mut overridden = Vec::new();
+    let servers = registered
         .into_iter()
         .filter(|server| {
-            !configured
+            let Some(entry) = configured
                 .iter()
-                .any(|name| namespace(name) == namespace(&server.name))
+                .find(|entry| namespace(&entry.name) == namespace(&server.name))
+            else {
+                return true;
+            };
+            overridden.push(format!(
+                "\"{}\" registered by {} is overridden by \"{}\" in {}",
+                server.name,
+                server.extension_path,
+                entry.name,
+                entry.source.display()
+            ));
+            false
         })
         .filter_map(|server| {
             // Validated when it was registered.
@@ -158,13 +172,16 @@ fn registered_servers(ctx: &Context, configured: &[String]) -> Vec<Server> {
             };
             Some(Server::new(entry, Some(server.config)))
         })
-        .collect()
+        .collect();
+    (servers, overridden)
 }
 
 #[derive(Default)]
 struct Shared {
     servers: Vec<Server>,
     config_errors: Vec<String>,
+    /// Registrations that `mcp.json` overrides, as `/mcp` lists them.
+    overridden: Vec<String>,
     /// True once startup connections settled and their problems were reported.
     startup: Option<watch::Receiver<bool>>,
     warned_unreachable: bool,
@@ -710,7 +727,10 @@ impl McpExtension {
     /// The plain status `/mcp` shows without the TUI.
     fn format_status(&self, agent_dir: &Path) -> String {
         let shared = lock(&self.shared);
-        if shared.servers.is_empty() && shared.config_errors.is_empty() {
+        if shared.servers.is_empty()
+            && shared.config_errors.is_empty()
+            && shared.overridden.is_empty()
+        {
             return no_servers(agent_dir);
         }
         let mut lines: Vec<String> = shared
@@ -762,6 +782,12 @@ impl McpExtension {
                 .config_errors
                 .iter()
                 .map(|error| format!("config error: {error}")),
+        );
+        lines.extend(
+            shared
+                .overridden
+                .iter()
+                .map(|line| format!("overridden: {line}")),
         );
         lines.join("\n")
     }
@@ -929,6 +955,12 @@ impl McpExtension {
             .config_errors
             .iter()
             .map(|error| format!("config: {error}"))
+            .chain(
+                shared
+                    .overridden
+                    .iter()
+                    .map(|line| format!("overridden: {line}")),
+            )
             .collect();
         McpMenu {
             title: "MCP servers".into(),
@@ -956,7 +988,10 @@ impl McpExtension {
     fn server_menu(&self, name: &str) -> McpMenu {
         let menu = self.server(name, |server| {
             let entry = &server.entry;
-            let saved = format!("saved to the {} mcp.json", entry.scope.as_str());
+            let saved = match entry.scope {
+                Scope::Extension => "for this session".to_owned(),
+                scope => format!("saved to the {} mcp.json", scope.as_str()),
+            };
             let snapshot = server
                 .connection
                 .as_ref()
@@ -1077,14 +1112,21 @@ impl McpExtension {
     /// pi's `chooseExposure`: why the choice could not be saved; `None` when
     /// the manager closed.
     async fn choose_exposure(&self, ctx: &Context, name: &str) -> Option<Option<String>> {
-        let Some((current, source)) = self.server(name, |server| {
-            (server.entry.config.exposure(), server.entry.source.clone())
+        let Some((current, details)) = self.server(name, |server| {
+            let source = server.entry.source.display();
+            let details = match server.entry.scope {
+                Scope::Extension => {
+                    format!("Applies to this session; the server is registered by {source}.")
+                }
+                _ => format!("Saved to {source}."),
+            };
+            (server.entry.config.exposure(), details)
         }) else {
             return Some(None);
         };
         let build = || McpMenu {
             title: format!("Exposure of {name}"),
-            details: Some(format!("Saved to {}.", source.display())),
+            details: Some(details.clone()),
             items: EXPOSURES
                 .iter()
                 .map(|(exposure, description)| {
@@ -1160,10 +1202,16 @@ impl McpExtension {
     }
 
     /// pi's `saveConfig`: saves `patch` to the `mcp.json` that defines the
-    /// server and applies it; why it could not be saved.
+    /// server, unless an extension registered it, and applies it; why it
+    /// could not be saved.
     fn save_config(&self, name: &str, patch: ConfigPatch) -> Option<String> {
-        let source = self.server(name, |server| server.entry.source.clone())?;
-        if let Err(error) = config::update_server_config(&source, name, patch) {
+        let (source, scope) = self.server(name, |server| {
+            (server.entry.source.clone(), server.entry.scope)
+        })?;
+        // Changes to servers extensions registered apply to the session only.
+        if scope != Scope::Extension
+            && let Err(error) = config::update_server_config(&source, name, patch)
+        {
             return Some(format!("Could not update {}: {error}", source.display()));
         }
         if let Some(server) = lock(&self.shared)
@@ -1404,7 +1452,7 @@ impl McpExtension {
     /// the session, and drops unregistered ones and those registered again
     /// with another config, which connect again with it.
     async fn servers_changed(&self, ctx: &Context) {
-        let configured: Vec<String> = {
+        let configured: Vec<ServerEntry> = {
             let shared = lock(&self.shared);
             if !shared.active {
                 return;
@@ -1413,12 +1461,13 @@ impl McpExtension {
                 .servers
                 .iter()
                 .filter(|server| server.registered.is_none())
-                .map(|server| server.entry.name.clone())
+                .map(|server| server.entry.clone())
                 .collect()
         };
-        let next = registered_servers(ctx, &configured);
+        let (next, overridden) = registered_servers(ctx, &configured);
         let (removed, generation) = {
             let mut shared = lock(&self.shared);
+            shared.overridden = overridden;
             let (removed, kept): (Vec<Server>, Vec<Server>) = std::mem::take(&mut shared.servers)
                 .into_iter()
                 .partition(|server| {
@@ -1706,16 +1755,13 @@ impl Extension for McpExtension {
                 shared.generation += 1;
                 shared.tools = Some(ctx.tools.clone());
                 shared.active = true;
-                let configured: Vec<String> = loaded
-                    .servers
-                    .iter()
-                    .map(|entry| entry.name.clone())
-                    .collect();
+                let (registered, overridden) = registered_servers(ctx, &loaded.servers);
+                shared.overridden = overridden;
                 shared.servers = loaded
                     .servers
                     .into_iter()
                     .map(|entry| Server::new(entry, None))
-                    .chain(registered_servers(ctx, &configured))
+                    .chain(registered)
                     .collect();
                 shared.generation
             };
