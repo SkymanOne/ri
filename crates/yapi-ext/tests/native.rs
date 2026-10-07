@@ -48,7 +48,7 @@ async fn native_extensions_register_and_run() {
     let session = session(&faux, &dir, host.for_session());
     assert!(session.active_tool_names().contains(&"shout".to_owned()));
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     assert_eq!(
         custom_entries(&session, "hello-started"),
@@ -109,7 +109,7 @@ async fn permission_gate_blocks_dangerous_commands() {
     ]);
     let session = session_with_tools(&faux, &dir, host.for_session(), &["bash"]);
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("run them", Vec::new()).await.unwrap();
     let results = tool_results(&session);
@@ -143,7 +143,7 @@ async fn protected_paths_block_writes() {
     ]);
     let session = session_with_tools(&faux, &dir, host.for_session(), &["write"]);
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("write", Vec::new()).await.unwrap();
     assert_eq!(tool_results(&session)[0], "Path \".env\" is protected");
@@ -171,7 +171,7 @@ async fn todo_keeps_a_list_per_branch() {
     ]);
     let session = session(&faux, &dir, host.for_session());
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("plan", Vec::new()).await.unwrap();
     assert_eq!(
@@ -229,7 +229,7 @@ async fn repo_status_reports_uncommitted_files() {
     ]);
     let session = session(&faux, &dir, host.for_session());
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("status", Vec::new()).await.unwrap();
     let report = &tool_results(&session)[0];

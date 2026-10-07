@@ -3806,10 +3806,9 @@ impl App {
         self.ext.set_theme(&self.theme);
         self.share_themes();
         let tx = self.tx.clone();
-        self.session
-            .set_actions(crate::runtime::actions(move |request| {
-                tx.send(Event::Action(Box::new(request))).is_ok()
-            }));
+        let actions = crate::runtime::actions(move |request| {
+            tx.send(Event::Action(Box::new(request))).is_ok()
+        });
         let ui = extension_ui::InteractiveUi {
             tx: self.tx.clone(),
             epoch: self.epoch,
@@ -3828,7 +3827,7 @@ impl App {
                 reply = old.reply;
             }
             session
-                .bind_extensions(Arc::new(ui), Mode::Tui, replaced)
+                .bind_extensions(Arc::new(ui), Mode::Tui, Some(actions), replaced)
                 .await;
             let _ = tx.send(Event::Bound(reply));
         });

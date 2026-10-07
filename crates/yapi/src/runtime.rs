@@ -234,7 +234,7 @@ pub type Replaced = Option<(Replacement, Option<String>)>;
 
 /// Makes a session current in a mode: streams its events and starts its
 /// extensions, telling them the session it replaced.
-pub type Bind = Box<dyn Fn(AgentSession, Replaced) -> LocalBoxFuture<'static, ()>>;
+pub type Bind = Box<dyn Fn(AgentSession, SessionActions, Replaced) -> LocalBoxFuture<'static, ()>>;
 
 /// pi's `AgentSessionRuntime` for the RPC and print modes: the current
 /// session, which session changes replace through the factory. Runs on a
@@ -283,8 +283,7 @@ impl Runtime {
     /// and starts its extensions.
     async fn bind(&self, session: AgentSession, replaced: Replaced) {
         *self.current.borrow_mut() = (session.clone(), replaced.clone());
-        session.set_actions(Arc::clone(&self.actions));
-        (self.bind)(session, replaced).await;
+        (self.bind)(session, Arc::clone(&self.actions), replaced).await;
     }
 
     /// Starts the current session's extensions again, as pi's RPC session

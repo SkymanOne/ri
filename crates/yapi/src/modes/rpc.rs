@@ -809,11 +809,16 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
         let (out, ui) = (out.clone(), Arc::clone(&ui));
         // As in pi, a session's events stream once its extensions have
         // started.
-        Box::new(move |session, replaced| {
+        Box::new(move |session, actions, replaced| {
             let (out, ui, epoch) = (out.clone(), Arc::clone(&ui), Arc::clone(&epoch));
             Box::pin(async move {
                 session
-                    .bind_extensions(Arc::clone(&ui) as Arc<dyn ExtensionUi>, Mode::Rpc, replaced)
+                    .bind_extensions(
+                        Arc::clone(&ui) as Arc<dyn ExtensionUi>,
+                        Mode::Rpc,
+                        Some(actions),
+                        replaced,
+                    )
                     .await;
                 runtime::forward_newest(&session, &epoch, move |event| {
                     if let Ok(line) = yapi_types::json::to_string(event) {

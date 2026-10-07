@@ -38,11 +38,11 @@ pub async fn run(startup: Startup, json: bool, factory: SessionFactory) -> u8 {
     // The current session's number; listeners of older ones stay silent.
     let epoch = Arc::new(AtomicU64::new(0));
     // As in pi, a session's events stream once its extensions have started.
-    let bind: Bind = Box::new(move |session, replaced| {
+    let bind: Bind = Box::new(move |session, actions, replaced| {
         let epoch = Arc::clone(&epoch);
         Box::pin(async move {
             session
-                .bind_extensions(Arc::new(NoUi), mode, replaced)
+                .bind_extensions(Arc::new(NoUi), mode, Some(actions), replaced)
                 .await;
             if json {
                 forward_newest(&session, &epoch, |event| {

@@ -84,7 +84,7 @@ async fn extension_tools_and_handlers_run_in_the_session() {
     let session = session(&faux, &dir, js.for_session());
     assert!(session.active_tool_names().contains(&"greet".to_owned()));
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     assert_eq!(
         custom_entries(&session, "started"),
@@ -132,7 +132,7 @@ async fn commands_input_and_new_sessions() {
     let faux = Faux::new([Response::text("ok")]);
     let first = session(&faux, &dir, js.for_session());
     first
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     first.prompt("/note buy milk", Vec::new()).await.unwrap();
     // The action runs on the runtime; wait for it to land.
@@ -161,7 +161,7 @@ async fn commands_input_and_new_sessions() {
     first.shutdown().await;
     let second = session(&Faux::new([]), &dir, js.for_session());
     second
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     assert_eq!(
         custom_entries(&second, "started"),
@@ -211,7 +211,7 @@ async fn model_registry_reads_typed_models() {
     assert!(js.errors().is_empty(), "{:?}", js.errors());
     let session = session(&Faux::new([]), &dir, js.for_session());
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("/probe", Vec::new()).await.unwrap();
     // The command runs on the runtime; wait for its entry.
@@ -267,7 +267,7 @@ async fn session_manager_reads_children() {
     assert!(js.errors().is_empty(), "{:?}", js.errors());
     let session = session(&Faux::new([]), &dir, js.for_session());
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.append_custom_entry("first", None).unwrap();
     session.append_custom_entry("second", None).unwrap();

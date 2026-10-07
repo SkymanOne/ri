@@ -20,7 +20,7 @@ use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::QueueMode;
 use yapi_types::sync::{lock, write};
 
-use crate::extensions::{Context, Extension, ExtensionUi, Mode, ToolRenderers};
+use crate::extensions::{Context, Extension, ExtensionUi, Mode, SessionActions, ToolRenderers};
 use crate::messages::convert_to_llm;
 use crate::time::now_ms;
 
@@ -469,7 +469,7 @@ impl Hooks {
 impl AgentSession {
     /// The context extensions get, with `cancel` for the operation at hand.
     pub(super) fn extension_context(&self, cancel: CancellationToken) -> Context {
-        let (ui, mode) = lock(&self.inner.binding).clone();
+        let (ui, mode, _) = lock(&self.inner.binding).clone();
         Context {
             cwd: self.inner.cwd.clone(),
             agent_dir: self.inner.agent_dir.clone(),
@@ -484,7 +484,8 @@ impl AgentSession {
 
     /// The UI and mode extensions are bound to.
     pub fn extension_binding(&self) -> (Arc<dyn ExtensionUi>, Mode) {
-        lock(&self.inner.binding).clone()
+        let (ui, mode, _) = lock(&self.inner.binding).clone();
+        (ui, mode)
     }
 
     /// The extensions with handlers for pi events of type `kind`.
@@ -862,12 +863,6 @@ impl AgentSession {
         (messages, forced)
     }
 
-    /// Sets how the mode carries out session changes extension commands
-    /// ask for.
-    pub fn set_actions(&self, actions: crate::extensions::SessionActions) {
-        *lock(&self.inner.actions) = Some(actions);
-    }
-
     /// Carries out a session change an extension command asks for: whether
     /// an extension cancelled it. Without a mode, nothing changes, as pi's
     /// default actions do.
@@ -875,14 +870,15 @@ impl AgentSession {
         &self,
         action: crate::extensions::SessionAction,
     ) -> Result<bool, String> {
-        let actions = lock(&self.inner.actions).clone();
+        let actions = lock(&self.inner.binding).2.clone();
         match actions {
             Some(actions) => actions(action).await,
             None => Ok(false),
         }
     }
 
-    /// Gives extensions their UI and mode and starts them: pi's
+    /// Gives extensions their UI, mode and the `actions` that carry out the
+    /// session changes their commands ask for, and starts them: pi's
     /// `bindExtensions`, which emits `session_start` with the reason this
     /// session replaced another and that session's file, or `startup` when
     /// `replaced` is `None`.
@@ -890,9 +886,10 @@ impl AgentSession {
         &self,
         ui: Arc<dyn ExtensionUi>,
         mode: Mode,
+        actions: Option<SessionActions>,
         replaced: Option<(Replacement, Option<String>)>,
     ) {
-        *lock(&self.inner.binding) = (ui, mode);
+        *lock(&self.inner.binding) = (ui, mode, actions);
         let ctx = self.extension_context(CancellationToken::new());
         for extension in &self.inner.extensions {
             extension.session_start(&ctx).await;

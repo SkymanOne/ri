@@ -100,7 +100,7 @@ async fn conversation(faux: &Faux, dir: &Path, host: &Arc<ExtensionHost>) -> Age
         .set_nested_global_setting("compaction", "keepRecentTokens", 2.into())
         .unwrap();
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("first", Vec::new()).await.unwrap();
     session.prompt("second", Vec::new()).await.unwrap();
@@ -235,7 +235,7 @@ async fn message_end_replacements_are_recorded_and_sent() {
     let faux = Faux::new([Response::text("one"), Response::text("two")]);
     let session = session(&faux, &dir, host.for_session());
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Print, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
         .await;
     session.prompt("first", Vec::new()).await.unwrap();
     session.prompt("second", Vec::new()).await.unwrap();
@@ -291,10 +291,10 @@ async fn rediscovered_resources_load_once() {
 
     // pi's RPC session commands bind a session twice, which discovers again.
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Rpc, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Rpc, None, None)
         .await;
     session
-        .bind_extensions(Arc::new(NoUi), Mode::Rpc, None)
+        .bind_extensions(Arc::new(NoUi), Mode::Rpc, None, None)
         .await;
 
     let resources = session.resources();
