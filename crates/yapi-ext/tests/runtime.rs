@@ -429,7 +429,8 @@ export default function (pi) {
 }
 
 /// `dns.lookup` resolves through the host, as SSRF guards such as
-/// pi-web-access's expect before they fetch, and needs the network grant.
+/// pi-web-access's expect before they fetch, and needs the network grant,
+/// as `fetch` does.
 /// Only `localhost` and address literals resolve here, so the test needs no
 /// network.
 #[tokio::test(flavor = "multi_thread")]
@@ -479,8 +480,9 @@ export default async function (pi) {
     let denied = r#"
 import { lookup } from "node:dns/promises";
 export default async function (pi) {
-	const message = await lookup("localhost").then(() => "resolved", (error) => error.message);
-	pi.registerCommand("probe", { description: message, handler: async () => {} });
+	const looked = await lookup("localhost").then(() => "resolved", (error) => error.message);
+	const fetched = await fetch("http://127.0.0.1:9").then(() => "fetched", (error) => error.message);
+	pi.registerCommand("probe", { description: `${looked};${fetched}`, handler: async () => {} });
 }
 "#;
     let dir = scratch("dns-denied");
@@ -502,7 +504,7 @@ export default async function (pi) {
         .as_str()
         .unwrap_or_default()
         .to_owned();
-    assert!(description.contains("Network access"), "{loaded}");
+    assert_eq!(description.matches("Network access").count(), 2, "{loaded}");
 }
 
 /// Scripts without module syntax load as CommonJS, imports may carry a
@@ -732,4 +734,97 @@ export default function (pi) {
     let (wait, abort) = (call("wait", 2), json!({"id": 2}));
     let (result, _) = tokio::join!(instance.call("tool", &wait), instance.call("abort", &abort));
     assert_eq!(result.unwrap()["content"][0]["text"], "aborted");
+}
+
+/// `fetch` resolves once the headers arrive and streams the body: the guest
+/// reads the first chunk before the server sends the second. Aborting a
+/// response closes its connection, and so does collecting one nobody read.
+#[tokio::test(flavor = "multi_thread")]
+async fn streams_fetch_responses() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+    /// The next connection, once its request's head has arrived.
+    async fn accept(listener: &TcpListener) -> TcpStream {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(stream.read_u8().await.unwrap());
+        }
+        stream
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let chunked = "HTTP/1.1 200 OK\r\nconnection: close\r\ntransfer-encoding: chunked\r\n\r\n";
+        let mut body = accept(&listener).await;
+        let first = format!("{chunked}5\r\nfirst\r\n");
+        body.write_all(first.as_bytes()).await.unwrap();
+        // The guest asks for the rest once it has read the first chunk.
+        let mut next = accept(&listener).await;
+        let ok = "HTTP/1.1 200 OK\r\nconnection: close\r\ncontent-length: 2\r\n\r\nok";
+        next.write_all(ok.as_bytes()).await.unwrap();
+        body.write_all(b"6\r\nsecond\r\n0\r\n\r\n").await.unwrap();
+        // Responses the guest aborts and drops after their first chunk.
+        let mut closed = Vec::new();
+        for _ in 0..2 {
+            let mut stalled = accept(&listener).await;
+            let first = format!("{chunked}1\r\nx\r\n");
+            stalled.write_all(first.as_bytes()).await.unwrap();
+            closed.push(stalled.read(&mut [0; 16]).await.unwrap());
+        }
+        closed
+    });
+    let dir = scratch("fetch");
+    let main = r#"
+export default function (pi) {
+	pi.registerTool({
+		name: "fetch", label: "fetch", description: "", parameters: { type: "object", properties: {} },
+		async execute() {
+			const base = "http://127.0.0.1:PORT";
+			const decoder = new TextDecoder();
+			const response = await fetch(`${base}/body`);
+			const reader = response.body.getReader();
+			const first = decoder.decode((await reader.read()).value);
+			const next = await fetch(`${base}/next`);
+			const copy = next.clone();
+			const texts = [await next.text(), await copy.text(), await next.text().catch((error) => error.name)];
+			let rest = "";
+			for (let chunk; !(chunk = await reader.read()).done; ) rest += decoder.decode(chunk.value);
+			const controller = new AbortController();
+			const stalled = await fetch(`${base}/stalled`, { signal: controller.signal });
+			const reading = stalled.text();
+			setTimeout(() => controller.abort(), 50);
+			const aborted = await reading.then(() => "read", (error) => error.name);
+			await fetch(`${base}/dropped`);
+			// Memory enough for QuickJS to collect the dropped response once its first chunk is in.
+			for (let i = 0; i < 5; i++) {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				Array.from({ length: 200000 }, (_, i) => ({ i }));
+			}
+			return { content: [{ type: "text", text: [first, rest, response.status, ...texts, aborted].join(",") }] };
+		},
+	});
+}
+"#
+    .replace("PORT", &port.to_string());
+    let (instance, extension) = load(&dir, &[("main.ts", &main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    instance.call("bind", &Value::Null).await.unwrap();
+    let call = json!({"id": 1, "extension": 1, "name": "fetch", "toolCallId": "fetch", "params": {}, "ctx": {}});
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        instance.call("tool", &call),
+    )
+    .await
+    .expect("the first chunk arrives before the body ends")
+    .unwrap();
+    assert_eq!(
+        result["content"][0]["text"],
+        "first,second,200,ok,ok,TypeError,AbortError"
+    );
+    let closed = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("the connections of the aborted and dropped responses close")
+        .unwrap();
+    assert_eq!(closed, [0, 0]);
 }
