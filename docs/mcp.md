@@ -38,7 +38,9 @@ To send the token of a provider you signed in to with `/login` instead, add `"au
 
 By default, yapi offers MCP tools through codemode. Instead of one tool call per step, the model writes a short JavaScript program that calls several tools and combines their results. Programs run in a fresh WebAssembly sandbox with no file, process or network access of their own.
 
-Set `"exposure": "direct"` on a server to offer its tools to the model directly. `--tools read,bash,edit,write,codemode` routes the built-in tools through codemode as well.
+Set `"exposure": "direct"` on a server to offer its tools to the model directly. `--tools read,bash,edit,write,codemode` routes the built-in tools through codemode as well. With `"codemode": { "mode": "only" }` in `settings.json`, the tools that scripts can call are offered only through codemode while it is active. Requests leave out their declarations and the system prompt does not list them.
+
+A package that registers its own `codemode` tool replaces the built-in one, and yapi warns about it at startup.
 
 Scripts also reach the `models` global: they list the catalog and run classifier and image models with the session's credentials. The model reads how to use it in Pi's codemode documentation, in `~/.yapi/agent/docs/pi/docs/codemode.md` when the documentation for the model is installed, else on GitHub.
 

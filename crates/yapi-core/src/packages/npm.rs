@@ -62,18 +62,105 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> NpmError + '_ {
     }
 }
 
-/// The registry npm would use: `npm_config_registry`, else npm's default.
-pub fn default_registry() -> String {
-    let registry = std::env::var("npm_config_registry")
-        .or_else(|_| std::env::var("NPM_CONFIG_REGISTRY"))
-        .ok()
-        .filter(|registry| !registry.is_empty())
-        .unwrap_or_else(|| "https://registry.npmjs.org/".into());
-    if registry.ends_with('/') {
-        registry
-    } else {
-        format!("{registry}/")
+/// npm's configuration as the `npm install` pi runs reads it: the user config
+/// file (`npm_config_userconfig`, else `~/.npmrc`) under `npm_config_*`
+/// environment variables, with `${VAR}` references expanded.
+pub fn config() -> HashMap<String, String> {
+    let env = |name: &str| std::env::var(name).ok();
+    let vars: HashMap<String, String> = std::env::vars_os()
+        .filter_map(|(name, value)| {
+            let key = env_key(name.to_str()?)?;
+            let value = expand(value.to_str()?, env);
+            (!value.is_empty()).then_some((key, value))
+        })
+        .collect();
+    let file = vars.get("userconfig").map_or_else(
+        || crate::tools::path::home_dir().join(".npmrc"),
+        |path| PathBuf::from(crate::tools::path::expand_home(path)),
+    );
+    let mut config = parse_config(&std::fs::read_to_string(file).unwrap_or_default(), env);
+    config.extend(vars);
+    config
+}
+
+/// The setting environment variable `name` holds, when it is an
+/// `npm_config_*` variable, named as npm names it.
+fn env_key(name: &str) -> Option<String> {
+    let key = name
+        .get(..11)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("npm_config_"))
+        .and(name.get(11..))?;
+    // npm keeps `//host/:_authToken` keys as written.
+    if key.starts_with("//") {
+        return Some(key.to_owned());
     }
+    let rest = key.get(1..)?.replace('_', "-");
+    Some(format!("{}{rest}", &key[..1]).to_lowercase())
+}
+
+/// The top-level settings of an npmrc file, read as npm's `ini` parser reads
+/// them, with `${VAR}` references in keys and values expanded from `env`.
+fn parse_config(text: &str, env: impl Fn(&str) -> Option<String>) -> HashMap<String, String> {
+    let mut config = HashMap::new();
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') && line.ends_with(']') {
+            // What follows belongs to a section, which npm ignores.
+            break;
+        }
+        if line.starts_with([';', '#']) {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        let quoted = value.len() >= 2
+            && (value.starts_with('"') && value.ends_with('"')
+                || value.starts_with('\'') && value.ends_with('\''));
+        let value = if quoted {
+            &value[1..value.len() - 1]
+        } else {
+            value.split([';', '#']).next().unwrap_or_default().trim()
+        };
+        let value = expand(value, &env);
+        if !value.is_empty() {
+            config.insert(expand(key.trim(), &env), value);
+        }
+    }
+    config
+}
+
+/// `text` with npm's `${VAR}` references replaced by `env`'s values. An
+/// undefined `${VAR}` stays as written and an undefined `${VAR?}` is empty.
+/// npm's backslash escapes of references are not supported.
+fn expand(text: &str, env: impl Fn(&str) -> Option<String>) -> String {
+    let mut expanded = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        expanded.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let reference = rest[2..].find('}').map(|end| &rest[2..end + 2]);
+        let Some(reference) = reference.filter(|name| {
+            let name = name.strip_suffix('?').unwrap_or(name);
+            !name.is_empty() && !name.contains(['$', '{', '?'])
+        }) else {
+            expanded.push_str("${");
+            rest = &rest[2..];
+            continue;
+        };
+        let (name, optional) = match reference.strip_suffix('?') {
+            Some(name) => (name, true),
+            None => (reference, false),
+        };
+        match env(name) {
+            Some(value) => expanded.push_str(&value),
+            None if optional => {}
+            None => expanded.push_str(&rest[..reference.len() + 3]),
+        }
+        rest = &rest[reference.len() + 3..];
+    }
+    expanded.push_str(rest);
+    expanded
 }
 
 /// `token` without the `v` node-semver allows before a version, as in
@@ -152,24 +239,86 @@ const PACKUMENT_ACCEPT: &str =
 
 /// A registry client with a per-run packument cache.
 pub struct Npm {
-    registry: String,
+    config: HashMap<String, String>,
     packuments: HashMap<String, Value>,
 }
 
 impl Npm {
-    /// A client for `registry`, a base URL ending in `/`.
-    pub fn new(registry: String) -> Npm {
+    /// A client with npm's configuration `config`, as [`config`] reads it.
+    pub fn new(config: HashMap<String, String>) -> Npm {
         Npm {
-            registry,
+            config,
             packuments: HashMap::new(),
         }
     }
 
-    /// GETs `url`, asking for the `accept` media types.
-    async fn get(&self, url: &str, accept: &str) -> Result<reqwest::Response, NpmError> {
-        let response = yapi_ai::http::client()
+    /// The registry of package `name`, ending in `/`: its scope's
+    /// `@scope:registry`, else `registry`, else npm's default.
+    fn registry(&self, name: &str) -> String {
+        let scope = name.split_once('/').map(|(scope, _)| scope);
+        let registry = scope
+            .filter(|scope| scope.starts_with('@'))
+            .and_then(|scope| self.config.get(&format!("{scope}:registry")))
+            .or_else(|| self.config.get("registry"))
+            .map_or("https://registry.npmjs.org/", String::as_str);
+        format!("{}/", registry.strip_suffix('/').unwrap_or(registry))
+    }
+
+    /// The `Authorization` npm sends with a request for `url` from
+    /// `registry`: the credentials of the longest `//host/path` key that
+    /// covers `url`, else those of `registry` when it is on `url`'s host.
+    fn authorization(&self, url: &str, registry: &str) -> Option<String> {
+        let parsed = url::Url::parse(url).ok()?;
+        let host =
+            |url: &url::Url| url[url::Position::BeforeHost..url::Position::AfterPort].to_owned();
+        let mut key = format!("//{}{}", host(&parsed), parsed.path());
+        while key.len() > 2 {
+            let field = |name: &str| self.config.get(&format!("{key}:{name}"));
+            if let Some(token) = field("_authToken") {
+                return Some(format!("Bearer {token}"));
+            }
+            if let Some(auth) = field("_auth") {
+                return Some(format!("Basic {auth}"));
+            }
+            if let (Some(username), Some(password)) = (field("username"), field("_password")) {
+                let mut credentials = format!("{username}:").into_bytes();
+                credentials.extend(STANDARD.decode(password).ok()?);
+                return Some(format!("Basic {}", STANDARD.encode(credentials)));
+            }
+            // Up one level: `//host/a/b/` to `//host/a/b`, then `//host/a/`.
+            let parent = match key.strip_suffix('/') {
+                Some(parent) => parent.len(),
+                None => key.trim_end_matches(|c| c != '/').len(),
+            };
+            key.truncate(parent);
+        }
+        let same_host =
+            url::Url::parse(registry).is_ok_and(|registry| host(&registry) == host(&parsed));
+        if url != registry && same_host {
+            self.authorization(registry, registry)
+        } else {
+            None
+        }
+    }
+
+    /// GETs `url` of a package from `registry`, asking for the `accept`
+    /// media types.
+    async fn get(
+        &self,
+        url: &str,
+        accept: &str,
+        registry: &str,
+    ) -> Result<reqwest::Response, NpmError> {
+        let mut request = yapi_ai::http::client()
             .get(url)
-            .header(reqwest::header::ACCEPT, accept)
+            .header(reqwest::header::ACCEPT, accept);
+        if let Some(authorization) = self.authorization(url, registry)
+            && let Ok(mut value) = reqwest::header::HeaderValue::from_str(&authorization)
+        {
+            value.set_sensitive(true);
+            request = request.header(reqwest::header::AUTHORIZATION, value);
+        }
+        let response = request
             .send()
             .await
             .map_err(|err| NpmError::Registry(format!("GET {url}: {err}")))?;
@@ -184,9 +333,10 @@ impl Npm {
 
     async fn packument(&mut self, name: &str) -> Result<&Value, NpmError> {
         if !self.packuments.contains_key(name) {
-            let url = format!("{}{}", self.registry, name.replace('/', "%2f"));
+            let registry = self.registry(name);
+            let url = format!("{registry}{}", name.replace('/', "%2f"));
             let body = self
-                .get(&url, PACKUMENT_ACCEPT)
+                .get(&url, PACKUMENT_ACCEPT, &registry)
                 .await?
                 .bytes()
                 .await
@@ -234,8 +384,9 @@ impl Npm {
     async fn tarball(&self, manifest: &Value) -> Result<Vec<u8>, NpmError> {
         let id = format!("{}@{}", text(&manifest["name"]), text(&manifest["version"]));
         let url = manifest["dist"]["tarball"].as_str().unwrap_or_default();
+        let registry = self.registry(&text(&manifest["name"]));
         let bytes = self
-            .get(url, "*/*")
+            .get(url, "*/*", &registry)
             .await?
             .bytes()
             .await
@@ -596,6 +747,104 @@ mod tests {
         assert!(!satisfies("1.2.4", "1.2.3 || 2"));
         assert!(satisfies("1.2.9", "1.2.x"));
         assert!(!satisfies("1.3.0", "1.2.x"));
+    }
+
+    #[test]
+    fn reads_npmrc_settings_with_environment_references() {
+        let env = |name: &str| (name == "TOKEN").then(|| "secret".to_owned());
+        let config = parse_config(
+            "; comment\n\
+             # comment\n\
+             registry = https://registry.example/ \n\
+             @acme:registry=\"https://npm.acme.test/\"\n\
+             //npm.acme.test/:_authToken=${TOKEN}\n\
+             //other.test/:_authToken=${MISSING}\n\
+             //optional.test/:_authToken=${MISSING?}\n\
+             //token.test/:_auth=dXNlcjpwYXNz ; comment\n\
+             [section]\n\
+             ignored=1\n",
+            env,
+        );
+        let mut entries: Vec<_> = config.iter().collect();
+        entries.sort();
+        assert_eq!(
+            entries,
+            [
+                (
+                    &"//npm.acme.test/:_authToken".to_owned(),
+                    &"secret".to_owned()
+                ),
+                (&"//other.test/:_authToken".into(), &"${MISSING}".into()),
+                (&"//token.test/:_auth".into(), &"dXNlcjpwYXNz".into()),
+                (&"@acme:registry".into(), &"https://npm.acme.test/".into()),
+                (&"registry".into(), &"https://registry.example/".into()),
+            ]
+        );
+        assert_eq!(
+            expand("a${TOKEN}b${${TOKEN}}${}", env),
+            "asecretb${secret}${}"
+        );
+    }
+
+    #[test]
+    fn sends_credentials_only_where_their_key_covers_the_url() {
+        let npm = Npm::new(HashMap::from(
+            [
+                ("@acme:registry", "https://npm.acme.test"),
+                ("//npm.acme.test/:_authToken", "acme"),
+                ("//npm.acme.test/private/:_authToken", "private"),
+                ("//basic.test/:username", "user"),
+                ("//basic.test/:_password", "cGFzcw=="),
+                ("//legacy.test:8080/:_auth", "dXNlcjpwYXNz"),
+                ("//gitlab.test/api/v4/packages/npm/:_authToken", "gitlab"),
+            ]
+            .map(|(key, value)| (key.to_owned(), value.to_owned())),
+        ));
+        assert_eq!(npm.registry("@acme/pkg"), "https://npm.acme.test/");
+        assert_eq!(npm.registry("pkg"), "https://registry.npmjs.org/");
+        let auth = |url: &str, registry: &str| npm.authorization(url, registry);
+        let acme = "https://npm.acme.test/";
+        assert_eq!(
+            auth("https://npm.acme.test/@acme%2fpkg", acme).unwrap(),
+            "Bearer acme"
+        );
+        assert_eq!(
+            auth("https://npm.acme.test/private/pkg.tgz", acme).unwrap(),
+            "Bearer private"
+        );
+        assert_eq!(
+            auth("https://npm.acme.test/privateer/pkg.tgz", acme).unwrap(),
+            "Bearer acme"
+        );
+        assert_eq!(
+            auth("https://basic.test/pkg", "https://basic.test/").unwrap(),
+            format!("Basic {}", STANDARD.encode("user:pass"))
+        );
+        assert_eq!(
+            auth("http://legacy.test:8080/pkg", acme).unwrap(),
+            "Basic dXNlcjpwYXNz"
+        );
+        // A tarball elsewhere on the registry's host gets the registry's.
+        let gitlab = "https://gitlab.test/api/v4/packages/npm/";
+        assert_eq!(
+            auth(
+                "https://gitlab.test/api/v4/projects/7/packages/npm/pkg.tgz",
+                gitlab
+            )
+            .unwrap(),
+            "Bearer gitlab"
+        );
+        // Other hosts and ports get nothing, tarballs included.
+        assert_eq!(auth("http://legacy.test/pkg", acme), None);
+        assert_eq!(auth("https://npm.acme.test.evil/pkg", acme), None);
+        assert_eq!(auth("https://cdn.acme.test/pkg.tgz", acme), None);
+        assert_eq!(
+            auth(
+                "https://registry.npmjs.org/pkg",
+                "https://registry.npmjs.org/"
+            ),
+            None
+        );
     }
 
     #[test]

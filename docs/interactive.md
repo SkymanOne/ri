@@ -17,6 +17,7 @@ These are the defaults. `/hotkeys` shows the bindings in effect, and `~/.yapi/ag
 | Ctrl+O | Expand or collapse tool output |
 | Ctrl+T | Show or hide thinking |
 | Ctrl+G | Write the message in `$EDITOR` |
+| Ctrl+V | Paste copied files' paths (macOS), an image or text from the clipboard. An image is saved to a temporary file, and its path goes in the editor. |
 | Ctrl+L | Open the model selector |
 | Ctrl+P | Cycle models |
 | Shift+Tab | Cycle the thinking level |

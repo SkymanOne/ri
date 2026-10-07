@@ -458,36 +458,8 @@ fn build(
     };
     yapi_ai::http::set_idle_timeout_ms(settings.http_idle_timeout_ms());
     // A `models.json` error is shown by the interactive mode, as in pi.
-    let mut registry = ModelRegistry::load(&agent_dir);
+    let (mut registry, apis) = models(args, &settings, extensions, warn);
     let builtin_settings = extension_settings(&settings);
-    // pi's built-in llama.cpp extension provides its provider.
-    if builtin_enabled(yapi_core::llama::NAME, args, &builtin_settings) {
-        registry.enable_llama();
-    }
-    // Providers extensions register, after `models.json` as in pi, with
-    // their sign-ins, and the wire APIs they implement.
-    let mut apis = Apis::default();
-    for host in &extensions.hosts {
-        for provider in host.providers() {
-            let name = provider.name;
-            match serde_json::from_value(provider.config) {
-                Ok(config) => registry.register_config(&name, config),
-                Err(error) if warn => {
-                    eprintln!("Warning: provider \"{name}\" from an extension is invalid: {error}");
-                }
-                Err(_) => {}
-            }
-            if let Some(stream) = provider.stream {
-                apis.register_for(&name, stream);
-            }
-            if let Some(oauth) = provider.oauth {
-                registry.register_oauth(&name, oauth);
-            }
-        }
-        for api in host.apis() {
-            apis.register(api);
-        }
-    }
 
     // Model: --model, then the session's last model, then defaults.
     let mut model = None;
@@ -771,6 +743,46 @@ fn build(
     Ok((session, fallback))
 }
 
+/// The models of a run: `models.json`, the built-in llama.cpp provider when
+/// enabled, and the providers extensions register, after `models.json` as in
+/// pi, with their sign-ins and the wire APIs they implement. `warn` reports
+/// invalid providers on stderr.
+pub fn models(
+    args: &Args,
+    settings: &SettingsManager,
+    extensions: &Extensions,
+    warn: bool,
+) -> (ModelRegistry, Apis) {
+    let mut registry = ModelRegistry::load(&agent_dir());
+    // pi's built-in llama.cpp extension provides its provider.
+    if builtin_enabled(yapi_core::llama::NAME, args, &extension_settings(settings)) {
+        registry.enable_llama();
+    }
+    let mut apis = Apis::default();
+    for host in &extensions.hosts {
+        for provider in host.providers() {
+            let name = provider.name;
+            match serde_json::from_value(provider.config) {
+                Ok(config) => registry.register_config(&name, config),
+                Err(error) if warn => {
+                    eprintln!("Warning: provider \"{name}\" from an extension is invalid: {error}");
+                }
+                Err(_) => {}
+            }
+            if let Some(stream) = provider.stream {
+                apis.register_for(&name, stream);
+            }
+            if let Some(oauth) = provider.oauth {
+                registry.register_oauth(&name, oauth);
+            }
+        }
+        for api in host.apis() {
+            apis.register(api);
+        }
+    }
+    (registry, apis)
+}
+
 /// The path prefix naming a built-in extension, as in `-e builtin:mcp`.
 const BUILTIN_PREFIX: &str = "builtin:";
 
@@ -825,6 +837,9 @@ pub struct ExtensionErrors {
     pub messages: Vec<String>,
     /// Whether an extension failed to load, which earns pi's hint.
     pub load_failed: bool,
+    /// What loaded despite the errors, when the extensions could load at all.
+    /// pi's `--help` and `--list-models` use it.
+    pub loaded: Option<Box<(Extensions, RunSettings)>>,
 }
 
 /// Loads the run's settings and its pi extensions: `-e` paths, then, unless
@@ -835,6 +850,7 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
     let fail = |message: String| ExtensionErrors {
         messages: vec![message],
         load_failed: false,
+        loaded: None,
     };
     let run = run_settings(args).map_err(|err| fail(err.to_string()))?;
     let cwd = run.cwd.clone();
@@ -844,7 +860,7 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
         cwd.clone(),
         agent_dir.clone(),
         settings,
-        yapi_core::packages::npm::default_registry(),
+        yapi_core::packages::npm::config(),
     );
     let offline = args.offline || yapi_core::tools::external::offline();
     // Installs missing packages; what they provide comes from pi's resolver.
@@ -984,28 +1000,30 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
         let plural = if unknown.len() == 1 { "" } else { "s" };
         messages.push(format!("Unknown option{plural}: {}", unknown.join(", ")));
     }
+    let extensions = Extensions {
+        warnings: replaced_builtin(&hosts, args, &run.settings)
+            .into_iter()
+            .collect(),
+        hosts,
+        skills,
+        prompts,
+        themes,
+    };
     if !messages.is_empty() {
         return Err(ExtensionErrors {
             messages,
             load_failed,
+            loaded: Some(Box::new((extensions, run))),
         });
     }
     if !values.is_empty() {
-        for host in &hosts {
+        for host in &extensions.hosts {
             host.set_flags(values.clone())
                 .await
                 .map_err(|err| fail(err.to_string()))?;
         }
     }
-    Ok((
-        Extensions {
-            hosts,
-            skills,
-            prompts,
-            themes,
-        },
-        run,
-    ))
+    Ok((extensions, run))
 }
 
 /// pi's extension conflicts: each tool or flag that an extension registers
@@ -1037,12 +1055,47 @@ fn conflicts(hosts: &[Arc<ExtensionHost>]) -> Vec<String> {
     messages
 }
 
+/// pi's `omitReplacedExtensions` for codemode, the built-in that yields to
+/// an extension's tool of its name: the built-in's path and the warning, when
+/// an extension registers `codemode` while the built-in is enabled.
+fn replaced_builtin(
+    hosts: &[Arc<ExtensionHost>],
+    args: &Args,
+    settings: &SettingsManager,
+) -> Option<(String, String)> {
+    let name = yapi_core::extensions::codemode::NAME;
+    if !builtin_enabled(name, args, &extension_settings(settings)) {
+        return None;
+    }
+    let owner = hosts
+        .iter()
+        .flat_map(|host| host.registrations())
+        .find(|extension| {
+            let mut tools = extension["tools"].as_array().into_iter().flatten();
+            tools.any(|tool| tool["name"] == name)
+        })?;
+    let path = owner["path"].as_str().unwrap_or_default();
+    Some((
+        format!("{BUILTIN_PREFIX}{name}"),
+        format!(
+            "Extension {path} registers tool `{name}`, so built-in extension `{name}` was not loaded. To use `{name}`, run `yapi config` and make sure it is enabled under Built-in extensions, then disable or remove the existing extension. We recommend only having one or the other loaded at a time."
+        ),
+    ))
+}
+
+/// pi's startup diagnostic for an extension warning.
+pub fn extension_warning(path: &str, warning: &str) -> String {
+    format!("Extension package \"{path}\": {warning}")
+}
+
 /// The run's loaded extensions, and the skills, prompt templates and themes
 /// its packages provide.
 #[derive(Default)]
 pub struct Extensions {
     /// Instances with loaded extensions.
     pub hosts: Vec<Arc<ExtensionHost>>,
+    /// Warnings about extensions that were not loaded, by path.
+    pub warnings: Vec<(String, String)>,
     /// Package skills with their packages as sources.
     pub skills: Vec<SourceInfo>,
     /// Package prompt templates with their packages as sources.

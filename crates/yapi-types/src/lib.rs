@@ -12,6 +12,7 @@ pub mod classify;
 pub mod collate;
 pub mod config;
 pub mod event;
+pub mod extension_event;
 pub mod js;
 pub mod json;
 pub mod message;

@@ -676,3 +676,60 @@ async fn join_stopped_waits_for_dropped_instances() {
     yapi_ext::join_stopped();
     assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
 }
+
+/// `child_process.spawn` streams output, takes input and signals, as in
+/// Node; `pi.exec` stops at its signal; Pi's local bash operations stream
+/// their output; `process.execPath` is the yapi binary; and a tool's
+/// `signal` aborts when the host aborts the call.
+#[tokio::test(flavor = "multi_thread")]
+async fn spawns_streaming_processes_and_aborts_tools() {
+    let dir = scratch("processes");
+    let main = r#"
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
+const closed = (child, event = "close") => new Promise((resolve) => child.on(event, (...args) => resolve(args)));
+export default function (pi) {
+	pi.registerTool({
+		name: "processes", label: "processes", description: "", parameters: { type: "object", properties: {} },
+		async execute() {
+			const cat = spawn("/bin/cat");
+			cat.stdout.setEncoding("utf8");
+			let out = "";
+			cat.stdout.on("data", (chunk) => (out += chunk));
+			cat.stdin.write("one ");
+			cat.stdin.end("two");
+			const [code] = await closed(cat);
+			const sleeper = spawn("sleep", ["10"], { stdio: "ignore" });
+			const killed = sleeper.kill();
+			const [, signal] = await closed(sleeper, "exit");
+			const controller = new AbortController();
+			setTimeout(() => controller.abort(), 50);
+			const exec = await pi.exec("sleep", ["10"], { signal: controller.signal });
+			let shellOutput = "";
+			const shell = await createLocalBashOperations().exec("echo hi; exit 3", process.cwd(), { onData: (data) => (shellOutput += data) });
+			const text = [out, code, sleeper.stdin, killed, signal, exec.killed, fs.existsSync(process.execPath), process.argv.length, shellOutput.trim(), shell.exitCode].join(",");
+			return { content: [{ type: "text", text }] };
+		},
+	});
+	pi.registerTool({
+		name: "wait", label: "wait", description: "", parameters: { type: "object", properties: {} },
+		execute(_id, _params, signal) {
+			return new Promise((resolve) => signal.addEventListener("abort", () => resolve({ content: [{ type: "text", text: "aborted" }] })));
+		},
+	});
+}
+"#;
+    let (instance, extension) = load(&dir, &[("main.ts", main)]).await;
+    assert_eq!(extension.get("error"), None, "{extension}");
+    instance.call("bind", &Value::Null).await.unwrap();
+    let call = |name: &str, id: u64| json!({"id": id, "extension": 1, "name": name, "toolCallId": name, "params": {}, "ctx": {}});
+    let result = instance.call("tool", &call("processes", 1)).await.unwrap();
+    assert_eq!(
+        result["content"][0]["text"],
+        "one two,0,,true,SIGTERM,true,true,1,hi,3"
+    );
+    let (wait, abort) = (call("wait", 2), json!({"id": 2}));
+    let (result, _) = tokio::join!(instance.call("tool", &wait), instance.call("abort", &abort));
+    assert_eq!(result.unwrap()["content"][0]["text"], "aborted");
+}

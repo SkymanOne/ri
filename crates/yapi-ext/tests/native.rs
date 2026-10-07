@@ -13,10 +13,11 @@ use std::sync::Arc;
 use common::{
     cli_source, custom_entries, engine, options, scratch, session, session_with_tools, text_of,
 };
+use futures_util::future::BoxFuture;
 use serde_json::json;
 use yapi_ai::faux::{Faux, Response};
 use yapi_core::agent_session::{AgentSession, TreeNavigation};
-use yapi_core::extensions::{Mode, NoUi};
+use yapi_core::extensions::{DialogOptions, ExtensionUi, Mode, NoUi, NotifyKind};
 use yapi_ext::ExtensionHost;
 use yapi_types::message::Message;
 use yapi_types::session::FileEntry;
@@ -88,10 +89,29 @@ fn tool_results(session: &AgentSession) -> Vec<String> {
         .collect()
 }
 
-const BLOCKED: &str = "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.";
+/// A person who answers each selection with the next of `answers`.
+struct Person(std::sync::Mutex<Vec<&'static str>>);
+
+impl ExtensionUi for Person {
+    fn has_ui(&self) -> bool {
+        true
+    }
+
+    fn notify(&self, _message: &str, _kind: NotifyKind) {}
+
+    fn select(
+        &self,
+        _title: &str,
+        _options: Vec<String>,
+        _dialog: DialogOptions,
+    ) -> BoxFuture<'static, Option<String>> {
+        let answer = self.0.lock().unwrap().remove(0).to_owned();
+        Box::pin(async move { Some(answer) })
+    }
+}
 
 #[tokio::test(flavor = "multi_thread")]
-async fn permission_gate_blocks_dangerous_commands() {
+async fn permission_gate_asks_before_dangerous_commands() {
     // The commands stay harmless if the gate lets them through.
     let dir = scratch("permission-gate");
     let host = load(&dir, "permission-gate").await;
@@ -101,9 +121,9 @@ async fn permission_gate_blocks_dangerous_commands() {
             "bash",
             json!({"command": "rm -rf ./nothing-here"}),
         ),
-        Response::tool_call("call-2", "bash", json!({"command": "sudo true"})),
-        Response::tool_call("call-3", "bash", json!({"command": "echo safe"})),
+        Response::tool_call("call-2", "bash", json!({"command": "echo safe"})),
         Response::text("done"),
+        Response::tool_call("call-3", "bash", json!({"command": "sudo -n true"})),
         Response::tool_call("call-4", "bash", json!({"command": "chmod 777 ./missing"})),
         Response::text("done"),
     ]);
@@ -113,15 +133,21 @@ async fn permission_gate_blocks_dangerous_commands() {
         .await;
     session.prompt("run them", Vec::new()).await.unwrap();
     let results = tool_results(&session);
-    assert_eq!(results[..2], [BLOCKED, BLOCKED]);
-    assert!(results[2].contains("safe"), "{results:?}");
+    assert_eq!(
+        results[0],
+        "Dangerous command blocked (no UI for confirmation)"
+    );
+    assert!(results[1].contains("safe"), "{results:?}");
 
-    let mut values = serde_json::Map::new();
-    values.insert("allow-dangerous".into(), json!(true));
-    host.set_flags(values).await.unwrap();
+    // With a person to ask, the answer decides.
+    let person = Person(std::sync::Mutex::new(vec!["No", "Yes"]));
+    session
+        .bind_extensions(Arc::new(person), Mode::Tui, None, None)
+        .await;
     session.prompt("again", Vec::new()).await.unwrap();
     let results = tool_results(&session);
-    assert_ne!(results[3], BLOCKED, "the flag lets the command run");
+    assert_eq!(results[2], "Blocked by user");
+    assert_ne!(results[3], "Blocked by user", "the person allowed it");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -235,4 +261,34 @@ async fn repo_status_reports_uncommitted_files() {
     let report = &tool_results(&session)[0];
     assert!(report.starts_with("On main, "), "{report}");
     assert!(report.contains("a.txt"), "{report}");
+}
+
+/// A tool call whose run is aborted before it reaches the extension is
+/// aborted as soon as it starts, instead of running to the end.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_tools_aborted_before_they_start_stop() {
+    let dir = scratch("subagent-aborted");
+    let host = load(&dir, "subagent").await;
+    let faux = Faux::new([]);
+    let session = session(&faux, &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    let tool = session
+        .callable_tools()
+        .into_iter()
+        .find(|tool| tool.name() == "subagent")
+        .unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    let result = tool
+        .tool
+        .execute(
+            "call-1".into(),
+            json!({"task": "x"}),
+            cancel,
+            Arc::new(|_| {}),
+        )
+        .await;
+    assert_eq!(result.unwrap_err(), "This operation was aborted");
 }

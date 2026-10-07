@@ -244,10 +244,8 @@ async fn run(parsed: &mut args::Args) -> u8 {
             let _ = yapi_core::docs::download(yapi_core::docs::RELEASES_URL, &agent_dir).await;
         });
     }
-    if let Some(pattern) = &parsed.list_models {
-        return list_models::run(pattern.as_deref(), metadata_to_stderr);
-    }
     let interactive = !parsed.help
+        && parsed.list_models.is_none()
         && parsed.mode.is_none()
         && !parsed.print
         && std::io::stdin().is_terminal()
@@ -258,10 +256,15 @@ async fn run(parsed: &mut args::Args) -> u8 {
         return 1;
     }
     let loaded = startup::load_extensions(parsed).await;
+    // pi's help and model list use the extensions that loaded and report no
+    // extension errors.
+    let partial = match &loaded {
+        Ok(loaded) => Some(loaded),
+        Err(errors) => errors.loaded.as_deref(),
+    };
     // pi's help lists the flags extensions register.
     if parsed.help {
-        let flags: Vec<yapi_ext::Flag> = loaded
-            .as_ref()
+        let flags: Vec<yapi_ext::Flag> = partial
             .map(|(extensions, _)| {
                 extensions
                     .hosts
@@ -272,6 +275,14 @@ async fn run(parsed: &mut args::Args) -> u8 {
             .unwrap_or_default();
         help::print(&flags, metadata_to_stderr);
         return 0;
+    }
+    // pi lists the models extensions register too.
+    if let Some(pattern) = &parsed.list_models {
+        let registry = match partial {
+            Some((extensions, run)) => startup::models(parsed, &run.settings, extensions, true).0,
+            None => yapi_ai::registry::ModelRegistry::load(&yapi_core::config::agent_dir()),
+        };
+        return list_models::run(&registry, pattern.as_deref(), metadata_to_stderr);
     }
     let (extensions, run_settings) = match loaded {
         Ok(loaded) => loaded,
@@ -333,6 +344,7 @@ async fn run(parsed: &mut args::Args) -> u8 {
                 verbose: parsed.verbose,
                 initial,
                 initial_images,
+                extension_warnings: extensions.warnings.clone(),
                 factory: startup::factory(parsed, extensions),
                 use_theme: parsed.use_theme.clone(),
                 model_fallback: startup.model_fallback,
@@ -354,6 +366,9 @@ async fn run(parsed: &mut args::Args) -> u8 {
     };
     for error in startup.session.settings_errors() {
         eprintln!("Warning: {error}");
+    }
+    for (path, warning) in &extensions.warnings {
+        eprintln!("Warning: {}", startup::extension_warning(path, warning));
     }
     if rpc {
         // pi refreshes model catalogs in the background for RPC.

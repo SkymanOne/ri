@@ -41,6 +41,13 @@ Packages can contain [native extensions](native-extensions.md) as `.wasm` files 
 
 yapi has a built-in npm registry client. It resolves versions with npm's range syntax, checks integrity hashes and lays out `node_modules` as npm does. It does not run lifecycle scripts. Those mostly build native addons, which the WebAssembly runtime cannot load, so such addons are installed unbuilt and fail only if the extension loads one.
 
+The client reads registries and credentials as npm does, from `npm_config_*` environment variables and then from `~/.npmrc` or the file `npm_config_userconfig` names. It reads `registry`, `@scope:registry` and each registry's `_authToken`, `_auth`, or `username` and `_password`, and expands `${VAR}` references. As with npm, credentials go only to the registry their key names.
+
+```ini
+@acme:registry=https://npm.acme.dev/
+//npm.acme.dev/:_authToken=${ACME_NPM_TOKEN}
+```
+
 Pi's `npmCommand` setting replaces the built-in client for installing and updating npm sources. Removals and the dependencies of git packages always use the built-in client.
 
 ## Package manifests

@@ -8,7 +8,7 @@ use yapi_extension_api::{Api, json, notify};
 const PROTECTED: [&str; 3] = [".env", ".git/", "node_modules/"];
 
 fn init(api: &mut Api) {
-    api.on("tool_call", |event, ctx| {
+    api.on("tool_call", |event, ctx| async move {
         if event["toolName"] != "write" && event["toolName"] != "edit" {
             return Ok(None);
         }

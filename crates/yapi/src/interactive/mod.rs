@@ -270,6 +270,8 @@ pub struct Options {
     pub initial: Vec<String>,
     /// Images attached to the first of `initial`.
     pub initial_images: Vec<ImageContent>,
+    /// Warnings about extensions that were not loaded, by path.
+    pub extension_warnings: Vec<(String, String)>,
     /// Builds replacement sessions for `/new`, `/resume`, `/fork` and `/clone`.
     pub factory: SessionFactory,
     /// `--use-theme`: the theme for this run instead of the `theme` setting.
@@ -489,6 +491,8 @@ struct App {
     waiting_suggestions: Option<(Value, tokio::sync::oneshot::Sender<Value>)>,
     /// pi's `[Extension issues]`: the extension each concerns, and what.
     extension_issues: Vec<(yapi_types::rpc::SourceInfo, String)>,
+    /// Warnings about extensions that were not loaded, by path.
+    extension_warnings: Vec<(String, String)>,
 }
 
 /// Writes to the terminal, ignoring errors from a vanished terminal.
@@ -634,6 +638,8 @@ impl App {
             expand_key: &self.expand_key,
             cancel_key: &self.cancel_key,
             home: self.home.as_deref().and_then(Path::to_str),
+            cwd: &self.cwd,
+            agent_dir: &self.agent_dir,
             thinking_label: self.ext.thinking_label.as_deref().unwrap_or("Thinking..."),
         }
     }
@@ -1142,6 +1148,7 @@ impl App {
         ));
         header.extend(header::extension_issues(
             &self.theme,
+            &self.extension_warnings,
             &self.extension_issues,
             self.home.as_deref(),
             width,
@@ -2320,12 +2327,16 @@ impl App {
             editor.view.input(data);
             return false;
         }
-        // Extension shortcuts come first, as in pi's editor.
+        // Extension shortcuts come first, then the paste key, as in pi's editor.
         if let Some(binding) =
             extension_ui::shortcut_for(&self.shortcuts, self.keys.decoder(), data).cloned()
         {
             self.run_shortcut(binding);
             return true;
+        }
+        if self.keys.matches(data, "app.clipboard.pasteImage") {
+            self.paste_clipboard();
+            return false;
         }
         let keys = &self.keys;
         if keys.matches(data, "app.interrupt") && !self.editor.is_showing_autocomplete() {
@@ -2407,6 +2418,7 @@ impl App {
             }
             "app.editor.external" => self.external_editor(terminal),
             "app.message.copy" => self.copy_last(),
+            "app.clipboard.pasteImage" => self.paste_clipboard(),
             "app.message.followUp" => {
                 let text = self.editor.expanded_text().trim().to_owned();
                 if text.is_empty() {
@@ -2474,6 +2486,59 @@ impl App {
                 Err(error) => notify(error, NotifyKind::Error),
             }
         });
+    }
+
+    /// pi's `handleClipboardPaste` beside the loop: copied files' paths,
+    /// the clipboard's image saved to a file, or its text, inserted at the
+    /// cursor.
+    fn paste_clipboard(&self) {
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        tokio::spawn(async move {
+            let pasted = clipboard::paste().await;
+            let then: Then = Box::new(move |app| match pasted {
+                Ok(Some(paste)) => app.insert_paste(paste),
+                Ok(None) => {}
+                Err(error) => app.error(format!("Failed to paste from clipboard: {error}")),
+            });
+            let _ = tx.send(Event::Then(epoch, then));
+        });
+    }
+
+    /// Inserts `paste` at the cursor of the editor in use. Files' paths go
+    /// one per line, or quoted on one line in a `!` command, apart from the
+    /// words around the cursor.
+    fn insert_paste(&mut self, paste: clipboard::Paste) {
+        let text = match paste {
+            clipboard::Paste::Text(text) => text,
+            clipboard::Paste::Files(paths) => {
+                let paths = if self.editor.text().trim_start().starts_with('!') {
+                    paths
+                        .iter()
+                        .map(|path| quote(path))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    paths.join("\n")
+                };
+                let (line, col) = self.editor.cursor();
+                let line = self.editor.lines().get(line).map_or("", String::as_str);
+                let (before, after) = line.split_at(line.floor_char_boundary(col));
+                let space = |c: Option<char>| match c {
+                    Some(c) if !c.is_whitespace() => " ",
+                    _ => "",
+                };
+                let (leading, trailing) =
+                    (space(before.chars().last()), space(after.chars().next()));
+                format!("{leading}{paths}{trailing}")
+            }
+        };
+        match &self.ext.editor {
+            // An extension's editor takes the text as a paste. It cannot end the paste early.
+            Some(editor) => editor
+                .view
+                .input(&format!("\x1b[200~{}\x1b[201~", text.replace('\x1b', ""))),
+            None => self.editor.insert_text_at_cursor(&text),
+        }
     }
 
     fn cycle_model(&mut self, forward: bool) {
@@ -3368,7 +3433,7 @@ pub fn session_sources(
     }
 }
 
-/// Shell-quotes a path for the resume hint when needed.
+/// pi's `quoteIfNeeded`: shell-quotes `value` when needed.
 fn quote(value: &str) -> String {
     if !value.is_empty()
         && value
@@ -3479,6 +3544,9 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
     app.render_history();
     for error in app.session.settings_errors() {
         app.warning(error);
+    }
+    for (path, warning) in app.extension_warnings.clone() {
+        app.warning(crate::startup::extension_warning(&path, &warning));
     }
     if let Some(error) = theme_error {
         app.error(error);
@@ -3783,6 +3851,7 @@ impl App {
             builtin_completions: None,
             waiting_suggestions: None,
             extension_issues: Vec::new(),
+            extension_warnings: options.extension_warnings,
         };
         app.style_alt_screen();
         app.alt.bottom_key = keybindings::keys_display(&app.keys, "tui.altScreen.bottom");
@@ -4039,6 +4108,7 @@ mod tests {
             use_theme: None,
             model_fallback: None,
             model_network: false,
+            extension_warnings: Vec::new(),
         };
         let (tx, rx) = unbounded_channel();
         let colors = yapi_tui::terminal::TerminalColors::default();
@@ -4107,6 +4177,48 @@ mod tests {
         let status = yapi_tui::ansi::parse_line(status).0;
         let spinner = Line::from("●");
         text(&status_border(status, spinner, hidden, width, style).expect("a status"))
+    }
+
+    /// The editor's text after pasting `paste` at its end, after
+    /// `text`, with the cursor `left` characters back.
+    fn pasted(text: &str, left: usize, paste: clipboard::Paste) -> String {
+        let (mut app, _events) = app();
+        app.set_editor_text(text);
+        for _ in 0..left {
+            app.editor.handle_input("\x1b[D", &app.keys);
+        }
+        app.insert_paste(paste);
+        app.editor.text()
+    }
+
+    #[tokio::test]
+    async fn pasted_files_are_set_apart_as_in_pi() {
+        let files = |paths: &[&str]| {
+            clipboard::Paste::Files(paths.iter().map(|path| (*path).to_owned()).collect())
+        };
+        let photos = ["/tmp/screenshot.png", "/tmp/My Photos/photo.png"];
+        assert_eq!(pasted("", 0, files(&photos)), photos.join("\n"));
+        assert_eq!(
+            pasted("Review:", 0, files(&["/tmp/photo.png"])),
+            "Review: /tmp/photo.png"
+        );
+        assert_eq!(
+            pasted("確認", 0, files(&["/tmp/photo.png"])),
+            "確認 /tmp/photo.png"
+        );
+        // A `!` command gets the paths quoted, as arguments.
+        let paths = [
+            "/tmp/My Photos/photo.png",
+            "/tmp/$(touch hacked).png",
+            "/tmp/plain.png",
+        ];
+        assert_eq!(
+            pasted("!catDEST", 4, files(&paths)),
+            "!cat '/tmp/My Photos/photo.png' '/tmp/$(touch hacked).png' /tmp/plain.png DEST"
+        );
+        // Text, such as a saved image's path, goes in as it is.
+        let path = clipboard::Paste::Text("/tmp/yapi-clipboard-1.png".into());
+        assert_eq!(pasted("see", 0, path), "see/tmp/yapi-clipboard-1.png");
     }
 
     #[test]

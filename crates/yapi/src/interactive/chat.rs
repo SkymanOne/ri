@@ -32,6 +32,10 @@ pub struct RenderContext<'a> {
     pub cancel_key: &'a str,
     /// The home directory, shown as `~`.
     pub home: Option<&'a str>,
+    /// The session's working directory.
+    pub cwd: &'a std::path::Path,
+    /// The agent directory, which holds the docs.
+    pub agent_dir: &'a std::path::Path,
     /// The label of hidden thinking blocks.
     pub thinking_label: &'a str,
 }

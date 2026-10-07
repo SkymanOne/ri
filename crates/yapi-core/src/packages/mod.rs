@@ -181,19 +181,19 @@ fn managed_path(root: &Path, parts: &Path) -> Result<PathBuf, PackageError> {
 }
 
 impl PackageManager {
-    /// A manager for `cwd`, reading and writing `settings`, with packages from
-    /// `registry`.
+    /// A manager for `cwd`, reading and writing `settings`, with npm's
+    /// configuration `npm_config`, as [`npm::config`] reads it.
     pub fn new(
         cwd: PathBuf,
         agent_dir: PathBuf,
         settings: SettingsManager,
-        registry: String,
+        npm_config: std::collections::HashMap<String, String>,
     ) -> PackageManager {
         PackageManager {
             cwd,
             agent_dir,
             settings,
-            npm: npm::Npm::new(registry),
+            npm: npm::Npm::new(npm_config),
             progress: Box::new(|_| {}),
         }
     }

@@ -81,6 +81,11 @@ pub trait Bridge: Send + Sync {
         Box::pin(async move { Err(message) })
     }
 
+    /// Ends a guest step: called on the instance's thread after each guest
+    /// call, once the operations it began have started and before its results
+    /// are delivered.
+    fn step_ended(&self) {}
+
     /// The request hooks of running extension stream `id`, for the requests
     /// it makes through yapi's wire APIs.
     fn stream_hooks(&self, _id: u64) -> yapi_ai::stream::RequestHooks {
@@ -242,16 +247,17 @@ impl Instance {
         options: Options,
         bridge: Arc<dyn Bridge>,
     ) -> Result<Instance, Error> {
+        let runtime = tokio::runtime::Handle::current();
         let host = Arc::new(Host {
             loader: Loader::new(options.cwd.clone(), options.cache_dir.clone()),
             bridge,
             options,
             ai_streams: AiStreams::default(),
+            processes: crate::ops::Processes::new(runtime.clone()),
         });
         let (commands, receiver) = mpsc::channel();
         let (ready, started) = oneshot::channel();
         let engine = engine.clone();
-        let runtime = tokio::runtime::Handle::current();
         let sender = commands.clone();
         let interrupt = Arc::new(AtomicBool::new(false));
         let flag = interrupt.clone();
@@ -279,10 +285,20 @@ impl Instance {
         })
     }
 
-    /// Runs dispatch `kind` with `payload` and waits for its result.
-    pub async fn call(&self, kind: &str, payload: &Value) -> Result<Value, Error> {
-        let result = self.send_call(kind, payload).ok_or(Error::Stopped)?;
-        result.await.map_err(|_| Error::Stopped)?
+    /// Runs dispatch `kind` with `payload`, queued at once after the calls
+    /// and input sent before it, and returns its result.
+    pub fn call(
+        &self,
+        kind: &str,
+        payload: &Value,
+    ) -> impl Future<Output = Result<Value, Error>> + use<> {
+        let result = self.send_call(kind, payload);
+        async move {
+            result
+                .ok_or(Error::Stopped)?
+                .await
+                .map_err(|_| Error::Stopped)?
+        }
     }
 
     /// Runs dispatch `kind` with `payload` without waiting for its result,
@@ -524,6 +540,7 @@ impl Actor {
                 for (op, kind, payload) in started {
                     self.start_op(op, &kind, &payload);
                 }
+                self.host.bridge.step_ended();
                 for outcome in outcomes {
                     let (id, result) = match outcome {
                         wit::extension::types::Outcome::Done((id, json)) => (
@@ -570,6 +587,7 @@ impl Actor {
         self.host
             .bridge
             .log("error", &format!("Extension runtime stopped: {reason}"));
+        self.host.processes.clear();
         for (_, reply) in self.pending.drain() {
             let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
         }
