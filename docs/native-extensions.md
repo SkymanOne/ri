@@ -191,7 +191,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 ### Processes
 
-`Process::spawn` starts a process that runs while the extension does other work. It takes `{"command", "args", "cwd", "env", "stdin"}`, all optional except `command`. Without `cwd` the process starts in yapi's working folder, `env` replaces the whole environment, and `"stdin": "ignore"` gives it empty standard input instead of a pipe. `Process::next` waits for the next `ProcessEvent`: output on standard output or standard error, then the exit. `write`, `close_stdin` and `kill` act on the running process.
+`Process::spawn` starts a process that runs while the extension does other work. It takes `{"command", "args", "cwd", "env", "stdin"}`, all optional except `command`. Without `cwd` the process starts in yapi's working folder, `env` replaces the whole environment, and `"stdin": "ignore"` gives it empty standard input instead of a pipe. `Process::next` waits for the next `ProcessEvent`: output on standard output or standard error, then the exit. A `next` future dropped before it finishes loses no output. `write` waits while the process has not taken the previous write, and `close_stdin` and `kill` act at once.
 
 Dropping a `Process` kills it, and so does stopping the extension. Starting one needs the process grant, which every extension has by default.
 

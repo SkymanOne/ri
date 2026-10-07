@@ -229,7 +229,6 @@ impl Host {
             "exec.sync" if self.options.grants.process => ops::exec_sync(payload),
             "process.spawn" if self.options.grants.process => self.processes.spawn(payload),
             "exec.sync" | "process.spawn" => Err(denied("Running processes")),
-            "process.write" => self.processes.write(payload),
             "process.end" => {
                 self.processes.end(payload);
                 Ok(Value::Null)
@@ -289,6 +288,7 @@ impl Host {
     ) -> BoxFuture<'static, Result<Value, String>> {
         match kind {
             "timer" => Box::pin(ops::timer(payload)),
+            "process.write" => self.processes.write(&payload),
             "process.next" => {
                 let processes = self.processes.clone();
                 let id = ops::process_id(&payload);

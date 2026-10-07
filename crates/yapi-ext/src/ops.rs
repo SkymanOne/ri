@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use futures_util::future::BoxFuture;
 use serde_json::{Map, Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::sync::mpsc;
@@ -179,8 +180,8 @@ pub(crate) struct Processes {
 /// reads them. Dropping it kills the process.
 struct Running {
     events: Option<mpsc::Receiver<Value>>,
-    /// Closed by `end`.
-    stdin: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    /// Holds one chunk at a time. Closed by `end`.
+    stdin: Option<mpsc::Sender<Vec<u8>>>,
     signals: mpsc::UnboundedSender<Value>,
 }
 
@@ -209,7 +210,7 @@ impl Processes {
         let pid = child.id();
         let (sender, events) = mpsc::channel(QUEUED_CHUNKS);
         let stdin = child.stdin.take().map(|mut pipe| {
-            let (sender, mut chunks) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (sender, mut chunks) = mpsc::channel::<Vec<u8>>(1);
             self.runtime.spawn(async move {
                 while let Some(chunk) = chunks.recv().await {
                     if pipe.write_all(&chunk).await.is_err() {
@@ -265,18 +266,18 @@ impl Processes {
         Value::Array(batch)
     }
 
-    /// Writes base64 `{id, data}` to process `id`'s standard input; whether
-    /// it is still open.
-    pub(crate) fn write(&self, payload: &Value) -> Result<Value, String> {
-        let data = STANDARD
-            .decode(payload["data"].as_str().unwrap_or_default())
-            .map_err(|err| err.to_string())?;
-        Ok(json!(self.with(payload, |running| {
-            running
-                .stdin
-                .as_ref()
-                .is_some_and(|stdin| stdin.send(data).is_ok())
-        })))
+    /// Writes base64 `{id, data}` to process `id`'s standard input once the
+    /// chunk before it has been taken; whether it is still open.
+    pub(crate) fn write(&self, payload: &Value) -> BoxFuture<'static, Result<Value, String>> {
+        let data = STANDARD.decode(payload["data"].as_str().unwrap_or_default());
+        let stdin = self.with(payload, |running| running.stdin.clone());
+        Box::pin(async move {
+            let data = data.map_err(|err| err.to_string())?;
+            let Some(stdin) = stdin else {
+                return Ok(json!(false));
+            };
+            Ok(json!(stdin.send(data).await.is_ok()))
+        })
     }
 
     /// Closes process `{id}`'s standard input.
@@ -609,10 +610,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn processes_take_input_and_stream_output() {
         let processes = Processes::new(tokio::runtime::Handle::current());
+        let write = |id: u64, data: &[u8]| {
+            processes.write(&json!({"id": id, "data": STANDARD.encode(data)}))
+        };
         let id = spawn(&processes, json!({"command": "/bin/cat"}));
-        let write = |text: &str| processes.write(&json!({"id": id, "data": STANDARD.encode(text)}));
-        assert_eq!(write("one ").unwrap(), true);
-        assert_eq!(write("two").unwrap(), true);
+        assert_eq!(write(id, b"one ").await.unwrap(), true);
+        assert_eq!(write(id, b"two").await.unwrap(), true);
         processes.end(&json!({"id": id}));
         let (output, exits) = events(&processes, id).await;
         assert_eq!(output, "one two");
@@ -622,8 +625,16 @@ mod tests {
             &processes,
             json!({"command": "/bin/cat", "stdin": "ignore"}),
         );
-        assert_eq!(write("lost").unwrap(), false);
+        assert_eq!(write(id, b"lost").await.unwrap(), false);
         assert_eq!(events(&processes, id).await.0, "");
+        // Input a process does not read waits in the guest, not in yapi.
+        let id = spawn(&processes, json!({"command": "/bin/sleep", "args": ["10"]}));
+        let chunk = vec![b'x'; 1 << 20];
+        assert_eq!(write(id, &chunk).await.unwrap(), true);
+        assert_eq!(write(id, &chunk).await.unwrap(), true);
+        let third = tokio::time::timeout(Duration::from_millis(200), write(id, &chunk)).await;
+        assert!(third.is_err(), "a third chunk was queued");
+        processes.release(&json!({"id": id}));
         let error = processes
             .spawn(&json!({"command": "/no/such/program"}))
             .unwrap_err();

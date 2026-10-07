@@ -6,6 +6,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+use crate::task::LocalFuture;
 use crate::{op, request};
 
 /// What a running process produced.
@@ -28,12 +29,23 @@ pub enum ProcessEvent {
 
 /// A running process. Dropping it kills the process, so a process started
 /// by a tool ends when the tool's run is aborted.
-#[derive(Debug)]
 pub struct Process {
     id: u64,
     pid: Option<u32>,
     events: VecDeque<ProcessEvent>,
     ended: bool,
+    /// The read in progress, kept when a `next` future is dropped so its
+    /// output is not lost.
+    reading: Option<LocalFuture<Result<Value, String>>>,
+}
+
+impl std::fmt::Debug for Process {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Process")
+            .field("id", &self.id)
+            .field("pid", &self.pid)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Process {
@@ -54,6 +66,7 @@ impl Process {
                 .and_then(|pid| u32::try_from(pid).ok()),
             events: VecDeque::new(),
             ended: false,
+            reading: None,
         })
     }
 
@@ -63,12 +76,16 @@ impl Process {
     }
 
     /// The next event, waiting for one; `None` once the process has exited
-    /// and closed its output.
+    /// and closed its output. Dropping the future loses no output: the next
+    /// call picks up the same read.
     pub async fn next(&mut self) -> Option<ProcessEvent> {
         while self.events.is_empty() && !self.ended {
-            let batch = op("process.next", &json!({"id": self.id}))
-                .await
-                .unwrap_or_default();
+            let id = self.id;
+            let reading = self
+                .reading
+                .get_or_insert_with(|| Box::pin(op("process.next", &json!({"id": id}))));
+            let batch = reading.as_mut().await.unwrap_or_default();
+            self.reading = None;
             let batch = batch.as_array().map(Vec::as_slice).unwrap_or_default();
             self.ended = batch.is_empty();
             self.events.extend(batch.iter().map(event));
@@ -76,12 +93,14 @@ impl Process {
         self.events.pop_front()
     }
 
-    /// Writes `data` to standard input; false once it is closed.
-    pub fn write(&self, data: &[u8]) -> bool {
-        request(
+    /// Writes `data` to standard input, waiting while the process has not
+    /// taken the previous write; false once it is closed.
+    pub async fn write(&self, data: &[u8]) -> bool {
+        op(
             "process.write",
             &json!({"id": self.id, "data": STANDARD.encode(data)}),
         )
+        .await
         .is_ok_and(|open| open == true)
     }
 

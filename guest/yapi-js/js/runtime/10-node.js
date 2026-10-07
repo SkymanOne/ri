@@ -812,24 +812,28 @@
 			return this;
 		}
 	}
-	/** A child's standard input. */
+	/** A child's standard input. Writes wait in order until the child takes them, so unread input stays in the runtime. */
 	class ChildInput extends EventEmitter {
 		constructor(id) {
 			super();
 			this.id = id;
+			this.written = Promise.resolve();
 		}
 		write(chunk, encoding, callback) {
 			if (typeof encoding === "function") callback = encoding;
 			const bytes = typeof chunk === "string" ? Buffer.from(chunk, typeof encoding === "string" ? encoding : undefined) : Buffer.from(chunk);
-			yapi.request("process.write", { id: this.id, data: yapi.base64Encode(bytes) });
-			if (callback) queueMicrotask(callback);
+			const data = yapi.base64Encode(bytes);
+			this.written = this.written.then(() => yapi.op("process.write", { id: this.id, data })).then(
+				() => callback?.(),
+				(error) => callback?.(error),
+			);
 			return true;
 		}
 		end(chunk, encoding, callback) {
 			if (typeof chunk === "function") callback = chunk;
 			else if (chunk !== undefined && chunk !== null) this.write(chunk, encoding);
-			yapi.request("process.end", { id: this.id });
-			queueMicrotask(() => {
+			this.written = this.written.then(() => {
+				yapi.request("process.end", { id: this.id });
 				this.emit("finish");
 				callback?.();
 			});
