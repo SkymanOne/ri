@@ -322,12 +322,8 @@ async fn execute(command: Command, options: Options) -> u8 {
     for error in settings.errors() {
         err(&format!("Warning: {error}"));
     }
-    let mut packages = PackageManager::new(
-        cwd,
-        agent_dir,
-        settings,
-        yapi_core::packages::npm::default_registry(),
-    );
+    let mut packages =
+        PackageManager::new(cwd, agent_dir, settings, yapi_core::packages::npm::config());
     packages.on_progress(out);
     let source = options.source.clone().unwrap_or_default();
     let result = match command {

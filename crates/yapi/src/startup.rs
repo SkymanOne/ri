@@ -884,7 +884,7 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
         cwd.clone(),
         agent_dir.clone(),
         settings,
-        yapi_core::packages::npm::default_registry(),
+        yapi_core::packages::npm::config(),
     );
     let offline = args.offline || yapi_core::tools::external::offline();
     // Installs missing packages; what they provide comes from pi's resolver.
