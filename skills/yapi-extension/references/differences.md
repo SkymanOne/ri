@@ -17,14 +17,15 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 - Pi's internal classes, such as `SettingsManager`, `ModelRuntime` and `ExtensionRunner`, import but throw when called. Built-in tool factories run yapi's tools and reject custom `operations`.
 - `ctx.ui.setTheme` takes theme names only, not `Theme` objects.
 - `newSession`'s `setup` runs after the new session's `session_start` with the read-only session manager, so it cannot append entries.
-- `onTerminalInput`, `setEditorComponent` and `addAutocompleteProvider` have no effect. `registerEntryRenderer`, `registerMarkdownTransformer` and `registerMcpServer` are recorded but unused.
-- `registerProvider` works for providers configured like `models.json` entries, without a custom `streamSimple`, an OAuth sign-in or `refreshModels`.
+- `onTerminalInput` handlers run while yapi keeps drawing, so keys that arrive together pass through them before yapi handles the first.
+- In yapi's own editor, an autocomplete provider's `applyCompletion` runs for every suggestion as they arrive, and its `signal` never aborts. An editor from `setEditorComponent` behaves as in Pi.
+- `registerEntryRenderer`, `registerMarkdownTransformer` and `registerMcpServer` are recorded but unused.
+- `registerProvider` does not take a complete pi-ai `Provider` object, image or classifier models, or `oauth.modifyModels`.
 
 ## Interface
 
 - Components render inside the runtime, and yapi paints their last frame, so a slow component never blocks the interface.
 - pi-tui reports a terminal without hyperlinks or images, so links show as text and images use pi-tui's text fallback.
-- Components match keys against pi-tui's default bindings, not the user's `keybindings.json`.
 - A theme change reaches extensions when their session next starts.
 
 ## Packages
