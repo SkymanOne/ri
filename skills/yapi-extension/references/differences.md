@@ -15,7 +15,7 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 ## API
 
 - Pi's internal classes, such as `SettingsManager`, `ModelRuntime` and `ExtensionRunner`, import but throw when called. Built-in tool factories run yapi's tools and reject custom `operations`.
-- `createAgentSession` and the rest of Pi's SDK throw, so subagents cannot run in yapi's process. Run another yapi instead, as Pi's `subagent` example does: `child_process.spawn(process.execPath, ["--mode", "json", "-p", "--no-session", task])`, reading its events as they arrive.
+- `createAgentSession` and the rest of Pi's SDK throw, by design: yapi does not run agent sessions inside an extension's sandbox. Run a subagent as another yapi instead, as Pi's `subagent` example does: `child_process.spawn(process.execPath, ["--mode", "json", "-p", "--no-session", task])`, reading its events as they arrive. `--mode rpc` also takes `steer`, `follow_up` and `abort` commands on standard input.
 - `ctx.ui.setTheme` takes theme names only, not `Theme` objects.
 - `newSession`'s `setup` runs after the new session's `session_start` with the read-only session manager, so it cannot append entries.
 - `onTerminalInput` handlers run while yapi keeps drawing, so keys that arrive together pass through them before yapi handles the first.
