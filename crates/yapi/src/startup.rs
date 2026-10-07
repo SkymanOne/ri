@@ -856,6 +856,19 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
     let cwd = run.cwd.clone();
     let agent_dir = agent_dir();
     let settings = run.settings.clone();
+    let mut packages = yapi_core::packages::PackageManager::new(
+        cwd.clone(),
+        agent_dir.clone(),
+        settings,
+        yapi_core::packages::npm::config(),
+    );
+    let offline = args.offline || yapi_core::tools::external::offline();
+    // Installs missing packages; what they provide comes from pi's resolver.
+    if !offline {
+        packages
+            .install_missing(|message| eprintln!("Warning: {message}"))
+            .await;
+    }
     let mut messages = Vec::new();
     let mut missing = Vec::new();
     let mut requested = Vec::new();
@@ -868,9 +881,19 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
             }
             continue;
         }
+        if !yapi_core::packages::source::is_local(path) {
+            // pi installs npm and git sources as temporary packages, and
+            // skips a missing one when offline.
+            match packages.install_temporary(path, offline).await {
+                Ok(Some(root)) => requested.push((root, false)),
+                Ok(None) => {}
+                Err(err) => return Err(fail(format!("Failed to install {path}: {err}"))),
+            }
+            continue;
+        }
         let resolved = resolve_to_cwd(path, &cwd);
         if resolved.exists() {
-            requested.push(path.clone());
+            requested.push((resolved, true));
         } else {
             missing.push(format!(
                 "Failed to load extension \"{0}\": Extension path does not exist: {0}",
@@ -884,30 +907,13 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
     // pi resolves `-e` entries as temporary packages: a file is an extension,
     // and a directory brings its manifest's or conventional resources.
     let mut sources: Vec<SourceInfo> = Vec::new();
-    for path in &requested {
-        let found = yapi_core::packages::resolve::package_resources(
-            &resolve_to_cwd(path, &cwd),
-            None,
-            true,
-        );
+    for (root, local) in &requested {
+        let found = yapi_core::packages::resolve::package_resources(root, None, *local);
         let cli = |info: &SourceInfo| yapi_core::resources::cli_source(Path::new(&info.path));
         sources.extend(found.enabled(ResourceType::Extensions).map(cli));
         skills.extend(found.enabled(ResourceType::Skills).map(cli));
         prompts.extend(found.enabled(ResourceType::Prompts).map(cli));
         themes.extend(found.enabled(ResourceType::Themes).map(cli));
-    }
-    let mut packages = yapi_core::packages::PackageManager::new(
-        cwd.clone(),
-        agent_dir.clone(),
-        settings,
-        yapi_core::packages::npm::config(),
-    );
-    let offline = args.offline || yapi_core::tools::external::offline();
-    // Installs missing packages; what they provide comes from pi's resolver.
-    if !offline {
-        packages
-            .install_missing(|message| eprintln!("Warning: {message}"))
-            .await;
     }
     // pi's precedence: the project's settings entries and discovered
     // extensions, then the user's, then packages. `--no-extensions` leaves
