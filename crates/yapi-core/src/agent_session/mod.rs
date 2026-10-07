@@ -1072,18 +1072,30 @@ impl AgentSession {
         expanded
     }
 
-    /// The prompt's options from the session's resources, without the
-    /// sections a run adds.
-    fn base_prompt_options(&self) -> SystemPromptOptions {
+    /// pi's base prompt options, which `ctx.getSystemPromptOptions()` gives
+    /// commands: the session's resources, the active tools, and the snippet
+    /// and guidelines of every registered tool, without what a run adds.
+    pub fn base_prompt_options(&self) -> SystemPromptOptions {
         let resources = self.resources();
-        SystemPromptOptions {
+        let mut options = SystemPromptOptions {
             custom_prompt: resources.custom_prompt,
+            selected_tools: self.inner.tools.active(),
             append_system_prompt: resources.append_prompt.unwrap_or_default(),
             cwd: self.inner.cwd.clone(),
             context_files: resources.context_files,
             skills: resources.skills,
             ..SystemPromptOptions::default()
+        };
+        for tool in self.inner.tools.with(|registry| registry.all()) {
+            let name = tool.name().to_owned();
+            if let Some(snippet) = tool.snippet.filter(|snippet| !snippet.is_empty()) {
+                options.tool_snippets.insert(name.clone(), snippet);
+            }
+            if !tool.guidelines.is_empty() {
+                options.tool_guidelines.insert(name, tool.guidelines);
+            }
         }
+        options
     }
 
     /// The prompt's options for `active` tools: the current run's, as

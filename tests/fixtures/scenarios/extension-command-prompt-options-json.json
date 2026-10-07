@@ -1,0 +1,31 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "session",
+      "version": 3
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "custom",
+        "customType": "options",
+        "content": "{\"selectedTools\":[\"read\",\"bash\",\"edit\",\"write\"],\"toolSnippets\":{\"read\":\"Read file contents\",\"bash\":\"Execute bash commands (ls, grep, find, etc.)\",\"edit\":\"Make precise file edits with exact text replacement, including multiple disjoint edits in one call\",\"write\":\"Create or overwrite files\",\"grep\":\"Search file contents for patterns (respects .gitignore)\",\"find\":\"Find files by glob pattern (respects .gitignore)\",\"ls\":\"List directory contents\",\"codemode\":\"Run JavaScript that calls other tools\",\"tool_search\":\"Search for tools that are not loaded yet and load the matches\"},\"toolGuidelines\":{\"read\":[\"Use read to examine files instead of cat or sed.\"],\"bash\":[\"You can inspect PI_* environment variables for current model and session details.\"],\"edit\":[\"Use edit for precise changes (edits[].oldText must match exactly)\",\"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\",\"Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\",\"Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\"],\"write\":[\"Use write only for new files or complete rewrites.\"],\"codemode\":[\"Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\"]},\"promptGuidelines\":[],\"appendSystemPrompt\":\"Be brief.\",\"sections\":{},\"cwd\":\"<cwd>\",\"contextFiles\":[{\"path\":\"<cwd>/AGENTS.md\",\"content\":\"Use tabs.\\n\"}],\"skills\":[]}",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "custom",
+        "customType": "options",
+        "content": "{\"selectedTools\":[\"read\",\"bash\",\"edit\",\"write\"],\"toolSnippets\":{\"read\":\"Read file contents\",\"bash\":\"Execute bash commands (ls, grep, find, etc.)\",\"edit\":\"Make precise file edits with exact text replacement, including multiple disjoint edits in one call\",\"write\":\"Create or overwrite files\",\"grep\":\"Search file contents for patterns (respects .gitignore)\",\"find\":\"Find files by glob pattern (respects .gitignore)\",\"ls\":\"List directory contents\",\"codemode\":\"Run JavaScript that calls other tools\",\"tool_search\":\"Search for tools that are not loaded yet and load the matches\"},\"toolGuidelines\":{\"read\":[\"Use read to examine files instead of cat or sed.\"],\"bash\":[\"You can inspect PI_* environment variables for current model and session details.\"],\"edit\":[\"Use edit for precise changes (edits[].oldText must match exactly)\",\"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\",\"Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\",\"Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\"],\"write\":[\"Use write only for new files or complete rewrites.\"],\"codemode\":[\"Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.\"]},\"promptGuidelines\":[],\"appendSystemPrompt\":\"Be brief.\",\"sections\":{},\"cwd\":\"<cwd>\",\"contextFiles\":[{\"path\":\"<cwd>/AGENTS.md\",\"content\":\"Use tabs.\\n\"}],\"skills\":[]}",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}
