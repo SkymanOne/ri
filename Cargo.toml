@@ -34,6 +34,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 # The version pi's Photon library builds on, so images decode and encode as in pi.
 image = { version = "0.24.9", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 indexmap = { version = "2", features = ["serde"] }
+libc = "0.2"
 regex-lite = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls"] }
 portable-pty = "0.9"

@@ -66,7 +66,8 @@ impl Spawn {
 
     /// The process to start, killed when dropped, with piped output and
     /// piped input when asked for. An explicit environment replaces the
-    /// process's, as in Node.
+    /// process's, as in Node. Every signal has its default action in the
+    /// process, as libuv gives Node's children.
     fn command(&self) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(&self.command);
         command
@@ -85,6 +86,12 @@ impl Spawn {
         }
         if let Some(env) = self.env_pairs() {
             command.env_clear().envs(env);
+        }
+        // SAFETY: the closure runs between fork and exec and only calls
+        // `signal`, which is async-signal-safe.
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(default_signals);
         }
         command
     }
@@ -607,6 +614,22 @@ async fn terminate(child: &mut tokio::process::Child) -> std::io::Result<std::pr
     child.wait().await
 }
 
+/// Restores the default action of every signal in a child about to exec, as
+/// libuv does. A signal yapi ignores, as a shell's background job ignores
+/// SIGINT and SIGQUIT, would otherwise stay ignored in the child, and `kill`
+/// with it would not stop the child.
+#[cfg(unix)]
+fn default_signals() -> std::io::Result<()> {
+    for signal in 1..32 {
+        if signal != libc::SIGKILL && signal != libc::SIGSTOP {
+            // SAFETY: `signal` is async-signal-safe, and SIG_DFL installs no
+            // handler.
+            unsafe { libc::signal(signal, libc::SIG_DFL) };
+        }
+    }
+    Ok(())
+}
+
 fn spawn_error(command: &str, err: &std::io::Error) -> String {
     let code = match err.kind() {
         std::io::ErrorKind::NotFound => "ENOENT",
@@ -778,9 +801,12 @@ mod tests {
     }
 
     /// `kill` signals a running process by name or number and reports
-    /// whether it was still running.
+    /// whether it was still running. A signal yapi ignores, as a shell's
+    /// background job ignores SIGINT, still stops the process.
     #[tokio::test(flavor = "multi_thread")]
     async fn processes_take_signals() {
+        // SAFETY: ignoring a signal installs no handler.
+        let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
         let processes = Streams::new(tokio::runtime::Handle::current());
         for signal in [json!("SIGINT"), json!(15), Value::Null] {
             let id = spawn(&processes, json!({"command": "/bin/sleep", "args": ["10"]}));
@@ -794,6 +820,8 @@ mod tests {
             assert_eq!(exits[0]["signal"], name);
             assert_eq!(processes.kill(&json!({"id": id})), false);
         }
+        // SAFETY: `previous` is the disposition `signal` returned.
+        unsafe { libc::signal(libc::SIGINT, previous) };
     }
 
     /// Clearing the set kills its processes.
