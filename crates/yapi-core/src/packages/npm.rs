@@ -130,6 +130,11 @@ fn requirements(range: &str) -> Option<Vec<semver::VersionReq>> {
         .collect()
 }
 
+/// Whether `range` is a version range, not a dist-tag.
+pub(crate) fn is_range(range: &str) -> bool {
+    requirements(range).is_some()
+}
+
 /// Whether installed `version` satisfies `range`.
 pub fn satisfies(version: &str, range: &str) -> bool {
     let Ok(version) = semver::Version::parse(version) else {

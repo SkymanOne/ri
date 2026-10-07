@@ -416,3 +416,69 @@ async fn installs_native_extensions() {
     );
     server.finish().unwrap();
 }
+
+/// `-e npm:` installs into pi's temporary folder for one run without
+/// touching settings, reuses an install whose version is in range, and
+/// offline installs nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn installs_temporary_packages_outside_settings() {
+    let dir = scratch("temporary");
+    let package = tarball(&[
+        (
+            "package.json",
+            r#"{"name": "temp-pkg", "version": "1.2.0"}"#,
+        ),
+        ("extensions/index.ts", "export default function () {}\n"),
+    ]);
+    let server = registry(|base| {
+        publish(
+            base,
+            "temp-pkg",
+            &[("1.2.0", json!({}), package.clone())],
+            "1.2.0",
+        )
+    })
+    .await;
+    let mut packages = manager(&dir, &server.url());
+
+    let offline = packages.install_temporary("npm:temp-pkg", true).await;
+    assert_eq!(offline.unwrap(), None);
+    let git = packages
+        .install_temporary("git:github.com/user/repo", true)
+        .await;
+    assert_eq!(git.unwrap(), None);
+
+    // pi's `getTemporaryDir("npm")`: the hash is SHA-256 of `npm-`.
+    let installed = dir.join("agent/tmp/extensions/npm/f35b2129/node_modules/temp-pkg");
+    let path = packages.install_temporary("npm:temp-pkg", false).await;
+    assert_eq!(path.unwrap().as_deref(), Some(installed.as_path()));
+    assert!(installed.join("extensions/index.ts").exists());
+    for (source, offline) in [
+        ("npm:temp-pkg@^1.1", false),
+        ("npm:temp-pkg@latest", false),
+        ("npm:temp-pkg", true),
+    ] {
+        let path = packages.install_temporary(source, offline).await;
+        assert_eq!(
+            path.unwrap().as_deref(),
+            Some(installed.as_path()),
+            "{source}"
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(dir.join("agent/tmp/extensions"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+    assert!(packages.list().is_empty());
+    assert!(!dir.join("agent/settings.json").exists());
+    assert_eq!(
+        server.finish().unwrap().len(),
+        2,
+        "one packument and one tarball"
+    );
+}
