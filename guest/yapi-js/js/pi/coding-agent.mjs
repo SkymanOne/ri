@@ -358,11 +358,206 @@ export class CustomEditor extends Editor {
 	}
 }
 
+// ----- RPC client ------------------------------------------------------------------------------
+/**
+ * pi's `RpcClient`: runs another agent in RPC mode and drives it over its
+ * standard input and output. The agent is yapi itself, the binary at
+ * `process.execPath`, so `cliPath` is ignored.
+ */
+export class RpcClient {
+	constructor(options = {}) {
+		this.options = options;
+		this.process = null;
+		this.eventListeners = [];
+		this.pendingRequests = new Map();
+		this.requestId = 0;
+		this.stderr = "";
+		this.exitError = null;
+	}
+	async start() {
+		if (this.process) throw new Error("Client already started");
+		this.exitError = null;
+		const args = ["--mode", "rpc"];
+		if (this.options.provider) args.push("--provider", this.options.provider);
+		if (this.options.model) args.push("--model", this.options.model);
+		if (this.options.args) args.push(...this.options.args);
+		const child = globalThis.__yapi_builtins.child_process.spawn(process.execPath, args, {
+			cwd: this.options.cwd,
+			env: { ...process.env, ...this.options.env },
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		this.process = child;
+		const fail = (error) => {
+			if (this.process !== child) return;
+			this.exitError = error;
+			for (const pending of this.pendingRequests.values()) pending.reject(error);
+			this.pendingRequests.clear();
+		};
+		child.stderr.on("data", (data) => {
+			this.stderr += data.toString();
+			process.stderr.write(data);
+		});
+		child.once("exit", (code, signal) => fail(this.exitedError(code, signal)));
+		child.once("error", (error) => fail(new Error(`Agent process error: ${error.message}. Stderr: ${this.stderr}`)));
+		// Strict JSONL: records end at LF only.
+		let buffer = "";
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => {
+			buffer += chunk;
+			for (let end; this.process === child && (end = buffer.indexOf("\n")) !== -1; buffer = buffer.slice(end + 1)) {
+				this.handleLine(buffer.slice(0, end).replace(/\r$/, ""));
+			}
+		});
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		if (this.exitError) throw this.exitError;
+		if (child.exitCode !== null) throw (this.exitError = this.exitedError(child.exitCode, child.signalCode));
+	}
+	async stop() {
+		const child = this.process;
+		if (!child) return;
+		child.kill("SIGTERM");
+		await new Promise((resolve) => {
+			const timeout = setTimeout(() => {
+				child.kill("SIGKILL");
+				resolve();
+			}, 1000);
+			child.on("exit", () => {
+				clearTimeout(timeout);
+				resolve();
+			});
+		});
+		this.process = null;
+		this.pendingRequests.clear();
+	}
+	onEvent(listener) {
+		this.eventListeners.push(listener);
+		return () => {
+			const index = this.eventListeners.indexOf(listener);
+			if (index !== -1) this.eventListeners.splice(index, 1);
+		};
+	}
+	getStderr() {
+		return this.stderr;
+	}
+	/** Events until the agent settles; `prompt` sends one first. */
+	collectEvents(timeout = 60000) {
+		return new Promise((resolve, reject) => {
+			const events = [];
+			const timer = setTimeout(() => {
+				unsubscribe();
+				reject(new Error(`Timeout collecting events. Stderr: ${this.stderr}`));
+			}, timeout);
+			const unsubscribe = this.onEvent((event) => {
+				events.push(event);
+				if (event.type !== "agent_settled") return;
+				clearTimeout(timer);
+				unsubscribe();
+				resolve(events);
+			});
+		});
+	}
+	waitForIdle(timeout = 60000) {
+		return this.collectEvents(timeout).then(() => undefined, (error) => {
+			throw new Error(error.message.replace("collecting events", "waiting for agent to become idle"));
+		});
+	}
+	async promptAndWait(message, images, timeout = 60000) {
+		const events = this.collectEvents(timeout);
+		await this.prompt(message, images);
+		return events;
+	}
+	handleLine(line) {
+		let data;
+		try {
+			data = JSON.parse(line);
+		} catch {
+			return;
+		}
+		const pending = data.type === "response" && data.id ? this.pendingRequests.get(data.id) : undefined;
+		if (pending) {
+			this.pendingRequests.delete(data.id);
+			pending.resolve(data);
+			return;
+		}
+		for (const listener of [...this.eventListeners]) listener(data);
+	}
+	exitedError(code, signal) {
+		return new Error(`Agent process exited (code=${code} signal=${signal}). Stderr: ${this.stderr}`);
+	}
+	send(command) {
+		const child = this.process;
+		if (!child?.stdin) return Promise.reject(new Error("Client not started"));
+		if (this.exitError) return Promise.reject(this.exitError);
+		if (child.exitCode !== null) return Promise.reject((this.exitError = this.exitedError(child.exitCode, child.signalCode)));
+		const id = `req_${++this.requestId}`;
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				this.pendingRequests.delete(id);
+				reject(new Error(`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`));
+			}, 30000);
+			const settle = (finish) => (value) => {
+				clearTimeout(timeout);
+				finish(value);
+			};
+			this.pendingRequests.set(id, { resolve: settle(resolve), reject: settle(reject) });
+			child.stdin.write(`${JSON.stringify({ ...command, id })}\n`);
+		});
+	}
+}
+/**
+ * RpcClient's commands, as pi defines them: the method, the RPC command, its
+ * arguments in order, and what the method returns: nothing (`undefined`),
+ * the response's data (`null`), or one field of it.
+ */
+const RPC_COMMANDS = [
+	["prompt", "prompt", ["message", "images", "streamingBehavior"], "disposition"],
+	["steer", "steer", ["message", "images"], "disposition"],
+	["followUp", "follow_up", ["message", "images"], "disposition"],
+	["abort", "abort", []],
+	["clearQueue", "clear_queue", [], null],
+	["newSession", "new_session", ["parentSession"], null],
+	["getState", "get_state", [], null],
+	["setModel", "set_model", ["provider", "modelId"], null],
+	["cycleModel", "cycle_model", [], null],
+	["getAvailableModels", "get_available_models", [], "models"],
+	["setThinkingLevel", "set_thinking_level", ["level"]],
+	["cycleThinkingLevel", "cycle_thinking_level", [], null],
+	["getAvailableThinkingLevels", "get_available_thinking_levels", [], "levels"],
+	["setSteeringMode", "set_steering_mode", ["mode"]],
+	["setFollowUpMode", "set_follow_up_mode", ["mode"]],
+	["compact", "compact", ["customInstructions"], null],
+	["setAutoCompaction", "set_auto_compaction", ["enabled"]],
+	["setAutoRetry", "set_auto_retry", ["enabled"]],
+	["abortRetry", "abort_retry", []],
+	["bash", "bash", ["command"], null],
+	["abortBash", "abort_bash", []],
+	["getSessionStats", "get_session_stats", [], null],
+	["exportHtml", "export_html", ["outputPath"], null],
+	["switchSession", "switch_session", ["sessionPath"], null],
+	["fork", "fork", ["entryId"], null],
+	["clone", "clone", [], null],
+	["getForkMessages", "get_fork_messages", [], "messages"],
+	["getEntries", "get_entries", ["since"], null],
+	["getTree", "get_tree", [], null],
+	["getLastAssistantText", "get_last_assistant_text", [], "text"],
+	["setSessionName", "set_session_name", ["name"]],
+	["getMessages", "get_messages", [], "messages"],
+	["getCommands", "get_commands", [], "commands"],
+];
+for (const [method, type, keys, returns] of RPC_COMMANDS) {
+	RpcClient.prototype[method] = async function (...values) {
+		const response = await this.send({ type, ...Object.fromEntries(keys.map((key, index) => [key, values[index]])) });
+		if (returns === undefined) return;
+		if (!response.success) throw new Error(response.error);
+		return returns === null ? response.data : response.data?.[returns];
+	};
+}
+
 // ----- not available in yapi --------------------------------------------------------------------------
 export const { AgentSession, AgentSessionRuntime, ArminComponent, AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent,
 	CompactionSummaryMessageComponent, CredentialSynchronizationError, CustomMessageComponent, DefaultPackageManager, DefaultResourceLoader,
 	ExtensionEditorComponent, ExtensionInputComponent, ExtensionRunner, ExtensionSelectorComponent, FooterComponent, InteractiveMode,
-	LoginDialogComponent, ModelRegistry, ModelRuntime, ModelSelectorComponent, OAuthSelectorComponent, ProjectTrustStore, RpcClient, SessionManager,
+	LoginDialogComponent, ModelRegistry, ModelRuntime, ModelSelectorComponent, OAuthSelectorComponent, ProjectTrustStore, SessionManager,
 	SessionSelectorComponent, SettingsManager, SettingsSelectorComponent, ShowImagesSelectorComponent, SkillInvocationMessageComponent,
 	ThemeSelectorComponent, ThinkingSelectorComponent, ToolExecutionComponent, TreeSelectorComponent, UserMessageComponent,
 	UserMessageSelectorComponent, buildContextEntries, buildSessionContext, buildSessionProjection, collectEntriesForBranchSummary, compact,

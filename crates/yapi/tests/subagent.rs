@@ -103,6 +103,11 @@ fn home(name: &str, parent: &MockServer, child: &MockServer) -> PathBuf {
 /// yapi with the example loaded, on the parent's model.
 fn yapi(home: &Path, args: &[&str]) -> Command {
     let example = common::repo().join("crates/yapi-ext/tests/fixtures/subagent.wasm");
+    yapi_with(home, &example, args)
+}
+
+/// yapi with `extension` loaded, on the parent's model.
+fn yapi_with(home: &Path, extension: &Path, args: &[&str]) -> Command {
     let mut command = common::yapi(home);
     command
         .args([
@@ -111,7 +116,7 @@ fn yapi(home: &Path, args: &[&str]) -> Command {
             "anthropic/claude-sonnet-4-5",
             "-e",
         ])
-        .arg(example)
+        .arg(extension)
         .args(args)
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("ANTHROPIC_API_KEY", "mock")
@@ -295,4 +300,66 @@ async fn aborting_the_run_kills_the_subagent() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("the subagent outlived the aborted run");
+}
+
+/// Pi's `RpcClient` runs yapi in RPC mode and drives it from a Pi extension.
+#[tokio::test(flavor = "multi_thread")]
+async fn pi_extensions_drive_subagents_with_rpc_client() {
+    let delegate = json!({"type": "tool_use", "id": "toolu_1", "name": "delegate", "input": {"task": "Count to four"}});
+    let parent = server(vec![
+        reply(&[delegate], "tool_use", 0),
+        text("The subagent counted."),
+    ])
+    .await;
+    let child = server(vec![text("1 2 3 4")]).await;
+    let home = home("subagent-rpc-client", &parent, &child);
+    let extension = home.join("delegate.ts");
+    std::fs::write(
+        &extension,
+        r#"import { RpcClient } from "@earendil-works/pi-coding-agent";
+
+export default function (pi) {
+	pi.registerTool({
+		name: "delegate",
+		label: "Delegate",
+		description: "Delegates a task to a subagent",
+		parameters: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+		async execute(_id, params) {
+			const client = new RpcClient({ model: "child/claude-sonnet-4-5", args: ["--no-session"] });
+			await client.start();
+			try {
+				const events = await client.promptAndWait(params.task);
+				const ended = events.some((event) => event.type === "agent_end");
+				const text = await client.getLastAssistantText();
+				return { content: [{ type: "text", text: `${text} (ended: ${ended})` }] };
+			} finally {
+				await client.stop();
+			}
+		},
+	});
+}
+"#,
+    )
+    .unwrap();
+    let output = tokio::task::spawn_blocking(move || {
+        yapi_with(&home, &extension, &["-p", "Delegate the counting"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "The subagent counted."
+    );
+    assert!(sent(&child.finish().unwrap()[0].body).contains("Count to four"));
+    let parent = parent.finish().unwrap();
+    assert!(
+        sent(&parent[1].body).contains("1 2 3 4 (ended: true)"),
+        "{}",
+        parent[1].body
+    );
 }
