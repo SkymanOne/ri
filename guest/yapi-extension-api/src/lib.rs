@@ -16,7 +16,9 @@
 //!         "shout",
 //!         "Repeats the text in capitals",
 //!         json!({"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}),
-//!         |params, _ctx| Ok(ToolResult::text(params["text"].as_str().unwrap_or_default().to_uppercase())),
+//!         |params, _ctx| async move {
+//!             Ok(ToolResult::text(params["text"].as_str().unwrap_or_default().to_uppercase()))
+//!         },
 //!     ));
 //! }
 //!
@@ -24,14 +26,28 @@
 //! ```
 //!
 //! yapi loads a `.wasm` file listed where pi extensions are: `-e`, the
-//! `extensions` directories, or a package's `yapi.extensions` manifest. Handlers
-//! run synchronously; host actions such as [`notify`] and [`exec`] answer at
-//! once. Events and results are pi's JSON shapes.
+//! `extensions` directories, or a package's `yapi.extensions` manifest.
+//! Events and results are pi's JSON shapes.
+//!
+//! Handlers are `async`. Requests such as [`notify`] and [`exec`] answer at
+//! once. [`sleep`], [`op`] and [`Process`] wait for host work, during which
+//! other handlers run. [`spawn`] runs work in the background, after the
+//! handler that started it has returned, as a Pi extension does with a
+//! promise it does not await.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::future::Future;
+use std::rc::Rc;
 
 pub use serde_json::{Value, json};
+
+mod process;
+mod task;
+
+pub use process::{Process, ProcessEvent};
+use task::LocalFuture;
+pub use task::{op, sleep, spawn};
 
 // The generated bindings name this crate by its external path.
 extern crate self as yapi_extension_api;
@@ -58,6 +74,7 @@ use bindings::yapi::extension::types::Outcome;
 #[derive(Clone, Debug)]
 pub struct Context {
     data: Value,
+    tool_call_id: Option<String>,
 }
 
 impl Context {
@@ -79,6 +96,17 @@ impl Context {
     /// Everything the host sent.
     pub fn data(&self) -> &Value {
         &self.data
+    }
+
+    /// Shows `partial` as the running tool's progress, as pi's `onUpdate`
+    /// does. Does nothing outside a tool.
+    pub fn update(&self, partial: &ToolResult) {
+        if let Some(id) = &self.tool_call_id {
+            let _ = request(
+                "tool.update",
+                &json!({"toolCallId": id, "partial": partial.to_json()}),
+            );
+        }
     }
 }
 
@@ -115,9 +143,15 @@ impl ToolResult {
     }
 }
 
-type ToolFn = Box<dyn Fn(&Value, &Context) -> Result<ToolResult, String>>;
-type CommandFn = Box<dyn Fn(&str, &Context) -> Result<(), String>>;
-type HandlerFn = Box<dyn Fn(&Value, &Context) -> Result<Option<Value>, String>>;
+/// A registered handler: an async function of its input and the context.
+type Handler<A, T> = Rc<dyn Fn(A, Context) -> LocalFuture<Result<T, String>>>;
+
+fn handler<A, T, R>(f: impl Fn(A, Context) -> R + 'static) -> Handler<A, T>
+where
+    R: Future<Output = Result<T, String>> + 'static,
+{
+    Rc::new(move |input, ctx| Box::pin(f(input, ctx)))
+}
 
 /// A tool for the model.
 pub struct Tool {
@@ -127,18 +161,22 @@ pub struct Tool {
     parameters: Value,
     prompt_snippet: Option<String>,
     prompt_guidelines: Vec<String>,
-    execute: ToolFn,
+    execute: Handler<Value, ToolResult>,
 }
 
 impl Tool {
     /// A tool named `name` taking arguments that match the JSON Schema
-    /// `parameters`.
-    pub fn new(
+    /// `parameters`. When the run is aborted, yapi drops the future
+    /// `execute` returned, which kills the processes it holds.
+    pub fn new<R>(
         name: impl Into<String>,
         description: impl Into<String>,
         parameters: Value,
-        execute: impl Fn(&Value, &Context) -> Result<ToolResult, String> + 'static,
-    ) -> Tool {
+        execute: impl Fn(Value, Context) -> R + 'static,
+    ) -> Tool
+    where
+        R: Future<Output = Result<ToolResult, String>> + 'static,
+    {
         Tool {
             name: name.into(),
             label: None,
@@ -146,7 +184,7 @@ impl Tool {
             parameters,
             prompt_snippet: None,
             prompt_guidelines: Vec::new(),
-            execute: Box::new(execute),
+            execute: handler(execute),
         }
     }
 
@@ -181,7 +219,7 @@ pub enum FlagType {
 struct Command {
     name: String,
     description: String,
-    handler: CommandFn,
+    handler: Handler<String, ()>,
 }
 
 struct Flag {
@@ -197,7 +235,7 @@ pub struct Api {
     tools: Vec<Tool>,
     commands: Vec<Command>,
     flags: Vec<Flag>,
-    handlers: Vec<(String, HandlerFn)>,
+    handlers: Vec<(String, Handler<Value, Option<Value>>)>,
 }
 
 impl Api {
@@ -208,16 +246,18 @@ impl Api {
     }
 
     /// Handles `/name args`.
-    pub fn register_command(
+    pub fn register_command<R>(
         &mut self,
         name: impl Into<String>,
         description: impl Into<String>,
-        handler: impl Fn(&str, &Context) -> Result<(), String> + 'static,
-    ) {
+        run: impl Fn(String, Context) -> R + 'static,
+    ) where
+        R: Future<Output = Result<(), String>> + 'static,
+    {
         self.commands.push(Command {
             name: name.into(),
             description: description.into(),
-            handler: Box::new(handler),
+            handler: handler(run),
         });
     }
 
@@ -237,15 +277,14 @@ impl Api {
         });
     }
 
-    /// Runs `handler` for pi events of type `event`. Its result is the
+    /// Runs `run` for pi events of type `event`. Its result is the
     /// handler's return value in pi, such as `{"block": true, "reason": ...}`
-    /// for `tool_call`.
-    pub fn on(
-        &mut self,
-        event: impl Into<String>,
-        handler: impl Fn(&Value, &Context) -> Result<Option<Value>, String> + 'static,
-    ) {
-        self.handlers.push((event.into(), Box::new(handler)));
+    /// for `tool_call`. yapi waits for it before the event's next handler.
+    pub fn on<R>(&mut self, event: impl Into<String>, run: impl Fn(Value, Context) -> R + 'static)
+    where
+        R: Future<Output = Result<Option<Value>, String>> + 'static,
+    {
+        self.handlers.push((event.into(), handler(run)));
     }
 
     fn describe(&self, id: u64, path: &str) -> Value {
@@ -402,6 +441,9 @@ struct State {
     id: u64,
     path: String,
     flag_values: HashMap<String, Value>,
+    /// Running calls the host may abort, by the host's id for them: the
+    /// task and the call's id.
+    abortable: HashMap<u64, (u64, u64)>,
 }
 
 thread_local! {
@@ -411,6 +453,7 @@ thread_local! {
 fn context(payload: &Value) -> Context {
     Context {
         data: payload["ctx"].clone(),
+        tool_call_id: payload["toolCallId"].as_str().map(str::to_owned),
     }
 }
 
@@ -425,18 +468,16 @@ fn instantiate(init: fn(&mut Api)) -> Value {
     })
 }
 
-/// Runs a closure with the registered API, outside of the state borrow's
-/// lifetime problems: handlers may call [`get_flag`].
-fn with_api<T>(f: impl FnOnce(&Api) -> T) -> Result<T, String> {
-    let api = STATE
-        .with(|state| state.borrow_mut().api.take())
-        .ok_or("extension not loaded")?;
-    let result = f(&api);
-    STATE.with(|state| state.borrow_mut().api = Some(api));
-    Ok(result)
+/// What `find` picks from the registered API.
+fn registered<T>(find: impl FnOnce(&Api) -> Option<T>) -> Option<T> {
+    STATE.with(|state| state.borrow().api.as_ref().and_then(find))
 }
 
-fn run(init: fn(&mut Api), kind: &str, payload: &Value) -> Result<Value, String> {
+/// Call `kind` with `payload`: what it answers once it completes.
+fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Value, String>> {
+    let answer = |value: Result<Value, String>| -> LocalFuture<Result<Value, String>> {
+        Box::pin(std::future::ready(value))
+    };
     match kind {
         "load" => {
             let entry = &payload["extensions"][0];
@@ -445,10 +486,10 @@ fn run(init: fn(&mut Api), kind: &str, payload: &Value) -> Result<Value, String>
                 state.id = entry["id"].as_u64().unwrap_or_default();
                 state.path = entry["path"].as_str().unwrap_or_default().to_owned();
             });
-            Ok(instantiate(init))
+            answer(Ok(instantiate(init)))
         }
-        "reload" => Ok(instantiate(init)),
-        "bind" | "shortcut" | "complete" => Ok(Value::Null),
+        "reload" => answer(Ok(instantiate(init))),
+        "bind" | "shortcut" | "complete" => answer(Ok(Value::Null)),
         "flags" => {
             STATE.with(|state| {
                 let mut state = state.borrow_mut();
@@ -456,42 +497,53 @@ fn run(init: fn(&mut Api), kind: &str, payload: &Value) -> Result<Value, String>
                     state.flag_values.insert(name.clone(), value.clone());
                 }
             });
-            Ok(Value::Null)
+            answer(Ok(Value::Null))
         }
         "tool" => {
-            let ctx = context(payload);
-            let name = payload["name"].as_str().unwrap_or_default();
-            with_api(|api| {
-                let tool = api
-                    .tools
-                    .iter()
-                    .find(|tool| tool.name == name)
-                    .ok_or_else(|| format!("Tool {name} is not registered"))?;
-                (tool.execute)(&payload["params"], &ctx).map(|result| result.to_json())
-            })?
+            let ctx = context(&payload);
+            let name = payload["name"].as_str().unwrap_or_default().to_owned();
+            let execute = registered(|api| {
+                let tool = api.tools.iter().find(|tool| tool.name == name)?;
+                Some(tool.execute.clone())
+            });
+            Box::pin(async move {
+                let execute = execute.ok_or_else(|| format!("Tool {name} is not registered"))?;
+                let result = execute(payload["params"].clone(), ctx).await?;
+                Ok(result.to_json())
+            })
         }
         "command" => {
-            let ctx = context(payload);
-            let name = payload["name"].as_str().unwrap_or_default();
-            let args = payload["args"].as_str().unwrap_or_default();
-            with_api(|api| {
-                let command = api
-                    .commands
-                    .iter()
-                    .find(|command| command.name == name)
-                    .ok_or_else(|| format!("Command /{name} is not registered"))?;
-                (command.handler)(args, &ctx).map(|()| Value::Null)
-            })?
+            let ctx = context(&payload);
+            let name = payload["name"].as_str().unwrap_or_default().to_owned();
+            let run = registered(|api| {
+                let command = api.commands.iter().find(|command| command.name == name)?;
+                Some(command.handler.clone())
+            });
+            Box::pin(async move {
+                let run = run.ok_or_else(|| format!("Command /{name} is not registered"))?;
+                run(payload["args"].as_str().unwrap_or_default().to_owned(), ctx).await?;
+                Ok(Value::Null)
+            })
         }
         "emit" => {
-            let ctx = context(payload);
-            let event = &payload["event"];
-            let kind = event["type"].as_str().unwrap_or_default();
-            with_api(|api| {
+            let ctx = context(&payload);
+            let event = payload["event"].clone();
+            let kind = event["type"].as_str().unwrap_or_default().to_owned();
+            let handlers: Vec<_> = registered(|api| {
+                Some(
+                    api.handlers
+                        .iter()
+                        .filter(|(name, _)| *name == kind)
+                        .map(|(_, handler)| handler.clone())
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+            Box::pin(async move {
                 let mut result = Value::Null;
                 let mut errors = Vec::new();
-                for (_, handler) in api.handlers.iter().filter(|(name, _)| name == kind) {
-                    match handler(event, &ctx) {
+                for handler in handlers {
+                    match handler(event.clone(), ctx.clone()).await {
                         Ok(Some(value)) => {
                             let blocks = kind == "tool_call" && value["block"] == true;
                             result = value;
@@ -505,20 +557,49 @@ fn run(init: fn(&mut Api), kind: &str, payload: &Value) -> Result<Value, String>
                     }
                 }
                 Ok(json!({"result": result, "errors": errors}))
-            })?
+            })
         }
-        other => Err(format!("Unknown dispatch kind: {other}")),
+        "abort" => {
+            let aborted = payload["id"]
+                .as_u64()
+                .and_then(|id| STATE.with(|state| state.borrow_mut().abortable.remove(&id)));
+            if let Some((task, call)) = aborted
+                && task::cancel(task)
+            {
+                task::report(Outcome::Failed((call, "This operation was aborted".into())));
+            }
+            answer(Ok(Value::Null))
+        }
+        other => answer(Err(format!("Unknown dispatch kind: {other}"))),
     }
 }
 
 #[doc(hidden)]
 pub fn dispatch(init: fn(&mut Api), id: u64, kind: &str, payload: &str) -> Vec<Outcome> {
     let payload: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
-    let outcome = match run(init, kind, &payload) {
-        Ok(value) => Outcome::Done((id, value.to_string())),
-        Err(message) => Outcome::Failed((id, message)),
-    };
-    vec![outcome]
+    // The host aborts a tool call by the id in its payload.
+    let abortable = payload["id"].as_u64().filter(|_| kind == "tool");
+    let answer = call(init, kind, payload);
+    let task = spawn(async move {
+        let outcome = match answer.await {
+            Ok(value) => Outcome::Done((id, value.to_string())),
+            Err(message) => Outcome::Failed((id, message)),
+        };
+        if let Some(op) = abortable {
+            STATE.with(|state| state.borrow_mut().abortable.remove(&op));
+        }
+        task::report(outcome);
+    });
+    if let Some(op) = abortable {
+        STATE.with(|state| state.borrow_mut().abortable.insert(op, (task, id)));
+    }
+    task::run()
+}
+
+#[doc(hidden)]
+pub fn resolve(op: u64, value: Result<String, String>) -> Vec<Outcome> {
+    task::resolve(op, value);
+    task::run()
 }
 
 /// Exports an extension whose init function is `$init: fn(&mut Api)`.
@@ -537,10 +618,10 @@ macro_rules! extension {
             }
 
             fn resolve(
-                _op: u64,
-                _value: ::std::result::Result<::std::string::String, ::std::string::String>,
+                op: u64,
+                value: ::std::result::Result<::std::string::String, ::std::string::String>,
             ) -> ::std::vec::Vec<$crate::bindings::yapi::extension::types::Outcome> {
-                ::std::vec::Vec::new()
+                $crate::resolve(op, value)
             }
 
             fn render(_handle: u32, _width: u32) -> ::std::vec::Vec<::std::string::String> {

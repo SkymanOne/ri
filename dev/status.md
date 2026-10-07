@@ -91,7 +91,6 @@ Deferred:
 - Completions through pi-ai from extensions.
 - `pi.sendUserMessage` expands prompt templates. `turn_end` carries only `turnIndex`, `message` and `toolResults`.
 - `yapi config` does not install configured packages that are missing.
-- Asynchronous host operations (timers, processes, HTTP) in the Rust SDK.
 
 ## M6: extension UI
 

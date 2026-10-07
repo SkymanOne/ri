@@ -1,10 +1,10 @@
-//! Blocks dangerous bash commands: recursive deletes, `sudo`, and `chmod` or
-//! `chown` with `777`. `--allow-dangerous` lets them run.
+//! Asks before dangerous bash commands run: recursive deletes, `sudo`, and
+//! `chmod` or `chown` with `777`. Without a person to ask, it blocks them.
 //!
-//! A port of pi's `permission-gate.ts` example. pi asks for confirmation in
-//! the terminal; native handlers answer at once, so this one blocks.
+//! A port of pi's `permission-gate.ts` example, with the same dialog and
+//! messages.
 
-use yapi_extension_api::{Api, FlagType, Value, get_flag, json};
+use yapi_extension_api::{Api, json, op};
 
 /// Whether `command` matches pi's patterns: `rm -r…` or `rm --recursive`,
 /// `sudo`, and `chmod` or `chown` followed later by `777`.
@@ -22,24 +22,27 @@ fn is_dangerous(command: &str) -> bool {
 }
 
 fn init(api: &mut Api) {
-    api.register_flag(
-        "allow-dangerous",
-        FlagType::Boolean,
-        json!(false),
-        "Let dangerous bash commands run",
-    );
-    api.on("tool_call", |event, _ctx| {
-        if event["toolName"] != "bash" || get_flag("allow-dangerous") == Some(Value::Bool(true)) {
-            return Ok(None);
-        }
+    api.on("tool_call", |event, ctx| async move {
         let command = event["input"]["command"].as_str().unwrap_or_default();
-        if !is_dangerous(command) {
+        if event["toolName"] != "bash" || !is_dangerous(command) {
             return Ok(None);
         }
-        Ok(Some(json!({
-            "block": true,
-            "reason": "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.",
-        })))
+        if !ctx.has_ui() {
+            return Ok(Some(json!({
+                "block": true,
+                "reason": "Dangerous command blocked (no UI for confirmation)",
+            })));
+        }
+        let title = format!("⚠️ Dangerous command:\n\n  {command}\n\nAllow?");
+        let choice = op(
+            "ui.select",
+            &json!({"title": title, "options": ["Yes", "No"]}),
+        )
+        .await?;
+        if choice != "Yes" {
+            return Ok(Some(json!({"block": true, "reason": "Blocked by user"})));
+        }
+        Ok(None)
     });
 }
 

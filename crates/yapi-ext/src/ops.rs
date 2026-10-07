@@ -291,6 +291,11 @@ impl Processes {
         json!(self.with(payload, |running| running.signals.send(signal).is_ok()))
     }
 
+    /// Forgets process `{id}`, killing it if it still runs.
+    pub(crate) fn release(&self, payload: &Value) {
+        lock(&self.running).remove(&process_id(payload));
+    }
+
     /// Kills every process.
     pub(crate) fn clear(&self) {
         lock(&self.running).clear();
@@ -298,9 +303,16 @@ impl Processes {
 
     /// Runs `f` on process `{id}`; false when there is none.
     fn with<T: Default>(&self, payload: &Value, f: impl FnOnce(&mut Running) -> T) -> T {
-        let id = payload["id"].as_u64().unwrap_or(u64::MAX);
-        lock(&self.running).get_mut(&id).map(f).unwrap_or_default()
+        lock(&self.running)
+            .get_mut(&process_id(payload))
+            .map(f)
+            .unwrap_or_default()
     }
+}
+
+/// The process `{id}` names; none when it names none.
+pub(crate) fn process_id(payload: &Value) -> u64 {
+    payload["id"].as_u64().unwrap_or(u64::MAX)
 }
 
 fn boxed(

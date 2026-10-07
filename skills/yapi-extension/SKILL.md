@@ -13,7 +13,8 @@ yapi runs two kinds of extensions, and both register tools, commands, flags and 
 | Language | TypeScript or JavaScript | Rust, compiled to `wasm32-wasip2` |
 | Runs in | yapi and Pi, unchanged | yapi only |
 | API | Pi's `ExtensionAPI` from `@earendil-works/pi-coding-agent` 1.0 | The `yapi-extension-api` crate |
-| Interface components, dialogs, async work, npm dependencies | Yes | No: handlers run synchronously, and host actions answer at once |
+| Interface components, npm dependencies | Yes | No |
+| Dialogs, processes and background work | Yes | Yes, from `async` handlers |
 | Sandbox | A shared QuickJS-NG runtime in WebAssembly, with Node shims | A WebAssembly instance of its own |
 
 Choose a Pi extension unless the user asks for Rust or a sandboxed, self-contained `.wasm` file. Both kinds load from the same places and ship in the same packages.
@@ -51,12 +52,13 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
 
    | Item | Purpose |
    |---|---|
-   | `Api::register_tool(Tool::new(name, description, schema, handler))` | A tool. `.label()`, `.prompt_snippet()` and `.prompt_guideline()` refine it. The handler returns `ToolResult::text(...)`, optionally `.with_details(json)`. |
-   | `Api::register_command(name, description, handler)` | `/name args` |
+   | `Api::register_tool(Tool::new(name, description, schema, handler))` | A tool. `.label()`, `.prompt_snippet()` and `.prompt_guideline()` refine it. The handler is an `async` closure, `\|params, ctx\| async move { ... }`, that returns `ToolResult::text(...)`, optionally `.with_details(json)`. |
+   | `Api::register_command(name, description, handler)` | `/name args`, with an `async` handler |
    | `Api::register_flag(name, FlagType, default, description)` | `--name`, read with `get_flag` |
-   | `Api::on(event, handler)` | A Pi event. Return `Ok(None)`, or `Ok(Some(json))` with the handler's result in Pi's shape, such as `{"block": true, "reason": "..."}`. |
-   | `notify`, `send_message`, `append_entry`, `exec`, `request` | Host actions: notifications, session messages and entries, processes, and any other action by name |
-   | `Context` | `mode()`, `has_ui()`, `cwd()` and the rest of Pi's `ctx` as `data()` |
+   | `Api::on(event, handler)` | A Pi event, with an `async` handler. Return `Ok(None)`, or `Ok(Some(json))` with the handler's result in Pi's shape, such as `{"block": true, "reason": "..."}`. |
+   | `notify`, `send_message`, `append_entry`, `exec`, `request` | Host actions that answer at once: notifications, session messages and entries, processes, and any other action by name |
+   | `op`, `sleep`, `Process`, `spawn` | Async work: host operations such as dialogs and `fetch`, timers, processes read as they run, and background tasks that outlive the handler |
+   | `Context` | `mode()`, `has_ui()`, `cwd()`, `update()` for a tool's progress, and the rest of Pi's `ctx` as `data()` |
 
 4. Build, copy the build into the package, then check it loads:
    ```sh

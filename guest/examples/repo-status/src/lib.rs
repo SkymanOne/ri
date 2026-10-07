@@ -42,8 +42,8 @@ fn summary(ctx: &Context) -> String {
 }
 
 fn init(api: &mut Api) {
-    api.on("session_start", |_event, ctx| {
-        if let Some((_, files)) = status(ctx).filter(|(_, files)| !files.is_empty()) {
+    api.on("session_start", |_event, ctx| async move {
+        if let Some((_, files)) = status(&ctx).filter(|(_, files)| !files.is_empty()) {
             notify(
                 &format!("{} uncommitted file(s) in this repository", files.len()),
                 "warning",
@@ -54,8 +54,8 @@ fn init(api: &mut Api) {
     api.register_command(
         "repo-status",
         "Show the git branch and uncommitted files",
-        |_args, ctx| {
-            notify(&summary(ctx), "info");
+        |_args, ctx| async move {
+            notify(&summary(&ctx), "info");
             Ok(())
         },
     );
@@ -63,7 +63,7 @@ fn init(api: &mut Api) {
         "repo_status",
         "Report the current git branch and the files with uncommitted changes",
         json!({"type": "object", "properties": {}}),
-        |_params, ctx| Ok(ToolResult::text(summary(ctx))),
+        |_params, ctx| async move { Ok(ToolResult::text(summary(&ctx))) },
     ));
 }
 

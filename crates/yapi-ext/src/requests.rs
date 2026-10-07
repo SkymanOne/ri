@@ -235,6 +235,10 @@ impl Host {
                 Ok(Value::Null)
             }
             "process.kill" => Ok(self.processes.kill(payload)),
+            "process.release" => {
+                self.processes.release(payload);
+                Ok(Value::Null)
+            }
             "execPath" => Ok(json!(
                 std::env::current_exe()
                     .ok()
@@ -287,7 +291,7 @@ impl Host {
             "timer" => Box::pin(ops::timer(payload)),
             "process.next" => {
                 let processes = self.processes.clone();
-                let id = payload["id"].as_u64().unwrap_or(u64::MAX);
+                let id = ops::process_id(&payload);
                 Box::pin(async move { Ok(processes.next(id).await) })
             }
             "fetch" if self.options.grants.network => Box::pin(ops::fetch(payload)),

@@ -5,7 +5,7 @@ The repository has five native extensions in [`guest/examples`](https://github.c
 | Example | Shows | Pi counterpart |
 |---|---|---|
 | [`hello`](#hello) | A tool, a command, a flag and two event handlers | `hello.ts` |
-| [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, a boolean flag | `permission-gate.ts` |
+| [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, asking in a dialog | `permission-gate.ts` |
 | [`protected-paths`](#protected-paths) | Inspecting tool input, notifications | `protected-paths.ts` |
 | [`todo`](#todo) | State kept in tool results and rebuilt from the session branch | `todo.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
@@ -27,7 +27,7 @@ Cargo names the file after the crate with underscores in place of dashes. `yapi 
 The smallest complete extension. It registers a `shout` tool that repeats text in capitals, a `/hello` command, a `--shout-suffix` flag that the tool reads, a `session_start` handler that stores an entry in the session, and a `tool_call` handler that blocks empty input.
 
 ```rust
-api.on("tool_call", |event, _ctx| {
+api.on("tool_call", |event, _ctx| async move {
     if event["toolName"] == "shout" && event["input"]["text"] == "" {
         return Ok(Some(json!({"block": true, "reason": "Nothing to shout"})));
     }
@@ -37,26 +37,28 @@ api.on("tool_call", |event, _ctx| {
 
 ## permission-gate
 
-Blocks dangerous `bash` commands: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. Starting yapi with `--allow-dangerous` turns the check off.
+Asks before dangerous `bash` commands run: recursive deletes, `sudo`, and `chmod` or `chown` with `777`. Returning `{"block": true, "reason": ...}` from a `tool_call` handler stops the call, and the model sees the reason as the tool's result. The handler awaits a dialog with `op`, and blocks the command when no one can answer, in print and JSON modes.
 
 ```rust
-api.register_flag("allow-dangerous", FlagType::Boolean, json!(false), "Let dangerous bash commands run");
-api.on("tool_call", |event, _ctx| {
-    if event["toolName"] != "bash" || get_flag("allow-dangerous") == Some(Value::Bool(true)) {
-        return Ok(None);
-    }
+api.on("tool_call", |event, ctx| async move {
     let command = event["input"]["command"].as_str().unwrap_or_default();
-    if !is_dangerous(command) {
+    if event["toolName"] != "bash" || !is_dangerous(command) {
         return Ok(None);
     }
-    Ok(Some(json!({
-        "block": true,
-        "reason": "Dangerous command blocked. Start yapi with --allow-dangerous to allow it.",
-    })))
+    if !ctx.has_ui() {
+        return Ok(Some(json!({
+            "block": true,
+            "reason": "Dangerous command blocked (no UI for confirmation)",
+        })));
+    }
+    let title = format!("⚠️ Dangerous command:\n\n  {command}\n\nAllow?");
+    let choice = op("ui.select", &json!({"title": title, "options": ["Yes", "No"]})).await?;
+    if choice != "Yes" {
+        return Ok(Some(json!({"block": true, "reason": "Blocked by user"})));
+    }
+    Ok(None)
 });
 ```
-
-Pi's version asks for confirmation in a dialog. Native handlers run synchronously, so this one blocks instead.
 
 ## protected-paths
 
@@ -65,7 +67,7 @@ Blocks `write` and `edit` calls on `.env`, `.git/` and `node_modules/`, and tell
 ```rust
 const PROTECTED: [&str; 3] = [".env", ".git/", "node_modules/"];
 
-api.on("tool_call", |event, ctx| {
+api.on("tool_call", |event, ctx| async move {
     if event["toolName"] != "write" && event["toolName"] != "edit" {
         return Ok(None);
     }
@@ -100,8 +102,8 @@ fn rebuild() -> Result<(), String> {
     Ok(())
 }
 
-api.on("session_start", |_event, _ctx| rebuild().map(|()| None));
-api.on("session_tree", |_event, _ctx| rebuild().map(|()| None));
+api.on("session_start", |_event, _ctx| async { rebuild().map(|()| None) });
+api.on("session_tree", |_event, _ctx| async { rebuild().map(|()| None) });
 ```
 
 The extension keeps its state in a `thread_local`, since each native extension runs in an instance of its own and calls into it one at a time.

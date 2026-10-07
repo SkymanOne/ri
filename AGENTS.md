@@ -161,7 +161,7 @@ Module loading runs on the host, in `yapi-ext`:
 
 - One actor thread owns each instance's wasmtime `Store`.
 - The guest is a reactor. Each export runs until the microtask queue drains, then returns its outcomes.
-- Async host work (exec, fetch, timers, dialogs) is an op that completes through a later `resolve` call.
+- Async host work (process output, fetch, timers, dialogs) is an op that completes through a later `resolve` call. The Rust SDK runs guest futures on a single-threaded executor that `resolve` drives.
 - Host imports never call into a guest synchronously. Anything that could re-enter is queued.
 
 ### UI bridge

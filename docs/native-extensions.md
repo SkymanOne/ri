@@ -45,7 +45,7 @@ To start without the template, create a library crate with `crate-type = ["cdyli
 yapi-extension-api = { git = "https://github.com/SkymanOne/yapi", tag = "v0.1.0" }
 ```
 
-An extension registers what it offers in an init function and exports it with `extension!`:
+An extension registers what it offers in an init function and exports it with `extension!`. Tools, commands and event handlers are `async` closures:
 
 ```rust
 // src/lib.rs
@@ -60,13 +60,13 @@ fn init(api: &mut Api) {
             "properties": {"text": {"type": "string"}},
             "required": ["text"]
         }),
-        |params, _ctx| {
+        |params, _ctx| async move {
             let text = params["text"].as_str().unwrap_or_default();
             Ok(ToolResult::text(text.to_uppercase()))
         },
     ));
-    api.register_command("hello", "Says hello", |args, _ctx| {
-        let name = if args.is_empty() { "world" } else { args };
+    api.register_command("hello", "Says hello", |args, _ctx| async move {
+        let name = if args.is_empty() { "world" } else { &args };
         notify(&format!("Hello, {name}!"), "info");
         Ok(())
     });
@@ -145,8 +145,12 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `notify` | Show a notification |
 | `send_message`, `append_entry` | Add a custom message or entry to the session |
 | `exec` | Run a process and wait for it |
-| `request` | Call any host action by name with a JSON payload |
-| `Context` | The mode, the working folder and the rest of Pi's `ctx` |
+| `Process` | Run a process in the background, reading its output as it arrives |
+| `sleep` | Wait a number of milliseconds |
+| `spawn` | Run a future in the background, after the handler that started it has returned |
+| `request` | Call any host action by name with a JSON payload and get its answer at once |
+| `op` | Start a host operation by name, such as a dialog or an HTTP request, and await its answer |
+| `Context` | The mode, the working folder and the rest of Pi's `ctx`. `Context::update` shows a running tool's progress. |
 
 [Native extension examples](native-examples.md) walks through five complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter and a minimal starting point.
 
@@ -159,6 +163,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats the message as console output from a Pi extension. |
 | `cwd` | `{}` | The working folder extensions see, as a string |
 | `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all optional except `command` | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits |
+| `execPath` | `{}` | The path of the running yapi binary, to start another yapi |
 | `ui.notify` | `{"message", "type"}`, with `type` one of `info`, `warning` and `error`, or left out | `null`, as Pi's `ctx.ui.notify` |
 | `session.sendMessage` | `{"message": {"customType", "content", "display", "details"}, "options": {"triggerTurn", "deliverAs"}}` | `null`, as Pi's `pi.sendMessage` |
 | `session.appendEntry` | `{"customType", "data"}` | `null`, as Pi's `pi.appendEntry` |
@@ -170,6 +175,32 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 `ui.notify` and the `session` requests fail while the init function runs, before yapi binds the extension to a session. Every other kind is internal to yapi and may change or disappear in any release.
 
+### Host operations
+
+`op(kind, payload)` starts an operation and returns a future of its JSON answer. Other handlers and background tasks run while it waits. yapi supports these kinds for native extensions:
+
+| Kind | Payload | Answer |
+|---|---|---|
+| `timer` | `{"ms"}` | `null` after `ms` milliseconds. `sleep` wraps it. |
+| `fetch` | `{"url", "method", "headers", "body"}`, with `bodyBase64` in place of `body` for bytes | `{"status", "statusText", "headers", "bodyBase64"}` once the whole response has arrived |
+| `ui.select` | `{"title", "options"}` | The option picked, or `null` when cancelled, as Pi's `ctx.ui.select` |
+| `ui.confirm` | `{"title", "message"}` | `true` or `false`, as Pi's `ctx.ui.confirm` |
+| `ui.input` | `{"title", "placeholder"}` | The text entered, or `null` when cancelled, as Pi's `ctx.ui.input` |
+
+`fetch` fails when the extension may not use the network. The dialogs answer `null` or `false` at once in print and JSON modes, which have no interface, so check `Context::has_ui` first. Every other kind is internal to yapi and may change or disappear in any release.
+
+### Processes
+
+`Process::spawn` starts a process that runs while the extension does other work. It takes `{"command", "args", "cwd", "env", "stdin"}`, all optional except `command`. Without `cwd` the process starts in yapi's working folder, `env` replaces the whole environment, and `"stdin": "ignore"` gives it empty standard input instead of a pipe. `Process::next` waits for the next `ProcessEvent`: output on standard output or standard error, then the exit. `write`, `close_stdin` and `kill` act on the running process.
+
+Dropping a `Process` kills it, and so does stopping the extension. Starting one needs the process grant, which every extension has by default.
+
+## Background work and cancellation
+
+Handlers are `async`. While one waits for a host operation, other handlers, tool calls and background tasks run. `spawn` runs a future in the background, after the handler that started it has returned, as a Pi extension does with a promise it does not await. A background task can report its result with the `session.sendMessage` request, with `"triggerTurn": true` to start a turn when the agent is idle.
+
+When the user aborts a run, yapi drops the futures of the extension tools still running in it, which kills the processes they hold. Background tasks keep running until they finish or the extension stops.
+
 ## Limits
 
-Handlers run synchronously, and host actions answer at once. Asynchronous host operations such as timers and HTTP requests are planned. Extension UI components are available to Pi extensions only.
+Extension UI components are available to Pi extensions only. Each call into an extension may compute for 60 seconds without waiting on yapi, and each extension may use 1 GiB of memory.
