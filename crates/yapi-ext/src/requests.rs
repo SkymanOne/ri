@@ -33,13 +33,13 @@ pub(crate) struct Host {
     pub(crate) bridge: Arc<dyn Bridge>,
     pub(crate) options: Options,
     pub(crate) ai_streams: AiStreams,
-    pub(crate) processes: ops::Processes,
+    pub(crate) streams: ops::Streams,
 }
 
 impl Drop for Host {
-    /// Processes end with the instance that started them.
+    /// Processes and responses end with the instance that started them.
     fn drop(&mut self) {
-        self.processes.clear();
+        self.streams.clear();
     }
 }
 
@@ -227,15 +227,15 @@ impl Host {
             }
             "hash" => hash(text(payload, "algorithm"), text(payload, "data")),
             "exec.sync" if self.options.grants.process => ops::exec_sync(payload),
-            "process.spawn" if self.options.grants.process => self.processes.spawn(payload),
+            "process.spawn" if self.options.grants.process => self.streams.spawn(payload),
             "exec.sync" | "process.spawn" => Err(denied("Running processes")),
             "process.end" => {
-                self.processes.end(payload);
+                self.streams.end(payload);
                 Ok(Value::Null)
             }
-            "process.kill" => Ok(self.processes.kill(payload)),
-            "process.release" => {
-                self.processes.release(payload);
+            "process.kill" => Ok(self.streams.kill(payload)),
+            "process.release" | "fetch.release" => {
+                self.streams.release(payload);
                 Ok(Value::Null)
             }
             "execPath" => Ok(json!(
@@ -288,14 +288,15 @@ impl Host {
     ) -> BoxFuture<'static, Result<Value, String>> {
         match kind {
             "timer" => Box::pin(ops::timer(payload)),
-            "process.write" => self.processes.write(&payload),
-            "process.next" => {
-                let processes = self.processes.clone();
+            "process.write" => self.streams.write(&payload),
+            "process.next" | "fetch.next" => {
+                let streams = self.streams.clone();
                 let id = ops::process_id(&payload);
-                Box::pin(async move { Ok(processes.next(id).await) })
+                Box::pin(async move { Ok(streams.next(id).await) })
             }
             "fetch" if self.options.grants.network => Box::pin(ops::fetch(payload)),
-            "fetch" => Box::pin(async { Err(denied("Network access")) }),
+            "fetch.stream" if self.options.grants.network => self.streams.fetch(payload),
+            "fetch" | "fetch.stream" => Box::pin(async { Err(denied("Network access")) }),
             "dns.lookup" if self.options.grants.network => Box::pin(ops::dns_lookup(payload)),
             "dns.lookup" => Box::pin(async { Err(denied("Network access")) }),
             "ai.stream" if self.options.grants.network => {

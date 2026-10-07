@@ -167,17 +167,19 @@ pub(crate) fn exec_sync(payload: &Value) -> Result<Value, String> {
     ))
 }
 
-/// The processes one instance runs, by id. Dropping the set or clearing it
-/// kills them, so a process never outlives the instance that started it.
+/// The processes one instance runs and the HTTP responses it reads, by id.
+/// Dropping the set or clearing it kills the processes and closes the
+/// responses, so neither outlives the instance that started it.
 #[derive(Clone)]
-pub(crate) struct Processes {
+pub(crate) struct Streams {
     runtime: tokio::runtime::Handle,
     running: Arc<Mutex<HashMap<u64, Running>>>,
     next_id: Arc<AtomicU64>,
 }
 
-/// A running process. Its events are out of the map while a `next` call
-/// reads them. Dropping it kills the process.
+/// A running process or response. Its events are out of the map while a
+/// `next` call reads them. Dropping it kills the process or closes the
+/// response.
 struct Running {
     events: Option<mpsc::Receiver<Value>>,
     /// Holds one chunk at a time. Closed by `end`.
@@ -185,10 +187,10 @@ struct Running {
     signals: mpsc::UnboundedSender<Value>,
 }
 
-impl Processes {
-    /// No processes; theirs run on `runtime`.
-    pub(crate) fn new(runtime: tokio::runtime::Handle) -> Processes {
-        Processes {
+impl Streams {
+    /// Empty. Processes and responses run on `runtime`.
+    pub(crate) fn new(runtime: tokio::runtime::Handle) -> Streams {
+        Streams {
             runtime,
             running: Arc::default(),
             next_id: Arc::default(),
@@ -230,22 +232,49 @@ impl Processes {
         }
         let (signals, received) = mpsc::unbounded_channel();
         self.runtime.spawn(watch(child, received, sender));
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        lock(&self.running).insert(
-            id,
-            Running {
-                events: Some(events),
-                stdin,
-                signals,
-            },
-        );
+        let id = self.insert(Running {
+            events: Some(events),
+            stdin,
+            signals,
+        });
         Ok(json!({"id": id, "pid": pid}))
+    }
+
+    /// Sends `{url, method, headers, body | bodyBase64}` and answers `{id,
+    /// status, statusText, headers}` once the response headers arrive.
+    /// `next` reads the body as `{type: "data", data}` events with base64
+    /// `data`. A body that fails ends with `{type: "error", message}`.
+    pub(crate) fn fetch(&self, payload: Value) -> BoxFuture<'static, Result<Value, String>> {
+        let (signals, stop) = mpsc::unbounded_channel();
+        // Registered before the request, so a restart that clears the set
+        // closes the response.
+        let id = self.insert(Running {
+            events: None,
+            stdin: None,
+            signals,
+        });
+        let streams = self.clone();
+        Box::pin(async move {
+            let response = send(&payload).await.inspect_err(|_| {
+                lock(&streams.running).remove(&id);
+            })?;
+            let mut answer = head(&response);
+            let (sender, events) = mpsc::channel(QUEUED_CHUNKS);
+            lock(&streams.running)
+                .get_mut(&id)
+                .ok_or("fetch aborted")?
+                .events = Some(events);
+            streams.runtime.spawn(read_body(response, stop, sender));
+            answer["id"] = json!(id);
+            Ok(answer)
+        })
     }
 
     /// The events of process `id` that have arrived, waiting for at least
     /// one: `{type: "stdout" | "stderr", data}` with base64 `data`, and
     /// `{type: "exit", code, signal}`. None once the process has exited and
-    /// closed its output.
+    /// closed its output. A response's events are those of [`Streams::fetch`],
+    /// and none once its body has ended.
     pub(crate) async fn next(&self, id: u64) -> Value {
         let Some(mut events) = lock(&self.running)
             .get_mut(&id)
@@ -297,9 +326,15 @@ impl Processes {
         lock(&self.running).remove(&process_id(payload));
     }
 
-    /// Kills every process.
+    /// Kills every process and closes every response.
     pub(crate) fn clear(&self) {
         lock(&self.running).clear();
+    }
+
+    fn insert(&self, running: Running) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        lock(&self.running).insert(id, running);
+        id
     }
 
     /// Runs `f` on process `{id}`; false when there is none.
@@ -387,8 +422,21 @@ fn send_signal(child: &mut tokio::process::Child, signal: &Value) {
 }
 
 /// Sends `{url, method, headers, body | bodyBase64}`; answers `{status,
-/// statusText, headers, bodyBase64}`.
+/// statusText, headers, bodyBase64}` once the whole body has arrived.
 pub(crate) async fn fetch(payload: Value) -> Result<Value, String> {
+    let response = send(&payload).await?;
+    let mut answer = head(&response);
+    let body = response
+        .bytes()
+        .await
+        .map_err(|err| format!("fetch failed: {err}"))?;
+    answer["bodyBase64"] = Value::String(STANDARD.encode(&body));
+    Ok(answer)
+}
+
+/// Sends `{url, method, headers, body | bodyBase64}`; the response once its
+/// headers arrive.
+async fn send(payload: &Value) -> Result<reqwest::Response, String> {
     let url = payload["url"].as_str().unwrap_or_default();
     let method = payload["method"].as_str().unwrap_or("GET");
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|err| err.to_string())?;
@@ -405,10 +453,14 @@ pub(crate) async fn fetch(payload: Value) -> Result<Value, String> {
     } else if let Some(body) = payload["bodyBase64"].as_str() {
         request = request.body(STANDARD.decode(body).map_err(|err| err.to_string())?);
     }
-    let response = request
+    request
         .send()
         .await
-        .map_err(|err| format!("fetch failed: {err}"))?;
+        .map_err(|err| format!("fetch failed: {err}"))
+}
+
+/// `{status, statusText, headers}` of `response`.
+fn head(response: &reqwest::Response) -> Value {
     let status = response.status();
     let mut headers = Map::new();
     for (name, value) in response.headers() {
@@ -416,16 +468,40 @@ pub(crate) async fn fetch(payload: Value) -> Result<Value, String> {
             headers.insert(name.as_str().to_owned(), Value::String(value.to_owned()));
         }
     }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|err| format!("fetch failed: {err}"))?;
-    Ok(json!({
+    json!({
         "status": status.as_u16(),
         "statusText": status.canonical_reason().unwrap_or_default(),
         "headers": headers,
-        "bodyBase64": STANDARD.encode(&body),
-    }))
+    })
+}
+
+/// Sends `response`'s body as events until it ends, fails, or the response
+/// is released, which closes `stop`.
+async fn read_body(
+    mut response: reqwest::Response,
+    mut stop: mpsc::UnboundedReceiver<Value>,
+    events: mpsc::Sender<Value>,
+) {
+    loop {
+        let chunk = tokio::select! {
+            chunk = response.chunk() => chunk,
+            _ = stop.recv() => return,
+        };
+        let (event, last) = match chunk {
+            Ok(Some(chunk)) => (
+                json!({"type": "data", "data": STANDARD.encode(&chunk)}),
+                false,
+            ),
+            Ok(None) => return,
+            Err(err) => (
+                json!({"type": "error", "message": format!("fetch failed: {err}")}),
+                true,
+            ),
+        };
+        if events.send(event).await.is_err() || last {
+            return;
+        }
+    }
 }
 
 /// Resolves `{hostname}` with the system resolver, as Node's `dns.lookup`
@@ -577,7 +653,7 @@ mod tests {
     }
 
     /// Every event of process `id` until it ends, with output decoded.
-    async fn events(processes: &Processes, id: u64) -> (String, Vec<Value>) {
+    async fn events(processes: &Streams, id: u64) -> (String, Vec<Value>) {
         let mut output = String::new();
         let mut exits = Vec::new();
         loop {
@@ -602,14 +678,14 @@ mod tests {
         }
     }
 
-    fn spawn(processes: &Processes, payload: Value) -> u64 {
+    fn spawn(processes: &Streams, payload: Value) -> u64 {
         processes.spawn(&payload).unwrap()["id"].as_u64().unwrap()
     }
 
     /// Input reaches a running process and its output streams back.
     #[tokio::test(flavor = "multi_thread")]
     async fn processes_take_input_and_stream_output() {
-        let processes = Processes::new(tokio::runtime::Handle::current());
+        let processes = Streams::new(tokio::runtime::Handle::current());
         let write = |id: u64, data: &[u8]| {
             processes.write(&json!({"id": id, "data": STANDARD.encode(data)}))
         };
@@ -645,7 +721,7 @@ mod tests {
     /// whether it was still running.
     #[tokio::test(flavor = "multi_thread")]
     async fn processes_take_signals() {
-        let processes = Processes::new(tokio::runtime::Handle::current());
+        let processes = Streams::new(tokio::runtime::Handle::current());
         for signal in [json!("SIGINT"), json!(15), Value::Null] {
             let id = spawn(&processes, json!({"command": "/bin/sleep", "args": ["10"]}));
             assert_eq!(processes.kill(&json!({"id": id, "signal": signal})), true);
@@ -663,7 +739,7 @@ mod tests {
     /// Clearing the set kills its processes.
     #[tokio::test(flavor = "multi_thread")]
     async fn cleared_processes_are_killed() {
-        let processes = Processes::new(tokio::runtime::Handle::current());
+        let processes = Streams::new(tokio::runtime::Handle::current());
         let reply = processes
             .spawn(&json!({"command": "/bin/sleep", "args": ["10"]}))
             .unwrap();
@@ -676,5 +752,25 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         panic!("the process outlived the set");
+    }
+
+    /// A response whose headers arrive after the set was cleared, as when
+    /// its instance restarted, is closed unread.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cleared_responses_are_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let streams = Streams::new(tokio::runtime::Handle::current());
+        let response = tokio::spawn(streams.fetch(json!({"url": url})));
+        let (mut connection, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(connection.read_u8().await.unwrap());
+        }
+        streams.clear();
+        let head = b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n";
+        connection.write_all(head).await.unwrap();
+        assert_eq!(response.await.unwrap().unwrap_err(), "fetch aborted");
+        connection.read_to_end(&mut Vec::new()).await.unwrap();
     }
 }
