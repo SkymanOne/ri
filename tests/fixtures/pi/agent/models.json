@@ -6,7 +6,7 @@
       "api": "openai-completions",
       "apiKey": "$LOCAL_LLM_KEY",
       "headers": {
-        "X-Client": "!echo ri"
+        "X-Client": "!echo yapi"
       },
       "compat": {
         "supportsDeveloperRole": false,
