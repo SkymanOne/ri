@@ -1,0 +1,23 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " MCP server off",
+    " python3 <fixtures>/mcp/server.py",
+    " global: <agent>/mcp.json",
+    " State: connected · 9 tools · 1 resource",
+    "",
+    "→ Tools                           9 offered",
+    "  Reconnect",
+    "  Exposure                        direct",
+    "  Disable                         saved to the global mcp.json",
+    "",
+    " enter select • escape/ctrl+c back",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                                                          (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

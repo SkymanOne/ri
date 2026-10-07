@@ -193,6 +193,8 @@ pub enum Selector {
     ScopedModels(Box<super::scoped_models::ScopedModelsSelector>),
     /// `yapi config`.
     Config(Box<super::config_selector::ConfigSelector>),
+    /// The `/mcp` manager.
+    Mcp(Box<super::mcp_manager::McpManager>),
 }
 
 impl Selector {
@@ -218,6 +220,7 @@ impl Selector {
             Selector::Settings(selector) => (selector.render(width, ui), None),
             Selector::ScopedModels(selector) => selector.render(width, ui),
             Selector::Config(selector) => (selector.render(width, ui), None),
+            Selector::Mcp(manager) => manager.render(width, ui),
         }
     }
 
@@ -242,6 +245,10 @@ impl Selector {
             Selector::Settings(selector) => selector.handle_input(data, ui),
             Selector::ScopedModels(selector) => selector.handle_input(data, ui),
             Selector::Config(selector) => selector.handle_input(data, ui),
+            Selector::Mcp(manager) => {
+                manager.handle_input(data, ui);
+                Outcome::None
+            }
         }
     }
 

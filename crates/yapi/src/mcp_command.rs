@@ -661,28 +661,14 @@ struct Report {
     error: Option<String>,
 }
 
-fn describe_transport(entry: &ServerEntry) -> String {
-    match &entry.config.transport {
-        ServerTransport::Http { url, .. } => url.clone(),
-        ServerTransport::Stdio { command, args, .. } => std::iter::once(command)
-            .chain(args)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(" "),
-    }
-}
-
 async fn report(entry: ServerEntry, cwd: &Path, agent_dir: &Path) -> Report {
     let mut report = Report {
         name: entry.name.clone(),
-        scope: match entry.scope {
-            Scope::Global => "global",
-            Scope::Project => "project",
-        },
+        scope: entry.scope.as_str(),
         source: entry.source.display().to_string(),
         enabled: entry.config.is_enabled(),
         exposure: entry.config.exposure().as_str(),
-        transport: describe_transport(&entry),
+        transport: entry.describe_transport(),
         state: "disabled",
         tools: Vec::new(),
         tool_exposure: Vec::new(),

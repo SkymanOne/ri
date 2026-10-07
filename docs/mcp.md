@@ -22,11 +22,11 @@ yapi mcp list                 # state, tools and errors, exits 1 if a server fai
 yapi mcp remove docs
 ```
 
-Inside yapi, `/mcp` shows the same status and `/mcp reconnect` restarts a server.
+Inside yapi, `/mcp` opens a manager that lists the servers with their state, tool count, exposure and configuration file. Servers that need attention come first. Select a server to see its tools and connection details, reconnect, sign in or out, change its exposure, or enable and disable it. Exposure and enabled changes are saved to the `mcp.json` that defines the server, and the rest of the file is kept. Outside the interactive mode, `/mcp` prints the status, and `/mcp login`, `/mcp logout` and `/mcp reconnect` act on a server directly.
 
 ## Signing in
 
-HTTP servers without an `Authorization` header sign in with OAuth. A server that asks for a sign-in shows as needing one in `/mcp` and `yapi mcp list`. Run `/mcp login <server>` inside yapi, or `yapi mcp login <server>` in a terminal. `/mcp logout <server>` and `yapi mcp logout <server>` delete the stored credentials.
+HTTP servers without an `Authorization` header sign in with OAuth. A server that asks for a sign-in shows as needing one in `/mcp` and `yapi mcp list`. Select it in `/mcp` or run `/mcp login <server>` inside yapi, or run `yapi mcp login <server>` in a terminal. `/mcp logout <server>` and `yapi mcp logout <server>` delete the stored credentials.
 
 yapi opens the authorization page in your browser and waits for it to redirect back. If the browser runs on another machine, paste the URL it was redirected to. yapi registers itself with the server when the server allows it. For servers that do not, set a pre-registered client in the server's `oauth` object (`clientId`, `clientSecret`, `callbackPort` or `callbackUrl`, `scope`, `clientName`, `authServerMetadataUrl`), or pass `--oauth-client-id` and the related options to `yapi mcp add`.
 
