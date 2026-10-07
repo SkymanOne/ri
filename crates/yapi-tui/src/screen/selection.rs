@@ -82,6 +82,74 @@ pub enum MouseAction {
     Copy(String),
 }
 
+/// pi's `WheelScrollAccelerator` (`packages/tui/src/wheel-scroll.ts`): turns
+/// wheel events into rows to scroll.
+#[derive(Debug, Default)]
+pub struct WheelScroll {
+    /// Speed up fast spins in `auto` mode. Off by default on a local macOS
+    /// terminal, which accelerates the wheel itself.
+    pub accelerate: bool,
+    /// The last event's time and direction.
+    last: Option<(Instant, isize)>,
+    average_gap: Option<f64>,
+    carry: f64,
+}
+
+/// Events closer than this, in milliseconds, are one notch or a
+/// high-resolution wheel, and scroll a row each.
+const BURST_GAP_MS: f64 = 5.0;
+/// A longer pause ends a spin.
+const GESTURE_GAP_MS: f64 = 200.0;
+/// The average gap that scrolls one row per event; faster spins scale up.
+const REFERENCE_GAP_MS: f64 = 100.0;
+const MAX_AUTO_LINES: f64 = 6.0;
+
+impl WheelScroll {
+    /// State for this terminal: accelerating unless it is a local macOS one.
+    pub fn new() -> WheelScroll {
+        let ssh = ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some());
+        WheelScroll {
+            accelerate: !cfg!(target_os = "macos") || ssh,
+            ..WheelScroll::default()
+        }
+    }
+
+    /// pi's `next`: the rows an event in `direction` (-1 or 1) at `now`
+    /// scrolls, `lines` each, or in `auto` mode when `None`: one for an
+    /// isolated notch and up to six for a fast spin.
+    pub fn next(&mut self, lines: Option<usize>, direction: isize, now: Instant) -> usize {
+        if let Some(lines) = lines {
+            return lines.max(1);
+        }
+        if !self.accelerate {
+            return 1;
+        }
+        let gap = self
+            .last
+            .filter(|(_, last)| *last == direction)
+            .map(|(at, _)| now.duration_since(at).as_secs_f64() * 1000.0)
+            .filter(|gap| *gap <= GESTURE_GAP_MS);
+        self.last = Some((now, direction));
+        let Some(gap) = gap else {
+            self.average_gap = None;
+            self.carry = 0.0;
+            return 1;
+        };
+        if gap < BURST_GAP_MS {
+            return 1;
+        }
+        let average = self
+            .average_gap
+            .map_or(gap, |average| (average + gap) / 2.0);
+        self.average_gap = Some(average);
+        let lines = (REFERENCE_GAP_MS / average).clamp(1.0, MAX_AUTO_LINES) + self.carry;
+        self.carry = lines.fract();
+        lines.floor() as usize
+    }
+}
+
 /// An SGR mouse report: button code, column and row from zero, and whether
 /// it is a release.
 fn parse(data: &str) -> Option<(usize, usize, usize, bool)> {
@@ -126,16 +194,16 @@ impl AltScreen {
         };
         if button & 64 != 0 {
             // Wheel up or down; horizontal wheels do nothing.
-            let lines = if button & 8 != 0 {
-                self.wheel_lines * ALT_WHEEL_MULTIPLIER
-            } else {
-                self.wheel_lines
-            } as isize;
-            match button & 3 {
-                0 => self.scroll_by(-lines),
-                1 => self.scroll_by(lines),
-                _ => {}
+            let direction = match button & 3 {
+                0 => -1,
+                1 => 1,
+                _ => return MouseAction::Handled,
+            };
+            let mut lines = self.wheel.next(self.wheel_lines, direction, Instant::now());
+            if button & 8 != 0 {
+                lines *= ALT_WHEEL_MULTIPLIER;
             }
+            self.scroll_by(direction * lines as isize);
             return MouseAction::Handled;
         }
         // The left button; some terminals release with button 3.

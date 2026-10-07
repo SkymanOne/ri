@@ -13,7 +13,7 @@ use ratatui_core::text::{Line, Span};
 
 use crate::ansi::line_to_ansi;
 use crate::lines::{StyledLine, composite, truncate, width as line_width};
-pub use selection::MouseAction;
+pub use selection::{MouseAction, WheelScroll};
 /// pi's `fullscreenScrollbar` setting.
 pub use yapi_types::settings::Scrollbar;
 
@@ -491,8 +491,11 @@ pub struct AltScreen {
     /// Copy a selection when the mouse button is released; pi's
     /// `fullscreenCopyOnSelect`.
     pub copy_on_select: bool,
-    /// Rows a wheel step scrolls; pi's `fullscreenWheelScrollLines`.
-    pub wheel_lines: usize,
+    /// Rows a wheel event scrolls, or `None` for `auto`; pi's
+    /// `fullscreenWheelScrollLines`.
+    pub wheel_lines: Option<usize>,
+    /// The wheel's acceleration in `auto` mode.
+    pub wheel: WheelScroll,
     /// The rows of the last frame.
     screen: Vec<StyledLine>,
     /// The width and height of the last frame.
@@ -524,7 +527,8 @@ impl AltScreen {
         AltScreen {
             bottom_key: "End".to_owned(),
             copy_on_select: true,
-            wheel_lines: 1,
+            wheel_lines: Some(1),
+            wheel: WheelScroll::new(),
             ..AltScreen::default()
         }
     }

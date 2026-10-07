@@ -1,24 +1,24 @@
 //! Fullscreen mouse selection against pi-tui's, recorded by
 //! `tests/fixtures/pi/generator/selection.mjs`: the screen after each mouse
-//! report, with reversed cells in brackets, and the text copied.
+//! report, with reversed cells in brackets, and the text copied; and the rows
+//! timed wheel events scroll.
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratatui_core::style::Modifier;
 use serde_json::Value;
 use yapi_tui::ansi::parse_line;
 use yapi_tui::lines::StyledLine;
-use yapi_tui::screen::{AltScreen, MouseAction, Scrollbar};
+use yapi_tui::screen::{AltScreen, MouseAction, Scrollbar, WheelScroll};
 
-fn fixture() -> Value {
-    let text = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/fixtures/pi/selection/selection.json"
-    ))
-    .unwrap();
-    serde_json::from_str(&text).unwrap()
+fn fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/../../tests/fixtures/pi/selection/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
 fn lines(value: &Value) -> Vec<StyledLine> {
@@ -52,7 +52,7 @@ fn marked(line: &StyledLine) -> String {
 #[test]
 fn selects_like_pi() {
     let mut failures = Vec::new();
-    for case in fixture().as_array().unwrap() {
+    for case in fixture("selection.json").as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let (width, height) = (
             case["columns"].as_u64().unwrap() as usize,
@@ -106,4 +106,31 @@ fn selects_like_pi() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn accelerates_the_wheel_like_pi() {
+    let start = Instant::now();
+    for case in fixture("wheel.json").as_array().unwrap() {
+        let mut wheel = WheelScroll::default();
+        wheel.accelerate = case["accelerate"].as_bool().unwrap();
+        let lines = case["lines"].as_u64().map(|lines| lines as usize);
+        let steps: Vec<u64> = case["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| {
+                let direction = event[0].as_i64().unwrap() as isize;
+                let at = start + Duration::from_millis(event[1].as_u64().unwrap());
+                wheel.next(lines, direction, at) as u64
+            })
+            .collect();
+        let expected: Vec<u64> = case["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|lines| lines.as_u64().unwrap())
+            .collect();
+        assert_eq!(steps, expected, "{}", case["name"]);
+    }
 }

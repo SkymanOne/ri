@@ -49,6 +49,7 @@ The script runs pi offline in `/tmp/yapi-pi-fixtures` with faux providers. Ids a
 | `editor/editor.json` | pi-tui `Editor` driven key by key | Text, cursor, rendered rows and submissions after every key: wrapping, word motion, kill ring, undo, history, pastes and markers, sticky columns, jumps, scrolling |
 | `models-api/cases.json` | pi-ai's `pi-messages`, System One, llama.cpp classifier and OpenRouter image APIs, with `fetch` stubbed | Request URLs, headers and bodies, results and error messages; checked by `crates/yapi-ai/tests/models_api.rs` |
 | `selection/selection.json` | pi-tui `TuiAltScreen` in pi's chat viewport layout, fed SGR mouse reports | The screen and the copied text after every report: drags, word and line clicks, the dock, auto-scroll at the transcript's edge, wheel scrolling, graphemes, focus loss, flashes, `copyOnSelect` off |
+| `selection/wheel.json` | pi-tui `WheelScrollAccelerator` fed timed wheel events | The rows each event scrolls: fixed counts, `auto` acceleration, bursts, carried fractions, direction changes and pauses |
 | `autocomplete/cases.json` | pi-tui `CombinedAutocompleteProvider` over a generated tree | Slash commands and arguments, skill names, path and quoted completion, `@` search through `fd`, applying the first item |
 
 The excerpts in `legacy/` come from pi, Copyright (c) 2025 Mario Zechner, MIT License.

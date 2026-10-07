@@ -1,0 +1,425 @@
+[
+	{
+		"name": "fixed lines",
+		"lines": 3,
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				10
+			],
+			[
+				1,
+				20
+			]
+		],
+		"steps": [
+			3,
+			3,
+			3
+		]
+	},
+	{
+		"name": "not accelerated",
+		"lines": "auto",
+		"accelerate": false,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				20
+			],
+			[
+				1,
+				40
+			],
+			[
+				1,
+				60
+			]
+		],
+		"steps": [
+			1,
+			1,
+			1,
+			1
+		]
+	},
+	{
+		"name": "isolated notches",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				300
+			],
+			[
+				1,
+				600
+			]
+		],
+		"steps": [
+			1,
+			1,
+			1
+		]
+	},
+	{
+		"name": "100 ms apart",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				100
+			],
+			[
+				1,
+				200
+			],
+			[
+				1,
+				300
+			]
+		],
+		"steps": [
+			1,
+			1,
+			1,
+			1
+		]
+	},
+	{
+		"name": "50 ms apart",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				50
+			],
+			[
+				1,
+				100
+			],
+			[
+				1,
+				150
+			],
+			[
+				1,
+				200
+			],
+			[
+				1,
+				250
+			]
+		],
+		"steps": [
+			1,
+			2,
+			2,
+			2,
+			2,
+			2
+		]
+	},
+	{
+		"name": "20 ms apart",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				20
+			],
+			[
+				1,
+				40
+			],
+			[
+				1,
+				60
+			],
+			[
+				1,
+				80
+			],
+			[
+				1,
+				100
+			],
+			[
+				1,
+				120
+			],
+			[
+				1,
+				140
+			]
+		],
+		"steps": [
+			1,
+			5,
+			5,
+			5,
+			5,
+			5,
+			5,
+			5
+		]
+	},
+	{
+		"name": "capped",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				10
+			],
+			[
+				1,
+				20
+			],
+			[
+				1,
+				30
+			],
+			[
+				1,
+				40
+			],
+			[
+				1,
+				50
+			]
+		],
+		"steps": [
+			1,
+			6,
+			6,
+			6,
+			6,
+			6
+		]
+	},
+	{
+		"name": "one notch in bursts",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				4
+			],
+			[
+				1,
+				8
+			],
+			[
+				1,
+				12
+			],
+			[
+				1,
+				16
+			]
+		],
+		"steps": [
+			1,
+			1,
+			1,
+			1,
+			1
+		]
+	},
+	{
+		"name": "fractions carry",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				40
+			],
+			[
+				1,
+				80
+			],
+			[
+				1,
+				120
+			],
+			[
+				1,
+				160
+			],
+			[
+				1,
+				200
+			]
+		],
+		"steps": [
+			1,
+			2,
+			3,
+			2,
+			3,
+			2
+		]
+	},
+	{
+		"name": "slowing down",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				10
+			],
+			[
+				1,
+				30
+			],
+			[
+				1,
+				70
+			],
+			[
+				1,
+				150
+			],
+			[
+				1,
+				300
+			]
+		],
+		"steps": [
+			1,
+			6,
+			6,
+			3,
+			2,
+			1
+		]
+	},
+	{
+		"name": "direction change",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				20
+			],
+			[
+				1,
+				40
+			],
+			[
+				-1,
+				60
+			],
+			[
+				-1,
+				80
+			],
+			[
+				-1,
+				100
+			]
+		],
+		"steps": [
+			1,
+			5,
+			5,
+			1,
+			5,
+			5
+		]
+	},
+	{
+		"name": "pause ends a spin",
+		"lines": "auto",
+		"accelerate": true,
+		"events": [
+			[
+				1,
+				0
+			],
+			[
+				1,
+				20
+			],
+			[
+				1,
+				40
+			],
+			[
+				1,
+				241
+			],
+			[
+				1,
+				261
+			],
+			[
+				1,
+				281
+			]
+		],
+		"steps": [
+			1,
+			5,
+			5,
+			1,
+			5,
+			5
+		]
+	}
+]

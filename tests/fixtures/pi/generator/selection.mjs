@@ -1,6 +1,7 @@
 // Records pi-tui's fullscreen mouse selection, for crates/yapi-tui/tests/selection.rs:
 // the screen lines after each mouse report sent to `TuiAltScreen`, and the text it copies.
 // The layout is pi's chat viewport: a scrolling transcript above a dock.
+// Also records the rows `WheelScrollAccelerator` scrolls for timed wheel events.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -8,9 +9,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "node_modules/@earendil-works/pi-coding-agent/package.json"));
-const { ScrollView, TuiAltScreen, VStack, setCapabilities } = await import(
-	pathToFileURL(require.resolve("@earendil-works/pi-tui")).href
-);
+const index = pathToFileURL(require.resolve("@earendil-works/pi-tui")).href;
+const { ScrollView, TuiAltScreen, VStack, setCapabilities } = await import(index);
+const { WheelScrollAccelerator } = await import(index.replace(/index\.js$/, "wheel-scroll.js"));
 setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 
 // The auto-scroll timer of a held drag runs when a step says `tick`.
@@ -209,7 +210,30 @@ for (const testCase of cases) {
 	});
 }
 
+// Wheel events as [direction, milliseconds].
+const spin = (gap, count, direction = 1, start = 0) =>
+	Array.from({ length: count }, (_, index) => [direction, start + index * gap]);
+const wheelCases = [
+	{ name: "fixed lines", lines: 3, events: spin(10, 3) },
+	{ name: "not accelerated", accelerate: false, events: spin(20, 4) },
+	{ name: "isolated notches", events: spin(300, 3) },
+	{ name: "100 ms apart", events: spin(100, 4) },
+	{ name: "50 ms apart", events: spin(50, 6) },
+	{ name: "20 ms apart", events: spin(20, 8) },
+	{ name: "capped", events: spin(10, 6) },
+	{ name: "one notch in bursts", events: spin(4, 5) },
+	{ name: "fractions carry", events: spin(40, 6) },
+	{ name: "slowing down", events: [0, 10, 30, 70, 150, 300].map((time) => [1, time]) },
+	{ name: "direction change", events: [...spin(20, 3), ...spin(20, 3, -1, 60)] },
+	{ name: "pause ends a spin", events: [...spin(20, 3), ...spin(20, 3, 1, 241)] },
+];
+const wheel = wheelCases.map(({ name, lines = "auto", accelerate = true, events }) => {
+	const accelerator = new WheelScrollAccelerator(lines, accelerate);
+	return { name, lines, accelerate, events, steps: events.map(([direction, time]) => accelerator.next(direction, time)) };
+});
+
 const dir = join(here, "..", "selection");
 mkdirSync(dir, { recursive: true });
 writeFileSync(join(dir, "selection.json"), `${JSON.stringify(out, null, "\t")}\n`);
-console.log(`wrote ${out.length} cases to ${dir}`);
+writeFileSync(join(dir, "wheel.json"), `${JSON.stringify(wheel, null, "\t")}\n`);
+console.log(`wrote ${out.length} selection and ${wheel.length} wheel cases to ${dir}`);

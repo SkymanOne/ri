@@ -1536,8 +1536,10 @@ impl App {
         let settings = self.session.settings();
         self.alt.copy_on_select = settings.fullscreen_copy_on_select.unwrap_or(true);
         self.alt.wheel_lines = match settings.fullscreen_wheel_scroll_lines {
-            Some(yapi_types::settings::NumberOr::Number(lines)) => lines.clamp(1, 100) as usize,
-            _ => 1,
+            Some(yapi_types::settings::NumberOr::Number(lines)) => {
+                Some(lines.clamp(1, 100) as usize)
+            }
+            _ => None,
         };
     }
 
