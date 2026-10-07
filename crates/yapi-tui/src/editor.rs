@@ -15,11 +15,12 @@ use crate::autocomplete::{AutocompleteProvider, Completion};
 use crate::keybindings::Keybindings;
 use crate::keys::decode_printable;
 use crate::kill_ring::KillRing;
+use crate::screen::MouseKind;
 use crate::segment::{
     Granularity, find_word_backward, find_word_forward, is_paste_marker, parse_paste_marker,
     paste_marker_spans, segment,
 };
-use crate::select_list::{SelectItem, SelectList, SelectListLayout, SelectListTheme};
+use crate::select_list::{SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme};
 use crate::text::{has_cjk, has_whitespace, is_autocomplete_separator, take_width, visible_width};
 use yapi_types::js::{byte_index, utf16_index};
 
@@ -283,6 +284,8 @@ pub struct Editor {
     snapped_from_cursor_col: Option<usize>,
     undo_stack: Vec<Snapshot>,
     cursor: Option<(usize, usize)>,
+    /// The last render's text rows, autocomplete rows and side padding.
+    rendered: (usize, usize, usize),
     /// Enter does nothing while set.
     pub disable_submit: bool,
     /// Whether the editor has focus, which shows the terminal cursor position.
@@ -327,6 +330,7 @@ impl Editor {
             snapped_from_cursor_col: None,
             undo_stack: Vec::new(),
             cursor: None,
+            rendered: (1, 0, 0),
             disable_submit: false,
             focused: true,
         }
@@ -701,10 +705,13 @@ impl Editor {
             "─".repeat(width)
         };
         out.push(Line::from(Span::styled(bottom, self.border)));
+        self.rendered = (visible.len(), 0, padding_x);
         if self.autocomplete_mode.is_some()
             && let Some(list) = &self.autocomplete_list
         {
-            for line in list.render(content_width) {
+            let rows = list.render(content_width);
+            self.rendered.1 = rows.len();
+            for line in rows {
                 let line_width = line.width();
                 let mut spans = vec![Span::raw(padding.clone())];
                 spans.extend(line.spans);
@@ -716,6 +723,61 @@ impl Editor {
             }
         }
         out
+    }
+
+    /// pi's `handleMouse`: `kind` at column `x` of row `y` of the last
+    /// render's rows. The autocomplete list takes presses, clicks and the
+    /// wheel, and a click on a text row moves the cursor to the character
+    /// under it. Returns whether the editor took the event, as it takes every
+    /// click on its rows.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> bool {
+        let (visible, list_rows, padding) = self.rendered;
+        let list_top = visible + 2;
+        if self.autocomplete_mode.is_some()
+            && (list_top..list_top + list_rows).contains(&y)
+            && let Some(list) = &mut self.autocomplete_list
+        {
+            return match list.mouse(kind, y - list_top) {
+                Some(SelectEvent::Selected(item)) => {
+                    self.apply_completion(&item);
+                    self.cancel_autocomplete();
+                    true
+                }
+                taken => taken.is_some(),
+            };
+        }
+        if kind != MouseKind::Click || y == 0 || y > visible {
+            return kind == MouseKind::Click;
+        }
+        let visual = self.visual_lines(self.last_width);
+        let index = self.scroll_offset + y - 1;
+        let Some(&line) = visual.get(index) else {
+            return true;
+        };
+        let chunk = &self.state.lines[line.logical][line.start..line.start + line.len];
+        let target = x.saturating_sub(padding);
+        let (mut column, mut offset, mut last) = (0, chunk.len(), 0);
+        for grapheme in segment(chunk, Granularity::Grapheme, &self.valid_ids()) {
+            let next = column + visible_width(grapheme.text);
+            last = grapheme.index;
+            if target < next {
+                offset = grapheme.index;
+                break;
+            }
+            column = next;
+        }
+        // Past the end of a wrapped row is its last character, not the next row's first.
+        if !Self::is_last_segment(&visual, index) && offset == chunk.len() && !chunk.is_empty() {
+            offset = last;
+        }
+        self.state.cursor_line = line.logical;
+        self.set_cursor_col(line.start + offset);
+        self.last_action = None;
+        self.exit_history();
+        if self.autocomplete_mode.is_some() {
+            self.update_autocomplete();
+        }
+        true
     }
 
     // Input
