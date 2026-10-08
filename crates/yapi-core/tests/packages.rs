@@ -105,18 +105,9 @@ fn publish(
 }
 
 async fn registry(interactions: impl Fn(&str) -> Vec<Interaction>) -> MockServer {
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    let base = format!("http://127.0.0.1:{port}");
-    MockServer::start(
-        format!("127.0.0.1:{port}").parse().unwrap(),
-        Cassette {
-            interactions: interactions(&base),
-        },
-    )
+    MockServer::local_with(|base| Cassette {
+        interactions: interactions(base),
+    })
     .await
     .unwrap()
 }
