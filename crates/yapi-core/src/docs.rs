@@ -20,7 +20,7 @@ const BOOK_URL: &str = "https://nikolish.in/yapi/";
 const PI_URL: &str = "https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent";
 
 /// Where the model reads the docs: the local copy in the agent directory
-/// when there is one, else the published pages.
+/// when it documents this version, else the published pages.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Locations {
     /// yapi's main page, in place of pi's `getReadmePath`.
@@ -32,11 +32,11 @@ pub struct Locations {
 }
 
 impl Locations {
-    /// The local docs in `agent_dir` when they are installed, else the
-    /// published ones.
+    /// The local docs in `agent_dir` when they are this version's, else the
+    /// published ones, as after an upgrade until the new docs are downloaded.
     pub fn find(agent_dir: &Path) -> Locations {
         let dir = crate::config::docs_dir(agent_dir);
-        if dir.join(VERSION_FILE).is_file() {
+        if current(&dir) {
             Locations {
                 main: dir.join("index.md").display().to_string(),
                 pi_docs: dir.join("pi").join("docs").display().to_string(),
@@ -59,7 +59,7 @@ impl Locations {
 pub async fn download(releases: &str, agent_dir: &Path) -> Result<(), String> {
     let version = env!("CARGO_PKG_VERSION");
     let dir = crate::config::docs_dir(agent_dir);
-    if std::fs::read_to_string(dir.join(VERSION_FILE)).is_ok_and(|text| text.trim() == version) {
+    if current(&dir) {
         return Ok(());
     }
     let url = format!("{releases}/download/v{version}/{ARCHIVE}");
@@ -76,6 +76,12 @@ pub async fn download(releases: &str, agent_dir: &Path) -> Result<(), String> {
     tokio::task::spawn_blocking(move || replace(&archive, &dir))
         .await
         .map_err(|err| err.to_string())?
+}
+
+/// Whether the docs in `dir` document this version of yapi.
+fn current(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join(VERSION_FILE))
+        .is_ok_and(|text| text.trim() == env!("CARGO_PKG_VERSION"))
 }
 
 /// Unpacks `archive` next to `dir`, then puts it in place of `dir`. Should
@@ -98,7 +104,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_the_local_docs_else_the_published_ones() {
+    fn finds_this_versions_local_docs_else_the_published_ones() {
         let agent = std::env::temp_dir().join(format!("yapi-docs-find-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&agent);
         let published = Locations::find(&agent);
@@ -112,7 +118,14 @@ mod tests {
             "https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/examples"
         );
         std::fs::create_dir_all(agent.join("docs")).unwrap();
-        std::fs::write(agent.join("docs").join(VERSION_FILE), "0.1.0\n").unwrap();
+        std::fs::write(agent.join("docs").join(VERSION_FILE), "0.0.1\n").unwrap();
+        assert_eq!(
+            Locations::find(&agent),
+            published,
+            "an older version's docs"
+        );
+        let version = format!("{}\n", env!("CARGO_PKG_VERSION"));
+        std::fs::write(agent.join("docs").join(VERSION_FILE), version).unwrap();
         let local = Locations::find(&agent);
         let docs = agent.join("docs");
         assert_eq!(local.main, docs.join("index.md").display().to_string());
