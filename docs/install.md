@@ -83,7 +83,7 @@ yapi reads its documentation to explain its own features: the pages of this site
 | Install script | Installed with the binary |
 | cargo-binstall, Cargo or a release archive | Downloaded by yapi in the background when it first starts |
 
-yapi downloads the documentation when the folder is missing or documents another version, checks it against its SHA-256 checksum, and replaces the old copy. It never downloads with `YAPI_NO_DOCS=1`, when offline (`--offline` or `PI_OFFLINE=1`), or in a development build. Until a copy is in place, the model reads the same pages online.
+yapi downloads the documentation when the folder is missing or documents another version, checks it against its SHA-256 checksum, and replaces the old copy. It never downloads with `YAPI_NO_DOCS=1`, when offline (`--offline` or `PI_OFFLINE=1`), or in a development build. yapi reads only the copy of its own version, so until that copy is in place, as just after an upgrade, the model reads the same pages online.
 
 To install the documentation by hand, for example on a machine that runs yapi offline:
 
@@ -91,7 +91,7 @@ To install the documentation by hand, for example on a machine that runs yapi of
 mkdir -p ~/.yapi/agent/docs && curl -fsSL https://github.com/SkymanOne/yapi/releases/latest/download/yapi-docs.tar.gz | tar xzf - -C ~/.yapi/agent/docs
 ```
 
-For another release, replace `latest/download` with `download/<tag>`.
+This installs the latest release's documentation. When yapi is an older release, replace `latest/download` with `download/v<version>`, where `<version>` is what `yapi --version` prints.
 
 ## Check the installation
 
