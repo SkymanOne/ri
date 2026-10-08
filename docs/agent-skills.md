@@ -15,7 +15,7 @@ In yapi or Pi, install the repository at a release tag as a package. Its `skills
 yapi install git:github.com/SkymanOne/yapi@v0.1.0
 ```
 
-A package installed at a tag stays at that tag, and `yapi update` keeps it there. To update the skills, install the tag of a newer release. Installed without a tag, the package follows the repository's main branch, and `yapi update` brings it up to date, including skills for features not yet released.
+yapi clones the whole repository but loads only its `skills` folder. A package installed at a tag stays at that tag, and `yapi update` keeps it there. To update the skills, install the tag of a newer release. Installed without a tag, the package follows the repository's main branch, and `yapi update` brings it up to date, including skills for features not yet released.
 
 To use one skill without the rest of the repository, copy its folder into a skills directory, such as `~/.yapi/agent/skills/`, `~/.agents/skills/` or, for Claude Code, `~/.claude/skills/`:
 
