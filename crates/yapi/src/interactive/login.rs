@@ -13,11 +13,12 @@ use yapi_ai::providers;
 use yapi_ai::registry::{LoginKind, ModelRegistry};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::{nudge, visible_range};
 use yapi_tui::text_input::{InputEvent, TextInput};
 use yapi_types::collate::locale_compare;
 
-use super::selectors::{Action, Outcome, Ui};
+use super::selectors::{Action, Outcome, Ui, input_mouse};
 
 const MAX_VISIBLE: usize = 8;
 
@@ -290,6 +291,8 @@ pub struct ProviderSelector {
     filtered: Vec<ProviderOption>,
     selected: usize,
     input: TextInput,
+    /// The search field's row in the last render.
+    input_row: usize,
     show_kinds: bool,
 }
 
@@ -308,6 +311,7 @@ impl ProviderSelector {
             all: options,
             selected: 0,
             input,
+            input_row: 0,
             show_kinds,
         };
         selector.filter();
@@ -354,6 +358,7 @@ impl ProviderSelector {
             1,
         ));
         out.extend(lines::spacer(1));
+        self.input_row = out.len();
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
         out.push(input);
@@ -408,6 +413,11 @@ impl ProviderSelector {
         (out, cursor)
     }
 
+    /// pi's `handleMouse`: a press on the search field moves its cursor.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<Outcome> {
+        input_mouse(&mut self.input, self.input_row, kind, x, y)
+    }
+
     /// Handles a key.
     pub fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         let kb = ui.keys;
@@ -453,6 +463,8 @@ pub struct LoginDialog {
     title: String,
     rows: Vec<Row>,
     input: TextInput,
+    /// The input's row in the last render, when it showed.
+    input_row: Option<usize>,
     pending: Option<Pending>,
     /// Cancels the whole sign-in.
     pub cancel: CancellationToken,
@@ -467,6 +479,7 @@ impl LoginDialog {
             title: format!("Login to {name}"),
             rows: Vec::new(),
             input,
+            input_row: None,
             pending: None,
             cancel: CancellationToken::new(),
         }
@@ -612,6 +625,7 @@ impl LoginDialog {
             1,
         ));
         let mut cursor = None;
+        self.input_row = None;
         for row in &self.rows {
             match row {
                 Row::Spacer => out.extend(lines::spacer(1)),
@@ -619,6 +633,7 @@ impl LoginDialog {
                     out.extend(lines::text(std::slice::from_ref(line), width, 1, 0, None))
                 }
                 Row::Input => {
+                    self.input_row = Some(out.len());
                     let line = self.input.render(width);
                     cursor = self.input.cursor_column().map(|col| (out.len(), col));
                     out.push(line);
@@ -627,6 +642,11 @@ impl LoginDialog {
         }
         out.push(ui.border(width));
         (out, cursor)
+    }
+
+    /// pi's `handleMouse`: a press on the input moves its cursor.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<Outcome> {
+        input_mouse(&mut self.input, self.input_row?, kind, x, y)
     }
 
     /// Handles a key: escape cancels the sign-in; enter answers the open question.

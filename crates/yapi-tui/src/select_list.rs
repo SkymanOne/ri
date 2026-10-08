@@ -84,7 +84,7 @@ pub struct SelectListLayout {
 /// What a key did to the list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SelectEvent {
-    /// The key was not a list key.
+    /// The key was not a list key, or the mouse left the list as it was.
     Ignored,
     /// The highlight moved.
     Moved,
@@ -195,7 +195,8 @@ impl SelectList {
     /// pi's `handleMouse`: the wheel moves the highlight a row without
     /// wrapping, a press highlights the item under it and a click chooses the
     /// item pressed. `y` is a row of [`SelectList::render`]'s; `None` when
-    /// the list does not take the event.
+    /// the list does not take the event, and [`SelectEvent::Ignored`] when it
+    /// takes it without moving the highlight.
     pub fn mouse(&mut self, kind: MouseKind, y: usize) -> Option<SelectEvent> {
         let count = self.items.len();
         if count == 0 {
@@ -203,6 +204,7 @@ impl SelectList {
         }
         let (start, end) = visible_range(self.selected, count, self.max_visible);
         let index = start + y;
+        let before = self.selected;
         match kind {
             MouseKind::Wheel(direction) => {
                 self.selected = nudge(self.selected, count, direction > 0)
@@ -217,7 +219,11 @@ impl SelectList {
                 return self.selected_item().cloned().map(SelectEvent::Selected);
             }
         }
-        Some(SelectEvent::Moved)
+        Some(if self.selected == before {
+            SelectEvent::Ignored
+        } else {
+            SelectEvent::Moved
+        })
     }
 
     fn display_value(item: &SelectItem) -> &str {

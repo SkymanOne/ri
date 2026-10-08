@@ -8,13 +8,14 @@ use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::{step, visible_range};
 use yapi_tui::text_input::TextInput;
 use yapi_types::model::Model;
 
 use super::catalogs::RefreshStatus;
 use super::keybindings::keys_display;
-use super::selectors::{Action, Outcome, Ui};
+use super::selectors::{Action, Outcome, Ui, input_mouse};
 
 /// Enabled model ids in order; `None` enables every model.
 type Enabled = Option<Vec<String>>;
@@ -122,6 +123,8 @@ pub struct ScopedModelsSelector {
     rows: Vec<Row>,
     selected: usize,
     input: TextInput,
+    /// The search field's row in the last render.
+    input_row: usize,
     dirty: bool,
     /// The selection changed since the selector opened.
     touched: bool,
@@ -145,6 +148,7 @@ impl ScopedModelsSelector {
             rows: Vec::new(),
             selected: 0,
             input,
+            input_row: 0,
             dirty: false,
             touched: false,
             refresh_id: 0,
@@ -277,6 +281,7 @@ impl ScopedModelsSelector {
             0,
         ));
         out.extend(lines::spacer(1));
+        self.input_row = out.len();
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
         out.push(input);
@@ -361,6 +366,11 @@ impl ScopedModelsSelector {
             enabled: self.enabled.clone(),
             save: false,
         })
+    }
+
+    /// pi's `handleMouse`: a press on the search field moves its cursor.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<Outcome> {
+        input_mouse(&mut self.input, self.input_row, kind, x, y)
     }
 
     /// Handles a key.

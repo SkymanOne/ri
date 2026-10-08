@@ -2790,5 +2790,748 @@
 				"copied": []
 			}
 		]
+	},
+	{
+		"name": "select list",
+		"columns": 20,
+		"rows": 8,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"select": {
+			"items": [
+				"one",
+				"two",
+				"three",
+				"four",
+				"five",
+				"six"
+			],
+			"maxVisible": 4
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;3;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"→ three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (3/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"move three"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"→ three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (3/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"select three"
+				]
+			},
+			{
+				"input": "\u001b[<65;3;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"→ four\u001b[0m\u001b]8;;\u0007",
+					"  five\u001b[0m\u001b]8;;\u0007",
+					"  (4/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"move four"
+				]
+			},
+			{
+				"input": "\u001b[<64;3;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"→ three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (3/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"move three"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"move two"
+				]
+			},
+			{
+				"input": "\u001b[<32;3;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;7m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;8M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;8m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;3;1M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  one\u001b[0m\u001b]8;;\u0007",
+					"→ two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (2/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ one\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (1/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"move one"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ one\u001b[0m\u001b]8;;\u0007",
+					"  two\u001b[0m\u001b]8;;\u0007",
+					"  three\u001b[0m\u001b]8;;\u0007",
+					"  four\u001b[0m\u001b]8;;\u0007",
+					"  (1/6)\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"select one"
+				]
+			}
+		]
+	},
+	{
+		"name": "settings list",
+		"columns": 40,
+		"rows": 13,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"settings": {
+			"maxVisible": 3,
+			"items": [
+				{
+					"id": "alpha",
+					"label": "alpha",
+					"description": "About alpha",
+					"currentValue": "on",
+					"values": [
+						"on",
+						"off"
+					]
+				},
+				{
+					"id": "beta",
+					"label": "beta",
+					"description": "About beta",
+					"currentValue": "on",
+					"values": [
+						"on",
+						"off"
+					]
+				},
+				{
+					"id": "gamma",
+					"label": "gamma",
+					"description": "About gamma",
+					"currentValue": "on",
+					"values": [
+						"on",
+						"off"
+					]
+				},
+				{
+					"id": "delta",
+					"label": "delta",
+					"description": "About delta",
+					"currentValue": "on",
+					"values": [
+						"on",
+						"off"
+					]
+				}
+			]
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "a",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> a\u001b[7m \u001b[27m                                    \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "b",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> b\u001b[7ma\u001b[27m                                    \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ beta   on\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About beta\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<65;3;11M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  alpha  on\u001b[0m\u001b]8;;\u0007",
+					"→ gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (2/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About gamma\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  on\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  off\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"change alpha off"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;7M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  alpha  off\u001b[0m\u001b]8;;\u0007",
+					"→ gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (2/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About gamma\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;3;6M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  alpha  off\u001b[0m\u001b]8;;\u0007",
+					"→ gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (2/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About gamma\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;6m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  alpha  off\u001b[0m\u001b]8;;\u0007",
+					"→ gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (2/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About gamma\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<65;3;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  alpha  off\u001b[0m\u001b]8;;\u0007",
+					"→ gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (2/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About gamma\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;3;13M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> \u001b[7ma\u001b[27m                                     \u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"→ alpha  off\u001b[0m\u001b]8;;\u0007",
+					"  gamma  on\u001b[0m\u001b]8;;\u0007",
+					"  beta   on\u001b[0m\u001b]8;;\u0007",
+					"  (1/4)\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  About alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  Type to search · Enter/Space to cha\u001b[0m...\u001b[0m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
+	},
+	{
+		"name": "input",
+		"columns": 20,
+		"rows": 4,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"input": "the quick brown fox jumps",
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;8;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the q\u001b[7mu\u001b[27mick brown fo\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;8;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the q\u001b[7mu\u001b[27mick brown fo\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "x",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the qx\u001b[7mu\u001b[27mick brown f\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u0005",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> k brown fox jumps\u001b[7m \u001b[27m\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the qxuic\u001b[7mk\u001b[27m brown f\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;1;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the qxuic\u001b[7mk\u001b[27m brown f\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;6;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the\u001b[7m \u001b[27mqxuick brown f\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;6;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> the\u001b[7m \u001b[27mqxuick brown f\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "y",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> they\u001b[7m \u001b[27mqxuick brown \u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;19;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> uick brow\u001b[7mn\u001b[27m fox jum\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;19;4m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> uick brow\u001b[7mn\u001b[27m fox jum\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<64;3;4M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> uick brow\u001b[7mn\u001b[27m fox jum\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			}
+		]
 	}
 ]

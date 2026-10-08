@@ -10,6 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::keybindings::Keybindings;
 use crate::keys::decode_printable;
 use crate::kill_ring::KillRing;
+use crate::screen::MouseKind;
 use crate::segment::{find_word_backward, find_word_forward};
 use crate::text::{grapheme_width, is_js_whitespace, truncate_to_width, visible_width};
 
@@ -47,6 +48,8 @@ pub struct TextInput {
     last_action: Option<LastAction>,
     undo: Vec<(String, usize)>,
     rendered_cursor: Option<usize>,
+    /// The first column of the value the last render showed.
+    rendered_start: usize,
 }
 
 impl Default for TextInput {
@@ -88,6 +91,7 @@ impl TextInput {
             last_action: None,
             undo: Vec::new(),
             rendered_cursor: None,
+            rendered_start: 0,
         }
     }
 
@@ -288,6 +292,27 @@ impl TextInput {
         self.cursor += clean.len();
     }
 
+    /// pi's `handleMouse`: a press at column `x` of the input's row moves the
+    /// cursor to the character under it, or past the end of the text. Returns
+    /// whether the input took the event.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize) -> bool {
+        if kind != MouseKind::Press {
+            return false;
+        }
+        let target = self.rendered_start + x.saturating_sub(visible_width(&self.prompt));
+        let mut column = 0;
+        self.cursor = self.value.len();
+        for (offset, grapheme) in self.value.grapheme_indices(true) {
+            column += grapheme_width(grapheme);
+            if target < column {
+                self.cursor = offset;
+                break;
+            }
+        }
+        self.last_action = None;
+        true
+    }
+
     /// The terminal cursor column in the last render, when focused.
     pub fn cursor_column(&self) -> Option<usize> {
         self.rendered_cursor
@@ -297,6 +322,7 @@ impl TextInput {
     pub fn render(&mut self, width: usize) -> Line<'static> {
         let prompt_width = visible_width(&self.prompt);
         self.rendered_cursor = None;
+        self.rendered_start = 0;
         let Some(available) = width.checked_sub(prompt_width).filter(|w| *w > 0) else {
             return Line::from(truncate_to_width(&self.prompt, width, "", false));
         };
@@ -319,6 +345,7 @@ impl TextInput {
                 } else {
                     cursor_col - half
                 };
+                self.rendered_start = start;
                 let visible = slice_columns(&self.value, start, scroll);
                 let before = slice_columns(&self.value, start, cursor_col.saturating_sub(start));
                 (visible, before.len().min(visible.len()))

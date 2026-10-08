@@ -6,6 +6,7 @@
 //! `extension-editor.ts` in
 //! `packages/coding-agent/src/modes/interactive/components` in pi `v1.0.0`.
 
+use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -16,6 +17,7 @@ use yapi_tui::editor::{Editor, EditorEvent, EditorTheme};
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::keybindings::Keybindings;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::{
     SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme, nudge, step,
     visible_range,
@@ -252,12 +254,48 @@ impl Selector {
         }
     }
 
+    /// pi's `handleMouse` of the selector's lists and fields: `kind` at
+    /// column `x` of row `y` of the last render; `None` when nothing there
+    /// takes it. pi's other selectors draw their rows as text, which takes
+    /// no clicks.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize, ui: &Ui<'_>) -> Option<Outcome> {
+        match self {
+            Selector::Model(selector) => {
+                input_mouse(&mut selector.input, selector.input_row, kind, x, y)
+            }
+            Selector::Thinking(selector) => selector.mouse(kind, x, y),
+            Selector::Text(dialog) => {
+                let rows = &dialog.editor_rows;
+                (rows.contains(&y) && dialog.editor.mouse(kind, x, y - rows.start))
+                    .then_some(Outcome::None)
+            }
+            Selector::Session(selector) => selector.mouse(kind, x, y),
+            Selector::Providers(selector) => selector.mouse(kind, x, y),
+            Selector::Login(dialog) => dialog.mouse(kind, x, y),
+            Selector::Input(dialog) => input_mouse(&mut dialog.input, dialog.input_row, kind, x, y),
+            Selector::Settings(selector) => selector.mouse(kind, x, y, ui),
+            Selector::ScopedModels(selector) => selector.mouse(kind, x, y),
+            _ => None,
+        }
+    }
+
     /// Called on every frame; selectors with timed state update it.
     pub fn tick(&mut self) {
         if let Selector::Session(selector) = self {
             selector.tick();
         }
     }
+}
+
+/// pi's `Input` at `row` of a selector: a press on it moves its cursor.
+pub fn input_mouse(
+    input: &mut TextInput,
+    row: usize,
+    kind: MouseKind,
+    x: usize,
+    y: usize,
+) -> Option<Outcome> {
+    (y == row && input.mouse(kind, x)).then_some(Outcome::None)
 }
 
 fn same_model(a: Option<&Model>, b: &Model) -> bool {
@@ -277,6 +315,8 @@ fn model_search_text(model: &Model) -> String {
 /// The `/model` selector.
 pub struct ModelSelector {
     input: TextInput,
+    /// The search field's row in the last render.
+    input_row: usize,
     /// The models of the current scope.
     models: Vec<Model>,
     all: Vec<Model>,
@@ -328,6 +368,7 @@ impl ModelSelector {
         };
         let mut selector = ModelSelector {
             input,
+            input_row: 0,
             filtered: (0..active.len()).collect(),
             models: active,
             all: models,
@@ -464,6 +505,7 @@ impl ModelSelector {
             out.extend(lines::text_row(Line::from(hint), width, 0));
         }
         out.extend(lines::spacer(1));
+        self.input_row = out.len();
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
         out.push(input);
@@ -656,6 +698,9 @@ pub struct ThinkingSelector {
     items: Vec<SelectItem>,
     list: SelectList,
     theme: SelectListTheme,
+    /// The search field's row and the list's rows in the last render.
+    input_row: usize,
+    list_rows: Range<usize>,
 }
 
 impl ThinkingSelector {
@@ -690,6 +735,8 @@ impl ThinkingSelector {
             items,
             list,
             theme,
+            input_row: 0,
+            list_rows: 0..0,
         }
     }
 
@@ -713,11 +760,14 @@ impl ThinkingSelector {
             0,
         ));
         out.extend(lines::spacer(1));
+        self.input_row = out.len();
         let input = self.input.render(width);
         let cursor = self.input.cursor_column().map(|col| (out.len(), col));
         out.push(input);
         out.extend(lines::spacer(1));
+        let start = out.len();
         out.extend(self.list.render(width));
+        self.list_rows = start..out.len();
         out.extend(lines::spacer(1));
         out.extend(lines::text_row(
             styled(
@@ -738,12 +788,7 @@ impl ThinkingSelector {
 
     fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         let kb = ui.keys;
-        let done = |item: Option<&SelectItem>, default| {
-            item.and_then(|item| ThinkingLevel::parse(&item.value))
-                .map_or(Outcome::None, |level| {
-                    Outcome::Done(Action::Thinking { level, default })
-                })
-        };
+        let done = Self::done;
         if kb.matches(data, "app.thinking.save") {
             return done(self.list.selected_item(), true);
         }
@@ -760,6 +805,24 @@ impl ThinkingSelector {
             SelectEvent::Selected(item) => done(Some(&item), false),
             SelectEvent::Cancelled if navigation => Outcome::Cancel,
             _ => Outcome::None,
+        }
+    }
+
+    /// Chooses `item`'s level; `default` also saves it.
+    fn done(item: Option<&SelectItem>, default: bool) -> Outcome {
+        item.and_then(|item| ThinkingLevel::parse(&item.value))
+            .map_or(Outcome::None, |level| {
+                Outcome::Done(Action::Thinking { level, default })
+            })
+    }
+
+    fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<Outcome> {
+        if !self.list_rows.contains(&y) {
+            return input_mouse(&mut self.input, self.input_row, kind, x, y);
+        }
+        match self.list.mouse(kind, y - self.list_rows.start)? {
+            SelectEvent::Selected(item) => Some(Self::done(Some(&item), false)),
+            _ => Some(Outcome::None),
         }
     }
 
@@ -1157,6 +1220,8 @@ impl ChoiceDialog {
 pub struct TextDialog {
     title: String,
     editor: Editor,
+    /// The editor's rows in the last render.
+    editor_rows: Range<usize>,
 }
 
 impl TextDialog {
@@ -1167,6 +1232,7 @@ impl TextDialog {
         TextDialog {
             title: title.to_owned(),
             editor,
+            editor_rows: 0..0,
         }
     }
 
@@ -1188,6 +1254,7 @@ impl TextDialog {
             .editor
             .cursor_position()
             .map(|(row, col)| (out.len() + row, col));
+        self.editor_rows = out.len()..out.len() + editor.len();
         out.extend(editor);
         out.extend(ui.frame_bottom(
             width,
@@ -1216,6 +1283,7 @@ impl TextDialog {
 pub struct InputDialog {
     title: String,
     input: TextInput,
+    input_row: usize,
     /// When the dialog closes on its own.
     pub countdown: Option<Countdown>,
 }
@@ -1228,6 +1296,7 @@ impl InputDialog {
         InputDialog {
             title: title.to_owned(),
             input,
+            input_row: 0,
             countdown: None,
         }
     }
@@ -1242,6 +1311,7 @@ impl InputDialog {
         ));
         out.extend(lines::spacer(1));
         let row = out.len();
+        self.input_row = row;
         out.push(self.input.render(width));
         let cursor = self.input.cursor_column().map(|column| (row, column));
         out.extend(ui.frame_bottom(

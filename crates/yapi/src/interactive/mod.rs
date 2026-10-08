@@ -486,8 +486,9 @@ struct App {
     hyperlinks: bool,
     keys: Keybindings,
     editor: Editor,
-    /// Where the built-in editor shows in fullscreen mode, when it has focus:
-    /// its first screen row, its first row shown and how many rows show.
+    /// Where the built-in editor, or a selector in its place, shows in
+    /// fullscreen mode when it has focus: its first screen row, its first row
+    /// shown and how many rows show.
     editor_rows: Option<(usize, usize, usize)>,
     /// Where extension components show in fullscreen mode's dock: each
     /// one's key, its first screen row, first row shown and how many rows
@@ -1322,14 +1323,18 @@ impl App {
             usize::MAX
         };
         let (rows, cursor, placed) = yapi_tui::screen::fit_stack(parts, cursor, available);
-        // The fourth part is the focused built-in editor unless a selector,
-        // an overlay among them, or an extension's editor takes its place.
-        // The dock sits at the bottom of the screen.
+        // The fourth part is the focused built-in editor or a selector in its
+        // place, unless an extension's component or editor takes it. The dock
+        // sits at the bottom of the screen.
         let top = self.size.1.saturating_sub(rows.len());
-        self.editor_rows =
-            (self.fullscreen && self.selector.is_none() && self.ext.editor.is_none())
-                .then(|| placed[3])
-                .map(|(row, first, count)| (top + row, first, count));
+        let builtin = match &self.selector {
+            Some(Selector::Remote(_)) => false,
+            Some(_) => true,
+            None => self.ext.editor.is_none(),
+        };
+        self.editor_rows = (self.fullscreen && builtin)
+            .then(|| placed[3])
+            .map(|(row, first, count)| (top + row, first, count));
         // The rows of each extension component that show, as pi's layout
         // boxes them.
         self.ext_rows = remote
@@ -2731,7 +2736,6 @@ impl App {
     /// Fullscreen scrolling and mouse selection; returns whether the key was
     /// consumed.
     fn handle_viewport_key(&mut self, data: &str) -> bool {
-        let (editor, rows) = (&mut self.editor, self.editor_rows);
         let (presses, columns, ext_rows) = (&mut self.presses, self.size.0, &self.ext_rows);
         let top = match (&self.selector, &self.overlay) {
             (Some(Selector::Remote(view)), Some(_)) => Some(view.key()),
@@ -2749,8 +2753,15 @@ impl App {
                 )
             })
             .collect();
+        let (editor, selector, rows) = (&mut self.editor, &mut self.selector, self.editor_rows);
+        let ui = Ui {
+            theme: &self.theme,
+            keys: &self.keys,
+        };
+        let mut outcome = None;
         // pi offers the events to the overlay under the pointer, else to the
-        // components in the layout there. An extension's answer comes later.
+        // components in the layout there: an extension's, whose answer comes
+        // later, or the editor or the selector in its place.
         let mut remote = Vec::new();
         let action = self.alt.mouse(data, &self.flat, |event| {
             if event.kind == MouseKind::Press {
@@ -2773,11 +2784,19 @@ impl App {
             }
             match rows {
                 Some((top, first, count)) if (top..top + count).contains(&event.y) => {
-                    editor.mouse(event.kind, event.x, event.y - top + first)
+                    let y = event.y - top + first;
+                    let Some(selector) = selector.as_mut() else {
+                        return editor.mouse(event.kind, event.x, y);
+                    };
+                    outcome = selector.mouse(event.kind, event.x, y, &ui);
+                    outcome.is_some()
                 }
                 _ => false,
             }
         });
+        if let Some(outcome) = outcome {
+            self.selector_outcome(outcome);
+        }
         let unhandled = action == MouseAction::Unhandled;
         let mut copy = match action {
             MouseAction::Copy(text) => Some(text),
@@ -2854,17 +2873,24 @@ impl App {
             return;
         };
         let outcome = selector.handle_input(data, &self.ui());
+        self.selector = Some(selector);
+        self.selector_outcome(outcome);
+    }
+
+    /// Does what the open selector asks.
+    fn selector_outcome(&mut self, outcome: Outcome) {
         match outcome {
-            Outcome::None => self.selector = Some(selector),
-            Outcome::Side(action) => {
-                self.selector = Some(selector);
-                self.act(action);
-            }
+            Outcome::None => {}
+            Outcome::Side(action) => self.act(action),
             Outcome::Cancel => {
+                self.selector = None;
                 let dialog = self.dialog.take();
                 self.on_cancel(dialog);
             }
-            Outcome::Done(action) => self.act(action),
+            Outcome::Done(action) => {
+                self.selector = None;
+                self.act(action);
+            }
         }
     }
 
@@ -4439,6 +4465,72 @@ mod tests {
             assert!(app.handle_viewport_key(&report.replace("{}", &(top + 2).to_string())));
         }
         assert_eq!(app.editor.cursor(), (0, 6));
+    }
+
+    /// Draws the fullscreen frame; the column and row of the first cell
+    /// showing `needle`.
+    fn find_on_screen(app: &mut App, needle: &str) -> (usize, usize) {
+        let (width, height) = app.size;
+        let (dock, cursor) = app.dock(width);
+        app.alt.frame(&[], &dock, cursor, width, height);
+        let rows: Vec<String> = app.alt.screen_lines().iter().map(text).collect();
+        rows.iter()
+            .enumerate()
+            .find_map(|(y, row)| {
+                let at = row.find(needle)?;
+                Some((yapi_tui::text::visible_width(&row[..at]), y))
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not in {rows:#?}"))
+    }
+
+    /// Clicks the first cell showing `needle`.
+    fn click_on(app: &mut App, needle: &str) {
+        let (x, y) = find_on_screen(app, needle);
+        for end in ['M', 'm'] {
+            assert!(app.handle_viewport_key(&format!("\x1b[<0;{};{}{end}", x + 1, y + 1)));
+        }
+    }
+
+    #[tokio::test]
+    async fn clicks_choose_settings_and_move_the_search_cursor() {
+        let (mut app, _events) = app();
+        app.fullscreen = true;
+        app.size = (80, 40);
+        app.open_settings();
+        for key in ["h", "e", "m", "e"] {
+            app.handle_selector_key(key);
+        }
+        // A click before the query puts the cursor there.
+        click_on(&mut app, "heme");
+        app.handle_selector_key("t");
+        find_on_screen(&mut app, "> theme");
+        // The theme item opens its submenu, whose items a click chooses.
+        click_on(&mut app, "Theme ");
+        find_on_screen(&mut app, "Select a theme");
+        // Not `automatic`, whose description mentions light terminals.
+        click_on(&mut app, "  light");
+        assert_eq!(app.session.settings().theme.as_deref(), Some("light"));
+        assert!(matches!(app.selector, Some(Selector::Settings(_))));
+        find_on_screen(&mut app, "Theme  ");
+    }
+
+    #[tokio::test]
+    async fn a_click_chooses_a_thinking_level() {
+        use yapi_types::message::ThinkingLevel;
+        let (mut app, _events) = app();
+        app.fullscreen = true;
+        app.size = (80, 30);
+        let levels = [ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::High];
+        let theme = selectors::select_list_theme(&app.theme);
+        let selector = selectors::ThinkingSelector::new(ThinkingLevel::Off, &levels, None, theme);
+        app.selector = Some(Selector::Thinking(Box::new(selector)));
+        click_on(&mut app, "high");
+        assert!(app.selector.is_none());
+        let rows: Vec<String> = app.transcript(80).iter().map(text).collect();
+        assert!(
+            rows.iter().any(|row| row.contains("Thinking level: high")),
+            "{rows:?}"
+        );
     }
 
     #[tokio::test]

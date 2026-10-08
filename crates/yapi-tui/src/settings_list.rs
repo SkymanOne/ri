@@ -11,7 +11,8 @@ use ratatui_core::text::{Line, Span};
 use crate::fuzzy::fuzzy_filter;
 use crate::keybindings::Keybindings;
 use crate::lines::{self, StyledLine, styled};
-use crate::select_list::{step, visible_range};
+use crate::screen::MouseKind;
+use crate::select_list::{nudge, step, visible_range};
 use crate::text::{truncate_to_width, visible_width};
 use crate::text_input::TextInput;
 
@@ -74,6 +75,8 @@ pub struct SettingsList {
     max_visible: usize,
     theme: SettingsListTheme,
     search: Option<TextInput>,
+    /// The item a press highlighted, which the click activates.
+    pressed: Option<usize>,
 }
 
 impl SettingsList {
@@ -93,6 +96,7 @@ impl SettingsList {
             max_visible,
             theme,
             search: search.then(TextInput::default),
+            pressed: None,
         }
     }
 
@@ -234,6 +238,43 @@ impl SettingsList {
             self.selected = 0;
         }
         SettingsEvent::None
+    }
+
+    /// pi's `handleMouse`: a press on the search field moves its cursor, the
+    /// wheel moves the highlight a row without wrapping, a press highlights
+    /// the item under it and a click activates the item pressed, as Enter
+    /// does. `x` and `y` are a column and row of [`SettingsList::render`]'s;
+    /// `None` when the list does not take the event.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<SettingsEvent> {
+        let mut y = y;
+        if let Some(input) = &mut self.search {
+            match y {
+                0 => return input.mouse(kind, x).then_some(SettingsEvent::None),
+                1 => return None,
+                _ => y -= 2,
+            }
+        }
+        let count = self.filtered.len();
+        if count == 0 {
+            return None;
+        }
+        let (start, end) = visible_range(self.selected, count, self.max_visible);
+        let index = start + y;
+        match kind {
+            MouseKind::Wheel(direction) => {
+                self.selected = nudge(self.selected, count, direction > 0);
+            }
+            _ if index >= end => return None,
+            MouseKind::Press => {
+                self.pressed = Some(index);
+                self.selected = index;
+            }
+            MouseKind::Click => {
+                self.selected = self.pressed.take().unwrap_or(index);
+                return Some(self.activate());
+            }
+        }
+        Some(SettingsEvent::None)
     }
 
     fn activate(&mut self) -> SettingsEvent {
