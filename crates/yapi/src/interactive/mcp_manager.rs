@@ -120,7 +120,10 @@ impl McpManager {
                 (title.clone(), None)
             }
             McpManager::RedirectUrl(title, url, input, _) => {
-                // pi links the URL and the hint; the terminal detects the URL.
+                let linked = |content: &str, color: &str| {
+                    let style = yapi_tui::ansi::link(theme.fg(color), url);
+                    lines::text(&[styled(content, style)], width, 1, 0, None)
+                };
                 let click = if cfg!(target_os = "macos") {
                     "Cmd+click to open"
                 } else {
@@ -131,8 +134,8 @@ impl McpManager {
                     "Approve access in your browser. If it did not open, visit:",
                     "muted",
                 ));
-                body.extend(text(url, "accent"));
-                body.extend(text(click, "dim"));
+                body.extend(linked(url, "accent"));
+                body.extend(linked(click, "dim"));
                 body.extend(lines::spacer(1));
                 body.extend(text(
                     "If the browser runs on another machine, paste the URL it was redirected to:",

@@ -8,12 +8,15 @@
 //! it. Double and triple clicks select words and lines. Components under the
 //! pointer get presses, clicks and the wheel first.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ratatui_core::style::{Modifier, Style};
 
 use super::AltScreen;
-use crate::lines::{StyledLine, cell_range, plain, restyle_columns, text_in_columns, width};
+use crate::lines::{
+    StyledLine, cell_range, link_at, plain, restyle_columns, text_in_columns, width,
+};
 use crate::segment::{Granularity, segment};
 use crate::text::visible_width;
 
@@ -73,6 +76,9 @@ pub(super) struct Selection {
     autoscroll: Option<(isize, usize, usize, Instant)>,
     /// The pointer moved since the press.
     dragged: bool,
+    /// The link under the press, opened if it ends as a click; pi's
+    /// `pressedUrl`.
+    url: Option<Arc<str>>,
     /// A press a component took: where, and whether the pointer moved since.
     press: Option<(usize, usize, bool)>,
     /// The scrollbar's thumb is being dragged, held this many rows below its
@@ -121,6 +127,8 @@ pub enum MouseAction {
     Handled,
     /// A selection finished while `copy_on_select` is on: its text, to copy.
     Copy(String),
+    /// A link was clicked: its URL, to open.
+    Open(String),
 }
 
 /// pi's `WheelScrollAccelerator` (`packages/tui/src/wheel-scroll.ts`): turns
@@ -236,6 +244,7 @@ impl AltScreen {
             selection.last_click = None;
             selection.press = None;
             selection.scrollbar_drag = None;
+            selection.url = None;
             self.set_scrollbar_hover(false);
             return MouseAction::Handled;
         }
@@ -336,6 +345,11 @@ impl AltScreen {
                 && self.selection.anchor.is_some_and(|anchor| {
                     anchor.transcript == point.transcript && anchor.at() == point.at()
                 });
+            if let Some(url) = self.selection.url.take().filter(|_| click) {
+                self.selection.anchor = None;
+                self.selection.focus = None;
+                return MouseAction::Open(url.to_string());
+            }
             if click && components(event(MouseKind::Click, 0)) {
                 self.clear_selection();
                 return MouseAction::Handled;
@@ -351,6 +365,7 @@ impl AltScreen {
             }
             self.selection.last_click = None;
             self.selection.dragged = true;
+            self.selection.url = None;
             self.extend(point, transcript);
             self.update_autoscroll(x, y);
             return MouseAction::Handled;
@@ -370,6 +385,13 @@ impl AltScreen {
             _ => None,
         };
         self.selection.initial = range;
+        self.selection.url = match range {
+            Some(_) => None,
+            None => self
+                .screen
+                .get(y)
+                .and_then(|line| link_at(line, anchor.col)),
+        };
         self.selection.anchor = Some(range.map_or(anchor, |(_, start, _)| start));
         self.selection.focus = Some(range.map_or(anchor, |(_, _, end)| end));
         MouseAction::Handled
@@ -412,6 +434,7 @@ impl AltScreen {
         selection.pressed = false;
         selection.autoscroll = None;
         selection.dragged = false;
+        selection.url = None;
     }
 
     fn overlay_at(&self, x: usize, y: usize) -> Option<usize> {

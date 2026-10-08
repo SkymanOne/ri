@@ -377,6 +377,78 @@ fn true_color() -> bool {
         || !env("KITTY_WINDOW_ID").is_empty()
 }
 
+/// pi-tui's `hyperlinks` capability: the `terminal.hyperlinks` setting when
+/// true or false, else what the environment tells, else whether tmux forwards
+/// OSC 8 hyperlinks to the terminal.
+async fn hyperlinks(setting: Option<bool>) -> bool {
+    let known =
+        setting.or_else(|| known_hyperlinks(|name| std::env::var(name).unwrap_or_default()));
+    match known {
+        Some(on) => on,
+        None => tmux_forwards_hyperlinks().await,
+    }
+}
+
+/// `PI_HYPERLINKS` as `1` or `0`, else whether the terminal the environment
+/// names shows OSC 8 hyperlinks, as pi-tui detects it; `None` inside tmux.
+fn known_hyperlinks(var: impl Fn(&str) -> String) -> Option<bool> {
+    match var("PI_HYPERLINKS").as_str() {
+        "1" => return Some(true),
+        "0" => return Some(false),
+        _ => {}
+    }
+    let set = |name: &str| !var(name).is_empty();
+    let (program, term) = (
+        var("TERM_PROGRAM").to_lowercase(),
+        var("TERM").to_lowercase(),
+    );
+    if set("TMUX") || term.starts_with("tmux") {
+        return None;
+    }
+    let known = [
+        "KITTY_WINDOW_ID",
+        "GHOSTTY_RESOURCES_DIR",
+        "WEZTERM_PANE",
+        "WARP_SESSION_ID",
+        "WARP_TERMINAL_SESSION_UUID",
+        "ITERM_SESSION_ID",
+        "WT_SESSION",
+    ];
+    let programs = [
+        "kitty",
+        "ghostty",
+        "wezterm",
+        "warpterminal",
+        "iterm.app",
+        "alacritty",
+        "vscode",
+        "zed",
+    ];
+    Some(
+        !term.starts_with("screen")
+            && (known.into_iter().any(set)
+                || term.contains("ghostty")
+                || programs.contains(&program.as_str())),
+    )
+}
+
+/// pi's `probeTmuxHyperlinks`: whether the attached tmux client lists the
+/// `hyperlinks` feature, so tmux forwards OSC 8 hyperlinks.
+async fn tmux_forwards_hyperlinks() -> bool {
+    let probe = tokio::process::Command::new("tmux")
+        .args(["display-message", "-p", "#{client_termfeatures}"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(Duration::from_millis(250), probe).await {
+        Ok(Ok(output)) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .split(',')
+            .any(|feature| feature.trim() == "hyperlinks"),
+        _ => false,
+    }
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -410,6 +482,8 @@ struct App {
     epoch: u64,
     theme: Theme,
     markdown: MarkdownTheme,
+    /// Links are OSC 8 hyperlinks: pi-tui's `hyperlinks` capability.
+    hyperlinks: bool,
     keys: Keybindings,
     editor: Editor,
     /// Where the built-in editor shows in fullscreen mode, when it has focus:
@@ -660,6 +734,7 @@ impl App {
             cwd: &self.cwd,
             agent_dir: &self.agent_dir,
             thinking_label: self.ext.thinking_label.as_deref().unwrap_or("Thinking..."),
+            hyperlinks: self.hyperlinks,
         }
     }
 
@@ -2706,6 +2781,10 @@ impl App {
         let unhandled = action == MouseAction::Unhandled;
         let mut copy = match action {
             MouseAction::Copy(text) => Some(text),
+            MouseAction::Open(url) => {
+                yapi_ai::auth::open_browser(&url);
+                None
+            }
             _ => None,
         };
         let press = self.presses;
@@ -3641,6 +3720,16 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         protocol: KeyboardProtocol::default(),
         stdin_paused,
     };
+    let hyperlinks = tokio::spawn(hyperlinks(
+        match session
+            .settings()
+            .terminal
+            .and_then(|terminal| terminal.hyperlinks)
+        {
+            Some(yapi_types::settings::BoolOr::Bool(on)) => Some(on),
+            _ => None,
+        },
+    ));
     let mut query = ColorQuery::new();
     emit(&terminal_enter(&mut terminal.protocol));
 
@@ -3674,6 +3763,7 @@ pub async fn run(session: AgentSession, agent_dir: PathBuf, mut options: Options
         query.colors(),
         terminal.protocol.kitty,
     );
+    app.hyperlinks = hyperlinks.await.unwrap_or(false);
     let (show_details, fullscreen) = (app.show_details, app.fullscreen);
     let scoped = app.session.scoped_models();
     if !scoped.is_empty() && show_details {
@@ -3961,6 +4051,7 @@ impl App {
         let cancel_key = keybindings::keys_text(&keys, "tui.select.cancel");
         let mut app = App {
             markdown: markdown_theme(&theme),
+            hyperlinks: false,
             theme,
             keys,
             editor,
@@ -4453,6 +4544,35 @@ mod tests {
         // Text, such as a saved image's path, goes in as it is.
         let path = clipboard::Paste::Text("/tmp/yapi-clipboard-1.png".into());
         assert_eq!(pasted("see", 0, path), "see/tmp/yapi-clipboard-1.png");
+    }
+
+    #[test]
+    fn detects_hyperlink_terminals_as_pi_tui() {
+        let known = |vars: &[(&str, &str)]| {
+            known_hyperlinks(|name| {
+                let value = vars.iter().find(|(key, _)| *key == name);
+                value
+                    .map(|(_, value)| value.to_string())
+                    .unwrap_or_default()
+            })
+        };
+        assert_eq!(known(&[("TERM_PROGRAM", "iTerm.app")]), Some(true));
+        assert_eq!(known(&[("TERM", "xterm-ghostty")]), Some(true));
+        assert_eq!(known(&[("TERM_PROGRAM", "Apple_Terminal")]), Some(false));
+        assert_eq!(
+            known(&[("TERM", "screen"), ("WT_SESSION", "1")]),
+            Some(false)
+        );
+        // tmux is asked, unless `PI_HYPERLINKS` decides.
+        assert_eq!(known(&[("TMUX", "/tmp/t"), ("KITTY_WINDOW_ID", "1")]), None);
+        assert_eq!(
+            known(&[("TMUX", "/tmp/t"), ("PI_HYPERLINKS", "1")]),
+            Some(true)
+        );
+        assert_eq!(
+            known(&[("PI_HYPERLINKS", "0"), ("WEZTERM_PANE", "0")]),
+            Some(false)
+        );
     }
 
     #[test]

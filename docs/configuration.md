@@ -63,6 +63,12 @@ yapi prepares the images in prompts, `@path` arguments and tool results as Pi do
 
 Both settings are also in `/settings`.
 
+## Links
+
+In a terminal that shows hyperlinks, yapi writes links as hyperlinks, as Pi does. Markdown links then show only their text, and the paths in `read`, `write`, `edit` and `ls` calls link to their files. In other terminals a Markdown link shows its URL after its text.
+
+yapi knows the hyperlink support of common terminals, such as iTerm2, Ghostty, kitty, WezTerm and VS Code. Inside tmux it asks tmux whether it passes hyperlinks on. Set `"terminal": {"hyperlinks": true}` or `false` in settings to decide yourself. The `PI_HYPERLINKS` environment variable, `1` or `0`, also decides, but the setting wins.
+
 ## Project trust
 
 Files in a project's `.yapi` folder can change how yapi behaves and can run code. The first time yapi starts in a project that has them, it asks whether to trust the folder.

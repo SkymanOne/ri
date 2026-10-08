@@ -2,7 +2,7 @@
 //! tools and resources, its credentials, and its state for `/mcp`. Port of
 //! `extensions/mcp/runtime.ts` in pi `v1.0.0`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -116,13 +116,6 @@ pub(super) async fn resolve_value(value: &str, description: &str) -> Result<Stri
             names.join(", ")
         ),
     }))
-}
-
-/// `file://` URL of a directory, as Node's `pathToFileURL`.
-fn file_url(path: &Path) -> String {
-    reqwest::Url::from_file_path(path)
-        .map(|url| url.to_string())
-        .unwrap_or_else(|_| format!("file://{}", path.display()))
 }
 
 impl Connection {
@@ -421,7 +414,7 @@ impl Connection {
             version: env!("CARGO_PKG_VERSION").into(),
             request_timeout: self.timeout(),
             roots: vec![Root {
-                uri: file_url(&self.cwd),
+                uri: crate::tools::path::file_url(&self.cwd),
                 name: self
                     .cwd
                     .file_name()

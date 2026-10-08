@@ -1,6 +1,6 @@
 // Records pi-tui's fullscreen mouse handling, for crates/yapi-tui/tests/selection.rs:
-// the screen lines after each mouse report or key sent to `TuiAltScreen`, and the text it
-// copies. The layout is pi's chat viewport: a scrolling transcript above a dock of lines or
+// the screen lines after each mouse report or key sent to `TuiAltScreen`, the text it
+// copies and the links it opens. The layout is pi's chat viewport: a scrolling transcript above a dock of lines or
 // a focused editor with slash command completion.
 // Also records the rows `WheelScrollAccelerator` scrolls for timed wheel events.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "node_modules/@earendil-works/pi-coding-agent/package.json"));
 const index = pathToFileURL(require.resolve("@earendil-works/pi-tui")).href;
-const { CombinedAutocompleteProvider, Editor, ScrollView, TuiAltScreen, VStack, setCapabilities } = await import(index);
+const { CombinedAutocompleteProvider, Editor, ScrollView, TuiAltScreen, VStack, hyperlink, setCapabilities } = await import(index);
 const { WheelScrollAccelerator } = await import(index.replace(/index\.js$/, "wheel-scroll.js"));
 setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 
@@ -221,6 +221,12 @@ const cases = [
 		steps: [...click(3, 7), ...click(3, 11)],
 	},
 	{
+		name: "links",
+		columns: 30,
+		transcript: [`see ${hyperlink("the docs", "https://example.com/docs")} now`, `${hyperlink("notes.md", "file:///work/notes.md")} here`],
+		steps: [...click(7, 1), ...click(2, 1), press(6, 1), drag(10, 1), release(10, 1), ...click(3, 2), ...click(3, 2)],
+	},
+	{
 		name: "completion",
 		rows: 10,
 		columns: 40,
@@ -236,6 +242,7 @@ for (const testCase of cases) {
 	const rows = testCase.rows ?? 6;
 	const dock = testCase.dock ?? ["> dock", "footer"];
 	const copied = [];
+	const opened = [];
 	const terminal = new Terminal(columns, rows);
 	const tui = new TuiAltScreen(terminal, false, undefined, {
 		copyOnSelect: testCase.copyOnSelect ?? true,
@@ -245,6 +252,7 @@ for (const testCase of cases) {
 			copied.push(text);
 			return true;
 		},
+		openUrl: (url) => opened.push(url),
 	});
 	let editor;
 	if (testCase.editor) {
@@ -270,6 +278,7 @@ for (const testCase of cases) {
 	const steps = [];
 	for (const step of testCase.steps) {
 		copied.length = 0;
+		opened.length = 0;
 		if (step === "tick") {
 			for (const timer of [...timers]) timer.callback();
 		} else {
@@ -278,7 +287,7 @@ for (const testCase of cases) {
 		// A copy flashes once the clipboard answers.
 		await new Promise((resolve) => setImmediate(resolve));
 		tui.renderNow();
-		steps.push({ input: step, screen: tui.getScreenLines(), copied: [...copied] });
+		steps.push({ input: step, screen: tui.getScreenLines(), copied: [...copied], ...(opened.length ? { opened: [...opened] } : {}) });
 	}
 	tui.stop();
 	timers.clear();

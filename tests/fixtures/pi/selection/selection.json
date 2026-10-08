@@ -2451,6 +2451,166 @@
 		]
 	},
 	{
+		"name": "links",
+		"columns": 30,
+		"rows": 6,
+		"transcript": [
+			"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now",
+			"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;7;1M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;7;1m",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"opened": [
+					"https://example.com/docs"
+				]
+			},
+			{
+				"input": "\u001b[<0;2;1M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;2;1m",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;6;1M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<32;10;1M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\t\u001b[7m\u001b]8;;https://example.com/docs\u001b\\he do\u001b[27m\u001b]8;;https://example.com/docs\u001b\\cs\u001b]8;;\u001b\\ now\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;1m",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\t\u001b[7m\u001b]8;;https://example.com/docs\u001b\\he do\u001b[27m\u001b]8;;https://example.com/docs\u001b\\cs\u001b]8;;\u001b\\ now     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"he do"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;2M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;2m",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"opened": [
+					"file:///work/notes.md"
+				]
+			},
+			{
+				"input": "\u001b[<0;3;2M",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7m\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b[27m\u001b]8;;file:///work/notes.md\u001b\\\u001b]8;;\u001b\\ here\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;3;2m",
+				"screen": [
+					"see \u001b]8;;https://example.com/docs\u001b\\the docs\u001b]8;;\u001b\\ now     \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7m\u001b]8;;file:///work/notes.md\u001b\\notes.md\u001b[27m\u001b]8;;file:///work/notes.md\u001b\\\u001b]8;;\u001b\\ here        \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"> dock\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"notes.md"
+				]
+			}
+		]
+	},
+	{
 		"name": "completion",
 		"columns": 40,
 		"rows": 10,

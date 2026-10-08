@@ -1,8 +1,8 @@
 //! Fullscreen mouse handling against pi-tui's, recorded by
 //! `tests/fixtures/pi/generator/selection.mjs`: the screen after each mouse
-//! report or key, with reversed cells in brackets, and the text copied. The
-//! dock is lines or a focused editor that completes slash commands. Also the
-//! rows timed wheel events scroll.
+//! report or key, with reversed cells in brackets, the text copied and the
+//! links opened. The dock is lines or a focused editor that completes slash
+//! commands. Also the rows timed wheel events scroll.
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
@@ -106,6 +106,7 @@ fn handles_the_mouse_like_pi() {
         for (index, step) in case["steps"].as_array().unwrap().iter().enumerate() {
             let input = step["input"].as_str().unwrap();
             let mut copied = Vec::new();
+            let mut opened = Vec::new();
             if input == "tick" {
                 // A held drag scrolls on the first frame 50 ms after the last.
                 std::thread::sleep(Duration::from_millis(60));
@@ -123,6 +124,7 @@ fn handles_the_mouse_like_pi() {
                         screen.flash("Copied!", Duration::from_secs(60));
                         copied.push(text);
                     }
+                    MouseAction::Open(url) => opened.push(url),
                     MouseAction::Handled => {}
                     MouseAction::Unhandled => match &mut editor {
                         Some(editor) => drop(editor.handle_input(input, &keybindings)),
@@ -143,6 +145,15 @@ fn handles_the_mouse_like_pi() {
             if copied != expected_copied {
                 failures.push(format!(
                     "{name} step {index} {input:?}: pi copied {expected_copied:?}, yapi {copied:?}"
+                ));
+            }
+            let expected_opened: Vec<&str> = step["opened"]
+                .as_array()
+                .map(|urls| urls.iter().map(|url| url.as_str().unwrap()).collect())
+                .unwrap_or_default();
+            if opened != expected_opened {
+                failures.push(format!(
+                    "{name} step {index} {input:?}: pi opened {expected_opened:?}, yapi {opened:?}"
                 ));
             }
             let expected: Vec<String> = lines(&step["screen"]).iter().map(marked).collect();

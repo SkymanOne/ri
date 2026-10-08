@@ -36,7 +36,7 @@ serde.workspace = true
 serde_json.workspace = true
 similar.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util", "sync"] }
+tokio = { workspace = true, features = ["rt", "macros", "signal", "io-std", "io-util", "process", "sync", "time"] }
 tokio-util.workspace = true
 unicode-segmentation.workspace = true
 

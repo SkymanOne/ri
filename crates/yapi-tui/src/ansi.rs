@@ -1,6 +1,8 @@
 //! Styled lines to terminal escape sequences.
 
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use ratatui_core::style::{Color, Modifier, Style};
 use ratatui_core::text::{Line, Span};
@@ -8,6 +10,51 @@ use ratatui_core::text::{Line, Span};
 /// Resets all attributes at the end of every line, as pi does, so styles never
 /// leak across lines.
 pub(crate) const LINE_RESET: &str = "\x1b[0m";
+
+/// Closes an OSC 8 hyperlink.
+const LINK_CLOSE: &str = "\x1b]8;;\x1b\\";
+
+/// The URLs of hyperlinks, by id.
+#[derive(Default)]
+struct Links {
+    ids: HashMap<Arc<str>, u32>,
+    urls: Vec<Arc<str>>,
+}
+
+// ponytail: grows by each distinct URL drawn and never shrinks; a session draws few.
+static LINKS: LazyLock<Mutex<Links>> = LazyLock::new(Mutex::default);
+
+/// `style` with its text linked to `url` by an OSC 8 hyperlink, as pi-tui's
+/// `hyperlink`. The link rides in the style's underline color as an id that
+/// no output writes as a color, so it never changes widths or wrapping.
+pub fn link(style: Style, url: &str) -> Style {
+    let mut links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
+    let id = match links.ids.get(url) {
+        Some(id) => *id,
+        None => {
+            let id = links.urls.len() as u32;
+            if id >= 1 << 24 {
+                return style;
+            }
+            let url: Arc<str> = url.into();
+            links.ids.insert(Arc::clone(&url), id);
+            links.urls.push(url);
+            id
+        }
+    };
+    let [_, r, g, b] = id.to_be_bytes();
+    style.underline_color(Color::Rgb(r, g, b))
+}
+
+/// The URL `style` links to.
+pub fn link_url(style: Style) -> Option<Arc<str>> {
+    let Some(Color::Rgb(r, g, b)) = style.underline_color else {
+        return None;
+    };
+    let id = u32::from_be_bytes([0, r, g, b]) as usize;
+    let links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
+    links.urls.get(id).cloned()
+}
 
 /// The 16 named colors in SGR order: 30-37, then the bright 90-97.
 const NAMED: [Color; 16] = [
@@ -76,21 +123,36 @@ pub fn sgr(style: Style) -> String {
     }
 }
 
-/// `line` as text with escape sequences, ending with a full reset.
+/// `line` as text with escape sequences, ending with a full reset. Linked
+/// text is wrapped in OSC 8 hyperlinks, closed at the end of the line.
 pub fn line_to_ansi(line: &Line<'_>) -> String {
     let mut out = String::new();
     let mut current = Style::default();
+    let mut current_link = None;
     for span in &line.spans {
         if span.content.is_empty() {
             continue;
         }
-        let style = line.style.patch(span.style);
+        let mut style = line.style.patch(span.style);
+        if style.underline_color != current_link {
+            if current_link.is_some() {
+                out.push_str(LINK_CLOSE);
+            }
+            if let Some(url) = link_url(style) {
+                let _ = write!(out, "\x1b]8;;{url}\x1b\\");
+            }
+            current_link = style.underline_color;
+        }
+        style.underline_color = None;
         if style != current {
             out.push_str(LINE_RESET);
             out.push_str(&sgr(style));
             current = style;
         }
         out.push_str(&span.content.replace('\t', "   "));
+    }
+    if current_link.is_some() {
+        out.push_str(LINK_CLOSE);
     }
     out.push_str(LINE_RESET);
     out
@@ -155,9 +217,9 @@ fn apply_sgr(style: &mut Style, params: &[u16]) {
 }
 
 /// A line of text with escape sequences as a styled line, and the column of
-/// pi-tui's cursor marker when the line has one. SGR sequences become styles;
-/// hyperlinks (OSC 8), other OSC and APC strings and other CSI sequences are
-/// dropped, keeping their visible text.
+/// pi-tui's cursor marker when the line has one. SGR sequences become styles
+/// and OSC 8 hyperlinks [`link`]s; other OSC and APC strings and other CSI
+/// sequences are dropped, keeping their visible text.
 pub fn parse_line(text: &str) -> (Line<'static>, Option<usize>) {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut style = Style::default();
@@ -198,7 +260,10 @@ pub fn parse_line(text: &str) -> (Line<'static>, Option<usize>) {
                                 .map(|part| part.parse().unwrap_or(0))
                                 .collect();
                             let params = if body.is_empty() { Vec::new() } else { params };
+                            // A reset keeps the hyperlink, as in pi-tui.
+                            let linked = style.underline_color;
                             apply_sgr(&mut style, &params);
+                            style.underline_color = linked;
                         }
                         break;
                     }
@@ -206,8 +271,9 @@ pub fn parse_line(text: &str) -> (Line<'static>, Option<usize>) {
                 }
             }
             // OSC, APC, DCS, PM and SOS strings end with BEL or ST.
-            Some(']' | '_' | 'P' | '^' | 'X') => {
+            Some(kind @ (']' | '_' | 'P' | '^' | 'X')) => {
                 chars.next();
+                let mut body = String::new();
                 while let Some((_, c)) = chars.next() {
                     if c == '\x07' {
                         break;
@@ -215,6 +281,20 @@ pub fn parse_line(text: &str) -> (Line<'static>, Option<usize>) {
                     if c == '\x1b' && chars.peek().is_some_and(|(_, next)| *next == '\\') {
                         chars.next();
                         break;
+                    }
+                    body.push(c);
+                }
+                // An OSC 8 hyperlink: `8;params;url`, closed by an empty URL.
+                if kind == ']'
+                    && let Some((_, url)) = body
+                        .strip_prefix("8;")
+                        .and_then(|rest| rest.split_once(';'))
+                {
+                    column += crate::text::visible_width(&current);
+                    flush(&mut spans, &mut current, style);
+                    style.underline_color = None;
+                    if !url.is_empty() {
+                        style = link(style, url);
                     }
                 }
             }
@@ -239,7 +319,7 @@ mod tests {
         );
         assert_eq!(
             line_to_ansi(&line),
-            "a\x1b[0m\x1b[1;38;2;1;2;3mb\x1b[0m\x1b[48;5;4mc\x1b[0m link!\x1b[0m"
+            "a\x1b[0m\x1b[1;38;2;1;2;3mb\x1b[0m\x1b[48;5;4mc\x1b[0m \x1b]8;;https://x\x1b\\link\x1b]8;;\x1b\\!\x1b[0m"
         );
         assert_eq!(cursor, Some(8));
         let (line, _) = parse_line("\x1b[31mred\x1b[39m \x1b[92mgreen\x1b[22m\x1b[2mdim\x1b[K");
@@ -248,6 +328,24 @@ mod tests {
         assert_eq!(line.spans[2].style.fg, Some(Color::LightGreen));
         assert!(line.spans[3].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(crate::lines::width(&line), 12);
+    }
+
+    #[test]
+    fn links_survive_resets_and_wrapping() {
+        let (line, _) =
+            parse_line("\x1b]8;;https://a\x1b\\\x1b[1mone\x1b[0m two\x1b]8;;\x1b\\ three");
+        let lines = crate::lines::wrap(&line, 4);
+        let ansi: Vec<String> = lines.iter().map(line_to_ansi).collect();
+        assert_eq!(
+            ansi,
+            [
+                "\x1b]8;;https://a\x1b\\\x1b[0m\x1b[1mone\x1b]8;;\x1b\\\x1b[0m",
+                "\x1b]8;;https://a\x1b\\two\x1b]8;;\x1b\\\x1b[0m",
+                "thre\x1b[0m",
+                "e\x1b[0m",
+            ]
+        );
+        assert_eq!(crate::lines::width(&line), 13);
     }
 
     #[test]
