@@ -619,10 +619,7 @@ fn markdown_theme(theme: &Theme) -> MarkdownTheme {
 }
 
 fn editor_theme(theme: &Theme) -> EditorTheme {
-    EditorTheme {
-        border: theme.fg("borderMuted"),
-        select_list: selectors::select_list_theme(theme),
-    }
+    EditorTheme::from_theme(|token| theme.fg(token))
 }
 
 /// The theme an export outside the terminal UI uses: the `theme` setting

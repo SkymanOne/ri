@@ -193,6 +193,21 @@ pub fn wrap_all(lines: &[Line<'_>], width: usize) -> Vec<StyledLine> {
     lines.iter().flat_map(|line| wrap(line, width)).collect()
 }
 
+/// `line` split before column `column`, between graphemes.
+pub fn split_at(line: &Line<'_>, column: usize) -> (StyledLine, StyledLine) {
+    let all = cells(line);
+    let mut used = 0;
+    let index = all
+        .iter()
+        .position(|cell| {
+            let start = used;
+            used += grapheme_width(&cell.text);
+            start >= column
+        })
+        .unwrap_or(all.len());
+    (from_cells(&all[..index]), from_cells(&all[index..]))
+}
+
 /// Truncates a line to `max_width` columns, appending an unstyled `ellipsis`
 /// when cut.
 pub fn truncate(line: &Line<'_>, max_width: usize, ellipsis: &str) -> StyledLine {

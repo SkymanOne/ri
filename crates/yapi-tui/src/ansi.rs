@@ -160,7 +160,7 @@ pub fn line_to_ansi(line: &Line<'_>) -> String {
 
 /// pi-tui's `CURSOR_MARKER`: an APC sequence a focused component puts where
 /// the terminal cursor belongs.
-pub(crate) const CURSOR_MARKER: &str = "\x1b_pi:c\x07";
+pub const CURSOR_MARKER: &str = "\x1b_pi:c\x07";
 
 fn basic_color(index: u16, bright: bool) -> Color {
     NAMED[usize::from(index.min(7)) + 8 * usize::from(bright)]

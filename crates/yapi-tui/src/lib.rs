@@ -20,3 +20,6 @@ pub mod terminal;
 pub mod text;
 pub mod text_input;
 pub mod theme;
+
+/// The styled text types the widgets render.
+pub use ratatui_core;

@@ -42,6 +42,16 @@ pub struct EditorTheme {
     pub select_list: SelectListTheme,
 }
 
+impl EditorTheme {
+    /// pi's `getEditorTheme`, with `fg` giving a theme token's style.
+    pub fn from_theme(fg: impl Fn(&str) -> Style) -> EditorTheme {
+        EditorTheme {
+            border: fg("borderMuted"),
+            select_list: SelectListTheme::from_theme(fg),
+        }
+    }
+}
+
 /// What a key did to the editor.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorEvent {
