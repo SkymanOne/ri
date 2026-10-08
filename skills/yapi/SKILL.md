@@ -100,6 +100,7 @@ yapi update --extensions
 yapi remove <source>
 yapi config                            # turn individual resources on and off
 yapi -e ./ext.ts                       # load an extension for one run
+yapi -e npm:<package>                  # try a package for one run, without adding it to settings
 yapi --skill ./my-skill                # load a skill for one run
 ```
 
