@@ -12,11 +12,12 @@ use ratatui_core::text::{Line, Span};
 use yapi_core::session::{SessionManager, SessionSummary};
 use yapi_tui::fuzzy::fuzzy_match;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::{nudge, visible_range};
 use yapi_tui::text::{truncate_to_width, visible_width};
 use yapi_tui::text_input::{InputEvent, TextInput};
 
-use super::selectors::{Action, Outcome, Ui};
+use super::selectors::{Action, Outcome, Ui, input_mouse};
 
 const MAX_VISIBLE: usize = 10;
 
@@ -322,6 +323,8 @@ pub struct SessionSelector {
     confirming_delete: Option<PathBuf>,
     status: Option<(bool, String, Instant)>,
     rename: Option<(PathBuf, TextInput)>,
+    /// The rename field's row in the last render.
+    rename_row: usize,
     show_rename_hint: bool,
 }
 
@@ -353,6 +356,7 @@ impl SessionSelector {
             confirming_delete: None,
             status: None,
             rename: None,
+            rename_row: 0,
             show_rename_hint: rename,
         };
         selector.load(Scope::Current);
@@ -726,6 +730,7 @@ impl SessionSelector {
                 1,
             ));
             out.extend(lines::spacer(1));
+            self.rename_row = out.len();
             let row = input.render(width);
             cursor = input.cursor_column().map(|col| (out.len(), col));
             out.push(row);
@@ -824,6 +829,13 @@ impl SessionSelector {
         self.current = None;
         self.all = None;
         self.load(self.scope);
+    }
+
+    /// pi's `handleMouse`: a press on the rename field moves its cursor. The
+    /// session list draws its search field and rows as text.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<Outcome> {
+        let (_, input) = self.rename.as_mut()?;
+        input_mouse(input, self.rename_row, kind, x, y)
     }
 
     /// Handles a key.

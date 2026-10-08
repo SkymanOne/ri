@@ -1,7 +1,8 @@
 // Records pi-tui's fullscreen mouse handling, for crates/yapi-tui/tests/selection.rs:
 // the screen lines after each mouse report or key sent to `TuiAltScreen`, the text it
-// copies and the links it opens. The layout is pi's chat viewport: a scrolling transcript above a dock of lines or
-// a focused editor with slash command completion.
+// copies, the links it opens and what a docked list reports. The layout is pi's chat viewport: a
+// scrolling transcript above a dock of lines, a focused editor with slash command completion, or a
+// focused `SelectList`, searchable `SettingsList` or `Input` as pi's selectors hold them.
 // Also records the rows `WheelScrollAccelerator` scrolls for timed wheel events.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -11,7 +12,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "node_modules/@earendil-works/pi-coding-agent/package.json"));
 const index = pathToFileURL(require.resolve("@earendil-works/pi-tui")).href;
-const { CombinedAutocompleteProvider, Editor, ScrollView, TuiAltScreen, VStack, hyperlink, setCapabilities } = await import(index);
+const {
+	CombinedAutocompleteProvider,
+	Editor,
+	Input,
+	ScrollView,
+	SelectList,
+	SettingsList,
+	TuiAltScreen,
+	VStack,
+	hyperlink,
+	setCapabilities,
+} = await import(index);
 const { WheelScrollAccelerator } = await import(index.replace(/index\.js$/, "wheel-scroll.js"));
 setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 
@@ -62,6 +74,14 @@ const editorTheme = {
 	selectList: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity },
 };
 const commands = ["clear", "compact", "copy", "model"].map((name) => ({ name, description: `The ${name} command` }));
+const settingsTheme = { label: identity, value: identity, description: identity, cursor: "→ ", hint: identity };
+const settings = ["alpha", "beta", "gamma", "delta"].map((id) => ({
+	id,
+	label: id,
+	description: `About ${id}`,
+	currentValue: "on",
+	values: ["on", "off"],
+}));
 const numbered = (count) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
 
 const cases = [
@@ -234,7 +254,81 @@ const cases = [
 		editor: { text: "", commands },
 		steps: ["/", wheelDown(3, 8), wheelDown(3, 8), wheelUp(3, 8), press(3, 10), drag(3, 9), release(3, 9), press(3, 9), release(3, 9)],
 	},
+	{
+		name: "select list",
+		rows: 8,
+		transcript: ["alpha"],
+		select: { items: ["one", "two", "three", "four", "five", "six"], maxVisible: 4 },
+		steps: [
+			...click(3, 6),
+			wheelDown(3, 5),
+			wheelUp(3, 8),
+			press(3, 5),
+			drag(3, 7),
+			release(3, 7),
+			...click(3, 8),
+			wheelUp(3, 1),
+			press(3, 4),
+			release(3, 4),
+		],
+	},
+	{
+		name: "settings list",
+		rows: 13,
+		columns: 40,
+		transcript: ["alpha"],
+		settings: { maxVisible: 3 },
+		steps: [
+			"a",
+			...click(3, 4),
+			"b",
+			"\x7f",
+			...click(1, 4),
+			...click(3, 5),
+			wheelDown(3, 11),
+			...click(3, 6),
+			press(3, 7),
+			drag(3, 6),
+			release(3, 6),
+			wheelDown(3, 4),
+			wheelUp(3, 13),
+		],
+	},
+	{
+		name: "input",
+		rows: 4,
+		transcript: ["alpha"],
+		input: "the quick brown fox jumps",
+		steps: [...click(8, 4), "x", "\x05", ...click(1, 4), ...click(6, 4), "y", ...click(19, 4), wheelUp(3, 4)],
+	},
 ];
+
+/** The component a case docks, focused, and the events its callbacks report. */
+function component(testCase, tui, events) {
+	if (testCase.select) {
+		const items = testCase.select.items.map((value) => ({ value, label: value }));
+		const list = new SelectList(items, testCase.select.maxVisible, editorTheme.selectList);
+		list.onSelect = (item) => events.push(`select ${item.value}`);
+		list.onSelectionChange = (item) => events.push(`move ${item.value}`);
+		return list;
+	}
+	if (testCase.settings) {
+		const onChange = (id, value) => events.push(`change ${id} ${value}`);
+		return new SettingsList(structuredClone(settings), testCase.settings.maxVisible, settingsTheme, onChange, () => {}, {
+			enableSearch: true,
+		});
+	}
+	if (testCase.input !== undefined) {
+		const input = new Input();
+		input.setValue(testCase.input);
+		return input;
+	}
+	if (!testCase.editor) return undefined;
+	const editor = new Editor(tui, editorTheme, { paddingX: testCase.editor.paddingX ?? 0 });
+	editor.setText(testCase.editor.text);
+	if (testCase.editor.commands) editor.setAutocompleteProvider(new CombinedAutocompleteProvider(testCase.editor.commands, here));
+	return editor;
+}
 
 const out = [];
 for (const testCase of cases) {
@@ -254,13 +348,9 @@ for (const testCase of cases) {
 		},
 		openUrl: (url) => opened.push(url),
 	});
-	let editor;
-	if (testCase.editor) {
-		editor = new Editor(tui, editorTheme, { paddingX: testCase.editor.paddingX ?? 0 });
-		editor.setText(testCase.editor.text);
-		if (testCase.editor.commands) editor.setAutocompleteProvider(new CombinedAutocompleteProvider(testCase.editor.commands, here));
-		tui.setFocus(editor);
-	}
+	const events = [];
+	const docked = component(testCase, tui, events);
+	if (docked) tui.setFocus(docked);
 	const transcript = new ScrollView(lines(testCase.transcript), {
 		follow: "end",
 		primary: true,
@@ -270,7 +360,7 @@ for (const testCase of cases) {
 	tui.setLayoutRoot(
 		new VStack([
 			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: editor ?? lines(dock), basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+			{ component: docked ?? lines(dock), basis: "auto", grow: 0, shrink: 1, minSize: 1 },
 		]),
 	);
 	tui.start();
@@ -279,6 +369,7 @@ for (const testCase of cases) {
 	for (const step of testCase.steps) {
 		copied.length = 0;
 		opened.length = 0;
+		events.length = 0;
 		if (step === "tick") {
 			for (const timer of [...timers]) timer.callback();
 		} else {
@@ -287,7 +378,13 @@ for (const testCase of cases) {
 		// A copy flashes once the clipboard answers.
 		await new Promise((resolve) => setImmediate(resolve));
 		tui.renderNow();
-		steps.push({ input: step, screen: tui.getScreenLines(), copied: [...copied], ...(opened.length ? { opened: [...opened] } : {}) });
+		steps.push({
+			input: step,
+			screen: tui.getScreenLines(),
+			copied: [...copied],
+			...(opened.length ? { opened: [...opened] } : {}),
+			...(events.length ? { events: [...events] } : {}),
+		});
 	}
 	tui.stop();
 	timers.clear();
@@ -298,6 +395,9 @@ for (const testCase of cases) {
 		transcript: testCase.transcript,
 		dock,
 		editor: testCase.editor ?? null,
+		...(testCase.select ? { select: testCase.select } : {}),
+		...(testCase.settings ? { settings: { ...testCase.settings, items: settings } } : {}),
+		...(testCase.input !== undefined ? { input: testCase.input } : {}),
 		scrollbar: testCase.scrollbar ?? "hidden",
 		copyOnSelect: testCase.copyOnSelect ?? true,
 		steps,

@@ -4,9 +4,12 @@
 //! Ports of `settings-selector.ts` and `settings-submenu.ts` in
 //! `packages/coding-agent/src/modes/interactive/components` in pi `v1.0.0`.
 
+use std::ops::Range;
+
 use ratatui_core::style::Modifier;
 use yapi_tui::fuzzy::fuzzy_filter;
 use yapi_tui::lines::{self, StyledLine, styled};
+use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::{SelectEvent, SelectItem, SelectList, SelectListLayout};
 use yapi_tui::settings_list::{SettingItem, SettingsEvent, SettingsList, SettingsListTheme};
 use yapi_tui::text_input::TextInput;
@@ -152,6 +155,9 @@ struct SelectSubmenu {
     list: SelectList,
     search: Option<TextInput>,
     layout: SelectListLayout,
+    /// The search field's row and the list's rows in the last render.
+    input_row: Option<usize>,
+    list_rows: Range<usize>,
 }
 
 enum SubmenuEvent {
@@ -190,6 +196,8 @@ impl SelectSubmenu {
             list,
             search: searchable.then(TextInput::default),
             layout,
+            input_row: None,
+            list_rows: 0..0,
         }
     }
 
@@ -227,12 +235,16 @@ impl SelectSubmenu {
                 0,
             ));
         }
+        self.input_row = None;
         if let Some(input) = &mut self.search {
             out.extend(lines::spacer(1));
+            self.input_row = Some(out.len());
             out.push(input.render(width));
         }
         out.extend(lines::spacer(1));
+        let start = out.len();
         out.extend(self.list.render(width));
+        self.list_rows = start..out.len();
         out.extend(lines::spacer(1));
         let hint = if self.search.is_some() {
             "  Type to filter · Enter to select · Esc to go back"
@@ -262,7 +274,26 @@ impl SelectSubmenu {
             self.list = Self::list(items, "", self.layout, ui);
             return SubmenuEvent::None;
         }
-        match self.list.handle_input(data, kb) {
+        let event = self.list.handle_input(data, kb);
+        self.list_event(event)
+    }
+
+    /// pi's `handleMouse` of the search field and the list: `None` when
+    /// neither takes the event.
+    fn mouse(&mut self, kind: MouseKind, x: usize, y: usize) -> Option<SubmenuEvent> {
+        if Some(y) == self.input_row {
+            let input = self.search.as_mut()?;
+            return input.mouse(kind, x).then_some(SubmenuEvent::None);
+        }
+        if !self.list_rows.contains(&y) {
+            return None;
+        }
+        let event = self.list.mouse(kind, y - self.list_rows.start)?;
+        Some(self.list_event(event))
+    }
+
+    fn list_event(&self, event: SelectEvent) -> SubmenuEvent {
+        match event {
             SelectEvent::Selected(item) => SubmenuEvent::Selected(item.value),
             SelectEvent::Cancelled => SubmenuEvent::Cancelled,
             SelectEvent::Moved => self
@@ -434,6 +465,8 @@ struct ThemeMenu {
     /// automatic settings.
     select: Option<(Option<&'static str>, SelectSubmenu)>,
     list: SettingsList,
+    /// The first row of the list or select list in the last render.
+    body_row: usize,
 }
 
 /// What the theme menu asks for.
@@ -499,6 +532,7 @@ impl ThemeMenu {
             dark,
             select: None,
             list: SettingsList::new(Vec::new(), 1, list_theme(ui), false),
+            body_row: 0,
         };
         if menu.automatic {
             menu.show_automatic(ui);
@@ -589,6 +623,7 @@ impl ThemeMenu {
 
     fn render(&mut self, width: usize, ui: &Ui<'_>) -> Vec<StyledLine> {
         if let Some((None, select)) = &mut self.select {
+            self.body_row = 0;
             return select.render(width, ui);
         }
         let theme = ui.theme;
@@ -618,6 +653,7 @@ impl ThemeMenu {
             0,
         ));
         out.extend(lines::spacer(1));
+        self.body_row = out.len();
         // A light or dark theme list takes the settings' place.
         match &mut self.select {
             Some((_, select)) => out.extend(select.render(width, ui)),
@@ -627,46 +663,79 @@ impl ThemeMenu {
     }
 
     fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> ThemeEvent {
-        if let Some((side, select)) = &mut self.select {
-            let side = *side;
-            return match select.handle_input(data, ui) {
-                SubmenuEvent::None => ThemeEvent::None,
-                SubmenuEvent::Moved(value) => ThemeEvent::Preview(match side {
-                    None if value == AUTOMATIC_THEME => self.automatic_setting(),
-                    _ => value,
-                }),
-                SubmenuEvent::Selected(value) => match side {
-                    None if value == AUTOMATIC_THEME => {
-                        self.automatic = true;
-                        let preview = self.setting();
-                        self.show_automatic(ui);
-                        ThemeEvent::Preview(preview)
-                    }
-                    None => {
-                        self.single.clone_from(&value);
-                        ThemeEvent::Done(Some(value))
-                    }
-                    Some(id) => {
-                        if id == "light-theme" {
-                            self.light.clone_from(&value);
-                        } else {
-                            self.dark.clone_from(&value);
-                        }
-                        self.list.update_value(id, &value);
-                        self.select = None;
-                        ThemeEvent::Preview(self.setting())
-                    }
-                },
-                SubmenuEvent::Cancelled => match side {
-                    None => ThemeEvent::Done(None),
-                    Some(_) => {
-                        self.select = None;
-                        ThemeEvent::Preview(self.setting())
-                    }
-                },
-            };
+        match &mut self.select {
+            Some((_, select)) => {
+                let event = select.handle_input(data, ui);
+                self.select_event(event, ui)
+            }
+            None => {
+                let event = self.list.handle_input(data, ui.keys);
+                self.list_event(event, ui)
+            }
         }
-        match self.list.handle_input(data, ui.keys) {
+    }
+
+    fn mouse(&mut self, kind: MouseKind, x: usize, y: usize, ui: &Ui<'_>) -> Option<ThemeEvent> {
+        let y = y.checked_sub(self.body_row)?;
+        Some(match &mut self.select {
+            Some((_, select)) => {
+                let event = select.mouse(kind, x, y)?;
+                self.select_event(event, ui)
+            }
+            None => {
+                let event = self.list.mouse(kind, x, y)?;
+                self.list_event(event, ui)
+            }
+        })
+    }
+
+    /// What the open select list's `event` does.
+    fn select_event(&mut self, event: SubmenuEvent, ui: &Ui<'_>) -> ThemeEvent {
+        let Some((side, _)) = &self.select else {
+            return ThemeEvent::None;
+        };
+        let side = *side;
+        match event {
+            SubmenuEvent::None => ThemeEvent::None,
+            SubmenuEvent::Moved(value) => ThemeEvent::Preview(match side {
+                None if value == AUTOMATIC_THEME => self.automatic_setting(),
+                _ => value,
+            }),
+            SubmenuEvent::Selected(value) => match side {
+                None if value == AUTOMATIC_THEME => {
+                    self.automatic = true;
+                    let preview = self.setting();
+                    self.show_automatic(ui);
+                    ThemeEvent::Preview(preview)
+                }
+                None => {
+                    self.single.clone_from(&value);
+                    ThemeEvent::Done(Some(value))
+                }
+                Some(id) => {
+                    if id == "light-theme" {
+                        self.light.clone_from(&value);
+                    } else {
+                        self.dark.clone_from(&value);
+                    }
+                    self.list.update_value(id, &value);
+                    self.select = None;
+                    ThemeEvent::Preview(self.setting())
+                }
+            },
+            SubmenuEvent::Cancelled => match side {
+                None => ThemeEvent::Done(None),
+                Some(_) => {
+                    self.select = None;
+                    ThemeEvent::Preview(self.setting())
+                }
+            },
+        }
+    }
+
+    /// What the automatic settings list's `event` does.
+    fn list_event(&mut self, event: SettingsEvent, ui: &Ui<'_>) -> ThemeEvent {
+        match event {
             SettingsEvent::Open(id) => {
                 let (title, description, current, side) = if id == "light-theme" {
                     (
@@ -724,6 +793,8 @@ enum Submenu {
 pub struct SettingsSelector {
     list: SettingsList,
     submenu: Option<Submenu>,
+    /// The rows between the borders in the last render.
+    body: usize,
     config: SettingsConfig,
     overrides: Vec<(String, ThinkingLevel)>,
     anthropic_extra_usage: bool,
@@ -1015,6 +1086,7 @@ impl SettingsSelector {
         SettingsSelector {
             list: SettingsList::new(items, 10, list_theme(ui), true),
             submenu: None,
+            body: 0,
             config,
             overrides,
             anthropic_extra_usage,
@@ -1035,6 +1107,7 @@ impl SettingsSelector {
             Some(Submenu::Theme(menu)) => out.extend(menu.render(width, ui)),
             None => out.extend(self.list.render(width)),
         }
+        self.body = out.len() - 1;
         out.push(ui.border(width));
         out
     }
@@ -1043,41 +1116,51 @@ impl SettingsSelector {
     pub fn handle_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
         match &mut self.submenu {
             Some(Submenu::Warnings(list)) => {
-                return match list.handle_input(data, ui.keys) {
-                    SettingsEvent::Changed { id, value } => {
-                        self.anthropic_extra_usage = value == "true";
-                        Outcome::Side(Action::Setting { id, value })
-                    }
-                    SettingsEvent::Cancelled => {
-                        self.submenu = None;
-                        Outcome::None
-                    }
-                    _ => Outcome::None,
-                };
+                let event = list.handle_input(data, ui.keys);
+                self.warnings_event(event)
             }
-            Some(Submenu::ModelThinking(_)) => return self.model_thinking_input(data, ui),
+            Some(Submenu::ModelThinking(menu)) => {
+                let event = menu.menu.handle_input(data, ui);
+                self.model_thinking_event(event, ui)
+            }
             Some(Submenu::Theme(menu)) => {
-                return match menu.handle_input(data, ui) {
-                    ThemeEvent::None => Outcome::None,
-                    ThemeEvent::Preview(setting) => Outcome::Side(Action::ThemePreview(setting)),
-                    ThemeEvent::Done(Some(setting)) => {
-                        self.submenu = None;
-                        self.list.update_value("theme", &setting);
-                        Outcome::Side(Action::Setting {
-                            id: "theme".to_owned(),
-                            value: setting,
-                        })
-                    }
-                    ThemeEvent::Done(None) => {
-                        let original = menu.original.clone();
-                        self.submenu = None;
-                        Outcome::Side(Action::ThemePreview(original))
-                    }
-                };
+                let event = menu.handle_input(data, ui);
+                self.theme_event(event)
             }
-            None => {}
+            None => {
+                let event = self.list.handle_input(data, ui.keys);
+                self.list_event(event, ui)
+            }
         }
-        match self.list.handle_input(data, ui.keys) {
+    }
+
+    /// pi's `handleMouse` of the list or the open submenu: `kind` at column
+    /// `x` of row `y` of the last render; `None` when nothing there takes it.
+    pub fn mouse(&mut self, kind: MouseKind, x: usize, y: usize, ui: &Ui<'_>) -> Option<Outcome> {
+        // Between the borders.
+        let y = y.checked_sub(1).filter(|y| *y < self.body)?;
+        Some(match &mut self.submenu {
+            Some(Submenu::Warnings(list)) => {
+                let event = list.mouse(kind, x, y)?;
+                self.warnings_event(event)
+            }
+            Some(Submenu::ModelThinking(menu)) => {
+                let event = menu.menu.mouse(kind, x, y)?;
+                self.model_thinking_event(event, ui)
+            }
+            Some(Submenu::Theme(menu)) => {
+                let event = menu.mouse(kind, x, y, ui)?;
+                self.theme_event(event)
+            }
+            None => {
+                let event = self.list.mouse(kind, x, y)?;
+                self.list_event(event, ui)
+            }
+        })
+    }
+
+    fn list_event(&mut self, event: SettingsEvent, ui: &Ui<'_>) -> Outcome {
+        match event {
             SettingsEvent::Changed { id, value } => Outcome::Side(Action::Setting { id, value }),
             SettingsEvent::Open(id) => {
                 self.open(&id, ui);
@@ -1085,6 +1168,39 @@ impl SettingsSelector {
             }
             SettingsEvent::Cancelled => Outcome::Cancel,
             SettingsEvent::None => Outcome::None,
+        }
+    }
+
+    fn warnings_event(&mut self, event: SettingsEvent) -> Outcome {
+        match event {
+            SettingsEvent::Changed { id, value } => {
+                self.anthropic_extra_usage = value == "true";
+                Outcome::Side(Action::Setting { id, value })
+            }
+            SettingsEvent::Cancelled => {
+                self.submenu = None;
+                Outcome::None
+            }
+            _ => Outcome::None,
+        }
+    }
+
+    fn theme_event(&mut self, event: ThemeEvent) -> Outcome {
+        match event {
+            ThemeEvent::None => Outcome::None,
+            ThemeEvent::Preview(setting) => Outcome::Side(Action::ThemePreview(setting)),
+            ThemeEvent::Done(Some(setting)) => {
+                self.submenu = None;
+                self.list.update_value("theme", &setting);
+                Outcome::Side(Action::Setting {
+                    id: "theme".to_owned(),
+                    value: setting,
+                })
+            }
+            ThemeEvent::Done(None) => match self.submenu.take() {
+                Some(Submenu::Theme(menu)) => Outcome::Side(Action::ThemePreview(menu.original)),
+                _ => Outcome::None,
+            },
         }
     }
 
@@ -1148,11 +1264,11 @@ impl SettingsSelector {
         };
     }
 
-    fn model_thinking_input(&mut self, data: &str, ui: &Ui<'_>) -> Outcome {
+    fn model_thinking_event(&mut self, event: SubmenuEvent, ui: &Ui<'_>) -> Outcome {
         let Some(Submenu::ModelThinking(menu)) = &mut self.submenu else {
             return Outcome::None;
         };
-        match menu.menu.handle_input(data, ui) {
+        match event {
             SubmenuEvent::Selected(value) => match menu.model.take() {
                 None => {
                     menu.menu = menu.levels_step(&value, ui);
