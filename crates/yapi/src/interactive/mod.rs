@@ -73,7 +73,7 @@ use yapi_types::rpc::StreamingBehavior;
 use yapi_types::settings::{DoubleEscapeAction, TuiMode};
 
 use self::bash_view::BashView;
-use self::chat::{Item, RenderContext};
+use self::chat::{Hit, Item, RenderContext, Toggle, Toggles};
 use self::selectors::{Action, ChoiceDialog, Outcome, Selector, TextDialog, Ui};
 use self::tools::ToolView;
 
@@ -474,6 +474,10 @@ struct Terminal {
     stdin_paused: Arc<AtomicBool>,
 }
 
+/// An item's rows for a width and transcript generation, and where a click
+/// on them toggles something.
+type Rendered = (usize, u64, Vec<StyledLine>, Vec<Hit>);
+
 /// The interactive application.
 struct App {
     session: AgentSession,
@@ -500,7 +504,9 @@ struct App {
     selector: Option<Selector>,
     dialog: Option<Dialog>,
     chat: Vec<Item>,
-    cache: Vec<Option<(usize, u64, Vec<StyledLine>)>>,
+    cache: Vec<Option<Rendered>>,
+    /// What clicks toggled on each chat item.
+    toggles: Vec<Toggles>,
     flat: Vec<StyledLine>,
     flat_header: Vec<StyledLine>,
     flat_key: Option<(usize, usize)>,
@@ -728,6 +734,7 @@ impl App {
             markdown: &self.markdown,
             expanded: self.expanded,
             hide_thinking: self.hide_thinking,
+            thinking: &[],
             output_pad: self.output_pad,
             expand_key: &self.expand_key,
             cancel_key: &self.cancel_key,
@@ -742,6 +749,7 @@ impl App {
     fn push(&mut self, item: Item) -> usize {
         self.chat.push(item);
         self.cache.push(None);
+        self.toggles.push(Toggles::default());
         self.chat.len() - 1
     }
 
@@ -826,6 +834,7 @@ impl App {
     fn clear_chat(&mut self) {
         self.chat.clear();
         self.cache.clear();
+        self.toggles.clear();
         self.streaming = None;
         self.tool_items.clear();
     }
@@ -834,6 +843,7 @@ impl App {
     fn remove_item(&mut self, index: usize) {
         self.chat.remove(index);
         self.cache.remove(index);
+        self.toggles.remove(index);
         self.tool_items.retain(|_, item| *item != index);
         let shift = |item: usize| if item > index { item - 1 } else { item };
         for item in self.tool_items.values_mut() {
@@ -1268,10 +1278,15 @@ impl App {
         };
         for index in 0..self.chat.len() {
             let fresh =
-                matches!(&self.cache[index], Some((w, g, _)) if *w == width && *g == generation);
+                matches!(&self.cache[index], Some((w, g, ..)) if *w == width && *g == generation);
             if !fresh || self.chat[index].animating() {
-                let lines = self.chat[index].render(width, index == 0, &self.ctx());
-                self.cache[index] = Some((width, generation, lines));
+                let toggles = &self.toggles[index];
+                let mut ctx = self.ctx();
+                ctx.expanded ^= toggles.expanded;
+                ctx.thinking = &toggles.thinking;
+                let mut hits = Vec::new();
+                let lines = self.chat[index].render(width, index == 0, &ctx, &mut hits);
+                self.cache[index] = Some((width, generation, lines, hits));
                 first_changed = first_changed.min(index);
             }
         }
@@ -1293,7 +1308,7 @@ impl App {
         }
         for index in self.flat_offsets.len()..self.chat.len() {
             self.flat_offsets.push(self.flat.len());
-            if let Some((_, _, lines)) = &self.cache[index] {
+            if let Some((_, _, lines, _)) = &self.cache[index] {
                 self.flat.extend(lines.iter().cloned());
             }
         }
@@ -2547,6 +2562,10 @@ impl App {
             "app.tools.expand" => self.toggle_tools(),
             "app.thinking.toggle" => {
                 self.hide_thinking = !self.hide_thinking;
+                // pi drops the runs a click showed or hid.
+                self.toggles
+                    .iter_mut()
+                    .for_each(|toggles| toggles.thinking.clear());
                 let _ = self
                     .session
                     .set_global_setting("hideThinkingBlock", Some(Value::Bool(self.hide_thinking)));
@@ -2610,8 +2629,30 @@ impl App {
         }
     }
 
+    /// pi's click on part of chat item `index`: expands or collapses it, or
+    /// shows or hides one of its runs of thinking blocks.
+    fn toggle(&mut self, index: usize, toggle: Toggle) {
+        let toggles = &mut self.toggles[index];
+        match toggle {
+            Toggle::Expanded => toggles.expanded = !toggles.expanded,
+            Toggle::Thinking(run) => match toggles.thinking.iter().position(|&at| at == run) {
+                Some(at) => {
+                    toggles.thinking.swap_remove(at);
+                }
+                None => toggles.thinking.push(run),
+            },
+        }
+        self.touch(index);
+        // An extension draws its tool's call and result for the new state.
+        self.draw_tool(index);
+    }
+
     fn toggle_tools(&mut self) {
         self.expanded = !self.expanded;
+        // pi sets every item to the new state.
+        self.toggles
+            .iter_mut()
+            .for_each(|toggles| toggles.expanded = false);
         self.ext.set_tools_expanded(self.expanded);
         self.redraw_transcript();
         self.invalidate_all();
@@ -2759,9 +2800,12 @@ impl App {
             keys: &self.keys,
         };
         let mut outcome = None;
+        let (cache, offsets) = (&self.cache, &self.flat_offsets);
+        let mut toggled = None;
         // pi offers the events to the overlay under the pointer, else to the
         // components in the layout there: an extension's, whose answer comes
-        // later, or the editor or the selector in its place.
+        // later, the editor or the selector in its place, or the chat's items,
+        // which take clicks.
         let mut remote = Vec::new();
         let action = self.alt.mouse(data, &self.flat, |event| {
             if event.kind == MouseKind::Press {
@@ -2791,11 +2835,31 @@ impl App {
                     outcome = selector.mouse(event.kind, event.x, y, &ui);
                     outcome.is_some()
                 }
-                _ => false,
+                _ => {
+                    toggled = event
+                        .row
+                        .filter(|_| event.kind == MouseKind::Click && event.overlay.is_none())
+                        .and_then(|row| {
+                            let index = offsets
+                                .partition_point(|&start| start <= row)
+                                .checked_sub(1)?;
+                            let (.., hits) = cache.get(index)?.as_ref()?;
+                            let at = row - offsets[index];
+                            hits.iter()
+                                .find(|(rows, columns, _)| {
+                                    rows.contains(&at) && columns.contains(&event.x)
+                                })
+                                .map(|&(.., toggle)| (index, toggle))
+                        });
+                    toggled.is_some()
+                }
             }
         });
         if let Some(outcome) = outcome {
             self.selector_outcome(outcome);
+        }
+        if let Some((index, toggle)) = toggled {
+            self.toggle(index, toggle);
         }
         let unhandled = action == MouseAction::Unhandled;
         let mut copy = match action {
@@ -4088,6 +4152,7 @@ impl App {
             presses: 0,
             chat: Vec::new(),
             cache: Vec::new(),
+            toggles: Vec::new(),
             flat: Vec::new(),
             flat_header: Vec::new(),
             flat_key: None,
@@ -4531,6 +4596,78 @@ mod tests {
             rows.iter().any(|row| row.contains("Thinking level: high")),
             "{rows:?}"
         );
+    }
+
+    /// Clicks on the chat's items against pi's, recorded by
+    /// `tests/fixtures/pi/generator/selection.mjs`: the screen text after
+    /// each click.
+    #[tokio::test]
+    async fn clicks_expand_items_like_pi() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/pi/selection/expand.json"
+        );
+        let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let (mut app, _events) = app();
+        (app.fullscreen, app.show_header, app.show_details) = (true, false, false);
+        app.alt.scrollbar = yapi_tui::screen::Scrollbar::Hidden;
+        let string = |value: &Value| value.as_str().unwrap().to_owned();
+        app.push(chat::user_item(string(&fixture["skill"])));
+        let assistant = serde_json::from_value(fixture["assistant"].clone()).unwrap();
+        app.push(Item::Assistant(Box::new(assistant)));
+        for read in fixture["reads"].as_array().unwrap() {
+            let mut view = ToolView::new("read", json!({"path": read["path"]}));
+            view.result = read["output"].as_str().map(|output| ToolResult {
+                content: vec![ContentBlock::text(output)],
+                ..ToolResult::default()
+            });
+            app.push(Item::Tool(Box::new(view)));
+        }
+        app.push(Item::Compaction {
+            tokens_before: fixture["compaction"]["tokensBefore"].as_u64().unwrap(),
+            summary: string(&fixture["compaction"]["summary"]),
+        });
+        app.push(Item::BranchSummary(string(&fixture["branch"]["summary"])));
+        let size = |key: &str| fixture[key].as_u64().unwrap() as usize;
+        let (width, height) = (size("columns"), size("rows"));
+        let dock = [Line::from("> dock"), Line::from("footer")];
+        let screen = |app: &mut App| {
+            app.refresh_transcript(width);
+            app.alt.frame(&app.flat, &dock, None, width, height);
+            let rows = app.alt.screen_lines().iter();
+            rows.map(|row| text(row).trim_end().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let pi = |screen: &Value| -> Vec<String> {
+            let rows = screen.as_array().unwrap().iter();
+            rows.map(|row| {
+                let row = yapi_tui::ansi::parse_line(row.as_str().unwrap()).0;
+                text(&row).trim_end().to_owned()
+            })
+            .collect()
+        };
+        assert_eq!(screen(&mut app), pi(&fixture["first"]));
+        for (index, step) in fixture["steps"].as_array().unwrap().iter().enumerate() {
+            for report in step["input"].as_array().unwrap() {
+                app.handle_viewport_key(report.as_str().unwrap());
+            }
+            assert_eq!(screen(&mut app), pi(&step["screen"]), "step {index}");
+        }
+    }
+
+    #[tokio::test]
+    async fn ctrl_o_and_hiding_thinking_drop_what_clicks_toggled() {
+        let (mut app, _events) = app();
+        app.push(Item::BranchSummary("summary".into()));
+        app.toggle(0, Toggle::Expanded);
+        app.toggle(0, Toggle::Thinking(1));
+        app.toggle_tools();
+        assert!(!app.toggles[0].expanded);
+        assert_eq!(app.toggles[0].thinking, [1]);
+        app.toggle(0, Toggle::Expanded);
+        app.apply_setting("hide-thinking", "true");
+        assert!(app.toggles[0].expanded);
+        assert!(app.toggles[0].thinking.is_empty());
     }
 
     #[tokio::test]

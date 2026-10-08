@@ -4,6 +4,8 @@
 //! `packages/coding-agent/src/modes/interactive/components` in pi `v1.0.0`.
 //! Every item renders its own leading blank line, as pi's do.
 
+use std::ops::Range;
+
 use ratatui_core::style::Modifier;
 use ratatui_core::text::{Line, Span};
 use yapi_tui::lines::{self, StyledLine, box_content_width, boxed, styled};
@@ -20,10 +22,14 @@ pub struct RenderContext<'a> {
     pub theme: &'a Theme,
     /// Markdown styles from the theme.
     pub markdown: &'a MarkdownTheme,
-    /// Tool output and summaries are expanded (`ctrl+o`).
+    /// Tool output and summaries are expanded (`ctrl+o`, or a click on the
+    /// item).
     pub expanded: bool,
     /// Thinking blocks are hidden (`ctrl+t`).
     pub hide_thinking: bool,
+    /// The item's thinking runs, by index, that a click showed or hid apart
+    /// from `hide_thinking`.
+    pub thinking: &'a [usize],
     /// Horizontal padding of message text (`outputPadding`).
     pub output_pad: usize,
     /// The expand key, as shown in hints.
@@ -40,6 +46,39 @@ pub struct RenderContext<'a> {
     pub thinking_label: &'a str,
     /// Links are OSC 8 hyperlinks: pi-tui's `hyperlinks` capability.
     pub hyperlinks: bool,
+}
+
+/// What a left click on part of an item toggles, as pi's `MouseRegion`s do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Toggle {
+    /// Whether the item is expanded: tool output, a summary or a skill.
+    Expanded,
+    /// Whether a run of thinking blocks shows, by its index in the message.
+    Thinking(usize),
+}
+
+/// Rows and columns of an item's rows where a click toggles something.
+pub type Hit = (Range<usize>, Range<usize>, Toggle);
+
+/// What clicks changed on an item, apart from `ctrl+o` and `ctrl+t`.
+#[derive(Clone, Debug, Default)]
+pub struct Toggles {
+    /// Expanded the other way from `ctrl+o`: pi's per-component `expanded`,
+    /// which `ctrl+o` sets on every item.
+    pub expanded: bool,
+    /// Thinking runs, by index, shown the other way from `ctrl+t`: pi's
+    /// `thinkingVisibilityOverrides`, which `ctrl+t` clears.
+    pub thinking: Vec<usize>,
+}
+
+/// The content of a box with one row and column of padding on rows
+/// `top..bottom`, which a click expands or collapses.
+pub fn box_hit(top: usize, bottom: usize, width: usize) -> Hit {
+    (
+        top + 1..bottom.saturating_sub(1),
+        1..width.saturating_sub(1),
+        Toggle::Expanded,
+    )
 }
 
 /// Draws an item's rows for a width.
@@ -158,6 +197,7 @@ fn summary_box(
     collapsed: &str,
     width: usize,
     ctx: &RenderContext<'_>,
+    hits: &mut Vec<Hit>,
 ) -> Vec<StyledLine> {
     let theme = ctx.theme;
     let text = theme.fg("customMessageText");
@@ -175,6 +215,7 @@ fn summary_box(
     };
     let mut out = lines::spacer(1);
     out.extend(labelled_box(label.to_owned(), body, width, theme));
+    hits.push(box_hit(1, out.len(), width));
     out
 }
 
@@ -232,8 +273,15 @@ impl Item {
         }
     }
 
-    /// The item's rows at `width`. `first` says nothing precedes it in the chat.
-    pub fn render(&self, width: usize, first: bool, ctx: &RenderContext<'_>) -> Vec<StyledLine> {
+    /// The item's rows at `width`. `first` says nothing precedes it in the
+    /// chat. `hits` gets where a click on them toggles something.
+    pub fn render(
+        &self,
+        width: usize,
+        first: bool,
+        ctx: &RenderContext<'_>,
+        hits: &mut Vec<Hit>,
+    ) -> Vec<StyledLine> {
         let theme = ctx.theme;
         match self {
             Item::User(text) => {
@@ -270,15 +318,21 @@ impl Item {
                         inner,
                     )
                 };
+                let top = out.len();
                 out.extend(boxed(body, width, 1, 1, Some(theme.bg("customMessageBg"))));
+                hits.push(box_hit(top, out.len(), width));
                 if let Some(message) = &block.user_message {
                     out.extend(lines::spacer(1));
                     out.extend(user_message(message, width, ctx));
                 }
                 out
             }
-            Item::Assistant(message) => render_assistant(message, width, ctx),
-            Item::Tool(tool) => tool.render(width, ctx),
+            Item::Assistant(message) => render_assistant(message, width, ctx, hits),
+            Item::Tool(tool) => {
+                let out = tool.render(width, ctx);
+                hits.extend(tool.hit(out.len(), width));
+                out
+            }
             Item::Custom(custom) => custom.render(width, ctx),
             Item::Bash(bash) => bash.render(width, ctx),
             Item::Compaction {
@@ -292,6 +346,7 @@ impl Item {
                     &format!("Compacted from {tokens} tokens"),
                     width,
                     ctx,
+                    hits,
                 )
             }
             Item::BranchSummary(summary) => summary_box(
@@ -300,6 +355,7 @@ impl Item {
                 "Branch summary",
                 width,
                 ctx,
+                hits,
             ),
             Item::Status(text) => {
                 let mut out = lines::spacer(1);
@@ -346,6 +402,7 @@ fn render_assistant(
     message: &AssistantMessage,
     width: usize,
     ctx: &RenderContext<'_>,
+    hits: &mut Vec<Hit>,
 ) -> Vec<StyledLine> {
     let theme = ctx.theme;
     let pad = ctx.output_pad;
@@ -360,6 +417,7 @@ fn render_assistant(
     }
     let blocks = &message.content;
     let mut index = 0;
+    let mut run = 0;
     while index < blocks.len() {
         match &blocks[index] {
             ContentBlock::Text(text) if has_visible(&text.text) => {
@@ -388,7 +446,8 @@ fn render_assistant(
                 if parts.is_empty() {
                     continue;
                 }
-                if ctx.hide_thinking {
+                let start = out.len();
+                if ctx.hide_thinking != ctx.thinking.contains(&run) {
                     out.extend(padded_text(
                         styled(
                             ctx.thinking_label.to_owned(),
@@ -411,6 +470,8 @@ fn render_assistant(
                         },
                     ));
                 }
+                hits.push((start..out.len(), 0..width, Toggle::Thinking(run)));
+                run += 1;
                 let more = blocks[index..].iter().any(|block| match block {
                     ContentBlock::Text(text) => has_visible(&text.text),
                     ContentBlock::Thinking(thinking) => has_visible(&thinking.thinking),

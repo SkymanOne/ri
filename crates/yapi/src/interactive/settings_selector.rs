@@ -1488,6 +1488,9 @@ impl super::App {
             }
             "hide-thinking" => {
                 self.hide_thinking = on;
+                self.toggles
+                    .iter_mut()
+                    .for_each(|toggles| toggles.thinking.clear());
                 global("hideThinkingBlock", on.into());
                 self.invalidate_all();
             }

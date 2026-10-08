@@ -426,8 +426,103 @@ const wheel = wheelCases.map(({ name, lines = "auto", accelerate = true, events 
 	return { name, lines, accelerate, events, steps: events.map(([direction, time]) => accelerator.next(direction, time)) };
 });
 
+// Clicks on chat items, for crates/yapi/src/interactive/mod.rs: pi's message components in the chat
+// viewport as interactive mode adds them, with tool output collapsed. Each step clicks the first cell
+// showing some text, or the cell `dy` rows below it and at column `x` when given.
+const pi = await import("@earendil-works/pi-coding-agent");
+const { Container, Spacer, setKeybindings, visibleWidth } = await import(index);
+pi.initTheme("dark", false);
+const agentDist = import.meta.resolve("@earendil-works/pi-coding-agent").replace(/index\.js$/, "");
+const { KeybindingsManager } = await import(`${agentDist}core/keybindings.js`);
+setKeybindings(new KeybindingsManager());
+const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+const expand = {
+	columns: 60,
+	rows: 48,
+	cwd: "/work",
+	skill: '<skill name="review" location="/skills/review/SKILL.md">\nRead the diff.\n\nReport each finding.\n</skill>\n\nCheck this branch',
+	assistant: {
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: "First I plan the review." },
+			{ type: "text", text: "Reading the notes." },
+		],
+		api: "anthropic-messages",
+		provider: "anthropic",
+		model: "claude-sonnet-4-5",
+		usage: { ...zero, totalTokens: 0, cost: zero },
+		stopReason: "toolUse",
+		timestamp: 0,
+	},
+	reads: [
+		{ path: "notes.txt", output: numbered(14).join("\n") },
+		{ path: "todo.txt", output: null },
+	],
+	compaction: { tokensBefore: 12345, summary: "The user asked for a review." },
+	branch: { summary: "Tried another approach." },
+	clicks: [
+		{ text: "[skill]", dy: -1 },
+		{ text: "[skill]" },
+		{ text: "First I plan" },
+		{ text: "Thinking..." },
+		{ text: "read notes.txt" },
+		{ text: "line 3" },
+		{ text: "read notes.txt", x: 59 },
+		{ text: "read todo.txt" },
+		{ text: "Reading the notes." },
+		{ text: "[compaction]" },
+		{ text: "[branch]" },
+		{ text: "[branch]" },
+	],
+};
+{
+	const terminal = new Terminal(expand.columns, expand.rows);
+	const tui = new TuiAltScreen(terminal, false);
+	const chat = new Container();
+	const block = pi.parseSkillBlock(expand.skill);
+	chat.addChild(new pi.SkillInvocationMessageComponent(block));
+	chat.addChild(new Spacer(1));
+	chat.addChild(new pi.UserMessageComponent(block.userMessage));
+	chat.addChild(new pi.AssistantMessageComponent(expand.assistant));
+	for (const [index, read] of expand.reads.entries()) {
+		const definition = pi.createReadToolDefinition(expand.cwd);
+		const tool = new pi.ToolExecutionComponent("read", `read-${index}`, { path: read.path }, {}, definition, tui, expand.cwd);
+		if (read.output) tool.updateResult({ content: [{ type: "text", text: read.output }], isError: false });
+		chat.addChild(tool);
+	}
+	chat.addChild(new Spacer(1));
+	chat.addChild(new pi.CompactionSummaryMessageComponent({ role: "compactionSummary", ...expand.compaction, timestamp: 0 }));
+	chat.addChild(new Spacer(1));
+	chat.addChild(new pi.BranchSummaryMessageComponent({ role: "branchSummary", ...expand.branch, fromId: "a", timestamp: 0 }));
+	const transcript = new ScrollView(chat, { follow: "end", primary: true, overscroll: "chain", scrollbar: "hidden" });
+	tui.setLayoutRoot(
+		new VStack([
+			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: lines(["> dock", "footer"]), basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+		]),
+	);
+	tui.start();
+	tui.renderNow();
+	// Escape sequences, so text is found by the columns it shows in.
+	const plain = (line) => line.replace(/\x1b\[[0-9;:]*[A-Za-z]|\x1b\][^\x07]*\x07/g, "");
+	expand.first = tui.getScreenLines();
+	expand.steps = [];
+	for (const { text, dy = 0, x } of expand.clicks) {
+		const rows = tui.getScreenLines().map(plain);
+		const row = rows.findIndex((line) => line.includes(text));
+		if (row < 0) throw new Error(`${text} is not on the screen`);
+		const column = x ?? visibleWidth(rows[row].slice(0, rows[row].indexOf(text)));
+		const input = click(column + 1, row + dy + 1);
+		for (const report of input) terminal.onInput(report);
+		tui.renderNow();
+		expand.steps.push({ input, screen: tui.getScreenLines() });
+	}
+	tui.stop();
+}
+
 const dir = join(here, "..", "selection");
 mkdirSync(dir, { recursive: true });
 writeFileSync(join(dir, "selection.json"), `${JSON.stringify(out, null, "\t")}\n`);
 writeFileSync(join(dir, "wheel.json"), `${JSON.stringify(wheel, null, "\t")}\n`);
-console.log(`wrote ${out.length} selection and ${wheel.length} wheel cases to ${dir}`);
+writeFileSync(join(dir, "expand.json"), `${JSON.stringify(expand, null, "\t")}\n`);
+console.log(`wrote ${out.length} selection, ${wheel.length} wheel and ${expand.steps.length} expand cases to ${dir}`);
