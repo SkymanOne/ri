@@ -127,22 +127,34 @@ impl MockServer {
     /// Starts serving `cassette` on `addr`; port 0 picks a free port. Must be called
     /// inside a Tokio runtime.
     pub async fn start(addr: SocketAddr, cassette: Cassette) -> Result<Self, Error> {
-        Self::listen(addr, Mode::Replay(cassette.interactions.into())).await
+        Self::listen(addr, |_| Mode::Replay(cassette.interactions.into())).await
     }
 
     /// Starts serving `cassette` on a free port of 127.0.0.1. Must be called
     /// inside a Tokio runtime.
     pub async fn local(cassette: Cassette) -> Result<Self, Error> {
-        Self::start(SocketAddr::from(([127, 0, 0, 1], 0)), cassette).await
+        Self::local_with(|_| cassette).await
+    }
+
+    /// Like [`Self::local`], with the cassette built from the server's base URL,
+    /// for responses that link back to the server. Must be called inside a Tokio
+    /// runtime.
+    pub async fn local_with(cassette: impl FnOnce(&str) -> Cassette) -> Result<Self, Error> {
+        Self::listen(SocketAddr::from(([127, 0, 0, 1], 0)), |url| {
+            Mode::Replay(cassette(url).interactions.into())
+        })
+        .await
     }
 
     /// Starts a recording proxy on `addr` that forwards every request to `upstream`,
     /// a base URL such as `https://api.anthropic.com`. See [`Self::recording`].
     pub async fn record(addr: SocketAddr, upstream: &str) -> Result<Self, Error> {
-        Self::listen(addr, Mode::Record(record::Recorder::new(upstream)?)).await
+        let recorder = record::Recorder::new(upstream)?;
+        Self::listen(addr, |_| Mode::Record(recorder)).await
     }
 
-    async fn listen(addr: SocketAddr, mode: Mode) -> Result<Self, Error> {
+    /// Binds `addr`, then serves the mode that `mode` builds from the bound base URL.
+    async fn listen(addr: SocketAddr, mode: impl FnOnce(&str) -> Mode) -> Result<Self, Error> {
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|source| Error::Bind { addr, source })?;
@@ -150,7 +162,7 @@ impl MockServer {
             .local_addr()
             .map_err(|source| Error::Bind { addr, source })?;
         let state = Arc::new(Mutex::new(State {
-            mode,
+            mode: mode(&format!("http://{addr}")),
             requests: Vec::new(),
             problems: Vec::new(),
         }));

@@ -212,13 +212,9 @@ async fn http_server() {
 
 #[tokio::test]
 async fn unreachable_http_server_fails_like_pi() {
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    // The discard port: outside the ephemeral range, so no free port lands on it.
     let transport = HttpTransport::new(HttpOptions {
-        url: format!("http://127.0.0.1:{port}/mcp"),
+        url: "http://127.0.0.1:9/mcp".into(),
         ..HttpOptions::default()
     });
     let error = McpClient::connect(options(), Transport::Http(transport))
