@@ -13,7 +13,8 @@ yapi runs two kinds of extensions, and both register tools, commands, flags and 
 | Language | TypeScript or JavaScript | Rust, compiled to `wasm32-wasip2` |
 | Runs in | yapi and Pi, unchanged | yapi only |
 | API | Pi's `ExtensionAPI` from `@earendil-works/pi-coding-agent` 1.0 | The `yapi-extension-api` crate |
-| Interface components, npm dependencies | Yes | No |
+| Interface components | Yes, pi-tui's | Yes, the SDK's `Component` trait, and yapi's ports of pi-tui's widgets with the `widgets` feature |
+| npm dependencies | Yes | No |
 | Dialogs, processes and background work | Yes | Yes, from `async` handlers |
 | Sandbox | A shared QuickJS-NG runtime in WebAssembly, with Node shims | A WebAssembly instance of its own |
 
@@ -59,6 +60,9 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
    | `notify`, `send_message`, `append_entry`, `exec`, `request` | Host actions that answer at once: notifications, session messages and entries, processes, and any other action by name |
    | `op`, `sleep`, `Process`, `spawn` | Async work: host operations such as dialogs and `fetch`, timers, processes read as they run, and background tasks that outlive the handler |
    | `Context` | `mode()`, `has_ui()`, `cwd()`, `update()` for a tool's progress, and the rest of Pi's `ctx` as `data()` |
+   | `Component`, `Context::custom`, `Context::set_widget`, `set_footer`, `set_header`, `set_editor_component` | Interface components, as Pi's `ctx.ui` shows them. A component's `render(width)` returns ANSI lines, `handle_input` gets raw keys (name them with `parse_key`), and `custom` resolves when it calls `Done::finish`. `theme()` styles text and `request_render()` redraws after changes not caused by input. Only the interactive mode shows components. |
+   | `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Components that draw tool calls, results and custom messages in the transcript |
+   | `widgets` (feature `widgets`) | pi-tui's widgets as yapi ports them: `tui::select_list::SelectList`, `tui::editor::Editor`, `CustomEditor` for editor components, `Text`, and `to_ansi` to turn their styled lines into a component's lines |
 
 4. Build, copy the build into the package, then check it loads:
    ```sh
@@ -66,7 +70,7 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
    cp target/wasm32-wasip2/release/<crate>.wasm extensions/
    python3 scripts/check-extension.py .
    ```
-5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch, a git status reporter and a subagent that runs another yapi in the foreground or the background.
+5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch and shown in a component, a footer component, a git status reporter, a subagent that runs another yapi in the foreground or the background, a modal editor, a question tool with its own rendering, an overlay, a message renderer and a select list.
 
 ## Package and share
 

@@ -1,15 +1,23 @@
 # Native extension examples
 
-The repository has six native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Five are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`.
+The repository has twelve native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Ten are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of the seven examples with interfaces against Pi running the TypeScript versions.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
 | [`hello`](#hello) | A tool, a command, a flag and two event handlers | `hello.ts` |
 | [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, asking in a dialog | `permission-gate.ts` |
 | [`protected-paths`](#protected-paths) | Inspecting tool input, notifications | `protected-paths.ts` |
-| [`todo`](#todo) | State kept in tool results and rebuilt from the session branch | `todo.ts` |
+| [`todo`](#todo) | State kept in tool results and rebuilt from the session branch, a component that lists it | `todo.ts` |
+| [`custom-footer`](#custom-footer) | A component in place of the footer that reads the session as it renders | `custom-footer.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
 | [`subagent`](#subagent) | A process read as it runs, tool progress, background work that reports in a new turn | `subagent/` |
+| [`modal-editor`](#modal-editor) | An editor component in place of the built-in editor, wrapping `CustomEditor` | `modal-editor.ts` |
+| [`question`](#question) | A tool that asks in a component with an `Editor` widget, and draws its own call and result | `question.ts` |
+| [`overlay-test`](#overlay-test) | An overlay with inline inputs, the cursor marker and wide characters | `overlay-test.ts` |
+| [`message-renderer`](#message-renderer) | Custom messages drawn in a box by a message renderer | `message-renderer.ts` |
+| [`select-menu`](#select-menu) | A `SelectList` widget in a custom component | None |
+
+The last five use the SDK's `widgets` feature.
 
 ## Build and try them
 
@@ -85,7 +93,7 @@ api.on("tool_call", |event, ctx| async move {
 
 ## todo
 
-A `todo` tool with `list`, `add`, `toggle` and `clear` actions, and a `/todos` command that shows the list. Each result carries the whole list in its details. When a session starts, or the user moves through the session tree with `/tree`, the extension reads the current branch and takes the list from the last `todo` result on it. Every branch therefore keeps its own list.
+A `todo` tool with `list`, `add`, `toggle` and `clear` actions, and a `/todos` command that shows the list in a component until Escape closes it. Each result carries the whole list in its details. When a session starts, or the user moves through the session tree with `/tree`, the extension reads the current branch and takes the list from the last `todo` result on it. Every branch therefore keeps its own list.
 
 ```rust
 fn rebuild() -> Result<(), String> {
@@ -108,6 +116,47 @@ api.on("session_tree", |_event, _ctx| async { rebuild().map(|()| None) });
 ```
 
 The extension keeps its state in a `thread_local`, since each native extension runs in an instance of its own and calls into it one at a time.
+
+`/todos` shows the list with `custom`, which resolves once the component calls `finish` on its `Done`. Outside the interactive mode the command reports an error instead, as Pi's does.
+
+```rust
+impl Component for TodoList {
+    fn render(&mut self, width: usize) -> Vec<String> {
+        let th = theme();
+        // ...
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        if matches!(parse_key(data).as_deref(), Some("escape" | "ctrl+c")) {
+            self.done.finish(());
+        }
+    }
+}
+
+let todos = STATE.with(|cell| cell.borrow().todos.clone());
+ctx.custom(|done| TodoList { todos, done }, CustomOptions::default()).await;
+```
+
+## custom-footer
+
+`/footer` replaces the footer with the session's token counts and cost on the left, and the model and the git branch on the right. Running it again restores the built-in footer. The footer is a component that reads the session's branch with `session.read` and the git branch with `ui.footerData` each time yapi renders it.
+
+```rust
+api.register_command("footer", "Toggle custom footer", |_args, ctx| async move {
+    let enabled = !ENABLED.get();
+    ENABLED.set(enabled);
+    if enabled {
+        let model = ctx.data()["model"]["id"].as_str().filter(|id| !id.is_empty());
+        let model = model.unwrap_or("no-model").to_owned();
+        ctx.set_footer(Some(Box::new(Footer { model })));
+        notify("Custom footer enabled", "info");
+    } else {
+        ctx.set_footer(None);
+        notify("Default footer restored", "info");
+    }
+    Ok(())
+});
+```
 
 ## repo-status
 
@@ -148,3 +197,61 @@ spawn(async move {
 ```
 
 `request("execPath", ...)` names the running yapi binary, so the subagent runs the same version. When the user aborts the run, yapi drops the foreground tool's future, and dropping the `Process` kills the subagent. Pi's own TypeScript example also runs unchanged in yapi, with each agent defined in `~/.yapi/agent/agents`.
+
+## modal-editor
+
+Vim-like modes for the prompt editor. Escape switches from insert to normal mode, where `hjkl` move the cursor, `0` and `$` go to the line's start and end, `x` deletes, and `i` and `a` switch back. The extension puts an `EditorComponent` in place of the built-in editor when the session starts. It wraps `widgets::CustomEditor`, which keeps the built-in editor's keys, history and completions, and turns normal mode's keys into the keys the editor knows.
+
+```rust
+fn handle_input(&mut self, data: &str) {
+    if parse_key(data).as_deref() == Some("escape") {
+        if self.normal {
+            self.editor.handle_input(data);
+        } else {
+            self.normal = true;
+        }
+        return;
+    }
+    // ...
+}
+
+api.on("session_start", |_event, ctx| async move {
+    ctx.set_editor_component(Some(Box::new(ModalEditor::default())));
+    Ok(None)
+});
+```
+
+## question
+
+A `question` tool for the model: the user picks one of its options in a component, or chooses "Type something." and writes an answer in an `Editor` widget. `render_call` and `render_result` draw the question and the answer in the transcript with `widgets::Text`.
+
+```rust
+.render_result(|result, _options, _ctx| {
+    let th = theme();
+    let details = &result["details"];
+    // ...
+    Some(Box::new(Text::new(text, 0, 0)))
+})
+```
+
+## overlay-test
+
+`/overlay-test` opens an overlay with inline text inputs and lines of wide characters, styled text and emoji. The component's `width` sets the overlay's, and the selected input puts pi-tui's cursor marker where the terminal's cursor belongs. `widgets::visible_width` pads styled text to the box's width.
+
+## message-renderer
+
+`/status [warn|error] message` adds a custom message that a message renderer draws in a box, colored by level. The box uses the `boxed` and `text` layouts of `widgets::tui::lines` over the theme's custom message background.
+
+## select-menu
+
+`/menu` opens a drinks menu: a `SelectList` between two borders, which reports the pick in a notification. It ports the TypeScript menu that yapi's own terminal scenarios use.
+
+```rust
+fn handle_input(&mut self, data: &str) {
+    match self.list.handle_input(data, &keybindings()) {
+        SelectEvent::Selected(item) => self.done.finish(Some(item.value)),
+        SelectEvent::Cancelled => self.done.finish(None),
+        SelectEvent::Moved | SelectEvent::Ignored => {}
+    }
+}
+```

@@ -121,12 +121,7 @@ pub fn key_hint(theme: &Theme, key: &str, description: &str) -> Vec<Span<'static
 
 /// pi's `getSelectListTheme`.
 pub fn select_list_theme(theme: &Theme) -> SelectListTheme {
-    SelectListTheme {
-        selected_text: theme.fg("accent"),
-        description: theme.fg("muted"),
-        scroll_info: theme.fg("muted"),
-        no_match: theme.fg("muted"),
-    }
+    SelectListTheme::from_theme(|token| theme.fg(token))
 }
 
 impl Ui<'_> {

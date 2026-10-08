@@ -1,0 +1,16 @@
+[package]
+name = "question"
+description = "An example native yapi extension. A question tool that asks in a component, and draws its call and result."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api", features = ["widgets"] }
+
+[lints]
+workspace = true

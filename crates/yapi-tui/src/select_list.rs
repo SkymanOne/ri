@@ -72,6 +72,18 @@ pub struct SelectListTheme {
     pub no_match: Style,
 }
 
+impl SelectListTheme {
+    /// pi's `getSelectListTheme`, with `fg` giving a theme token's style.
+    pub fn from_theme(fg: impl Fn(&str) -> Style) -> SelectListTheme {
+        SelectListTheme {
+            selected_text: fg("accent"),
+            description: fg("muted"),
+            scroll_info: fg("muted"),
+            no_match: fg("muted"),
+        }
+    }
+}
+
 /// Bounds for the first column.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SelectListLayout {
