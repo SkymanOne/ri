@@ -79,7 +79,7 @@ Dependency direction:
 - `yapi-types` ← `yapi-ai` ← `yapi-agent` ← `yapi-core` ← `yapi-ext` ← `yapi`.
 - `yapi-tui` ← `yapi`.
 - `yapi-core` never depends on wasmtime.
-- `guest/` is a separate workspace, so `cargo build` never compiles wasm.
+- `guest/` is a separate workspace, so `cargo build` never compiles wasm. The SDK's optional `widgets` feature takes `yapi-tui` and `yapi-types` from this workspace by path.
 - `yapi-mock` is only ever a dev-dependency.
 
 ### Boundary traits
@@ -212,7 +212,7 @@ Feasibility study, prior art and rejected alternatives: [dev/research/extension-
   - `cargo test --workspace`
   - `cargo deny check`
 - CI runs the same checks on Linux and macOS for pull requests and pushes to `main`.
-- After changing a guest, rebuild with `cargo xtask js-runtime` and commit the artifact with its inputs hash.
+- After changing a guest, `yapi-tui` or `yapi-types`, rebuild with `cargo xtask js-runtime` and commit the artifacts with their inputs hash. It rebuilds `yapi-js.wasm`, which needs a WASI SDK, only when the runtime's own inputs changed.
 - Regenerate the model catalog with `cargo xtask models`. Never edit generated files.
 - Serve a cassette to pi or another out-of-process client with `cargo xtask mock-sse --cassette <file>`. It prints the base URL and, on exit, reports requests that did not match. `--record <upstream-url> --out <file>` records a new cassette through a proxy to a real provider; credentials are never written.
 

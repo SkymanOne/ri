@@ -1,0 +1,16 @@
+[package]
+name = "overlay-test"
+description = "An example native yapi extension. An overlay with inline text inputs and wide characters."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api", features = ["widgets"] }
+
+[lints]
+workspace = true

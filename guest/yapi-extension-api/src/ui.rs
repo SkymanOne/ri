@@ -33,17 +33,66 @@ pub trait Component {
     fn handle_mouse(&mut self, _event: &Value) -> bool {
         false
     }
+
+    /// The width an overlay [`Context::custom`] shows it at when its
+    /// options set none, as pi-tui reads a component's `width`.
+    fn width(&self) -> Option<usize> {
+        None
+    }
+}
+
+/// pi's editor component, which [`Context::set_editor_component`] puts in
+/// place of the built-in editor. It gets the keys the editor would, and
+/// reports its text with [`editor_changed`] and [`editor_submit`].
+pub trait EditorComponent: Component {
+    /// Replaces the text.
+    fn set_text(&mut self, text: &str);
+
+    /// Adds a submitted prompt to the history.
+    fn add_to_history(&mut self, _text: &str) {}
+
+    /// Inserts `text` at the cursor. `apart` sets it apart from the words
+    /// around the cursor with spaces, as pi does for pasted file paths.
+    fn insert_text_at_cursor(&mut self, text: &str, apart: bool);
+
+    /// Takes the built-in editor's settings: `{"border", "paddingX",
+    /// "autocompleteMaxVisible", "focused", "rows"}`, where `border` is a
+    /// thinking level or `bashMode`.
+    fn configure(&mut self, _config: &Value) {}
 }
 
 type Mounted = Rc<RefCell<Box<dyn Component>>>;
+type MountedEditor = Rc<RefCell<Box<dyn EditorComponent>>>;
 
 #[derive(Default)]
 struct Components {
     next: u32,
     mounted: HashMap<u32, Mounted>,
     /// The handle shown by each request kind and key: widgets by their key,
-    /// the footer and the header by an empty one.
+    /// the footer, the header and the editor by an empty one, and the
+    /// renders of transcript items by tool call or message.
     shown: HashMap<(&'static str, String), u32>,
+    /// The editor component and its handle.
+    editor: Option<(u32, MountedEditor)>,
+    /// Renderer state by tool call.
+    states: HashMap<String, Value>,
+}
+
+/// An editor in the registry of components.
+struct EditorView(MountedEditor);
+
+impl Component for EditorView {
+    fn render(&mut self, width: usize) -> Vec<String> {
+        self.0.borrow_mut().render(width)
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        self.0.borrow_mut().handle_input(data);
+    }
+
+    fn handle_mouse(&mut self, event: &Value) -> bool {
+        self.0.borrow_mut().handle_mouse(event)
+    }
 }
 
 thread_local! {
@@ -126,9 +175,81 @@ pub(crate) fn reset() {
     let dropped = COMPONENTS.with(|components| {
         let mut components = components.borrow_mut();
         components.shown.clear();
-        std::mem::take(&mut components.mounted)
+        components.states.clear();
+        (
+            std::mem::take(&mut components.mounted),
+            components.editor.take(),
+        )
     });
     drop(dropped);
+}
+
+/// The `editor` call: operation `{"handle", "op", ...}` for the editor
+/// component; see [`EditorComponent`].
+pub(crate) fn editor_op(payload: &Value) {
+    let editor = COMPONENTS.with(|components| {
+        let components = components.borrow();
+        let (handle, editor) = components.editor.as_ref()?;
+        (payload["handle"] == *handle).then(|| editor.clone())
+    });
+    let Some(editor) = editor else {
+        return;
+    };
+    let mut editor = editor.borrow_mut();
+    let text = payload["text"].as_str().unwrap_or_default();
+    match payload["op"].as_str() {
+        Some("setText") => editor.set_text(text),
+        Some("addToHistory") => editor.add_to_history(text),
+        Some("insertTextAtCursor") => editor.insert_text_at_cursor(text, payload["apart"] == true),
+        Some("configure") => editor.configure(payload),
+        _ => {}
+    }
+}
+
+/// The `component` call: what a tool's or a message's renderer draws,
+/// `{"handle"}`, or `null` for yapi's own rendering.
+pub(crate) fn transcript(
+    payload: &Value,
+    draw: impl FnOnce(&mut Value) -> Option<Box<dyn Component>>,
+) -> Value {
+    let (kind, key) = match payload["kind"].as_str() {
+        Some("message") => ("message", &payload["key"]),
+        Some("toolCall") => ("toolCall", &payload["toolCallId"]),
+        _ => ("toolResult", &payload["toolCallId"]),
+    };
+    let key = key.as_str().unwrap_or_default().to_owned();
+    let mut state = COMPONENTS.with(|components| {
+        let mut components = components.borrow_mut();
+        components.states.remove(&key).unwrap_or_else(|| json!({}))
+    });
+    let component = draw(&mut state);
+    COMPONENTS.with(|components| components.borrow_mut().states.insert(key.clone(), state));
+    let handle = component.map(mount);
+    replace(kind, &key, handle);
+    json!(handle.map(|handle| json!({"handle": handle})))
+}
+
+/// Sends the text an [`EditorComponent`] now holds, paste markers expanded,
+/// so yapi's own editor keeps a copy; pi's `onChange`.
+pub fn editor_changed(text: &str) {
+    let _ = request("ui.editorChange", &json!({"text": text}));
+}
+
+/// Submits the prompt an [`EditorComponent`] holds; pi's `onSubmit`.
+pub fn editor_submit(text: &str) {
+    let _ = request("ui.editorSubmit", &json!({"text": text}));
+}
+
+/// Runs app action `action`, a key binding id such as `app.interrupt` or
+/// `app.exit`, as the built-in editor does for its keys.
+pub fn editor_action(action: &str) {
+    let _ = request("ui.editorAction", &json!({"action": action}));
+}
+
+/// Runs the extension shortcut raw input `data` is bound to; whether there
+/// was one.
+pub fn editor_shortcut(data: &str) -> bool {
+    request("ui.editorShortcut", &json!({"data": data})).is_ok_and(|ran| ran == true)
 }
 
 /// Asks yapi to render the components again, as pi-tui's
@@ -158,12 +279,51 @@ pub enum Widget {
 
 /// How [`Context::custom`] shows its component; the options of pi's
 /// `ctx.ui.custom`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct CustomOptions {
     /// Over the screen instead of in the editor's place.
     pub overlay: bool,
     /// pi's `OverlayOptions`, such as `{"width": 70, "anchor": "center"}`.
+    /// Without them an overlay takes the component's [`Component::width`].
     pub overlay_options: Value,
+    /// Receives the component's [`OverlayHandle`] once it is shown; pi's
+    /// `onHandle`.
+    pub on_handle: Option<Rc<dyn Fn(OverlayHandle)>>,
+}
+
+/// pi-tui's `OverlayHandle` for a component [`Context::custom`] shows.
+#[derive(Clone, Debug)]
+pub struct OverlayHandle {
+    handle: u32,
+    hidden: Rc<std::cell::Cell<bool>>,
+}
+
+impl OverlayHandle {
+    /// Closes the component without finishing it. Prefer [`Done::finish`].
+    pub fn hide(&self) {
+        let _ = request("ui.close", &json!({"handle": self.handle}));
+    }
+
+    /// Marks the overlay hidden or shown. yapi keeps showing it either way.
+    pub fn set_hidden(&self, hidden: bool) {
+        self.hidden.set(hidden);
+    }
+
+    /// Whether [`OverlayHandle::set_hidden`] last marked it hidden.
+    pub fn is_hidden(&self) -> bool {
+        self.hidden.get()
+    }
+
+    /// Does nothing: the shown component keeps keyboard focus.
+    pub fn focus(&self) {}
+
+    /// Does nothing: the shown component keeps keyboard focus.
+    pub fn unfocus(&self) {}
+
+    /// Whether it has keyboard focus: while it is not marked hidden.
+    pub fn is_focused(&self) -> bool {
+        !self.hidden.get()
+    }
 }
 
 impl Context {
@@ -207,6 +367,32 @@ impl Context {
         self.set_slot("ui.setHeader", component);
     }
 
+    /// pi's `ctx.ui.setEditorComponent`: puts `editor` in place of the
+    /// built-in editor, with the built-in editor's text, or restores the
+    /// built-in one. Modes that show no components keep their editor.
+    pub fn set_editor_component(&self, editor: Option<Box<dyn EditorComponent>>) {
+        if !self.shows_components() {
+            return;
+        }
+        let text = request("ui.getEditorText", &json!({})).unwrap_or_default();
+        let editor = editor.map(|mut editor| {
+            editor.set_text(text.as_str().unwrap_or_default());
+            Rc::new(RefCell::new(editor))
+        });
+        let handle = editor
+            .clone()
+            .map(|editor| mount(Box::new(EditorView(editor))));
+        let previous = COMPONENTS.with(|components| {
+            let mut components = components.borrow_mut();
+            let previous = components.editor.take();
+            components.editor = handle.zip(editor);
+            previous
+        });
+        drop(previous);
+        let _ = request("ui.setEditor", &json!({"handle": handle}));
+        replace("ui.setEditor", "", handle);
+    }
+
     fn set_slot(&self, kind: &'static str, component: Option<Box<dyn Component>>) {
         replace(kind, "", None);
         if !self.shows_components() {
@@ -241,6 +427,10 @@ impl Context {
             let component = build(Done(state.clone()));
             // A component that finished while it was built is not shown.
             if !state.borrow().finished {
+                let overlay_options = match (&options.overlay_options, component.width()) {
+                    (Value::Null, Some(width)) => json!({"width": width}),
+                    (options, _) => options.clone(),
+                };
                 let handle = mount(Box::new(component));
                 state.borrow_mut().handle = Some(handle);
                 let _ = request(
@@ -248,9 +438,15 @@ impl Context {
                     &json!({
                         "handle": handle,
                         "overlay": options.overlay,
-                        "overlayOptions": options.overlay_options,
+                        "overlayOptions": overlay_options,
                     }),
                 );
+                if let Some(on_handle) = &options.on_handle {
+                    on_handle(OverlayHandle {
+                        handle,
+                        hidden: Rc::default(),
+                    });
+                }
             }
         }
         Shown(state)

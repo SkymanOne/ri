@@ -55,8 +55,12 @@ pub use process::{Process, ProcessEvent};
 use task::LocalFuture;
 pub use task::{op, sleep, spawn};
 pub use ui::{
-    Component, CustomOptions, Done, Placement, Theme, Widget, parse_key, request_render, theme,
+    Component, CustomOptions, Done, EditorComponent, OverlayHandle, Placement, Theme, Widget,
+    editor_action, editor_changed, editor_shortcut, editor_submit, parse_key, request_render,
+    theme,
 };
+#[cfg(feature = "widgets")]
+pub mod widgets;
 
 // The generated bindings name this crate by its external path.
 extern crate self as yapi_extension_api;
@@ -171,6 +175,24 @@ pub struct Tool {
     prompt_snippet: Option<String>,
     prompt_guidelines: Vec<String>,
     execute: Handler<Value, ToolResult>,
+    render_call: Option<Rc<CallRenderer>>,
+    render_result: Option<Rc<ResultRenderer>>,
+    render_shell: Option<String>,
+    execution_mode: Option<String>,
+}
+
+type CallRenderer = dyn Fn(&Value, &mut RenderContext) -> Option<Box<dyn Component>>;
+type ResultRenderer = dyn Fn(&Value, &Value, &mut RenderContext) -> Option<Box<dyn Component>>;
+type MessageRenderer = dyn Fn(&Value, &Value) -> Option<Box<dyn Component>>;
+
+/// What a tool's renderer draws for; pi's `ToolRenderContext`.
+pub struct RenderContext<'a> {
+    /// pi's fields: `args`, `toolCallId`, `cwd`, `executionStarted`,
+    /// `argsComplete`, `isPartial`, `expanded`, `showImages` and `isError`.
+    pub data: &'a Value,
+    /// State the renderers of one tool call share across renders, `{}` at
+    /// first.
+    pub state: &'a mut Value,
 }
 
 impl Tool {
@@ -194,6 +216,10 @@ impl Tool {
             prompt_snippet: None,
             prompt_guidelines: Vec::new(),
             execute: handler(execute),
+            render_call: None,
+            render_result: None,
+            render_shell: None,
+            execution_mode: None,
         }
     }
 
@@ -212,6 +238,44 @@ impl Tool {
     /// A rule added to the system prompt while the tool is active.
     pub fn prompt_guideline(mut self, guideline: impl Into<String>) -> Tool {
         self.prompt_guidelines.push(guideline.into());
+        self
+    }
+
+    /// pi's `renderCall`: the component the transcript shows for a call
+    /// with arguments `args`, or `None` for yapi's own rendering. Call
+    /// [`request_render`] to draw it again.
+    pub fn render_call(
+        mut self,
+        render: impl Fn(&Value, &mut RenderContext) -> Option<Box<dyn Component>> + 'static,
+    ) -> Tool {
+        self.render_call = Some(Rc::new(render));
+        draws();
+        self
+    }
+
+    /// pi's `renderResult`: the component the transcript shows for a result
+    /// `{"content", "details"}` with options `{"expanded", "isPartial"}`, or
+    /// `None` for yapi's own rendering.
+    pub fn render_result(
+        mut self,
+        render: impl Fn(&Value, &Value, &mut RenderContext) -> Option<Box<dyn Component>> + 'static,
+    ) -> Tool {
+        self.render_result = Some(Rc::new(render));
+        draws();
+        self
+    }
+
+    /// pi's `executionMode`: `sequential` to run alone, after the calls
+    /// before it, or `parallel`.
+    pub fn execution_mode(mut self, mode: impl Into<String>) -> Tool {
+        self.execution_mode = Some(mode.into());
+        self
+    }
+
+    /// pi's `renderShell`: `self` when the renderers draw the tool's whole
+    /// box, or `default`.
+    pub fn render_shell(mut self, shell: impl Into<String>) -> Tool {
+        self.render_shell = Some(shell.into());
         self
     }
 }
@@ -245,6 +309,7 @@ pub struct Api {
     commands: Vec<Command>,
     flags: Vec<Flag>,
     handlers: Vec<(String, Handler<Value, Option<Value>>)>,
+    message_renderers: Vec<(String, Rc<MessageRenderer>)>,
 }
 
 impl Api {
@@ -296,6 +361,19 @@ impl Api {
         self.handlers.push((event.into(), handler(run)));
     }
 
+    /// pi's `registerMessageRenderer`: the component the transcript shows
+    /// for custom messages of type `custom_type`, from the message and the
+    /// options `{"expanded"}`, or `None` for yapi's own rendering.
+    pub fn register_message_renderer(
+        &mut self,
+        custom_type: impl Into<String>,
+        render: impl Fn(&Value, &Value) -> Option<Box<dyn Component>> + 'static,
+    ) {
+        self.message_renderers
+            .push((custom_type.into(), Rc::new(render)));
+        draws();
+    }
+
     fn describe(&self, id: u64, path: &str) -> Value {
         let mut events: Vec<&str> = self
             .handlers
@@ -314,6 +392,10 @@ impl Api {
                 "parameters": tool.parameters,
                 "promptSnippet": tool.prompt_snippet,
                 "promptGuidelines": tool.prompt_guidelines,
+                "renderShell": tool.render_shell,
+                "executionMode": tool.execution_mode,
+                "hasRenderCall": tool.render_call.is_some(),
+                "hasRenderResult": tool.render_result.is_some(),
             })).collect::<Vec<_>>(),
             "commands": self.commands.iter().map(|command| json!({
                 "name": command.name, "description": command.description, "hasCompletions": false,
@@ -326,7 +408,7 @@ impl Api {
             })).collect::<Vec<_>>(),
             "shortcuts": [],
             "events": events,
-            "messageRenderers": [],
+            "messageRenderers": self.message_renderers.iter().map(|(name, _)| name).collect::<Vec<_>>(),
             "entryRenderers": [],
             "markdownTransformer": false,
             "providers": [],
@@ -503,9 +585,16 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
         }
         "bind" => {
             ui::bind();
+            #[cfg(feature = "widgets")]
+            widgets::bind();
             answer(Ok(Value::Null))
         }
         "mouse" => answer(Ok(Value::Bool(ui::mouse(&payload)))),
+        "editor" => {
+            ui::editor_op(&payload);
+            answer(Ok(Value::Null))
+        }
+        "component" => answer(Ok(DRAW.get().map_or(Value::Null, |draw| draw(&payload)))),
         "shortcut" | "complete" => answer(Ok(Value::Null)),
         "flags" => {
             STATE.with(|state| {
@@ -589,6 +678,53 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
         }
         other => answer(Err(format!("Unknown dispatch kind: {other}"))),
     }
+}
+
+type Draw = fn(&Value) -> Value;
+
+thread_local! {
+    /// Answers the `component` call once a renderer is registered, so
+    /// extensions without renderers leave out the code.
+    static DRAW: std::cell::Cell<Option<Draw>> = const { std::cell::Cell::new(None) };
+}
+
+fn draws() {
+    DRAW.set(Some(component));
+}
+
+/// The `component` call: what a registered renderer draws.
+fn component(payload: &Value) -> Value {
+    if payload["kind"] == "message" {
+        let custom_type = &payload["message"]["customType"];
+        let renderer = registered(|api| {
+            let (_, renderer) = api
+                .message_renderers
+                .iter()
+                .find(|(name, _)| custom_type == name)?;
+            Some(renderer.clone())
+        });
+        return ui::transcript(payload, |_| {
+            renderer?(&payload["message"], &payload["options"])
+        });
+    }
+    let call = payload["kind"] == "toolCall";
+    let name = &payload["name"];
+    let renderers = registered(|api| {
+        let tool = api.tools.iter().find(|tool| name == tool.name.as_str())?;
+        Some((tool.render_call.clone(), tool.render_result.clone()))
+    });
+    ui::transcript(payload, |state| {
+        let (render_call, render_result) = renderers?;
+        let mut data = payload["context"].clone();
+        data["args"] = payload["args"].clone();
+        data["toolCallId"] = payload["toolCallId"].clone();
+        let mut ctx = RenderContext { data: &data, state };
+        if call {
+            render_call?(&payload["args"], &mut ctx)
+        } else {
+            render_result?(&payload["result"], &payload["options"], &mut ctx)
+        }
+    })
 }
 
 #[doc(hidden)]

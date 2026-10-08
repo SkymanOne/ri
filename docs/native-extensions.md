@@ -152,10 +152,12 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `op` | Start a host operation by name, such as a dialog or an HTTP request, and await its answer |
 | `Context` | The mode, the working folder and the rest of Pi's `ctx`. `Context::update` shows a running tool's progress. |
 | `Component` | A piece of interface that renders lines for a width and handles keys and mouse events. See [Interface components](#interface-components). |
-| `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header` | Show components, as Pi's `ctx.ui` does |
+| `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header`, `Context::set_editor_component` | Show components, as Pi's `ctx.ui` does |
+| `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Draw tool calls, tool results and custom messages in the transcript |
 | `theme`, `request_render`, `parse_key` | Style text in the session's theme, render components again, and name keys |
+| `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
-[Native extension examples](native-examples.md) walks through seven complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch and shown in a component, a footer component, a git status reporter, a subagent that runs in the foreground or the background, and a minimal starting point.
+[Native extension examples](native-examples.md) walks through twelve complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
 
 ### Host requests
 
@@ -248,9 +250,36 @@ yapi renders a component after each key or mouse event it handles, and paints th
 
 Only the interactive mode shows components. In RPC, print and JSON modes, `custom` resolves to `None` at once, and component widgets, footers and headers are left out. When the extension loads again for another session, yapi drops every component it showed.
 
-Native extensions cannot yet replace the editor, render tool calls and messages, or hide an overlay through a handle, and the SDK has no ready-made widgets like pi-tui's `SelectList` or `Editor`.
+`CustomOptions::on_handle` receives the shown component's `OverlayHandle`, Pi's `onHandle`. `hide` closes the component without finishing it, so prefer `Done::finish`. `set_hidden`, `focus` and `unfocus` only change what `is_hidden` and `is_focused` report, as for Pi extensions in yapi, and the overlay stays on screen. An overlay without `overlay_options` takes the width its component's `Component::width` returns, as Pi does with a component's `width`.
 
-The methods send these host requests. The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself:
+### Replacing the editor
+
+`Context::set_editor_component` puts an `EditorComponent` in place of the built-in editor, as Pi's `setEditorComponent` does, or restores the built-in one with `None`. The editor starts with the built-in editor's text. yapi calls its `set_text`, `add_to_history`, `insert_text_at_cursor` and `configure` methods, and the editor reports back with `editor_changed` when its text changes, `editor_submit` when the user submits, `editor_action` for app keys such as `app.interrupt`, and `editor_shortcut` for extension shortcuts.
+
+`widgets::CustomEditor` is Pi's `CustomEditor`: the built-in editor's keys, history, completions and app keys. Wrap it to change how it handles keys or renders, as Pi's examples extend it. The [`modal-editor`](native-examples.md#modal-editor) example adds vim-like modes this way.
+
+### Tool and message renderers
+
+`Tool::render_call` and `Tool::render_result` draw a tool's call and result in the transcript, as Pi's `renderCall` and `renderResult` do, and `Tool::render_shell("self")` says they draw the tool's whole box. `Api::register_message_renderer` draws custom messages of one type, as Pi's `registerMessageRenderer` does. A renderer returns a component, or `None` to keep yapi's own rendering.
+
+A tool renderer gets a `RenderContext`, with Pi's context fields such as `toolCallId`, `expanded` and `isPartial` in `data`, and a `state` value that the call's and the result's renderers share for one tool call. Pi's `lastComponent` has no counterpart, so a renderer builds a new component each time yapi asks.
+
+### Widgets
+
+The `widgets` feature adds yapi's own ports of pi-tui's widgets, the ones yapi's interface uses. They match pi-tui's output, as tests against pi-tui check. Turn it on where the extension depends on the SDK, at a release that has the feature:
+
+```toml
+[dependencies]
+yapi-extension-api = { git = "https://github.com/SkymanOne/yapi", tag = "<release>", features = ["widgets"] }
+```
+
+`widgets::tui` holds them, such as `select_list::SelectList`, `editor::Editor`, `text_input::TextInput`, `settings_list::SettingsList`, and the `Text`, `Box` and border layouts in `lines`. They render styled lines, and `widgets::to_ansi` turns those into a component's lines, with pi-tui's cursor marker where a cursor belongs. `widgets::style` and `widgets::bg_style` give a theme token's style for the widgets' themes, and `widgets::keybindings` the key bindings their `handle_input` takes. The module also has `Text`, a component with pi-tui's `Text` layout, and pi-tui's `visible_width`, `truncate_to_width` and `wrap_text_with_ansi` for text with escape sequences.
+
+The widgets add 100 to 300 KB to an extension that uses them. A built extension without the feature stays near 170 KB.
+
+### Host requests for components
+
+The methods send these host requests. The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself: The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself:
 
 | Kind | Payload | Effect |
 |---|---|---|
@@ -260,8 +289,16 @@ The methods send these host requests. The handles in them name components the SD
 | `ui.close` | `{"handle"}` | Closes the component `ui.custom` showed |
 | `ui.requestRender` | `{}` | Renders the components again |
 | `ui.theme` | `{}` | The theme, as `{"name", "mode", "fg", "bg", "dim", "colors"}`, where `fg` and `bg` hold each token's escape sequence |
+| `ui.setEditor` | `{"handle"}` | Shows the editor component, or the built-in editor when `handle` is `null` |
+| `ui.getEditorText` | `{}` | The built-in editor's text |
+| `ui.editorChange`, `ui.editorSubmit` | `{"text"}` | The editor component's text changed or was submitted |
+| `ui.editorAction`, `ui.editorShortcut` | `{"action"}`, `{"data"}` | Runs an app action, or the extension shortcut bound to a key |
+| `ui.keybindings` | `{}` | `{"kitty", "bindings": {id: [key]}, "actions": [id]}` |
+| `ui.applyCompletion` | `{"lines", "cursorLine", "cursorCol", "item", "prefix"}` | The editor's lines and cursor with the completion applied |
 
-yapi renders a component through the WIT world's `render` export and delivers keys through `input`. Mouse events arrive as the `mouse` call.
+`CustomEditor` asks for completions with the `ui.suggestions` operation, which takes `{"lines", "cursorLine", "cursorCol", "force"}` and answers `{"items", "prefix"}` or `null`. Columns count UTF-16 units, as in Pi.
+
+yapi renders a component through the WIT world's `render` export and delivers keys through `input`. Mouse events arrive as the `mouse` call, editor operations as `editor`, and requests for transcript renders as `component`.
 
 ## Background work and cancellation
 

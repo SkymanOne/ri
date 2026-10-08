@@ -241,6 +241,26 @@ async fn todo_keeps_a_list_per_branch() {
 struct Terminal {
     custom: std::sync::Mutex<Option<(RemoteComponent, CustomOptions)>>,
     closed: std::sync::Mutex<Vec<(u64, u32)>>,
+    editor: std::sync::Mutex<Option<RemoteComponent>>,
+    footer: std::sync::Mutex<Option<RemoteComponent>>,
+    /// Notifications and what the extension's editor reported, in order.
+    events: std::sync::Mutex<Vec<String>>,
+}
+
+impl Terminal {
+    fn event(&self, event: String) {
+        self.events.lock().unwrap().push(event);
+    }
+
+    /// The custom component the extension shows, once it shows one.
+    async fn shown(&self) -> (RemoteComponent, CustomOptions) {
+        loop {
+            if let Some(shown) = self.custom.lock().unwrap().clone() {
+                return shown;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
 }
 
 impl ExtensionUi for Terminal {
@@ -248,14 +268,44 @@ impl ExtensionUi for Terminal {
         true
     }
 
-    fn notify(&self, _message: &str, _kind: NotifyKind) {}
+    fn notify(&self, message: &str, _kind: NotifyKind) {
+        self.event(format!("notify {message}"));
+    }
+
+    fn editor_text(&self) -> String {
+        "draft".into()
+    }
+
+    fn set_footer(&self, footer: Option<RemoteComponent>) {
+        *self.footer.lock().unwrap() = footer;
+    }
+
+    fn set_editor(&self, editor: Option<RemoteComponent>, _embeds_status: bool) {
+        *self.editor.lock().unwrap() = editor;
+    }
+
+    fn editor_changed(&self, text: &str) {
+        self.event(format!("changed {text}"));
+    }
+
+    fn editor_submit(&self, text: &str) {
+        self.event(format!("submit {text}"));
+    }
+
+    fn editor_action(&self, action: &str) {
+        self.event(format!("action {action}"));
+    }
+
+    fn keybindings(&self) -> serde_json::Value {
+        json!({"bindings": {"app.interrupt": ["escape"], "app.exit": ["ctrl+d"]}, "actions": []})
+    }
 
     fn shows_components(&self) -> bool {
         true
     }
 
     fn theme(&self) -> serde_json::Value {
-        json!({"fg": {"accent": "<a>", "borderMuted": "<b>", "dim": "<d>"}, "bg": {}, "dim": []})
+        json!({"fg": {"accent": "\x1b[36m", "borderMuted": "\x1b[37m", "dim": "\x1b[90m"}, "bg": {}, "dim": []})
     }
 
     fn custom(&self, component: RemoteComponent, options: CustomOptions) {
@@ -290,21 +340,16 @@ async fn todo_shows_the_list_in_a_component_until_escape() {
         let session = session.clone();
         async move { session.prompt("/todos", Vec::new()).await }
     });
-    let (component, options) = loop {
-        if let Some(shown) = terminal.custom.lock().unwrap().clone() {
-            break shown;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    };
+    let (component, options) = terminal.shown().await;
     assert!(!options.overlay);
     // Rendered in the session's theme, for each width asked.
     let lines = component.render(20).await;
     assert_eq!(
         lines[1],
-        "<b>───\x1b[39m<a> Todos \x1b[39m<b>──────────\x1b[39m"
+        "\x1b[37m───\x1b[39m\x1b[36m Todos \x1b[39m\x1b[37m──────────\x1b[39m"
     );
     assert_eq!(lines[3], "  0/1 completed");
-    assert_eq!(lines[5], "  <d>○\x1b[39m <a>#1\x1b[39m buy milk");
+    assert_eq!(lines[5], "  \x1b[90m○\x1b[39m \x1b[36m#1\x1b[39m buy milk");
     assert_eq!(component.render(12).await[1].matches('─').count(), 5);
 
     // Other keys leave it open. Escape, as the Kitty protocol sends it,
@@ -375,4 +420,209 @@ async fn native_tools_aborted_before_they_start_stop() {
         )
         .await;
     assert_eq!(result.unwrap_err(), "This operation was aborted");
+}
+
+/// The rows of `component` at `width`, without CSI and APC sequences.
+async fn plain(component: &RemoteComponent, width: u16) -> Vec<String> {
+    let strip = |row: &str| {
+        let mut out = String::new();
+        let mut chars = row.chars();
+        while let Some(char) = chars.next() {
+            match (char, chars.clone().next()) {
+                ('\x1b', Some('[')) => {
+                    while !chars.next().is_some_and(|c| c.is_ascii_alphabetic()) {}
+                }
+                ('\x1b', Some('_')) => while chars.next().is_some_and(|c| c != '\x07') {},
+                _ => out.push(char),
+            }
+        }
+        out
+    };
+    component
+        .render(width)
+        .await
+        .iter()
+        .map(|row| strip(row))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn modal_editor_replaces_the_editor() {
+    let dir = scratch("modal-editor");
+    let host = load(&dir, "modal-editor").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    let editor = terminal.editor.lock().unwrap().clone().unwrap();
+
+    // It takes the built-in editor's text, and shows its cursor and mode.
+    let rows = editor.render(20).await;
+    assert!(rows[1].contains("draft\x1b_pi:c\x07"), "{rows:?}");
+    assert_eq!(plain(&editor, 20).await[2], "──────────── INSERT ");
+
+    // Normal mode moves and deletes, then Escape interrupts as the built-in
+    // editor's does, and Enter submits back in insert mode.
+    for key in ["!", "\x1b", "0", "x", "\x1b", "i", "\r"] {
+        editor.input(key);
+    }
+    editor.editor_op(&json!({"op": "setText", "text": "next"}));
+    assert_eq!(plain(&editor, 20).await[1], "next                ");
+    assert_eq!(
+        *terminal.events.lock().unwrap(),
+        [
+            "changed draft",
+            "changed draft!",
+            "changed raft!",
+            "action app.interrupt",
+            "submit raft!",
+            "changed ",
+            "changed next",
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn question_draws_its_call_and_result() {
+    let dir = scratch("question-renderers");
+    let host = load(&dir, "question").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(Terminal::default()), Mode::Tui, None, None)
+        .await;
+    let extension = session.extensions()[0].clone();
+    let renderers = &extension.renderers().tools["question"];
+    assert!(renderers.call && renderers.result && !renderers.own_shell);
+
+    let args = json!({"question": "Color?", "options": [{"label": "Red"}, {"label": "Blue"}]});
+    let call = json!({"kind": "toolCall", "name": "question", "toolCallId": "c1", "args": args, "context": {}});
+    let drawn = extension.component(&call).await.unwrap();
+    assert_eq!(
+        plain(&drawn, 40).await,
+        [
+            "question Color?                         ",
+            "  Options: 1. Red, 2. Blue, 3. Type     ",
+            "something.                              ",
+        ]
+    );
+    // Drawing again replaces the component.
+    let again = extension.component(&call).await.unwrap();
+    assert_ne!(again.key(), drawn.key());
+    assert!(drawn.render(40).await.is_empty());
+
+    let details = json!({"question": "Color?", "options": ["Red", "Blue"], "answer": "Blue", "wasCustom": false});
+    let result = json!({
+        "kind": "toolResult", "name": "question", "toolCallId": "c1", "args": args,
+        "result": {"content": [], "details": details}, "options": {}, "context": {},
+    });
+    let drawn = extension.component(&result).await.unwrap();
+    assert_eq!(plain(&drawn, 12).await, ["✓ 2. Blue   "]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_renderer_draws_status_messages() {
+    let dir = scratch("message-renderer");
+    let host = load(&dir, "message-renderer").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    session
+        .bind_extensions(Arc::new(Terminal::default()), Mode::Tui, None, None)
+        .await;
+    let extension = session.extensions()[0].clone();
+    assert_eq!(extension.renderers().messages, ["status-update"]);
+    let message = json!({"customType": "status-update", "content": "Disk full", "details": {"level": "warn"}});
+    let request =
+        json!({"kind": "message", "key": "1", "message": message, "options": {"outputPad": 2}});
+    let drawn = extension.component(&request).await.unwrap();
+    assert_eq!(
+        plain(&drawn, 20).await,
+        [
+            "                    ",
+            "  [WARN] Disk full  ",
+            "                    "
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn select_menu_picks_from_a_select_list() {
+    let dir = scratch("select-menu");
+    let host = load(&dir, "select-menu").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    let command = tokio::spawn({
+        let session = session.clone();
+        async move { session.prompt("/menu", Vec::new()).await }
+    });
+    let (menu, _) = terminal.shown().await;
+    assert_eq!(
+        plain(&menu, 20).await,
+        [
+            "────────────────────",
+            " Drinks             ",
+            "→ Tea",
+            "  Juice",
+            "  Water",
+            "────────────────────"
+        ]
+    );
+    menu.input("\x1b[B");
+    assert_eq!(plain(&menu, 20).await[3], "→ Juice");
+    menu.input("\r");
+    command.await.unwrap().unwrap();
+    assert_eq!(*terminal.events.lock().unwrap(), ["notify Chose juice"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overlay_test_takes_its_width_and_typing() {
+    let dir = scratch("overlay-test");
+    let host = load(&dir, "overlay-test").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    let command = tokio::spawn({
+        let session = session.clone();
+        async move { session.prompt("/overlay-test", Vec::new()).await }
+    });
+    let (overlay, options) = terminal.shown().await;
+    // Without overlay options, the overlay is as wide as the component.
+    assert!(options.overlay);
+    assert_eq!(options.overlay_options, json!({"width": 70}));
+    overlay.input("h");
+    overlay.input("i");
+    let rows = overlay.render(70).await;
+    assert!(rows[9].contains("hi\x1b_pi:c\x07"), "{rows:?}");
+    overlay.input("\r");
+    command.await.unwrap().unwrap();
+    assert_eq!(*terminal.events.lock().unwrap(), ["notify Search: \"hi\""]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_footer_toggles_a_footer_component() {
+    let dir = scratch("custom-footer");
+    let host = load(&dir, "custom-footer").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    session.prompt("/footer", Vec::new()).await.unwrap();
+    let footer = terminal.footer.lock().unwrap().clone().unwrap();
+    let model = session.model().unwrap().id;
+    let row = format!("↑0 ↓0 $0.000{}{model}", " ".repeat(28 - model.len()));
+    assert_eq!(plain(&footer, 40).await, [row]);
+    session.prompt("/footer", Vec::new()).await.unwrap();
+    assert!(terminal.footer.lock().unwrap().is_none());
+    assert_eq!(
+        *terminal.events.lock().unwrap(),
+        [
+            "notify Custom footer enabled",
+            "notify Default footer restored"
+        ]
+    );
 }
