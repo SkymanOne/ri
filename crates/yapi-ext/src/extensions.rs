@@ -1196,6 +1196,20 @@ impl ComponentHost for Components {
         }
     }
 
+    fn mouse(&self, handle: u32, event: &Value) -> BoxFuture<'static, bool> {
+        // Queued now, so it reaches the component in order with keys.
+        let taken = self.0.upgrade().map(|host| {
+            host.instance
+                .call("mouse", &json!({"handle": handle, "event": event}))
+        });
+        Box::pin(async move {
+            match taken {
+                Some(taken) => taken.await.is_ok_and(|taken| taken == Value::Bool(true)),
+                None => false,
+            }
+        })
+    }
+
     fn terminal_input(&self, keys: Vec<String>) -> BoxFuture<'static, Vec<String>> {
         let host = self.0.upgrade();
         Box::pin(async move {

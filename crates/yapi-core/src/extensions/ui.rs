@@ -81,6 +81,11 @@ pub trait ComponentHost: Send + Sync {
     /// Delivers raw terminal input to component `handle`.
     fn input(&self, handle: u32, data: &str);
 
+    /// Delivers pi-tui's `TuiMouseEvent` `event` to component `handle`,
+    /// after the input delivered before it. Resolves to whether the
+    /// component took it, as pi-tui's `dispatchMouseEvent` decides.
+    fn mouse(&self, handle: u32, event: &Value) -> BoxFuture<'static, bool>;
+
     /// Sends `op` to editor component `handle`, after the input delivered
     /// before it: `{"op": "setText", "text"}`, `{"op": "addToHistory",
     /// "text"}`, `{"op": "insertTextAtCursor", "text", "apart"}`, or
@@ -142,6 +147,11 @@ impl RemoteComponent {
     /// Delivers raw terminal input.
     pub fn input(&self, data: &str) {
         self.host.input(self.handle, data);
+    }
+
+    /// Delivers a mouse event; see [`ComponentHost::mouse`].
+    pub fn mouse(&self, event: &Value) -> BoxFuture<'static, bool> {
+        self.host.mouse(self.handle, event)
     }
 
     /// Sends an operation to the editor it is; see [`ComponentHost::editor_op`].
