@@ -101,6 +101,15 @@ pub struct MouseEvent {
     pub x: usize,
     /// The row.
     pub y: usize,
+    /// The report's button code, whose bits 4, 8 and 16 are Shift, Alt and
+    /// Ctrl.
+    pub button: usize,
+    /// For the wheel, the rows it scrolls, negative upward: pi's
+    /// `wheelDelta`.
+    pub delta: isize,
+    /// The topmost of [`AltScreen::overlays`] under the pointer, which gets
+    /// the event in place of the components below it.
+    pub overlay: Option<usize>,
 }
 
 /// What [`AltScreen::mouse`] did with its input.
@@ -205,9 +214,10 @@ impl AltScreen {
     /// wheel scrolls [`AltScreen::wheel_lines`] rows, the left button drags
     /// the scrollbar, jumps to the latest message from its label or selects
     /// text, and losing focus mid-press drops the selection. `components`
-    /// gets the events pi's layout offers the components under the pointer
-    /// outside overlays, and says whether one took the event. `transcript` is
-    /// the one last drawn.
+    /// gets the events pi offers the overlay or the components under the
+    /// pointer, and says whether one took the event. A wheel event nothing
+    /// takes is unhandled while an overlay shows, as pi gives it to the
+    /// focused overlay. `transcript` is the one last drawn.
     pub fn mouse(
         &mut self,
         data: &str,
@@ -235,8 +245,16 @@ impl AltScreen {
         let Some((button, x, y, release)) = parse(data) else {
             return MouseAction::Unhandled;
         };
-        let covered = self.overlay_at(x, y);
-        let event = |kind| MouseEvent { kind, x, y };
+        let overlay = self.overlay_at(x, y);
+        let covered = overlay.is_some();
+        let event = |kind, delta| MouseEvent {
+            kind,
+            x,
+            y,
+            button,
+            delta,
+            overlay,
+        };
         if button & 64 != 0 {
             // Wheel up or down; horizontal wheels do nothing.
             let direction = match button & 3 {
@@ -249,10 +267,14 @@ impl AltScreen {
                 lines *= ALT_WHEEL_MULTIPLIER;
             }
             // A component under the pointer may take it instead.
-            if !covered && components(event(MouseKind::Wheel(direction))) {
+            let delta = direction * lines as isize;
+            if components(event(MouseKind::Wheel(direction), delta)) {
                 return MouseAction::Handled;
             }
-            self.scroll_by(direction * lines as isize);
+            if !self.overlays.is_empty() {
+                return MouseAction::Unhandled;
+            }
+            self.scroll_by(delta);
             self.update_scrollbar_hover(x, y);
             return MouseAction::Handled;
         }
@@ -262,14 +284,15 @@ impl AltScreen {
                 let click = !*moved;
                 self.selection.press = None;
                 if click {
-                    components(event(MouseKind::Click));
+                    components(event(MouseKind::Click, 0));
                 }
             }
             return MouseAction::Handled;
         }
-        let left_press = button & (32 | 3) == 0 && !release && !covered;
+        let left_press = button & (32 | 3) == 0 && !release;
         if let Some((row, col, width)) = self.jump_label
             && left_press
+            && !covered
             && y == row
             && (col..col + width).contains(&x)
         {
@@ -283,7 +306,7 @@ impl AltScreen {
         if scrollbar {
             return MouseAction::Handled;
         }
-        if left_press && components(event(MouseKind::Press)) {
+        if left_press && components(event(MouseKind::Press, 0)) {
             self.clear_selection();
             self.selection.press = Some((x, y, false));
             return MouseAction::Handled;
@@ -313,7 +336,7 @@ impl AltScreen {
                 && self.selection.anchor.is_some_and(|anchor| {
                     anchor.transcript == point.transcript && anchor.at() == point.at()
                 });
-            if click && !covered && components(event(MouseKind::Click)) {
+            if click && components(event(MouseKind::Click, 0)) {
                 self.clear_selection();
                 return MouseAction::Handled;
             }
@@ -369,8 +392,19 @@ impl AltScreen {
         Some(self.scrollbar_hover != hover)
     }
 
+    /// A component took the press that started the selection being made,
+    /// at column `x` and row `y`, as pi learns before the selection starts:
+    /// it ends the selection, and a release there is a click on the
+    /// component. Does nothing once the button is up or the pointer moved.
+    pub fn take_press(&mut self, x: usize, y: usize) {
+        if self.selection.pressed && !self.selection.dragged {
+            self.clear_selection();
+            self.selection.press = Some((x, y, false));
+        }
+    }
+
     /// pi's `clearTextSelection`.
-    fn clear_selection(&mut self) {
+    pub fn clear_selection(&mut self) {
         let selection = &mut self.selection;
         selection.anchor = None;
         selection.focus = None;
@@ -380,8 +414,8 @@ impl AltScreen {
         selection.dragged = false;
     }
 
-    fn overlay_at(&self, x: usize, y: usize) -> bool {
-        self.overlays.iter().any(|overlay| {
+    fn overlay_at(&self, x: usize, y: usize) -> Option<usize> {
+        self.overlays.iter().rposition(|overlay| {
             (overlay.col..overlay.col + overlay.width).contains(&x)
                 && (overlay.row..overlay.row + overlay.lines.len()).contains(&y)
         })
@@ -736,5 +770,58 @@ mod tests {
         assert_eq!(parse("\x1b[<0;1M"), None);
         assert_eq!(parse("\x1b[<0;+1;1M"), None);
         assert_eq!(parse("\x1b[A"), None);
+    }
+
+    /// Feeds `inputs` to `screen`, whose components take nothing: the clicks
+    /// offered to them and the last action.
+    fn feed(screen: &mut AltScreen, inputs: &[&str]) -> (Vec<(usize, usize)>, MouseAction) {
+        let (mut clicks, mut action) = (Vec::new(), MouseAction::Unhandled);
+        for input in inputs {
+            action = screen.mouse(input, &[], |event| {
+                if event.kind == MouseKind::Click {
+                    clicks.push((event.x, event.y));
+                }
+                false
+            });
+        }
+        (clicks, action)
+    }
+
+    #[test]
+    fn a_press_taken_late_selects_nothing() {
+        let mut screen = AltScreen::new();
+        screen.copy_on_select = true;
+        screen.frame(&[], &[StyledLine::from("pick me")], None, 20, 5);
+        let drag = ["\x1b[<32;5;5M", "\x1b[<0;5;5m"];
+        feed(&mut screen, &["\x1b[<0;1;5M"]);
+        assert_eq!(feed(&mut screen, &drag).1, MouseAction::Copy("pick".into()));
+        // Taken before the pointer moves, a press selects nothing, and a
+        // release where it went down is a click.
+        feed(&mut screen, &["\x1b[<0;1;5M"]);
+        screen.take_press(0, 4);
+        assert_eq!(feed(&mut screen, &drag), (vec![], MouseAction::Handled));
+        feed(&mut screen, &["\x1b[<0;1;5M"]);
+        screen.take_press(0, 4);
+        let release = feed(&mut screen, &["\x1b[<0;1;5m"]);
+        assert_eq!(release, (vec![(0, 4)], MouseAction::Handled));
+    }
+
+    #[test]
+    fn the_wheel_over_an_overlay_goes_to_it() {
+        let mut screen = AltScreen::new();
+        screen.frame(&[], &[], None, 20, 5);
+        screen.overlays = vec![crate::screen::Overlay {
+            row: 1,
+            col: 2,
+            width: 5,
+            lines: vec![StyledLine::from("menu")],
+        }];
+        let mut overlay = None;
+        let action = screen.mouse("\x1b[<65;4;2M", &[], |event| {
+            overlay = event.overlay;
+            false
+        });
+        // Nothing took it, so it is the focused overlay's input.
+        assert_eq!((action, overlay), (MouseAction::Unhandled, Some(0)));
     }
 }

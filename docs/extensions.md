@@ -35,6 +35,7 @@ yapi does not need Node.js. TypeScript and JavaScript extensions run in `yapi-js
 - `fetch` resolves when the response headers arrive, and the body streams as it arrives, as in Node. yapi holds only a few chunks of a body the extension has not read yet. Aborting, cancelling or dropping a response closes it.
 - Custom TUI components render inside the runtime. yapi paints their last frame, so a slow extension never blocks the interface.
 - An editor installed with `ctx.ui.setEditorComponent` replaces yapi's editor in the same way. It receives every key, and an editor that extends `CustomEditor` triggers yapi's key bindings, submits prompts and runs extension shortcuts as Pi's does.
+- In fullscreen mode, custom components, overlays, widgets, footers and editors from extensions get presses, clicks and the wheel through `handleMouse`, at their own coordinates as in Pi. yapi keeps drawing while they answer, and handles an event none of them takes as Pi does.
 - Listeners added with `ctx.ui.onTerminalInput` see raw input before yapi handles it and may consume or replace it. They run in the runtime too, so keys wait behind them while yapi keeps drawing.
 - Providers added with `ctx.ui.addAutocompleteProvider` wrap yapi's built-in completions, as in Pi. yapi asks them in the background, as it does for `@` file search.
 - Components match keys against the user's `keybindings.json`.

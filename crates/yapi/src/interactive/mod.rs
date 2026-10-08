@@ -55,7 +55,7 @@ use yapi_tui::lines::{self, StyledLine};
 use yapi_tui::markdown::MarkdownTheme;
 use yapi_tui::screen::{
     ALT_SCREEN_LEAVE, AltScreen, COPY_ERROR_FLASH_DURATION, FLASH_DURATION, MainScreen,
-    MouseAction, alt_screen_enter,
+    MouseAction, MouseKind, Placement, alt_screen_enter,
 };
 use yapi_tui::terminal::{
     BRACKETED_PASTE_DISABLE, BRACKETED_PASTE_ENABLE, ColorQuery, Filtered, KeyboardProtocol,
@@ -124,6 +124,10 @@ const VIEWPORT_KEYS: &[&str] = &[
 
 /// Work to finish on the loop.
 type Then = Box<dyn FnOnce(&mut App) + Send>;
+
+/// An extension component in the dock: its part, its first row in the part,
+/// its height and its key.
+type DockComponent = (usize, usize, usize, (u64, u32));
 
 /// Where the outcome of a session change goes when an extension command
 /// asked for it: whether an extension cancelled it, or why it failed.
@@ -411,6 +415,13 @@ struct App {
     /// Where the built-in editor shows in fullscreen mode, when it has focus:
     /// its first screen row, its first row shown and how many rows show.
     editor_rows: Option<(usize, usize, usize)>,
+    /// Where extension components show in fullscreen mode's dock: each
+    /// one's key, its first screen row, first row shown and how many rows
+    /// show, and its height.
+    ext_rows: Vec<((u64, u32), Placement, usize)>,
+    /// Presses offered to components, which tells an answer to an earlier
+    /// press from one to the current press.
+    presses: u64,
     selector: Option<Selector>,
     dialog: Option<Dialog>,
     chat: Vec<Item>,
@@ -1225,7 +1236,8 @@ impl App {
     /// than the screen leaves the transcript one row, its parts shrink, and
     /// each part keeps its top rows. Regular mode stacks the parts as drawn.
     fn dock(&mut self, width: usize) -> (Vec<StyledLine>, Option<(usize, usize)>) {
-        let (mut parts, cursor) = self.dock_parts(width);
+        let mut remote = Vec::new();
+        let (mut parts, cursor) = self.dock_parts(width, &mut remote);
         let available = if self.fullscreen {
             self.size.1.saturating_sub(1).max(1)
         } else {
@@ -1238,20 +1250,34 @@ impl App {
         // The fourth part is the focused built-in editor unless a selector,
         // an overlay among them, or an extension's editor takes its place.
         // The dock sits at the bottom of the screen.
-        self.editor_rows = (self.fullscreen
-            && self.selector.is_none()
-            && self.ext.editor.is_none())
-        .then(|| placed[3])
-        .map(|(row, first, count)| (self.size.1.saturating_sub(rows.len()) + row, first, count));
+        let top = self.size.1.saturating_sub(rows.len());
+        self.editor_rows =
+            (self.fullscreen && self.selector.is_none() && self.ext.editor.is_none())
+                .then(|| placed[3])
+                .map(|(row, first, count)| (top + row, first, count));
+        // The rows of each extension component that show, as pi's layout
+        // boxes them.
+        self.ext_rows = remote
+            .into_iter()
+            .filter(|_| self.fullscreen)
+            .filter_map(|(part, start, height, key)| {
+                let (row, first, count) = placed[part];
+                let (from, to) = (start.max(first), (start + height).min(first + count));
+                let shown = (top + row + from - first, from - start, to - from);
+                (from < to).then_some((key, shown, height))
+            })
+            .collect();
         (rows, cursor)
     }
 
     /// pi's dock stack: pending messages, status, widgets above, the editor
     /// (minimum three rows), widgets below and the footer, each with its
-    /// rows and minimum height, and the cursor as part, row and column.
+    /// rows and minimum height, and the cursor as part, row and column. Adds
+    /// the extension components in them to `remote`.
     fn dock_parts(
         &mut self,
         width: usize,
+        remote: &mut Vec<DockComponent>,
     ) -> (
         Vec<yapi_tui::screen::StackPart>,
         Option<(usize, usize, usize)>,
@@ -1305,7 +1331,9 @@ impl App {
         // pi's widget container above the editor: a spacer, then the widgets.
         out.extend(lines::spacer(1));
         for (_, widget) in &mut self.ext.above {
-            out.extend(widget.render(width, &self.theme));
+            let rows = widget.render(width, &self.theme);
+            remote.extend(widget.key().map(|key| (2, out.len(), rows.len(), key)));
+            out.extend(rows);
         }
         parts.push((std::mem::take(&mut out), 0));
         let cursor;
@@ -1324,6 +1352,9 @@ impl App {
         });
         if !overlaid && let Some(mut selector) = self.selector.take() {
             let (rows, at) = selector.render(width, &self.ui());
+            if let Selector::Remote(view) = &selector {
+                remote.push((3, 0, rows.len(), view.key()));
+            }
             self.selector = Some(selector);
             cursor = at.map(|(row, col)| (out.len() + row, col));
             out.extend(rows);
@@ -1341,6 +1372,7 @@ impl App {
             cursor = at
                 .filter(|_| !overlaid)
                 .map(|(row, col)| (out.len() + row, col));
+            remote.push((3, 0, rows.len(), editor.view.key()));
             out.extend(rows);
         } else {
             self.editor.border = border;
@@ -1363,7 +1395,9 @@ impl App {
         }
         parts.push((std::mem::take(&mut out), 3));
         for (_, widget) in &mut self.ext.below {
-            out.extend(widget.render(width, &self.theme));
+            let rows = widget.render(width, &self.theme);
+            remote.extend(widget.key().map(|key| (4, out.len(), rows.len(), key)));
+            out.extend(rows);
         }
         parts.push((std::mem::take(&mut out), 0));
         if !matches!(&self.footer_cache, Some((cached, _)) if *cached == width) {
@@ -1371,6 +1405,9 @@ impl App {
             self.footer_cache = Some((width, lines));
         }
         if let Some((_, footer)) = &self.footer_cache {
+            if let Some(view) = &self.ext.footer {
+                remote.push((5, 0, footer.len(), view.key()));
+            }
             out.extend(footer.iter().cloned());
         }
         parts.push((out, 0));
@@ -2620,20 +2657,94 @@ impl App {
     /// consumed.
     fn handle_viewport_key(&mut self, data: &str) -> bool {
         let (editor, rows) = (&mut self.editor, self.editor_rows);
-        // pi's layout offers the editor the events over its rows.
-        let action = self.alt.mouse(data, &self.flat, |event| match rows {
-            Some((top, first, count)) if (top..top + count).contains(&event.y) => {
-                editor.mouse(event.kind, event.x, event.y - top + first)
+        let (presses, columns, ext_rows) = (&mut self.presses, self.size.0, &self.ext_rows);
+        let top = match (&self.selector, &self.overlay) {
+            (Some(Selector::Remote(view)), Some(_)) => Some(view.key()),
+            _ => None,
+        };
+        let below = self.overlays_below.iter().map(|(view, _)| view.key());
+        let overlays: Vec<_> = (self.alt.overlays.iter().zip(below.chain(top)))
+            .map(|(overlay, key)| {
+                (
+                    key,
+                    overlay.col,
+                    overlay.row,
+                    overlay.width,
+                    overlay.lines.len(),
+                )
+            })
+            .collect();
+        // pi offers the events to the overlay under the pointer, else to the
+        // components in the layout there. An extension's answer comes later.
+        let mut remote = Vec::new();
+        let action = self.alt.mouse(data, &self.flat, |event| {
+            if event.kind == MouseKind::Press {
+                *presses += 1;
             }
-            _ => false,
+            let target = match event.overlay {
+                Some(index) => overlays.get(index).map(|&(key, col, row, width, height)| {
+                    (key, (event.x - col, event.y - row, width, height))
+                }),
+                None => ext_rows
+                    .iter()
+                    .find(|(_, (top, _, count), _)| (*top..top + count).contains(&event.y))
+                    .map(|&(key, (top, first, _), height)| {
+                        (key, (event.x, event.y - top + first, columns, height))
+                    }),
+            };
+            if let Some(target) = target {
+                remote.push((event, target));
+                return matches!(event.kind, MouseKind::Wheel(_));
+            }
+            match rows {
+                Some((top, first, count)) if (top..top + count).contains(&event.y) => {
+                    editor.mouse(event.kind, event.x, event.y - top + first)
+                }
+                _ => false,
+            }
         });
-        match action {
-            MouseAction::Unhandled => {}
-            MouseAction::Handled => return true,
-            MouseAction::Copy(text) => {
-                self.copy_and_flash(text, true);
-                return true;
+        let unhandled = action == MouseAction::Unhandled;
+        let mut copy = match action {
+            MouseAction::Copy(text) => Some(text),
+            _ => None,
+        };
+        let press = self.presses;
+        for (event, (key, area)) in remote {
+            match event.kind {
+                // A press the component takes starts no selection.
+                MouseKind::Press => self.remote_mouse(key, event, area, move |app, taken| {
+                    if taken && app.presses == press {
+                        app.alt.take_press(event.x, event.y);
+                    }
+                }),
+                // A click the component takes ends the selection uncopied.
+                MouseKind::Click => {
+                    let copy = copy.take();
+                    self.remote_mouse(key, event, area, move |app, taken| match copy {
+                        _ if taken && app.presses == press => app.alt.clear_selection(),
+                        Some(text) if !taken => app.copy_and_flash(text, true),
+                        _ => {}
+                    });
+                }
+                // A wheel event it does not take goes to the focused overlay,
+                // or scrolls.
+                MouseKind::Wheel(_) => {
+                    let data = data.to_owned();
+                    self.remote_mouse(key, event, area, move |app, taken| {
+                        match (taken, &app.selector, &app.overlay) {
+                            (true, ..) => {}
+                            (_, Some(Selector::Remote(view)), Some(_)) => view.input(&data),
+                            _ => app.alt.scroll_by(event.delta),
+                        }
+                    });
+                }
             }
+        }
+        if let Some(text) = copy {
+            self.copy_and_flash(text, true);
+        }
+        if !unhandled {
+            return true;
         }
         let Some(&action) = VIEWPORT_KEYS
             .iter()
@@ -3856,6 +3967,8 @@ impl App {
             selector: None,
             dialog: None,
             editor_rows: None,
+            ext_rows: Vec::new(),
+            presses: 0,
             chat: Vec::new(),
             cache: Vec::new(),
             flat: Vec::new(),

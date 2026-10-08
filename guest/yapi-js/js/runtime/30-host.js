@@ -1375,6 +1375,16 @@
 			}
 			return null;
 		},
+		/** A mouse event for a component; whether it took it, as pi-tui's `dispatchMouseEvent` decides. */
+		mouse(payload) {
+			let result;
+			try {
+				result = components.get(payload.handle)?.handleMouse?.(payload.event);
+			} catch (error) {
+				console.error("Component mouse error:", error);
+			}
+			return !!result && ("target" in result || !!(result.handled || result.capture || result.focus));
+		},
 		/** Runs a `!` command through the operations with `id`; `{ exitCode }`. */
 		async bash(payload) {
 			const operations = bashOperations.get(payload.id);

@@ -17,6 +17,7 @@ use yapi_core::extensions::{
 use yapi_core::mcp::extension::McpScreen;
 use yapi_tui::color::Color;
 use yapi_tui::lines::{self, StyledLine};
+use yapi_tui::screen::{MouseEvent, MouseKind};
 use yapi_tui::theme::{Paint, Theme};
 use yapi_types::sync::lock;
 
@@ -482,6 +483,14 @@ impl RemoteView {
         self.invalidate();
     }
 
+    /// Delivers a mouse event; see [`RemoteComponent::mouse`]. pi-tui
+    /// renders again after the events the TUI delivers.
+    pub fn mouse(&self, event: &Value) -> BoxFuture<'static, bool> {
+        let taken = self.component.mouse(event);
+        self.invalidate();
+        taken
+    }
+
     /// Sends an operation to the editor it shows; see
     /// [`RemoteComponent::editor_op`].
     pub fn editor_op(&self, op: &Value) {
@@ -591,6 +600,14 @@ pub(super) enum WidgetView {
 const MAX_WIDGET_LINES: usize = 10;
 
 impl WidgetView {
+    /// The component's key; see [`RemoteView::key`].
+    pub fn key(&self) -> Option<(u64, u32)> {
+        match self {
+            WidgetView::Lines(_) => None,
+            WidgetView::Remote(view) => Some(view.key()),
+        }
+    }
+
     pub fn render(&mut self, width: usize, theme: &Theme) -> Vec<StyledLine> {
         match self {
             WidgetView::Lines(text) => {
@@ -1369,6 +1386,71 @@ pub(super) fn overlay_layout(
 }
 
 impl super::App {
+    /// The extension component with `key` that the dock or an overlay shows.
+    fn remote_view(&mut self, key: (u64, u32)) -> Option<&RemoteView> {
+        use super::selectors::Selector;
+        if let Some(Selector::Remote(view)) = &self.selector
+            && view.key() == key
+        {
+            return Some(view);
+        }
+        if let Some((view, _)) = self
+            .overlays_below
+            .iter()
+            .find(|(view, _)| view.key() == key)
+        {
+            return Some(view);
+        }
+        self.ext
+            .views()
+            .find(|view| view.key() == key)
+            .map(|view| &*view)
+    }
+
+    /// Delivers `event` to the extension component with `key` as pi-tui's
+    /// `TuiMouseEvent` at the component's column and row and with its
+    /// width and height, `area`. Once the component answers, `then` runs
+    /// with whether it took the event.
+    pub(super) fn remote_mouse(
+        &mut self,
+        key: (u64, u32),
+        event: MouseEvent,
+        (x, y, width, height): (usize, usize, usize, usize),
+        then: impl FnOnce(&mut super::App, bool) + Send + 'static,
+    ) {
+        let button = ["left", "middle", "right", "none"][event.button & 3];
+        let (kind, button) = match event.kind {
+            MouseKind::Press => ("press", button),
+            MouseKind::Click => ("click", button),
+            MouseKind::Wheel(_) => ("wheel", "none"),
+        };
+        let mut json = json!({
+            "type": kind,
+            "button": button,
+            "x": x,
+            "y": y,
+            "screenX": event.x,
+            "screenY": event.y,
+            "width": width,
+            "height": height,
+            "shift": event.button & 4 != 0,
+            "alt": event.button & 8 != 0,
+            "ctrl": event.button & 16 != 0,
+        });
+        if kind == "wheel" {
+            json["wheelDelta"] = json!(event.delta);
+        }
+        let (tx, epoch) = (self.tx.clone(), self.epoch);
+        let Some(view) = self.remote_view(key) else {
+            return;
+        };
+        let taken = view.mouse(&json);
+        tokio::spawn(async move {
+            let taken = taken.await;
+            let _ = tx.send(Event::Then(epoch, Box::new(move |app| then(app, taken))));
+        });
+    }
+
     /// The overlay of the open custom component, as pi-tui composites it.
     /// The overlays of open custom components, bottom first, as pi-tui
     /// composites them.
