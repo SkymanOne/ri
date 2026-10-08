@@ -48,6 +48,13 @@ pub fn expand(text: &str) -> String {
     expand_home(text)
 }
 
+/// Node's `pathToFileURL` for an absolute path.
+pub fn file_url(path: &Path) -> String {
+    url::Url::from_file_path(path)
+        .map(String::from)
+        .unwrap_or_else(|_| format!("file://{}", path.display()))
+}
+
 /// `~` and `~/…` name the home directory, as in a shell.
 pub fn expand_home(text: &str) -> String {
     if text == "~" {
