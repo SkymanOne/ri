@@ -34,6 +34,11 @@
 //! other handlers run. [`spawn`] runs work in the background, after the
 //! handler that started it has returned, as a Pi extension does with a
 //! promise it does not await.
+//!
+//! A [`Component`] draws interface as a pi-tui component does.
+//! [`Context::custom`] shows one with keyboard focus until it finishes, and
+//! [`Context::set_widget`], [`Context::set_footer`] and
+//! [`Context::set_header`] keep one on screen.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -44,10 +49,14 @@ pub use serde_json::{Value, json};
 
 mod process;
 mod task;
+mod ui;
 
 pub use process::{Process, ProcessEvent};
 use task::LocalFuture;
 pub use task::{op, sleep, spawn};
+pub use ui::{
+    Component, CustomOptions, Done, Placement, Theme, Widget, parse_key, request_render, theme,
+};
 
 // The generated bindings name this crate by its external path.
 extern crate self as yapi_extension_api;
@@ -83,7 +92,7 @@ impl Context {
         self.data["hasUI"] == true
     }
 
-    /// The mode: `interactive`, `print`, `json` or `rpc`.
+    /// The mode: `tui`, `print`, `json` or `rpc`.
     pub fn mode(&self) -> &str {
         self.data["mode"].as_str().unwrap_or("print")
     }
@@ -488,8 +497,16 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
             });
             answer(Ok(instantiate(init)))
         }
-        "reload" => answer(Ok(instantiate(init))),
-        "bind" | "shortcut" | "complete" => answer(Ok(Value::Null)),
+        "reload" => {
+            ui::reset();
+            answer(Ok(instantiate(init)))
+        }
+        "bind" => {
+            ui::bind();
+            answer(Ok(Value::Null))
+        }
+        "mouse" => answer(Ok(Value::Bool(ui::mouse(&payload)))),
+        "shortcut" | "complete" => answer(Ok(Value::Null)),
         "flags" => {
             STATE.with(|state| {
                 let mut state = state.borrow_mut();
@@ -602,6 +619,17 @@ pub fn resolve(op: u64, value: Result<String, String>) -> Vec<Outcome> {
     task::run()
 }
 
+#[doc(hidden)]
+pub fn render(handle: u32, width: u32) -> Vec<String> {
+    ui::render(handle, width)
+}
+
+#[doc(hidden)]
+pub fn input(handle: u32, data: &str) -> Vec<Outcome> {
+    ui::input(handle, data);
+    task::run()
+}
+
 /// Exports an extension whose init function is `$init: fn(&mut Api)`.
 #[macro_export]
 macro_rules! extension {
@@ -624,15 +652,15 @@ macro_rules! extension {
                 $crate::resolve(op, value)
             }
 
-            fn render(_handle: u32, _width: u32) -> ::std::vec::Vec<::std::string::String> {
-                ::std::vec::Vec::new()
+            fn render(handle: u32, width: u32) -> ::std::vec::Vec<::std::string::String> {
+                $crate::render(handle, width)
             }
 
             fn input(
-                _handle: u32,
-                _data: ::std::string::String,
+                handle: u32,
+                data: ::std::string::String,
             ) -> ::std::vec::Vec<$crate::bindings::yapi::extension::types::Outcome> {
-                ::std::vec::Vec::new()
+                $crate::input(handle, &data)
             }
         }
 

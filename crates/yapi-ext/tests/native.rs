@@ -17,7 +17,9 @@ use futures_util::future::BoxFuture;
 use serde_json::json;
 use yapi_ai::faux::{Faux, Response};
 use yapi_core::agent_session::{AgentSession, TreeNavigation};
-use yapi_core::extensions::{DialogOptions, ExtensionUi, Mode, NoUi, NotifyKind};
+use yapi_core::extensions::{
+    CustomOptions, DialogOptions, ExtensionUi, Mode, NoUi, NotifyKind, RemoteComponent,
+};
 use yapi_ext::ExtensionHost;
 use yapi_types::message::Message;
 use yapi_types::session::FileEntry;
@@ -232,6 +234,88 @@ async fn todo_keeps_a_list_per_branch() {
         .unwrap();
     session.prompt("list", Vec::new()).await.unwrap();
     assert_eq!(tool_results(&session).last().unwrap(), "[ ] #1: buy milk");
+}
+
+/// A terminal that shows the custom components extensions open.
+#[derive(Default)]
+struct Terminal {
+    custom: std::sync::Mutex<Option<(RemoteComponent, CustomOptions)>>,
+    closed: std::sync::Mutex<Vec<(u64, u32)>>,
+}
+
+impl ExtensionUi for Terminal {
+    fn has_ui(&self) -> bool {
+        true
+    }
+
+    fn notify(&self, _message: &str, _kind: NotifyKind) {}
+
+    fn shows_components(&self) -> bool {
+        true
+    }
+
+    fn theme(&self) -> serde_json::Value {
+        json!({"fg": {"accent": "<a>", "borderMuted": "<b>", "dim": "<d>"}, "bg": {}, "dim": []})
+    }
+
+    fn custom(&self, component: RemoteComponent, options: CustomOptions) {
+        *self.custom.lock().unwrap() = Some((component, options));
+    }
+
+    fn close(&self, component: RemoteComponent) {
+        self.closed.lock().unwrap().push(component.key());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn todo_shows_the_list_in_a_component_until_escape() {
+    let dir = scratch("todo-component");
+    let host = load(&dir, "todo").await;
+    let faux = Faux::new([
+        Response::tool_call(
+            "call-1",
+            "todo",
+            json!({"action": "add", "text": "buy milk"}),
+        ),
+        Response::text("done"),
+    ]);
+    let session = session(&faux, &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    session.prompt("plan", Vec::new()).await.unwrap();
+
+    let command = tokio::spawn({
+        let session = session.clone();
+        async move { session.prompt("/todos", Vec::new()).await }
+    });
+    let (component, options) = loop {
+        if let Some(shown) = terminal.custom.lock().unwrap().clone() {
+            break shown;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    };
+    assert!(!options.overlay);
+    // Rendered in the session's theme, for each width asked.
+    let lines = component.render(20).await;
+    assert_eq!(
+        lines[1],
+        "<b>───\x1b[39m<a> Todos \x1b[39m<b>──────────\x1b[39m"
+    );
+    assert_eq!(lines[3], "  0/1 completed");
+    assert_eq!(lines[5], "  <d>○\x1b[39m <a>#1\x1b[39m buy milk");
+    assert_eq!(component.render(12).await[1].matches('─').count(), 5);
+
+    // Other keys leave it open. Escape, as the Kitty protocol sends it,
+    // closes it and ends the command.
+    component.input("x");
+    assert_eq!(component.render(20).await, lines);
+    assert!(terminal.closed.lock().unwrap().is_empty());
+    component.input("\x1b[27u");
+    command.await.unwrap().unwrap();
+    assert_eq!(*terminal.closed.lock().unwrap(), [component.key()]);
+    assert!(component.render(20).await.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

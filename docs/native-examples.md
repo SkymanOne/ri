@@ -1,13 +1,14 @@
 # Native extension examples
 
-The repository has six native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Five are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`.
+The repository has seven native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Six are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios compare the screens of `todo` and `custom-footer` with Pi running the TypeScript versions.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
 | [`hello`](#hello) | A tool, a command, a flag and two event handlers | `hello.ts` |
 | [`permission-gate`](#permission-gate) | Blocking tool calls from a `tool_call` handler, asking in a dialog | `permission-gate.ts` |
 | [`protected-paths`](#protected-paths) | Inspecting tool input, notifications | `protected-paths.ts` |
-| [`todo`](#todo) | State kept in tool results and rebuilt from the session branch | `todo.ts` |
+| [`todo`](#todo) | State kept in tool results and rebuilt from the session branch, a component that lists it | `todo.ts` |
+| [`custom-footer`](#custom-footer) | A component in place of the footer that reads the session as it renders | `custom-footer.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
 | [`subagent`](#subagent) | A process read as it runs, tool progress, background work that reports in a new turn | `subagent/` |
 
@@ -85,7 +86,7 @@ api.on("tool_call", |event, ctx| async move {
 
 ## todo
 
-A `todo` tool with `list`, `add`, `toggle` and `clear` actions, and a `/todos` command that shows the list. Each result carries the whole list in its details. When a session starts, or the user moves through the session tree with `/tree`, the extension reads the current branch and takes the list from the last `todo` result on it. Every branch therefore keeps its own list.
+A `todo` tool with `list`, `add`, `toggle` and `clear` actions, and a `/todos` command that shows the list in a component until Escape closes it. Each result carries the whole list in its details. When a session starts, or the user moves through the session tree with `/tree`, the extension reads the current branch and takes the list from the last `todo` result on it. Every branch therefore keeps its own list.
 
 ```rust
 fn rebuild() -> Result<(), String> {
@@ -108,6 +109,47 @@ api.on("session_tree", |_event, _ctx| async { rebuild().map(|()| None) });
 ```
 
 The extension keeps its state in a `thread_local`, since each native extension runs in an instance of its own and calls into it one at a time.
+
+`/todos` shows the list with `custom`, which resolves once the component calls `finish` on its `Done`. Outside the interactive mode the command reports an error instead, as Pi's does.
+
+```rust
+impl Component for TodoList {
+    fn render(&mut self, width: usize) -> Vec<String> {
+        let th = theme();
+        // ...
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        if matches!(parse_key(data).as_deref(), Some("escape" | "ctrl+c")) {
+            self.done.finish(());
+        }
+    }
+}
+
+let todos = STATE.with(|cell| cell.borrow().todos.clone());
+ctx.custom(|done| TodoList { todos, done }, CustomOptions::default()).await;
+```
+
+## custom-footer
+
+`/footer` replaces the footer with the session's token counts and cost on the left, and the model and the git branch on the right. Running it again restores the built-in footer. The footer is a component that reads the session's branch with `session.read` and the git branch with `ui.footerData` each time yapi renders it.
+
+```rust
+api.register_command("footer", "Toggle custom footer", |_args, ctx| async move {
+    let enabled = !ENABLED.get();
+    ENABLED.set(enabled);
+    if enabled {
+        let model = ctx.data()["model"]["id"].as_str().filter(|id| !id.is_empty());
+        let model = model.unwrap_or("no-model").to_owned();
+        ctx.set_footer(Some(Box::new(Footer { model })));
+        notify("Custom footer enabled", "info");
+    } else {
+        ctx.set_footer(None);
+        notify("Default footer restored", "info");
+    }
+    Ok(())
+});
+```
 
 ## repo-status
 

@@ -2,7 +2,7 @@
 
 Native extensions are WebAssembly components written in Rust with the `yapi-extension-api` crate. They register tools, commands, flags and event handlers like Pi extensions, and use Pi's JSON shapes for events and results.
 
-A native extension needs no JavaScript runtime and runs in a WebAssembly instance of its own. A built extension is one `.wasm` file of a few hundred kilobytes.
+Native extensions can also draw their own interface with components, as Pi extensions do with pi-tui. A native extension needs no JavaScript runtime and runs in a WebAssembly instance of its own. A built extension is one `.wasm` file of a few hundred kilobytes.
 
 Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Rust SDK and the host requests they use may change in any release before then, and extensions may need to be rebuilt. Pi extensions from npm use Pi's extension API and are not affected.
 
@@ -151,8 +151,11 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `request` | Call any host action by name with a JSON payload and get its answer at once |
 | `op` | Start a host operation by name, such as a dialog or an HTTP request, and await its answer |
 | `Context` | The mode, the working folder and the rest of Pi's `ctx`. `Context::update` shows a running tool's progress. |
+| `Component` | A piece of interface that renders lines for a width and handles keys and mouse events. See [Interface components](#interface-components). |
+| `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header` | Show components, as Pi's `ctx.ui` does |
+| `theme`, `request_render`, `parse_key` | Style text in the session's theme, render components again, and name keys |
 
-[Native extension examples](native-examples.md) walks through six complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch, a git status reporter, a subagent that runs in the foreground or the background, and a minimal starting point.
+[Native extension examples](native-examples.md) walks through seven complete extensions: a guard for dangerous commands, protected paths, a todo list kept per session branch and shown in a component, a footer component, a git status reporter, a subagent that runs in the foreground or the background, and a minimal starting point.
 
 ### Host requests
 
@@ -195,6 +198,71 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 Dropping a `Process` kills it, and so does stopping the extension. Starting one needs the process grant, which every extension has by default.
 
+## Interface components
+
+A component implements the `Component` trait. `render` returns the lines to show at a width, as text with ANSI escape sequences. The optional `handle_input` receives raw terminal input while the component has focus, and `handle_mouse` receives mouse events in fullscreen mode and returns whether it took them.
+
+```rust
+use yapi_extension_api::{Component, CustomOptions, Done, parse_key, theme};
+
+struct Confirm {
+    done: Done<bool>,
+}
+
+impl Component for Confirm {
+    fn render(&mut self, _width: usize) -> Vec<String> {
+        vec![theme().fg("accent", "Deploy now? (y/n)")]
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        if data == "y" || data == "n" {
+            self.done.finish(data == "y");
+        } else if parse_key(data).as_deref() == Some("escape") {
+            self.done.finish(false);
+        }
+    }
+}
+
+api.register_command("deploy", "Deploys after asking", |_args, ctx| async move {
+    let confirmed = ctx.custom(|done| Confirm { done }, CustomOptions::default()).await;
+    if confirmed == Some(true) {
+        // ...
+    }
+    Ok(())
+});
+```
+
+These `Context` methods show components:
+
+| Method | Pi counterpart | Shows |
+|---|---|---|
+| `custom(build, options)` | `ctx.ui.custom` | The component `build` returns, with keyboard focus, in the editor's place or as an overlay. `CustomOptions` sets `overlay` and Pi's `overlayOptions`, such as `{"width": 70}`. The future resolves to the value the component passes to `Done::finish`, which also closes it. |
+| `set_widget(key, widget, placement)` | `ctx.ui.setWidget` | `Widget::Lines` or `Widget::Component` as widget `key`, above or below the editor. `None` removes the widget. |
+| `set_footer(component)`, `set_header(component)` | `ctx.ui.setFooter`, `ctx.ui.setHeader` | A component in place of the footer or the startup header. `None` restores the built-in one. |
+
+yapi renders a component after each key or mouse event it handles, and paints the lines it rendered last in the meantime, so the interface never waits for the extension. A component that changes on its own, from a timer or a background task, calls `request_render` afterwards. yapi cuts lines wider than the width.
+
+`theme()` returns the session's theme. `Theme::fg` and `Theme::bg` color text with a token such as `accent`, `muted` or `success`, and `bold`, `italic`, `underline`, `strikethrough` and `inverse` style it. Text stays plain without a theme, as in print mode, and for a token the theme does not have.
+
+`parse_key` names the keys components most often handle, such as `up`, `enter`, `escape` and `ctrl+c`. yapi turns on the Kitty keyboard protocol where the terminal supports it, which encodes Escape and keys with Ctrl differently, and `parse_key` reads both encodings. Compare keys through it rather than with raw bytes such as `"\x1b"`.
+
+Only the interactive mode shows components. In RPC, print and JSON modes, `custom` resolves to `None` at once, and component widgets, footers and headers are left out. When the extension loads again for another session, yapi drops every component it showed.
+
+Native extensions cannot yet replace the editor, render tool calls and messages, or hide an overlay through a handle, and the SDK has no ready-made widgets like pi-tui's `SelectList` or `Editor`.
+
+The methods send these host requests. The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself:
+
+| Kind | Payload | Effect |
+|---|---|---|
+| `ui.setWidget` | `{"key", "lines", "options": {"placement"}}`, or `handle` in place of `lines` | Shows the lines or the component as widget `key`, or removes it when both are left out |
+| `ui.setFooter`, `ui.setHeader` | `{"handle"}` | Shows the component, or the built-in one when `handle` is `null` |
+| `ui.custom` | `{"handle", "overlay", "overlayOptions"}` | Shows the component with keyboard focus |
+| `ui.close` | `{"handle"}` | Closes the component `ui.custom` showed |
+| `ui.requestRender` | `{}` | Renders the components again |
+| `ui.theme` | `{}` | The theme, as `{"name", "mode", "fg", "bg", "dim", "colors"}`, where `fg` and `bg` hold each token's escape sequence |
+
+yapi renders a component through the WIT world's `render` export and delivers keys through `input`. Mouse events arrive as the `mouse` call.
+
 ## Background work and cancellation
 
 Handlers are `async`. While one waits for a host operation, other handlers, tool calls and background tasks run. `spawn` runs a future in the background, after the handler that started it has returned, as a Pi extension does with a promise it does not await. A background task can report its result with the `session.sendMessage` request, with `"triggerTurn": true` to start a turn when the agent is idle.
@@ -203,4 +271,4 @@ When the user aborts a run, yapi drops the futures of the extension tools still 
 
 ## Limits
 
-Extension UI components are available to Pi extensions only. Each call into an extension may compute for 60 seconds without waiting on yapi, and each extension may use 1 GiB of memory.
+Each call into an extension may compute for 60 seconds without waiting on yapi, and each extension may use 1 GiB of memory.

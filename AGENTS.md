@@ -166,9 +166,9 @@ Module loading runs on the host, in `yapi-ext`:
 
 ### UI bridge
 
-- JS components render ANSI lines inside the guest.
+- Components render ANSI lines inside the guest: pi-tui components in `yapi-js`, and the Rust SDK's `Component` in native extensions, over the same `render` and `input` exports and `ui.*` requests.
 - The TUI paints a remote component's cached lines, parsed from ANSI by `yapi-tui`, and maps pi's cursor marker to the frame cursor.
-- The TUI requests renders for dirty handles and paints the last result, so it never waits on JS.
+- The TUI requests renders for dirty handles and paints the last result, so it never waits on the guest.
 - Inside the guest, pi-tui reports a terminal without hyperlink or image support, so components use pi-tui's own text fallbacks.
 - Known losses are listed in [docs/compat.md](docs/compat.md).
 

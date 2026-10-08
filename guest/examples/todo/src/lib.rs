@@ -1,5 +1,5 @@
 //! A todo list the model manages through a `todo` tool, and a `/todos`
-//! command that shows it.
+//! command that shows it in a component.
 //!
 //! A port of pi's `todo.ts` example. Each tool result carries the whole list
 //! in its details, and the list is rebuilt from the session's current branch
@@ -8,7 +8,10 @@
 
 use std::cell::RefCell;
 
-use yapi_extension_api::{Api, Tool, ToolResult, Value, json, notify, request};
+use yapi_extension_api::{
+    Api, Component, CustomOptions, Done, Tool, ToolResult, Value, json, notify, parse_key, request,
+    theme,
+};
 
 #[derive(Clone)]
 struct State {
@@ -114,6 +117,61 @@ fn apply(state: &mut State, params: &Value) -> (String, Option<String>) {
     }
 }
 
+/// The list `/todos` shows until Escape closes it; pi's `TodoListComponent`.
+struct TodoList {
+    todos: Vec<Value>,
+    done: Done<()>,
+}
+
+impl Component for TodoList {
+    fn render(&mut self, width: usize) -> Vec<String> {
+        let th = theme();
+        let mut lines = vec![String::new()];
+        lines.push(format!(
+            "{}{}{}",
+            th.fg("borderMuted", &"─".repeat(3)),
+            th.fg("accent", " Todos "),
+            th.fg("borderMuted", &"─".repeat(width.saturating_sub(10))),
+        ));
+        lines.push(String::new());
+        if self.todos.is_empty() {
+            lines.push(format!(
+                "  {}",
+                th.fg("dim", "No todos yet. Ask the agent to add some!")
+            ));
+        } else {
+            let done = self
+                .todos
+                .iter()
+                .filter(|todo| todo["done"] == true)
+                .count();
+            let completed = format!("{done}/{} completed", self.todos.len());
+            lines.push(format!("  {}", th.fg("muted", &completed)));
+            lines.push(String::new());
+            for todo in &self.todos {
+                let text = todo["text"].as_str().unwrap_or_default();
+                let (check, text) = if todo["done"] == true {
+                    (th.fg("success", "✓"), th.fg("dim", text))
+                } else {
+                    (th.fg("dim", "○"), th.fg("text", text))
+                };
+                let id = th.fg("accent", &format!("#{}", todo["id"]));
+                lines.push(format!("  {check} {id} {text}"));
+            }
+        }
+        lines.push(String::new());
+        lines.push(format!("  {}", th.fg("dim", "Press Escape to close")));
+        lines.push(String::new());
+        lines
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        if matches!(parse_key(data).as_deref(), Some("escape" | "ctrl+c")) {
+            self.done.finish(());
+        }
+    }
+}
+
 fn init(api: &mut Api) {
     api.on("session_start", |_event, _ctx| async {
         rebuild().map(|()| None)
@@ -155,13 +213,14 @@ fn init(api: &mut Api) {
     api.register_command(
         "todos",
         "Show all todos on the current branch",
-        |_args, _ctx| async {
+        |_args, ctx| async move {
+            if ctx.mode() != "tui" {
+                notify("/todos requires interactive mode", "error");
+                return Ok(());
+            }
             let todos = STATE.with(|cell| cell.borrow().todos.clone());
-            let done = todos.iter().filter(|todo| todo["done"] == true).count();
-            notify(
-                &format!("{done}/{} completed\n{}", todos.len(), listing(&todos)),
-                "info",
-            );
+            ctx.custom(|done| TodoList { todos, done }, CustomOptions::default())
+                .await;
             Ok(())
         },
     );

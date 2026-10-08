@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "examples/custom-footer",
     "examples/hello",
     "examples/permission-gate",
     "examples/protected-paths",
