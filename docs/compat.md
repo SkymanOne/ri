@@ -43,7 +43,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 | Tree label times | Local time | UTC, with no time zone database. |
 | Codex transport | WebSocket, then compressed SSE | Uncompressed SSE, the same requests and events as Pi's fallback. |
 | Image formats | Any format Pi's image library reads becomes PNG | Only BMP is converted. Other prompt images are left out with a note. |
-| Mouse in fullscreen mode | Clicks also choose items in `/settings`, `/thinking` and their submenus, move the cursor in selector search fields, expand tool output, thinking and summaries, and open links. Extension editors and components get mouse events. | Clicks move the editor's cursor and choose completions. Other built-in components get no mouse events, and links show as text. Extension headers, message renderers and tool renderers get none either. Other extension components get presses, clicks and the wheel, but no pointer moves, drags or releases, and a click does not give them the keyboard focus. |
+| Mouse in fullscreen mode | Clicks also choose items in `/settings`, `/thinking` and their submenus, move the cursor in selector search fields, and expand tool output, thinking and summaries. Extension editors and components get mouse events. | Clicks move the editor's cursor and choose completions. Other built-in components get no mouse events. Extension headers, message renderers and tool renderers get none either. Other extension components get presses, clicks and the wheel, but no pointer moves, drags or releases, and a click does not give them the keyboard focus. |
 
 ## Open Gaps
 

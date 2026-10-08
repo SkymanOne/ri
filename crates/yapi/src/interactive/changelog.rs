@@ -146,7 +146,10 @@ pub fn notice(markdown: String, collapse: bool, spacer: bool) -> Item {
                 1,
                 0,
                 ctx.markdown,
-                MarkdownOptions::default(),
+                MarkdownOptions {
+                    hyperlinks: ctx.hyperlinks,
+                    ..MarkdownOptions::default()
+                },
             ));
             out.extend(lines::spacer(1));
         }

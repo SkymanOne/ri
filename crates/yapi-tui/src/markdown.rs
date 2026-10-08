@@ -8,7 +8,7 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 
@@ -71,6 +71,9 @@ pub struct MarkdownOptions {
     pub preserve_list_markers: bool,
     /// Show backslash escapes as written.
     pub preserve_backslash_escapes: bool,
+    /// Links are OSC 8 hyperlinks, without their URL after the text: pi-tui's
+    /// `hyperlinks` capability.
+    pub hyperlinks: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -250,15 +253,24 @@ impl<'a> Builder<'a> {
                     push_text(out, "~".to_owned());
                 }
             }
-            Event::Start(Tag::Link { dest_url, .. }) => {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            }) => {
                 let in_link = std::mem::replace(&mut self.in_link, true);
                 let children = self.inlines(TagEnd::Link);
                 self.in_link = in_link;
                 let text = plain_text(&children);
+                // marked links `<me@example.com>` to `mailto:me@example.com`.
+                let href = match link_type {
+                    LinkType::Email => format!("mailto:{dest_url}"),
+                    _ => dest_url.into_string(),
+                };
                 out.push(Inline::Link {
                     children,
                     text,
-                    href: dest_url.into_string(),
+                    href,
                 });
             }
             Event::Start(tag @ (Tag::Image { .. } | Tag::Superscript | Tag::Subscript)) => {
@@ -721,10 +733,12 @@ impl Renderer<'_> {
                     text,
                     href,
                 } => {
-                    out.extend(under(
-                        children,
-                        self.theme.link.add_modifier(Modifier::UNDERLINED),
-                    ));
+                    let style = self.theme.link.add_modifier(Modifier::UNDERLINED);
+                    if self.options.hyperlinks {
+                        out.extend(under(children, crate::ansi::link(style, href)));
+                        continue;
+                    }
+                    out.extend(under(children, style));
                     let bare = href.strip_prefix("mailto:").unwrap_or(href);
                     if text != href && text != bare {
                         out.push(Span::styled(format!(" ({href})"), self.theme.link_url));

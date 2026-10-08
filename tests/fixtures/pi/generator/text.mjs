@@ -1,5 +1,6 @@
 // Records pi-tui's text layout, for crates/yapi-tui/tests/text.rs: wrapping,
-// truncation and markdown rendering, as plain text (identity theme).
+// truncation and markdown rendering, as plain text (identity theme), with
+// links as text or as OSC 8 hyperlinks.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -75,6 +76,16 @@ for (const [name, text] of [...Object.entries(docs), ...Object.entries(autolinks
 			const component = new Markdown(text, paddingX, paddingY, underline ? underlined : theme, undefined, options);
 			markdown.push({ name, text, width, paddingX, paddingY, preserve, underline, lines: component.render(width) });
 		}
+	}
+}
+
+// Links as OSC 8 hyperlinks, in a terminal that shows them.
+setCapabilities({ images: null, trueColor: true, hyperlinks: true });
+for (const name of ["links", "urlContext", "urlBlocks"]) {
+	const text = docs[name] ?? autolinks[name];
+	for (const [width, paddingX, paddingY] of [[40, 0, 0], [24, 1, 0]]) {
+		const lines = new Markdown(text, paddingX, paddingY, theme).render(width);
+		markdown.push({ name, text, width, paddingX, paddingY, preserve: false, hyperlinks: true, lines });
 	}
 }
 

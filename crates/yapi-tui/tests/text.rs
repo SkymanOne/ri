@@ -5,7 +5,7 @@
 use ratatui_core::style::Modifier;
 use ratatui_core::text::Line;
 use serde_json::Value;
-use yapi_tui::ansi::parse_line;
+use yapi_tui::ansi::{line_to_ansi, link_url, parse_line};
 use yapi_tui::lines::{plain, raw, truncate, wrap};
 use yapi_tui::markdown::{MarkdownOptions, MarkdownTheme, render};
 
@@ -79,6 +79,29 @@ fn underlined(line: &Line) -> String {
     out
 }
 
+/// A line's text with each linked run as `[text](url)`.
+fn linked(line: &Line) -> String {
+    let mut out = String::new();
+    let mut open = None;
+    for span in line.spans.iter().filter(|span| !span.content.is_empty()) {
+        let url = link_url(span.style);
+        if url != open {
+            if let Some(url) = &open {
+                out.push_str(&format!("]({url})"));
+            }
+            if url.is_some() {
+                out.push('[');
+            }
+            open = url;
+        }
+        out.push_str(&span.content);
+    }
+    if let Some(url) = open {
+        out.push_str(&format!("]({url})"));
+    }
+    out
+}
+
 #[test]
 fn renders_markdown_like_pi() {
     let fixture = fixture();
@@ -90,9 +113,12 @@ fn renders_markdown_like_pi() {
         let px = case["paddingX"].as_u64().unwrap() as usize;
         let py = case["paddingY"].as_u64().unwrap() as usize;
         let preserve = case["preserve"].as_bool().unwrap();
+        // Hyperlinks are compared as written to the terminal and read back.
+        let hyperlinks = case["hyperlinks"].as_bool() == Some(true);
         let options = MarkdownOptions {
             preserve_list_markers: preserve,
             preserve_backslash_escapes: preserve,
+            hyperlinks,
             ..MarkdownOptions::default()
         };
         let underline = case["underline"].as_bool() == Some(true);
@@ -106,7 +132,9 @@ fn renders_markdown_like_pi() {
         )
         .iter()
         .map(|line| {
-            if underline {
+            if hyperlinks {
+                linked(&parse_line(&line_to_ansi(line)).0)
+            } else if underline {
                 underlined(line)
             } else {
                 plain(line)
@@ -116,9 +144,10 @@ fn renders_markdown_like_pi() {
         // pi closes styles inside wrapped table cells even with an identity theme.
         let expected: Vec<String> = strings(&case["lines"])
             .iter()
-            .map(|line| match underline {
-                true => underlined(&parse_line(line).0),
-                false => line.replace("\x1b[22;23;24;25;27;28;29;39m", ""),
+            .map(|line| match (hyperlinks, underline) {
+                (true, _) => linked(&parse_line(line).0),
+                (_, true) => underlined(&parse_line(line).0),
+                _ => line.replace("\x1b[22;23;24;25;27;28;29;39m", ""),
             })
             .collect();
         if actual != expected {

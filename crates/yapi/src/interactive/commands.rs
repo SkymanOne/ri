@@ -536,7 +536,10 @@ fn framed_markdown(
         1,
         1,
         ctx.markdown,
-        MarkdownOptions::default(),
+        MarkdownOptions {
+            hyperlinks: ctx.hyperlinks,
+            ..MarkdownOptions::default()
+        },
     ));
     out.push(lines::border(width, border));
     out

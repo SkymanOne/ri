@@ -299,6 +299,24 @@ fn path_span(
     }
 }
 
+/// pi's `renderToolPath`: [`path_span`], linked to the file when hyperlinks
+/// are on.
+fn tool_path(
+    ctx: &RenderContext<'_>,
+    path: Option<Option<&str>>,
+    fallback: Option<&str>,
+) -> Span<'static> {
+    let mut span = path_span(ctx.theme, path, ctx.home, fallback);
+    if let Some(path) = path
+        .filter(|_| ctx.hyperlinks)
+        .and_then(|path| path.filter(|p| !p.is_empty()).or(fallback))
+    {
+        let file = yapi_core::tools::path::resolve_to_cwd(path, ctx.cwd);
+        span.style = yapi_tui::ansi::link(span.style, &yapi_core::tools::path::file_url(&file));
+    }
+    span
+}
+
 fn number_arg(args: &Value, key: &str) -> Option<String> {
     match args.get(key)? {
         Value::Number(number) => Some(number.to_string()),
@@ -572,7 +590,7 @@ impl ToolView {
                     None => vec![
                         title(theme, "read"),
                         Span::raw(" "),
-                        path_span(theme, path, home, None),
+                        tool_path(ctx, path, None),
                     ],
                 };
                 spans.extend(read_range(args, theme));
@@ -610,7 +628,7 @@ impl ToolView {
                 let mut lines = vec![Line::from(vec![
                     title(theme, "write"),
                     Span::raw(" "),
-                    path_span(theme, string_arg(args, &["file_path", "path"]), home, None),
+                    tool_path(ctx, string_arg(args, &["file_path", "path"]), None),
                 ])];
                 match string_arg(args, &["content"]) {
                     None => {
@@ -687,7 +705,7 @@ impl ToolView {
                 let mut spans = vec![
                     title(theme, "ls"),
                     Span::raw(" "),
-                    path_span(theme, string_arg(args, &["path"]), home, Some(".")),
+                    tool_path(ctx, string_arg(args, &["path"]), Some(".")),
                 ];
                 if let Some(limit) = number_arg(args, "limit") {
                     spans.push(Span::styled(
@@ -1065,12 +1083,7 @@ impl ToolView {
         let header = Line::from(vec![
             title(theme, "edit"),
             Span::raw(" "),
-            path_span(
-                theme,
-                string_arg(&self.args, &["file_path", "path"]),
-                ctx.home,
-                None,
-            ),
+            tool_path(ctx, string_arg(&self.args, &["file_path", "path"]), None),
         ]);
         let mut body = lines::wrap(&header, inner);
         // pi's edit renderer: a successful result's diff replaces the
@@ -1461,6 +1474,7 @@ mod tests {
             cwd: Path::new("/work"),
             agent_dir: Path::new("/agent"),
             thinking_label: "Thinking...",
+            hyperlinks: false,
         };
         let mut view = ToolView::new("mcp__demo__big", Value::Null);
         view.mcp_label = Some("demo/big".to_owned());
@@ -1530,6 +1544,7 @@ mod tests {
             cwd: Path::new("/work"),
             agent_dir: Path::new("/agent"),
             thinking_label: "Thinking...",
+            hyperlinks: false,
         };
         let call = |args: Value, ctx: &RenderContext<'_>| {
             lines::plain(&ToolView::new("read", args).call_lines(ctx, 120)[0])
@@ -1565,6 +1580,16 @@ mod tests {
             call(serde_json::json!({"path": "attio/SKILL.md"}), &ctx),
             "read attio/SKILL.md"
         );
+        // With hyperlinks the path links to its file, as pi's `linkPath`.
+        ctx.hyperlinks = true;
+        let line =
+            ToolView::new("read", serde_json::json!({"path": "a b.md"})).call_lines(&ctx, 120);
+        let urls: Vec<String> = line[0]
+            .spans
+            .iter()
+            .filter_map(|span| yapi_tui::ansi::link_url(span.style).map(|url| url.to_string()))
+            .collect();
+        assert_eq!(urls, ["file:///work/a%20b.md"]);
     }
 
     #[test]

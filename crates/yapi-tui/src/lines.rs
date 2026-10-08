@@ -334,6 +334,18 @@ pub(crate) fn cell_range(line: &Line<'_>, column: usize) -> Option<(usize, usize
     None
 }
 
+/// pi-tui's `getOsc8LinkAtColumn`: the URL linked at `column`.
+pub(crate) fn link_at(line: &Line<'_>, column: usize) -> Option<std::sync::Arc<str>> {
+    let mut at = 0;
+    for span in &line.spans {
+        at += crate::text::visible_width(&span.content);
+        if column < at {
+            return crate::ansi::link_url(line.style.patch(span.style));
+        }
+    }
+    None
+}
+
 /// Pads a line with spaces to `width` columns.
 pub(crate) fn pad(mut line: StyledLine, width: usize) -> StyledLine {
     let used = self::width(&line);

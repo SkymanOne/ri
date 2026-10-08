@@ -486,6 +486,7 @@ impl LoginDialog {
     /// Shows an event from the sign-in.
     pub fn notify(&mut self, event: AuthEvent, ui: &Ui<'_>) {
         let theme = ui.theme;
+        let link = yapi_tui::ansi::link;
         let click = if cfg!(target_os = "macos") {
             "Cmd+click to open"
         } else {
@@ -495,8 +496,8 @@ impl LoginDialog {
             AuthEvent::AuthUrl { url, instructions } => {
                 self.rows.clear();
                 self.rows.push(Row::Spacer);
-                self.text(styled(url.clone(), theme.fg("accent")));
-                self.text(styled(click, theme.fg("dim")));
+                self.text(styled(url.clone(), link(theme.fg("accent"), &url)));
+                self.text(styled(click, link(theme.fg("dim"), &url)));
                 if let Some(instructions) = instructions {
                     self.rows.push(Row::Spacer);
                     self.text(styled(instructions, theme.fg("warning")));
@@ -510,8 +511,10 @@ impl LoginDialog {
             } => {
                 self.rows.clear();
                 self.rows.push(Row::Spacer);
-                self.text(styled(verification_uri, theme.fg("accent")));
-                self.text(styled(click, theme.fg("dim")));
+                let hint = styled(click, link(theme.fg("dim"), &verification_uri));
+                let uri = link(theme.fg("accent"), &verification_uri);
+                self.text(styled(verification_uri, uri));
+                self.text(hint);
                 self.rows.push(Row::Spacer);
                 self.text(styled(
                     format!("Enter code: {user_code}"),
@@ -523,13 +526,13 @@ impl LoginDialog {
             }
             AuthEvent::Info { message, links } => {
                 self.show_info(&message, ui);
-                for link in links {
-                    let text = if link.label.is_empty() {
-                        link.url
+                for info in links {
+                    let text = if info.label.is_empty() {
+                        info.url.clone()
                     } else {
-                        format!("{}: {}", link.label, link.url)
+                        format!("{}: {}", info.label, info.url)
                     };
-                    self.text(styled(text, theme.fg("accent")));
+                    self.text(styled(text, link(theme.fg("accent"), &info.url)));
                 }
             }
             AuthEvent::Progress { message } => self.text(styled(message, theme.fg("dim"))),

@@ -38,6 +38,8 @@ pub struct RenderContext<'a> {
     pub agent_dir: &'a std::path::Path,
     /// The label of hidden thinking blocks.
     pub thinking_label: &'a str,
+    /// Links are OSC 8 hyperlinks: pi-tui's `hyperlinks` capability.
+    pub hyperlinks: bool,
 }
 
 /// Draws an item's rows for a width.
@@ -124,6 +126,7 @@ fn custom_markdown(text: &str, width: usize, ctx: &RenderContext<'_>) -> Vec<Sty
         ctx.markdown,
         MarkdownOptions {
             text: Some(ctx.theme.fg("customMessageText")),
+            hyperlinks: ctx.hyperlinks,
             ..MarkdownOptions::default()
         },
     )
@@ -201,6 +204,7 @@ fn user_message(text: &str, width: usize, ctx: &RenderContext<'_>) -> Vec<Styled
             background: Some(ctx.theme.bg("userMessageBg")),
             preserve_list_markers: true,
             preserve_backslash_escapes: true,
+            hyperlinks: ctx.hyperlinks,
         },
     )
 }
@@ -365,7 +369,10 @@ fn render_assistant(
                     pad,
                     0,
                     ctx.markdown,
-                    MarkdownOptions::default(),
+                    MarkdownOptions {
+                        hyperlinks: ctx.hyperlinks,
+                        ..MarkdownOptions::default()
+                    },
                 ));
                 index += 1;
             }
@@ -399,6 +406,7 @@ fn render_assistant(
                         ctx.markdown,
                         MarkdownOptions {
                             text: Some(theme.fg("thinkingText").add_modifier(Modifier::ITALIC)),
+                            hyperlinks: ctx.hyperlinks,
                             ..MarkdownOptions::default()
                         },
                     ));
