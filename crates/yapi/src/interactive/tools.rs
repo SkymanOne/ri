@@ -16,7 +16,7 @@ use yapi_tui::theme::Theme;
 use yapi_types::event::ToolResult;
 use yapi_types::message::ContentBlock;
 
-use super::chat::RenderContext;
+use super::chat::{Hit, RenderContext, Toggle, box_hit};
 use super::selectors::key_hint;
 
 /// A tool call, its streamed progress and its result.
@@ -460,6 +460,24 @@ impl ToolView {
 
     fn shown_result(&self) -> Option<&ToolResult> {
         self.result.as_ref().or(self.partial.as_ref())
+    }
+
+    /// Where a click on the item's `rows` rows at `width` expands or
+    /// collapses it, once it has a result: pi's `MouseRegion`s over the call
+    /// and the result inside the box. A tool pi has no definition for takes
+    /// clicks on its whole padded text, and one that draws its own frame on
+    /// its rows below the spacer.
+    pub fn hit(&self, rows: usize, width: usize) -> Option<Hit> {
+        self.shown_result()?;
+        let own = self
+            .draw
+            .as_ref()
+            .is_some_and(|draw| draw.renderers.own_shell);
+        Some(if own || !self.known {
+            (1..rows, 0..width, Toggle::Expanded)
+        } else {
+            box_hit(1, rows, width)
+        })
     }
 
     fn background(&self, theme: &Theme) -> Style {
@@ -1467,6 +1485,7 @@ mod tests {
             markdown: &markdown,
             expanded: false,
             hide_thinking: false,
+            thinking: &[],
             output_pad: 1,
             expand_key: "ctrl+o",
             cancel_key: "esc",
@@ -1537,6 +1556,7 @@ mod tests {
             markdown: &markdown,
             expanded: false,
             hide_thinking: false,
+            thinking: &[],
             output_pad: 1,
             expand_key: "ctrl+o",
             cancel_key: "esc",

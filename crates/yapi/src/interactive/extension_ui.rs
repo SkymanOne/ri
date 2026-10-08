@@ -981,6 +981,9 @@ impl super::App {
             Request::ToolsExpanded(expanded) => {
                 if expanded != self.expanded {
                     self.expanded = expanded;
+                    self.toggles
+                        .iter_mut()
+                        .for_each(|toggles| toggles.expanded = false);
                     self.invalidate_all();
                     self.redraw_transcript();
                 }
@@ -1111,7 +1114,11 @@ impl super::App {
             return;
         };
         let session = self.session.clone();
-        let (cwd, expanded) = (self.cwd.clone(), self.expanded);
+        let toggled = self
+            .toggles
+            .get(index)
+            .is_some_and(|toggles| toggles.expanded);
+        let (cwd, expanded) = (self.cwd.clone(), self.expanded ^ toggled);
         let Some(Item::Tool(view)) = self.chat.get_mut(index) else {
             return;
         };

@@ -116,6 +116,9 @@ pub struct MouseEvent {
     /// The topmost of [`AltScreen::overlays`] under the pointer, which gets
     /// the event in place of the components below it.
     pub overlay: Option<usize>,
+    /// The transcript row under the pointer, when the transcript shows there,
+    /// as pi's scroll view passes its content row to the chat.
+    pub row: Option<usize>,
 }
 
 /// What [`AltScreen::mouse`] did with its input.
@@ -256,6 +259,9 @@ impl AltScreen {
         };
         let overlay = self.overlay_at(x, y);
         let covered = overlay.is_some();
+        let row = (y < self.viewport)
+            .then(|| self.scroll_position() + y)
+            .filter(|row| *row < self.transcript_len);
         let event = |kind, delta| MouseEvent {
             kind,
             x,
@@ -263,6 +269,7 @@ impl AltScreen {
             button,
             delta,
             overlay,
+            row,
         };
         if button & 64 != 0 {
             // Wheel up or down; horizontal wheels do nothing.
