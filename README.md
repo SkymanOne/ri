@@ -83,7 +83,7 @@ Native addons, sockets, threads and SQLite are not available to extensions. [Ext
 
 ## Agent skills
 
-The repository ships two [Agent Skills](https://agentskills.io) for coding agents: `yapi`, for running and scripting yapi, and `yapi-extension`, for writing Pi and native extensions. Install both with `yapi install git:github.com/SkymanOne/yapi`. [Agent skills](https://skymanone.github.io/yapi/agent-skills.html) has the details.
+The repository ships two [Agent Skills](https://agentskills.io) for coding agents: `yapi`, for running and scripting yapi, and `yapi-extension`, for writing Pi and native extensions. Install both with `yapi install git:github.com/SkymanOne/yapi@v0.1.0`. [Agent skills](https://skymanone.github.io/yapi/agent-skills.html) has the details.
 
 ## Documentation
 
