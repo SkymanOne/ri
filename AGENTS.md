@@ -215,7 +215,7 @@ Feasibility study, prior art and rejected alternatives: [dev/research/extension-
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
   - `cargo deny check`
-- CI runs the same checks on Linux and macOS for pull requests and pushes to `main`.
+- CI runs the same checks on Linux and macOS for pull requests and pushes to `main`. It skips them when a change touches only docs, `dev/`, skills, root Markdown files other than `CHANGELOG.md`, or other workflows.
 - After changing a guest, `yapi-tui` or `yapi-types`, rebuild with `cargo xtask js-runtime` and commit the artifacts with their inputs hash. It rebuilds `yapi-js.wasm`, which needs a WASI SDK, only when the runtime's own inputs changed.
 - Regenerate the model catalog with `cargo xtask models`. Never edit generated files.
 - Serve a cassette to pi or another out-of-process client with `cargo xtask mock-sse --cassette <file>`. It prints the base URL and, on exit, reports requests that did not match. `--record <upstream-url> --out <file>` records a new cassette through a proxy to a real provider; credentials are never written.
