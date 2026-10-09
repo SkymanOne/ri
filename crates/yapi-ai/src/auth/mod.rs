@@ -336,12 +336,18 @@ pub fn open_browser(target: &str) {
         "xdg-open"
     };
     let mut command = std::process::Command::new(program);
+    command.arg(target);
+    launch(command);
+}
+
+/// Starts `command` without terminal input or output, best effort. Returns at
+/// once; the command runs on its own thread.
+pub fn launch(mut command: std::process::Command) {
     command
-        .arg(target)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    // Waiting reaps the opener when it exits.
+    // Waiting reaps the command when it exits.
     std::thread::spawn(move || command.spawn().and_then(|mut child| child.wait()));
 }
 

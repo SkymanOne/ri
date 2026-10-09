@@ -27,7 +27,7 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 ## Interface
 
 - Components render inside the runtime, and yapi paints their last frame, so a slow component never blocks the interface.
-- pi-tui reports a terminal without hyperlinks or images, so links and images use pi-tui's text fallbacks. A hyperlink a component writes itself still works.
+- pi-tui reports a terminal without hyperlinks or images, so links and images use pi-tui's text fallbacks. A hyperlink a component writes itself still works, unless its URL holds a control character.
 - In fullscreen mode, components get presses, clicks and the wheel through `handleMouse`, but no pointer moves, drags or releases, and a click does not give them the keyboard focus. Headers, message renderers and tool renderers get no mouse events.
 - A theme change reaches extensions when their session next starts.
 
