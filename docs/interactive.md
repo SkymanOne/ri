@@ -46,7 +46,7 @@ Type `/` to list commands. The most used ones:
 | `/trust` | Change whether the project's `.yapi` folder is trusted |
 | `/reload` | Reload settings, keybindings, extensions, skills and themes |
 | `/hotkeys` | Show every key binding |
-| `/debug` | Write the rendered screen and the session's messages to `~/.yapi/agent/yapi-debug.log` |
+| `/debug` | Write the rendered screen, the session's messages and the last 200 lines of extension output to `~/.yapi/agent/yapi-debug.log` |
 | `/quit` | Quit yapi |
 
 Prompt templates, skills (`/skill:name`) and extension commands appear in the same list.

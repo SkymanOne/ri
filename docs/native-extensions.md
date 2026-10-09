@@ -165,7 +165,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 | Kind | Payload | Answer |
 |---|---|---|
-| `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats the message as console output from a Pi extension. |
+| `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats the message as console output from a Pi extension, which interactive mode keeps off the screen for `/debug`. |
 | `cwd` | `{}` | The working folder extensions see, as a string |
 | `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all optional except `command` | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits |
 | `execPath` | `{}` | The path of the running yapi binary, to start another yapi |

@@ -4,7 +4,8 @@
 //! [`Extension`] per loaded file; when a later session starts, the guest runs
 //! the extensions' factories again, as pi does for every session.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -103,7 +104,8 @@ impl ExtensionHost {
         options: Options,
         sources: &[SourceInfo],
     ) -> Result<Arc<ExtensionHost>, Error> {
-        let bridge = SessionBridge::new(engine);
+        let names: Vec<&str> = sources.iter().map(|source| source.path.as_str()).collect();
+        let bridge = SessionBridge::new(engine, names.join(", "));
         let instance = Instance::start(engine, options.clone(), bridge.clone()).await?;
         ExtensionHost::start(instance, bridge, options, sources).await
     }
@@ -116,7 +118,7 @@ impl ExtensionHost {
         source: &SourceInfo,
     ) -> Result<Arc<ExtensionHost>, Error> {
         let component = engine.native(std::path::Path::new(&source.path))?;
-        let bridge = SessionBridge::new(engine);
+        let bridge = SessionBridge::new(engine, source.path.clone());
         let instance =
             Instance::start_component(engine, component, options.clone(), bridge.clone()).await?;
         ExtensionHost::start(instance, bridge, options, std::slice::from_ref(source)).await
@@ -1117,8 +1119,30 @@ struct Step {
 /// Numbers the runtimes of a process, so their component handles stay apart.
 static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 
+/// The most lines of extension output [`extension_output`] keeps.
+const OUTPUT_LINES: usize = 200;
+
+/// Extension output kept off the terminal, oldest first; `None` while it
+/// goes to stderr.
+static OUTPUT: Mutex<Option<VecDeque<String>>> = Mutex::new(None);
+
+/// Keeps extension output off the terminal from now on, for a mode that draws
+/// on it: each message goes to `tracing` at its level, and the last 200 stay
+/// for [`extension_output`]. Until then, extension output goes to stderr.
+pub fn capture_output() {
+    lock(&OUTPUT).get_or_insert_default();
+}
+
+/// The extension output kept since [`capture_output`], oldest first: one line
+/// per message, with its time, extensions and level.
+pub fn extension_output() -> Vec<String> {
+    lock(&OUTPUT).iter().flatten().cloned().collect()
+}
+
 /// Answers the guest's requests from the bound session.
 struct SessionBridge {
+    /// The extension files the runtime loaded, for its output.
+    name: String,
     /// This runtime's number.
     runtime_id: u64,
     /// Where actions that outlive a request run.
@@ -1153,8 +1177,9 @@ fn not_bound() -> String {
 }
 
 impl SessionBridge {
-    fn new(engine: &Engine) -> Arc<SessionBridge> {
+    fn new(engine: &Engine, name: String) -> Arc<SessionBridge> {
         Arc::new(SessionBridge {
+            name,
             codemode: Arc::new(crate::codemode::Runner::with_engine(
                 engine.clone(),
                 crate::codemode::docs(),
@@ -1503,6 +1528,31 @@ fn session_read(session: &AgentSession, method: &str, args: &Value) -> Result<Va
 }
 
 impl Bridge for SessionBridge {
+    fn log(&self, level: &str, message: &str) {
+        if lock(&OUTPUT).is_none() {
+            let _ = writeln!(std::io::stderr(), "{message}");
+            return;
+        }
+        let extension = &self.name;
+        match level {
+            "error" => tracing::error!(%extension, "{message}"),
+            "warn" => tracing::warn!(%extension, "{message}"),
+            "debug" => tracing::debug!(%extension, "{message}"),
+            _ => tracing::info!(%extension, "{message}"),
+        }
+        let line = format!(
+            "{} [{extension}] {level} {message}",
+            yapi_types::time::now_iso()
+        );
+        // ponytail: bounded by line count, not bytes; cap bytes too if huge messages matter.
+        if let Some(lines) = lock(&OUTPUT).as_mut() {
+            if lines.len() == OUTPUT_LINES {
+                lines.pop_front();
+            }
+            lines.push_back(line);
+        }
+    }
+
     fn request(&self, kind: &str, payload: &Value) -> Result<Value, String> {
         if kind == "bash.data" {
             let sink = lock(&self.bash)

@@ -922,6 +922,9 @@ impl super::App {
             data.push(yapi_types::json::to_string(&message).unwrap_or_default());
         }
         data.push(String::new());
+        data.push("=== Extension output ===".to_owned());
+        data.extend(yapi_ext::extension_output());
+        data.push(String::new());
         let path = self.agent_dir.join("yapi-debug.log");
         let _ = std::fs::create_dir_all(&self.agent_dir);
         let _ = std::fs::write(&path, data.join("\n"));

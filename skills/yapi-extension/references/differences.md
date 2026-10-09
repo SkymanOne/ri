@@ -9,7 +9,7 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 - `require()` of an ES module fails. Use `import`.
 - Native addons are installed unbuilt and fail when loaded. Load them lazily, so the rest of the extension still works.
 - `Intl` covers Unicode segmentation and number and plural formatting in `en-US`. `Intl.DateTimeFormat` ignores its options.
-- `process.arch` is `wasm32`. Console output goes to stderr.
+- `process.arch` is `wasm32`. Console output goes to stderr in print, JSON and RPC modes. Interactive mode keeps it off the screen, and `/debug` writes its last 200 lines to `~/.yapi/agent/yapi-debug.log`.
 - Error stacks show only frames in the extension's own files.
 
 ## API

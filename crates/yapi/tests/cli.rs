@@ -410,6 +410,111 @@ fn service_commands_are_not_offered() {
     pty.finish().unwrap();
 }
 
+/// Extension console output goes to stderr in print mode. In interactive
+/// mode it stays off the screen, and `/debug` writes it.
+#[test]
+fn extension_output_stays_off_the_screen() {
+    use std::time::Duration;
+    let root = common::scratch("extension-output");
+    let agent = root.join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(
+        root.join("noisy.ts"),
+        r#"export default function (pi) {
+  console.log("loaded-line");
+  pi.registerCommand("noisy", {
+    description: "Logs",
+    handler: async (_args, ctx) => {
+      console.log("noisy-line");
+      console.error("noisy-error");
+      process.stderr.write("raw-stderr\n");
+      ctx.ui.notify("noisy done", "info");
+    },
+  });
+}
+"#,
+    )
+    .unwrap();
+    let env = [
+        ("HOME", root.clone().into_os_string()),
+        ("YAPI_CODING_AGENT_DIR", agent.clone().into_os_string()),
+        ("PI_OFFLINE", "1".into()),
+        ("ANTHROPIC_API_KEY", "mock".into()),
+    ];
+    let args = [
+        "-e",
+        "noisy.ts",
+        "--model",
+        "anthropic/claude-sonnet-4-5",
+        "--no-session",
+    ]
+    .map(str::to_owned);
+
+    let output = common::yapi(&root)
+        .args(&args)
+        .args(["-p", "/noisy"])
+        .envs(env.clone())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "loaded-line\nnoisy-line\nnoisy-error\nraw-stderr\n"
+    );
+
+    let mut pty = yapi_mock::pty::Pty::spawn(
+        std::path::Path::new(env!("CARGO_BIN_EXE_yapi")),
+        &args,
+        &root,
+        &env,
+        (100, 30),
+        true,
+    )
+    .unwrap();
+    let shown =
+        |text: &'static str| move |rows: &[String]| rows.iter().any(|row| row.contains(text));
+    assert!(
+        pty.wait_for(Duration::from_secs(20), shown("claude-sonnet-4-5"))
+            .is_some()
+    );
+    pty.write("/noisy\r").unwrap();
+    assert!(
+        pty.wait_for(Duration::from_secs(10), shown("noisy done"))
+            .is_some()
+    );
+    pty.settle();
+    let rows = pty.rows();
+    assert!(
+        !rows.iter().any(|row| ["-line", "-error", "stderr"]
+            .iter()
+            .any(|text| row.contains(text))),
+        "{rows:#?}"
+    );
+    pty.write("/debug\r").unwrap();
+    assert!(
+        pty.wait_for(Duration::from_secs(10), shown("Debug log written"))
+            .is_some()
+    );
+    pty.finish().unwrap();
+    let log = std::fs::read_to_string(agent.join("yapi-debug.log")).unwrap();
+    let (_, output) = log.split_once("\n=== Extension output ===\n").unwrap();
+    let lines: Vec<&str> = output
+        .lines()
+        .filter_map(|line| line.split_once("noisy.ts] "))
+        .map(|(_, rest)| rest)
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "info loaded-line",
+            "info noisy-line",
+            "error noisy-error",
+            "warn raw-stderr"
+        ],
+        "{log}"
+    );
+}
+
 #[test]
 fn update_self_names_the_installer() {
     let dir = common::scratch("update-self");
