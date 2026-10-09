@@ -42,8 +42,18 @@
 			},
 		};
 	};
-	// `pi.events`, which every extension shares.
+	// `pi.events`, which every extension shares. The host passes events on to
+	// the listeners in other runtimes, as JSON, after the listeners here.
 	const eventBus = yapi.createEventBus();
+	const emitEvent = (channel, data) => {
+		eventBus.emit(channel, data);
+		try {
+			yapi.request("events.emit", { channel, data });
+		} catch {
+			// Data JSON cannot carry stays in this runtime, as do all events
+			// where no other runtimes run.
+		}
+	};
 
 	// ----- runtime actions -----------------------------------------------------------
 	const notInitialized = () => {
@@ -240,7 +250,7 @@
 			},
 			events: active({
 				emit(channel, data) {
-					eventBus.emit(channel, data);
+					emitEvent(channel, data);
 				},
 				on(channel, handler) {
 					return eventBus.on(channel, handler);
@@ -1277,6 +1287,8 @@
 			bound = false;
 			generation.stale = true;
 			generation = { stale: false };
+			// pi drops the stale extensions' `pi.events` listeners.
+			eventBus.clear();
 			for (const handle of [...components.keys()]) unmount(handle);
 			widgetHandles.clear();
 			transcriptViews.clear();
@@ -1294,6 +1306,11 @@
 		},
 		flags(payload) {
 			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);
+			return null;
+		},
+		/** `{ channel, data }` emitted with `pi.events` in another runtime. */
+		events(payload) {
+			eventBus.emit(payload.channel, payload.data);
 			return null;
 		},
 		/** The terminal was resized to `{ columns, rows }`. */

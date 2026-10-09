@@ -11,7 +11,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::{
-    cli_source, custom_entries, engine, options, scratch, session, session_with_tools, text_of,
+    Notes, cli_source, custom_entries, engine, options, scratch, session, session_with_tools,
+    text_of,
 };
 use futures_util::future::BoxFuture;
 use serde_json::json;
@@ -417,6 +418,42 @@ async fn repo_status_reports_uncommitted_files() {
     let report = &tool_results(&session)[0];
     assert!(report.starts_with("On main, "), "{report}");
     assert!(report.contains("a.txt"), "{report}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn package_scripts_get_a_variable_on_the_inherited_environment() {
+    let dir = scratch("package-scripts");
+    let package = dir.join("package");
+    let wasm = package.join("extensions/package-scripts.wasm");
+    let script = "printf '%s|%s|%s' \"$EXTENSION_DIR\" \"$1\" \"$PATH\"";
+    for scripts in [package.join("scripts"), package.join("extensions/scripts")] {
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("env.sh"), script).unwrap();
+    }
+    std::fs::copy(fixture("package-scripts"), &wasm).unwrap();
+    let mut installed = cli_source(&wasm);
+    installed.base_dir = Some(package.to_string_lossy().into_owned());
+    // An installed package's scripts are at its root; those of a file given
+    // with `-e` next to it.
+    for (source, root) in [
+        (installed, package.clone()),
+        (cli_source(&wasm), package.join("extensions")),
+    ] {
+        let host = ExtensionHost::load_native(&engine(), options(&dir), &source)
+            .await
+            .unwrap();
+        let session = session(&Faux::new([]), &dir, host.for_session());
+        let notes = Arc::new(Notes::default());
+        session
+            .bind_extensions(notes.clone(), Mode::Print, None, None)
+            .await;
+        session
+            .prompt("/script env.sh arg", Vec::new())
+            .await
+            .unwrap();
+        let path = std::env::var("PATH").unwrap();
+        assert_eq!(notes.all(), [format!("{}|arg|{path}", root.display())]);
+    }
 }
 
 /// A tool call whose run is aborted before it reaches the extension is

@@ -88,6 +88,7 @@ yapi reads and edits files and runs commands as your user, so give it the same t
 - yapi never runs agent sessions inside an extension's instance. A session there would run its tools and use its credentials in yapi's own process, outside the extension's grants.
 - MCP servers started over stdio run as normal processes with your permissions. An extension registers a stdio server only with the process grant, and an HTTP server only with the network grant.
 - Codemode scripts run in a fresh instance with no file, process or network access. They act only through the tools they call.
+- Extensions talk to each other over Pi's `pi.events` bus, which yapi carries between instances, so every extension hears every other's events, as in Pi. With declared grants, the bus will stay within packages of the same grants unless your settings allow more, as [planned](packages.md#planned-manifests-and-registry).
 - Project trust gates project-local resources. yapi loads nothing from a project's `.yapi` folder or `.agents/skills` until you trust the project.
 - Files and tool output that the model reads can steer it. Work in repositories you trust, or run yapi in a container or virtual machine.
 

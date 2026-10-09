@@ -2,11 +2,13 @@
 resolver = "3"
 members = [
     "examples/custom-footer",
+    "examples/event-bus",
     "examples/hello",
     "examples/input-hooks",
     "examples/message-renderer",
     "examples/modal-editor",
     "examples/overlay-test",
+    "examples/package-scripts",
     "examples/permission-gate",
     "examples/protected-paths",
     "examples/question",

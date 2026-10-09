@@ -1,0 +1,16 @@
+[package]
+name = "package-scripts"
+description = "An example native yapi extension: running scripts that ship with the extension."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

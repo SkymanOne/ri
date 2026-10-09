@@ -7,7 +7,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use futures_util::future::BoxFuture;
@@ -85,7 +85,21 @@ pub struct ExtensionHost {
     bound: tokio::sync::Mutex<u64>,
     /// Sends the bound session's terminal size to the guest as it changes.
     resizes: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// `pi.events` emitted in other runtimes, on their way to the guest's
+    /// listeners.
+    events: tokio::sync::mpsc::Sender<Value>,
+    /// Whether events for the guest are being dropped, so that each run of
+    /// drops is reported once.
+    dropping: AtomicBool,
 }
+
+/// The extension hosts that share `pi.events`.
+pub(crate) type Bus = Arc<Mutex<Vec<Weak<ExtensionHost>>>>;
+
+/// `pi.events` from other runtimes that may wait for a busy runtime's
+/// listeners. Later ones are dropped until it catches up, so a stuck
+/// runtime holds no more than these.
+const QUEUED_EVENTS: usize = 64;
 
 impl std::fmt::Debug for ExtensionHost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -133,12 +147,13 @@ impl ExtensionHost {
         let entries: Vec<Value> = sources
             .iter()
             .enumerate()
-            .map(|(id, source)| json!({"id": id, "path": source.path}))
+            .map(|(id, source)| json!({"id": id, "path": source.path, "baseDir": source.base_dir}))
             .collect();
         let result = instance
             .call("load", &json!({"cwd": options.cwd, "extensions": entries}))
             .await?;
         let (loaded, errors) = split(&result);
+        let (events, queued) = tokio::sync::mpsc::channel(QUEUED_EVENTS);
         let extensions = Arc::new(ExtensionHost {
             instance,
             bridge,
@@ -149,8 +164,12 @@ impl ExtensionHost {
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
             resizes: Mutex::new(None),
+            events,
+            dropping: AtomicBool::new(false),
         });
         let _ = extensions.bridge.owner.set(Arc::downgrade(&extensions));
+        extensions.forward_events(queued);
+        lock(&extensions.bridge.bus).push(Arc::downgrade(&extensions));
         Ok(extensions)
     }
 
@@ -366,6 +385,41 @@ impl ExtensionHost {
         }
         *bound = generation + 1;
         true
+    }
+
+    /// Delivers `pi.events` from other runtimes to the guest's listeners, one
+    /// call at a time, so a busy guest holds at most one in its queue.
+    fn forward_events(&self, mut events: tokio::sync::mpsc::Receiver<Value>) {
+        let owner = self.bridge.owner.get().cloned().unwrap_or_default();
+        tokio::spawn(async move {
+            while let Some(event) = events.recv().await {
+                let Some(host) = owner.upgrade() else {
+                    return;
+                };
+                let delivered = host.instance.call("events", &event);
+                drop(host);
+                let _ = delivered.await;
+            }
+        });
+    }
+
+    /// Queues `event`, emitted in another runtime, for the guest's listeners,
+    /// or drops it while [`QUEUED_EVENTS`] already wait.
+    fn receive(&self, event: &Value) {
+        use tokio::sync::mpsc::error::TrySendError;
+        match self.events.try_send(event.clone()) {
+            Ok(()) => self.dropping.store(false, Ordering::Relaxed),
+            Err(TrySendError::Full(_)) if !self.dropping.swap(true, Ordering::Relaxed) => {
+                self.bridge.log(
+                    "warn",
+                    &format!(
+                        "Dropped pi.events \"{}\" for a busy extension runtime",
+                        text(&event["channel"])
+                    ),
+                );
+            }
+            Err(_) => {}
+        }
     }
 
     /// Sends each new terminal `size` to the guest's `resize`. Sizes that
@@ -1171,6 +1225,8 @@ struct SessionBridge {
     /// stream, a sign-in or a model refresh.
     next_id: AtomicU64,
     owner: OnceLock<Weak<ExtensionHost>>,
+    /// The hosts that share `pi.events` with this one.
+    bus: Bus,
     /// Runs scripts of the codemode tool the facade's `createCodemodeExtension` registers.
     codemode: Arc<crate::codemode::Runner>,
 }
@@ -1199,11 +1255,31 @@ impl SessionBridge {
             streams: Mutex::default(),
             next_id: AtomicU64::new(1),
             owner: OnceLock::new(),
+            bus: engine.bus.clone(),
         })
     }
 
     fn session(&self) -> Option<AgentSession> {
         lock(&self.session).upgrade()
+    }
+
+    /// Hands `event`, `{channel, data}` emitted with `pi.events` in this
+    /// runtime, to the listeners of every other runtime. This runtime's own
+    /// listeners have heard it already.
+    fn publish(&self, event: &Value) {
+        let me = self.owner.get();
+        let others: Vec<Arc<ExtensionHost>> = {
+            let mut hosts = lock(&self.bus);
+            hosts.retain(|host| host.strong_count() > 0);
+            hosts
+                .iter()
+                .filter(|host| me.is_none_or(|me| !Weak::ptr_eq(me, host)))
+                .filter_map(Weak::upgrade)
+                .collect()
+        };
+        for host in others {
+            host.receive(event);
+        }
     }
 
     fn spawn(&self, future: impl std::future::Future<Output = ()> + Send + 'static) {
@@ -1564,6 +1640,10 @@ impl Bridge for SessionBridge {
     }
 
     fn request(&self, kind: &str, payload: &Value) -> Result<Value, String> {
+        if kind == "events.emit" {
+            self.publish(payload);
+            return Ok(Value::Null);
+        }
         if kind == "bash.data" {
             let sink = lock(&self.bash)
                 .get(&payload["id"].as_u64().unwrap_or_default())

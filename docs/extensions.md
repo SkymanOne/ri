@@ -39,6 +39,7 @@ yapi does not need Node.js. TypeScript and JavaScript extensions run in `yapi-js
 - Listeners added with `ctx.ui.onTerminalInput` see raw input before yapi handles it and may consume or replace it. They run in the runtime too, so keys wait behind them while yapi keeps drawing.
 - Providers added with `ctx.ui.addAutocompleteProvider` wrap yapi's built-in completions, as in Pi. yapi asks them in the background, as it does for `@` file search.
 - Components match keys against the user's `keybindings.json`.
+- `pi.events` reaches every extension, native ones and those in other runtime instances included. Listeners in the emitting extension's instance run during `emit`, as in Pi, and the others right after it returns, with a JSON copy of the data.
 - Commands change the session with `ctx.newSession`, `ctx.fork`, `ctx.navigateTree`, `ctx.switchSession` and `ctx.reload` in every mode, as in Pi. `setup` and `withSession` run on the replacement, and a `pi` or `ctx` captured before the change throws once the session is replaced. `setup` runs after the new session's `session_start`, as [Differences from Pi](compat.md#open-gaps) notes.
 - `ctx.ui.setTheme` switches to a theme by name and saves it, as `/settings` does. Given a `Theme` object, from `ctx.ui.getTheme` or Pi's `Theme` constructor, it switches for this run without saving. yapi checks the object's colors first and returns an error when a color is missing or invalid.
 

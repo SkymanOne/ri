@@ -119,3 +119,35 @@ pub fn text_of(message: &Message) -> String {
         _ => String::new(),
     }
 }
+
+/// An interface without dialogs that records the notifications it shows.
+#[derive(Default)]
+pub struct Notes(std::sync::Mutex<Vec<String>>);
+
+impl Notes {
+    /// The notifications so far, in order.
+    pub fn all(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl yapi_core::extensions::ExtensionUi for Notes {
+    fn has_ui(&self) -> bool {
+        false
+    }
+
+    fn notify(&self, message: &str, _kind: yapi_core::extensions::NotifyKind) {
+        self.0.lock().unwrap().push(message.to_owned());
+    }
+}
+
+/// Waits up to ten seconds for `done`, checking every 10 ms.
+pub async fn eventually(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..1000 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {what}");
+}

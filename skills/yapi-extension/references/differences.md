@@ -17,6 +17,7 @@ yapi runs Pi extensions in a QuickJS-NG runtime compiled to WebAssembly, not in 
 - Pi's internal classes, such as `SettingsManager`, `ModelRuntime` and `ExtensionRunner`, import but throw when called. Built-in tool factories run yapi's tools and reject custom `operations`.
 - `createAgentSession` and the rest of Pi's SDK throw, by design: yapi does not run agent sessions inside an extension's sandbox. Run a subagent as another yapi instead. Pi's `RpcClient` starts yapi in RPC mode and can prompt, steer, follow up and abort it. Pi's `subagent` example runs `child_process.spawn(process.execPath, ["--mode", "json", "-p", "--no-session", task])` and reads its events as they arrive.
 - `newSession`'s `setup` runs after the new session's `session_start` with the read-only session manager, so it cannot append entries.
+- `pi.events` listeners in the emitter's runtime instance run during `emit`, as in Pi. Native extensions and other instances hear the event right after `emit` returns, with a JSON copy of the data.
 - `onTerminalInput` handlers run while yapi keeps drawing, so keys that arrive together pass through them before yapi handles the first.
 - In yapi's own editor, an autocomplete provider's `applyCompletion` runs for every suggestion as they arrive, and its `signal` never aborts. An editor from `setEditorComponent` behaves as in Pi.
 - `registerEntryRenderer` and `registerMarkdownTransformer` are recorded but unused.

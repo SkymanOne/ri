@@ -27,12 +27,14 @@ const TICK: Duration = Duration::from_millis(10);
 wasmtime::component::bindgen!({ path: "../../wit/since_v0.1.0", world: "extension" });
 
 /// A wasmtime engine with the `yapi-js` component compiled and linked. Cloning
-/// shares it; instances start from it in milliseconds.
+/// shares it; instances start from it in milliseconds. The extension hosts
+/// started from one engine share Pi's `pi.events` bus.
 #[derive(Clone)]
 pub struct Engine {
     pub(crate) engine: wasmtime::Engine,
     pub(crate) component: Component,
     pub(crate) linker: Arc<Linker<State>>,
+    pub(crate) bus: crate::extensions::Bus,
     cache_dir: Option<PathBuf>,
 }
 
@@ -63,6 +65,7 @@ impl Engine {
             engine,
             component,
             linker: Arc::new(linker),
+            bus: crate::extensions::Bus::default(),
             cache_dir: cache_dir.map(Path::to_path_buf),
         })
     }

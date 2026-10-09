@@ -60,7 +60,7 @@ Pi's [package documentation](https://github.com/earendil-works/pi/blob/v1.0.0/pa
 
 These features are planned and not available yet.
 
-- **Package manifests with capabilities.** A WebAssembly package declares in its own manifest the grants it needs, such as file, process, network or environment access. You approve them, and yapi runs the package with only those grants.
+- **Package manifests with capabilities.** A WebAssembly package declares in its own manifest the grants it needs, such as file, process, network or environment access. You approve them, and yapi runs the package with only those grants. Events on Pi's `pi.events` bus then reach only packages with the same grants, unless your settings let a package reach the others. A package's own manifest cannot allow it.
 - **Project manifests.** A `yapi.toml` file at a project's root lists the packages, extensions and skills the project uses. Anyone who checks out the project installs them in one step and gets the same versions, as `Cargo.toml` does for a Rust project.
 - **A package registry.** A central registry of yapi packages, so manifests can name packages and versions instead of npm or git sources.
 

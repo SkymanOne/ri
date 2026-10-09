@@ -50,10 +50,11 @@ impl std::fmt::Debug for Process {
 
 impl Process {
     /// Starts the process `spawn` describes: `{"command", "args", "cwd",
-    /// "env", "stdin"}`, all optional except `command`. Without `cwd` it
-    /// starts in yapi's working folder, `env` replaces the whole environment,
-    /// and `"stdin": "ignore"` gives it empty standard input instead of a
-    /// pipe. Fails with Node's spawn error, such as `spawn git ENOENT`, or
+    /// "env", "envAdd", "stdin"}`, all optional except `command`. Without
+    /// `cwd` it starts in yapi's working folder, `env` replaces the whole
+    /// environment, `envAdd` sets variables on top of the inherited
+    /// environment or `env`, and `"stdin": "ignore"` gives it empty standard
+    /// input instead of a pipe. Fails with Node's spawn error, such as `spawn git ENOENT`, or
     /// when the extension may not run processes.
     pub fn spawn(spawn: &Value) -> Result<Process, String> {
         let started = request("process.spawn", spawn)?;
