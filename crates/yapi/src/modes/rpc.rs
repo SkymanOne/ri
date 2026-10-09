@@ -99,6 +99,25 @@ struct Rpc {
     runtime: Rc<Runtime>,
     out: Output,
     ui: Arc<RpcUi>,
+    /// Commands read whose response is not out yet.
+    unanswered: Cell<usize>,
+}
+
+/// A command read whose response is not out yet; counted in
+/// [`Rpc::unanswered`] until dropped.
+struct Unanswered(Rc<Rpc>);
+
+impl Unanswered {
+    fn new(rpc: &Rc<Rpc>) -> Unanswered {
+        rpc.unanswered.set(rpc.unanswered.get() + 1);
+        Unanswered(Rc::clone(rpc))
+    }
+}
+
+impl Drop for Unanswered {
+    fn drop(&mut self) {
+        self.0.unanswered.set(self.0.unanswered.get() - 1);
+    }
 }
 
 type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<ExtensionUiResponse>>>>;
@@ -373,7 +392,8 @@ async fn settle(session: &AgentSession) -> u64 {
     calls
 }
 
-async fn handle_line(rpc: Rc<Rpc>, line: String) {
+/// Runs command `line`; `unanswered` counts it until its response is out.
+async fn handle_line(rpc: Rc<Rpc>, line: String, unanswered: Unanswered) {
     let parsed: Value = match serde_json::from_str(&line) {
         Ok(parsed) => parsed,
         Err(error) => {
@@ -446,6 +466,8 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
                     let reply =
                         value(&disposition).and_then(|it| data(&json!({ "disposition": it })));
                     rpc.reply(id.as_ref(), Some("prompt"), reply);
+                    // The command has answered. Its run goes on.
+                    drop(unanswered);
                 },
             )
             .await;
@@ -841,48 +863,53 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
                 runtime: Runtime::start(session, factory, bind).await,
                 out: out.clone(),
                 ui,
+                unanswered: Cell::new(0),
             });
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
             let mut buffer = Vec::new();
-            let signal = termination();
-            tokio::pin!(signal);
-            let code = 'read: loop {
-                buffer.clear();
-                let read = tokio::select! {
-                    read = stdin.read_until(b'\n', &mut buffer) => read,
-                    code = &mut signal => break 'read code,
-                    () = rpc.ui.exit.notified() => break 'read 0,
-                };
-                // A command that extension code finished answers before the
-                // next line runs.
-                let mut calls = settle(&rpc.session()).await;
-                tokio::task::yield_now().await;
-                match read {
-                    // pi reads the end of input after that code too, so a
-                    // command answers if extension code is all it waits for.
-                    // The commands go on until a round makes no call into
-                    // extension code.
-                    Ok(0) | Err(_) => loop {
-                        let next = settle(&rpc.session()).await;
-                        if next == calls {
-                            break 'read 0;
+            let lines = async {
+                loop {
+                    buffer.clear();
+                    let read = stdin.read_until(b'\n', &mut buffer).await;
+                    // A command that extension code finished answers before
+                    // the next line runs.
+                    let mut calls = settle(&rpc.session()).await;
+                    tokio::task::yield_now().await;
+                    let Ok(1..) = read else {
+                        // pi reads the end of input after that code too, so a
+                        // command answers if extension code is all it waits
+                        // for. Commands that have not answered go on until a
+                        // round makes no call into extension code. A prompt
+                        // has answered once its run starts, which pi cuts off.
+                        while rpc.unanswered.get() > 0 {
+                            let next = settle(&rpc.session()).await;
+                            if next == calls {
+                                break;
+                            }
+                            calls = next;
+                            tokio::task::yield_now().await;
                         }
-                        calls = next;
-                        tokio::task::yield_now().await;
-                    },
-                    Ok(_) => {
-                        let mut line = String::from_utf8_lossy(&buffer).into_owned();
-                        if line.ends_with('\n') {
-                            line.pop();
-                        }
-                        if line.ends_with('\r') {
-                            line.pop();
-                        }
-                        tokio::task::spawn_local(handle_line(Rc::clone(&rpc), line));
-                        // Start the command before reading the next line.
-                        tokio::task::yield_now().await;
+                        return 0;
+                    };
+                    let mut line = String::from_utf8_lossy(&buffer).into_owned();
+                    if line.ends_with('\n') {
+                        line.pop();
                     }
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                    let unanswered = Unanswered::new(&rpc);
+                    tokio::task::spawn_local(handle_line(Rc::clone(&rpc), line, unanswered));
+                    // Start the command before reading the next line.
+                    tokio::task::yield_now().await;
                 }
+            };
+            // A signal or an extension's shutdown ends the run, even while
+            // extension code runs.
+            let code = tokio::select! {
+                code = lines => code,
+                code = termination() => code,
+                () = rpc.ui.exit.notified() => 0,
             };
             (code, rpc)
         })
