@@ -1,9 +1,11 @@
 //! Fullscreen mouse handling against pi-tui's, recorded by
 //! `tests/fixtures/pi/generator/selection.mjs`: the screen after each mouse
 //! report or key, with reversed cells in brackets, the text copied, the
-//! links opened and what a docked list reports. The dock is lines, a focused
-//! editor that completes slash commands, a select list, a searchable settings
-//! list or an input. Also the rows timed wheel events scroll.
+//! links opened and what a docked list or component reports. The dock is
+//! lines, a focused editor that completes slash commands, a select list, a
+//! searchable settings list, an input, or a component that takes clicks and
+//! reports the presses and clicks it gets. Also the rows timed wheel events
+//! scroll.
 
 #![allow(clippy::unwrap_used, reason = "test fixture access")]
 
@@ -17,7 +19,7 @@ use yapi_tui::editor::{Editor, EditorTheme};
 use yapi_tui::keybindings::{Keybindings, UserBindings, tui_definitions};
 use yapi_tui::keys::Keys;
 use yapi_tui::lines::StyledLine;
-use yapi_tui::screen::{AltScreen, MouseAction, MouseEvent, Scrollbar, WheelScroll};
+use yapi_tui::screen::{AltScreen, MouseAction, MouseEvent, MouseKind, Scrollbar, WheelScroll};
 use yapi_tui::select_list::{
     SelectEvent, SelectItem, SelectList, SelectListLayout, SelectListTheme,
 };
@@ -66,6 +68,9 @@ enum Docked {
     Select(SelectList),
     Settings(SettingsList),
     Input(TextInput),
+    /// Lines that take clicks, and presses when set, as an extension's
+    /// widget may.
+    Clicks(Vec<StyledLine>, bool),
 }
 
 impl Docked {
@@ -103,6 +108,10 @@ impl Docked {
             let theme = SettingsListTheme::default();
             return Some(Docked::Settings(SettingsList::new(items, max, theme, true)));
         }
+        if let Some(spec) = case["component"].as_object() {
+            let takes_press = spec["takesPress"].as_bool().unwrap();
+            return Some(Docked::Clicks(lines(&spec["lines"]), takes_press));
+        }
         if let Some(value) = case["input"].as_str() {
             let mut input = TextInput::default();
             input.focused = true;
@@ -118,6 +127,7 @@ impl Docked {
             Docked::Select(list) => list.render(width),
             Docked::Settings(list) => list.render(width),
             Docked::Input(input) => vec![input.render(width)],
+            Docked::Clicks(lines, _) => lines.clone(),
         }
     }
 
@@ -148,6 +158,17 @@ impl Docked {
                 taken.is_some()
             }
             Docked::Input(input) => y == 0 && input.mouse(event.kind, event.x),
+            Docked::Clicks(_, takes_press) => match event.kind {
+                MouseKind::Press => {
+                    events.push("press".into());
+                    *takes_press
+                }
+                MouseKind::Click => {
+                    events.push(format!("click {}", event.clicks));
+                    true
+                }
+                MouseKind::Wheel(_) => false,
+            },
         }
     }
 
@@ -157,6 +178,7 @@ impl Docked {
             Docked::Select(list) => drop(list.handle_input(input, keybindings)),
             Docked::Settings(list) => drop(list.handle_input(input, keybindings)),
             Docked::Input(field) => drop(field.handle_input(input, keybindings)),
+            Docked::Clicks(..) => {}
         }
     }
 }

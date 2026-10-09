@@ -1,8 +1,10 @@
 // Records pi-tui's fullscreen mouse handling, for crates/yapi-tui/tests/selection.rs:
 // the screen lines after each mouse report or key sent to `TuiAltScreen`, the text it
-// copies, the links it opens and what a docked list reports. The layout is pi's chat viewport: a
-// scrolling transcript above a dock of lines, a focused editor with slash command completion, or a
-// focused `SelectList`, searchable `SettingsList` or `Input` as pi's selectors hold them.
+// copies, the links it opens and what a docked list or component reports. The layout is pi's chat
+// viewport: a scrolling transcript above a dock of lines, a focused editor with slash command
+// completion, a focused `SelectList`, searchable `SettingsList` or `Input` as pi's selectors hold
+// them, or a component that takes clicks, as an extension's widget does, and reports the presses
+// and clicks it gets.
 // Also records the rows `WheelScrollAccelerator` scrolls for timed wheel events.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -301,6 +303,29 @@ const cases = [
 		input: "the quick brown fox jumps",
 		steps: [...click(8, 4), "x", "\x05", ...click(1, 4), ...click(6, 4), "y", ...click(19, 4), wheelUp(3, 4)],
 	},
+	{
+		// A double click inside a word selects it instead of clicking a component that takes no presses.
+		name: "component clicks",
+		transcript: ["alpha"],
+		component: { lines: ["  agent-one done", "footer"], takesPress: false },
+		steps: [...click(5, 5), ...click(5, 5), ...click(1, 5), ...click(1, 5), ...click(1, 5)],
+	},
+	{
+		name: "component presses",
+		transcript: ["alpha"],
+		component: { lines: ["  agent-one done", "footer"], takesPress: true },
+		steps: [
+			...click(5, 5),
+			...click(5, 5),
+			...click(5, 5),
+			...click(5, 5),
+			...click(9, 5),
+			press(9, 5),
+			drag(10, 5),
+			release(10, 5),
+			...click(10, 5),
+		],
+	},
 ];
 
 /** The component a case docks, focused, and the events its callbacks report. */
@@ -317,6 +342,18 @@ function component(testCase, tui, events) {
 		return new SettingsList(structuredClone(settings), testCase.settings.maxVisible, settingsTheme, onChange, () => {}, {
 			enableSearch: true,
 		});
+	}
+	if (testCase.component) {
+		const { lines: rows, takesPress } = testCase.component;
+		return {
+			render: () => [...rows],
+			invalidate() {},
+			handleMouse(event) {
+				if (event.type === "press") events.push("press");
+				if (event.type === "click") events.push(`click ${event.clickCount}`);
+				return event.type === "click" || (takesPress && event.type === "press") ? { handled: true } : undefined;
+			},
+		};
 	}
 	if (testCase.input !== undefined) {
 		const input = new Input();
@@ -398,6 +435,7 @@ for (const testCase of cases) {
 		...(testCase.select ? { select: testCase.select } : {}),
 		...(testCase.settings ? { settings: { ...testCase.settings, items: settings } } : {}),
 		...(testCase.input !== undefined ? { input: testCase.input } : {}),
+		...(testCase.component ? { component: testCase.component } : {}),
 		scrollbar: testCase.scrollbar ?? "hidden",
 		copyOnSelect: testCase.copyOnSelect ?? true,
 		steps,

@@ -3533,5 +3533,421 @@
 				"copied": []
 			}
 		]
+	},
+	{
+		"name": "component clicks",
+		"columns": 20,
+		"rows": 6,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"component": {
+			"lines": [
+				"  agent-one done",
+				"footer"
+			],
+			"takesPress": false
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  \u001b[7magent-one\u001b[27m done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  \u001b[7magent-one\u001b[27m done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [
+					"agent-one"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7m  \u001b[27magent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 2"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5M",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[7m  agent-one done\u001b[27m\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;1;5m",
+				"screen": [
+					"alpha      \u001b[0m\u001b]8;;\u0007\u001b[7m Copied! \u001b[0m\u001b]8;;\u0007\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 3"
+				]
+			}
+		]
+	},
+	{
+		"name": "component presses",
+		"columns": 20,
+		"rows": 6,
+		"transcript": [
+			"alpha"
+		],
+		"dock": [
+			"> dock",
+			"footer"
+		],
+		"editor": null,
+		"component": {
+			"lines": [
+				"  agent-one done",
+				"footer"
+			],
+			"takesPress": true
+		},
+		"scrollbar": "hidden",
+		"copyOnSelect": true,
+		"steps": [
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 2"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 3"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;5;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			},
+			{
+				"input": "\u001b[<0;9;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;9;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			},
+			{
+				"input": "\u001b[<0;9;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<32;10;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": []
+			},
+			{
+				"input": "\u001b[<0;10;5M",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"press"
+				]
+			},
+			{
+				"input": "\u001b[<0;10;5m",
+				"screen": [
+					"alpha\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"\u001b[0m\u001b]8;;\u0007",
+					"  agent-one done\u001b[0m\u001b]8;;\u0007",
+					"footer\u001b[0m\u001b]8;;\u0007"
+				],
+				"copied": [],
+				"events": [
+					"click 1"
+				]
+			}
+		]
 	}
 ]
