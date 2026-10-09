@@ -1984,7 +1984,14 @@ impl App {
                     self.draw_tool(index);
                 }
             }
-            AgentEvent::AgentSettled if self.shutdown_requested => self.quit = true,
+            // A run an extension message started has no prompt to finish:
+            // as pi's `isStreaming`, the session's own state ends it.
+            AgentEvent::AgentSettled => {
+                self.running = self.session.is_streaming();
+                if self.shutdown_requested {
+                    self.quit = true;
+                }
+            }
             AgentEvent::AgentEnd { .. } => {
                 self.show_progress(false);
                 if matches!(self.indicator, Some((Indicator::Working, _))) {
