@@ -289,14 +289,15 @@ pub trait ExtensionUi: Send + Sync {
     /// such as `app.interrupt`.
     fn editor_action(&self, _action: &str) {}
 
-    /// Starts passing raw input through the `onTerminalInput` listeners
-    /// that `listeners` runs, or stops with `None`. Only the JS runtime has
-    /// them.
-    fn set_terminal_input(&self, _listeners: Option<Arc<dyn ComponentHost>>) {}
+    /// Starts passing raw input through the `onTerminalInput` listeners of
+    /// extension runtime `runtime`, which `listeners` runs, or stops with
+    /// `None`. Runtimes' listeners see input in the order they started.
+    fn set_terminal_input(&self, _runtime: u64, _listeners: Option<Arc<dyn ComponentHost>>) {}
 
     /// Completes through the providers composed with
     /// `addAutocompleteProvider`, which `providers` runs; `triggers` open
-    /// completion too. Only the JS runtime has them.
+    /// completion too. They replace the providers of the runtime that set
+    /// them before.
     fn set_autocomplete(&self, _providers: Arc<dyn ComponentHost>, _triggers: Vec<String>) {}
 
     /// What the built-in provider suggests for pi's provider arguments
