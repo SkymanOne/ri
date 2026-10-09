@@ -249,6 +249,8 @@ struct Terminal {
     events: std::sync::Mutex<Vec<String>>,
     listeners: std::sync::Mutex<Option<Arc<dyn ComponentHost>>>,
     completions: std::sync::Mutex<Option<Arc<dyn ComponentHost>>>,
+    /// Extension errors, and the runtimes whose components were dropped.
+    errors: std::sync::Mutex<Vec<String>>,
 }
 
 impl Terminal {
@@ -318,6 +320,20 @@ impl ExtensionUi for Terminal {
 
     fn close(&self, component: RemoteComponent) {
         self.closed.lock().unwrap().push(component.key());
+    }
+
+    fn drop_components(&self, runtime: u64) {
+        self.errors
+            .lock()
+            .unwrap()
+            .push(format!("dropped {runtime}"));
+    }
+
+    fn extension_error(&self, path: &str, event: &str, error: &str, _stack: Option<&str>) {
+        let path = Path::new(path).file_name().unwrap().to_string_lossy();
+        let error = error.lines().next().unwrap();
+        let line = format!("{path} {event}: {error}");
+        self.errors.lock().unwrap().push(line);
     }
 
     fn set_terminal_input(&self, _runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
@@ -744,4 +760,89 @@ async fn input_hooks_listen_complete_and_take_a_shortcut() {
             "notify Stopped listening",
         ]
     );
+}
+
+/// A panic in a component stops the runtime. It restarts without the
+/// components: the dialog closes and ends its blocking prompt, the editor
+/// gives way to the built-in one, and the person sees why.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_runtime_that_panics_restarts_without_its_components() {
+    let dir = scratch("crash-recovery");
+    let host = load(&dir, "crash-recovery").await;
+    let watch = dir.join("watch.ts");
+    std::fs::write(
+        &watch,
+        r#"export default function (pi) {
+	pi.on("ui_prompt_start", (event) => pi.appendEntry("prompt", `${event.type} ${event.kind}`));
+	pi.on("ui_prompt_end", (event) => pi.appendEntry("prompt", `${event.type} ${event.kind}`));
+}
+"#,
+    )
+    .unwrap();
+    let js = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&watch)])
+        .await
+        .unwrap();
+    let mut extensions = host.for_session();
+    extensions.extend(js.for_session());
+    let session = session(&Faux::new([]), &dir, extensions);
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+    let editor = terminal.editor.lock().unwrap().clone().unwrap();
+    assert_eq!(editor.render(20).await, ["> draft"]);
+    // Extensions hear of the dialog while it is open.
+    let prompts = async |count: usize| {
+        for _ in 0..500 {
+            let entries = custom_entries(&session, "prompt");
+            if entries.len() >= count {
+                return entries;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        custom_entries(&session, "prompt")
+    };
+    let command = tokio::spawn({
+        let session = session.clone();
+        async move { session.prompt("/fragile", Vec::new()).await }
+    });
+    let (dialog, _) = terminal.shown().await;
+    assert_eq!(prompts(1).await, [json!("ui_prompt_start custom")]);
+
+    for key in ["p", "a", "n", "i", "c"] {
+        dialog.input(key);
+    }
+    assert!(dialog.render(20).await.is_empty());
+    command.await.unwrap().unwrap();
+    assert_eq!(*terminal.closed.lock().unwrap(), [dialog.key()]);
+    assert_eq!(
+        prompts(2).await,
+        [
+            json!("ui_prompt_start custom"),
+            json!("ui_prompt_end custom")
+        ]
+    );
+    // The failed command reports itself too, from its own task.
+    let errors: Vec<String> = (terminal.errors.lock().unwrap().iter())
+        .filter(|error| !error.starts_with("command:"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            format!("dropped {}", editor.key().0),
+            "crash-recovery.wasm restart: Extension runtime stopped and restarted: wasm trap: wasm `unreachable` instruction executed".to_owned(),
+        ]
+    );
+    // The runtime runs again, and a new dialog is a new outermost prompt.
+    *terminal.custom.lock().unwrap() = None;
+    let command = tokio::spawn({
+        let session = session.clone();
+        async move { session.prompt("/fragile", Vec::new()).await }
+    });
+    let (dialog, _) = terminal.shown().await;
+    assert_eq!(dialog.render(20).await, ["> "]);
+    dialog.input("\r");
+    command.await.unwrap().unwrap();
+    assert_eq!(prompts(4).await.len(), 4);
 }

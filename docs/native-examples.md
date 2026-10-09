@@ -1,6 +1,6 @@
 # Native extension examples
 
-The repository has fifteen native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Eleven are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, `event-bus` with Pi extensions in `crates/yapi-ext/tests/bus.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of nine examples against Pi running the TypeScript versions.
+The repository has sixteen native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Eleven are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, `event-bus` with Pi extensions in `crates/yapi-ext/tests/bus.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of nine examples against Pi running the TypeScript versions.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
@@ -19,6 +19,7 @@ The repository has fifteen native extensions in [`guest/examples`](https://githu
 | [`message-renderer`](#message-renderer) | Custom messages drawn in a box by a message renderer | `message-renderer.ts` |
 | [`select-menu`](#select-menu) | A `SelectList` widget in a custom component | None |
 | [`input-hooks`](#input-hooks) | A terminal input listener that reads the editor, an autocomplete provider and a shortcut | None |
+| [`crash-recovery`](#crash-recovery) | What yapi does when an extension panics | None |
 
 Five of them, from `modal-editor` to `select-menu`, use the SDK's `widgets` feature.
 
@@ -314,4 +315,15 @@ api.on("session_start", |_event, ctx| async move {
     ctx.add_autocomplete_provider(Variables);
     Ok(None)
 });
+```
+
+## crash-recovery
+
+An editor in place of the built-in one, and a `/fragile` dialog, that panic when their text is `panic`. A panic stops the extension's runtime. yapi reports it, restarts the runtime and loads the extension again, without what it showed. The dialog closes and the built-in editor takes the keys. The editor that `session_start` installed stays away until the next session.
+
+```rust
+fn render(&mut self, _width: usize) -> Vec<String> {
+    assert!(self.text != "panic", "asked to panic");
+    vec![format!("> {}", self.text)]
+}
 ```

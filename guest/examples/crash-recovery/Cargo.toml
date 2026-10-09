@@ -1,0 +1,16 @@
+[package]
+name = "crash-recovery"
+description = "An example native yapi extension. An editor and a dialog that panic on purpose, to show yapi restarting an extension that stops."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

@@ -107,6 +107,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "crash-recovery"
+version = "0.1.0"
+dependencies = [
+ "yapi-extension-api",
+]
+
+[[package]]
 name = "custom-footer"
 version = "0.1.0"
 dependencies = [

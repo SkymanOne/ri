@@ -5018,6 +5018,73 @@ mod tests {
         );
     }
 
+    /// A runtime whose components draw nothing.
+    struct Blank;
+
+    impl yapi_core::extensions::ComponentHost for Blank {
+        fn render(
+            &self,
+            _handle: u32,
+            _width: u16,
+        ) -> futures_util::future::BoxFuture<'static, Vec<String>> {
+            Box::pin(async { Vec::new() })
+        }
+
+        fn input(&self, _handle: u32, _data: &str) {}
+
+        fn mouse(
+            &self,
+            _handle: u32,
+            _event: &Value,
+        ) -> futures_util::future::BoxFuture<'static, bool> {
+            Box::pin(async { false })
+        }
+
+        fn editor_op(&self, _handle: u32, _op: &Value) {}
+
+        fn terminal_input(
+            &self,
+            keys: Vec<String>,
+        ) -> futures_util::future::BoxFuture<'static, Vec<String>> {
+            Box::pin(async { keys })
+        }
+
+        fn suggestions(&self, _request: Value) -> futures_util::future::BoxFuture<'static, Value> {
+            Box::pin(async { Value::Null })
+        }
+    }
+
+    /// A runtime that restarted loses its components: the built-in editor
+    /// takes the keys again, and other runtimes keep theirs.
+    #[tokio::test]
+    async fn a_restarted_runtime_gives_up_its_components() {
+        use extension_ui::{CustomEditor, RemoteView, Request, WidgetView};
+        use yapi_core::extensions::{Placement, RemoteComponent};
+        let (mut app, _events) = app();
+        let view = |runtime: u64, handle: u32| {
+            let component = RemoteComponent::new(runtime, handle, Arc::new(Blank));
+            RemoteView::new(component, app.tx.clone(), app.epoch)
+        };
+        let editor = CustomEditor::new(view(7, 1), false);
+        let (lost, kept) = (
+            WidgetView::Remote(view(7, 2)),
+            WidgetView::Remote(view(8, 1)),
+        );
+        let (footer, header) = (view(7, 3), view(7, 4));
+        app.ext.editor = Some(editor);
+        app.ext
+            .set_widget("lost".into(), Some(lost), Placement::AboveEditor);
+        app.ext
+            .set_widget("kept".into(), Some(kept), Placement::BelowEditor);
+        (app.ext.footer, app.ext.header) = (Some(footer), Some(header));
+
+        app.on_ui_request(Request::DropComponents(7));
+        assert!(app.ext.editor.is_none());
+        assert!(app.ext.above.is_empty());
+        assert_eq!(app.ext.below.len(), 1);
+        assert!(app.ext.footer.is_none() && app.ext.header.is_none());
+    }
+
     #[test]
     fn status_border_matches_pi_layouts() {
         assert_eq!(border("● Working", 0, 20), "── ● Working ───────");

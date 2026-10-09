@@ -62,6 +62,8 @@ pub(super) enum Request {
     /// A screen of the `/mcp` manager.
     Mcp(McpScreen),
     Close(RemoteComponent),
+    /// See [`ExtensionUi::drop_components`].
+    DropComponents(u64),
     /// An extension's editor, and whether it embeds the working status.
     SetEditor(Option<RemoteComponent>, bool),
     EditorChanged(String),
@@ -338,6 +340,10 @@ impl ExtensionUi for InteractiveUi {
 
     fn close(&self, component: RemoteComponent) {
         self.send(Request::Close(component));
+    }
+
+    fn drop_components(&self, runtime: u64) {
+        self.send(Request::DropComponents(runtime));
     }
 
     fn request_render(&self) {
@@ -730,6 +736,27 @@ impl ExtensionState {
         Some(cut)
     }
 
+    /// Drops the editor, widgets, footer and header of extension runtime
+    /// `runtime`.
+    pub fn drop_runtime(&mut self, runtime: u64) {
+        let gone = |key: (u64, u32)| key.0 == runtime;
+        if self
+            .editor
+            .as_ref()
+            .is_some_and(|editor| gone(editor.view.key()))
+        {
+            self.editor = None;
+        }
+        for widgets in [&mut self.above, &mut self.below] {
+            widgets.retain(|(_, widget)| !widget.key().is_some_and(gone));
+        }
+        for slot in [&mut self.footer, &mut self.header] {
+            if slot.as_ref().is_some_and(|view| gone(view.key())) {
+                *slot = None;
+            }
+        }
+    }
+
     /// The views of components around the editor.
     pub fn views(&mut self) -> impl Iterator<Item = &mut RemoteView> {
         self.above
@@ -958,6 +985,11 @@ impl super::App {
                     self.overlays_below
                         .retain(|(view, _)| view.key() != component.key());
                 }
+            }
+            Request::DropComponents(runtime) => {
+                self.ext.drop_runtime(runtime);
+                // The built-in header may be back.
+                self.flat_key = None;
             }
             Request::Render => {
                 for view in self.ext.views() {
