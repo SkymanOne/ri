@@ -149,12 +149,16 @@ Module loading runs on the host, in `yapi-ext`:
 ### Trust and capabilities
 
 - One wasm instance per trust domain:
-  - all full-trust packages share one `yapi-js` instance;
-  - each package with restricted grants gets its own;
+  - all JS packages share one `yapi-js` instance;
+  - each native extension gets its own;
   - codemode gets a fresh instance with no grants.
-- Default grants match pi: filesystem, process, network.
-- Users restrict a package in settings. Planned: v0.1 gives every package the default grants.
+- Default grants match pi: filesystem, process, network, environment. v0.1 gives every package the default grants.
 - The host enforces grants: WASI preopens for files; grant checks for exec, fetch and environment.
+- Planned, alongside a package registry and project manifests:
+  - packages declare the grants they need in their own manifest, the user approves them, and each trust domain gets its own instance;
+  - a project's `yapi.toml` lists its packages, extensions and skills, so a checkout installs the same set, as `Cargo.toml` does;
+  - before grants can be restricted, the host requests that ignore them must check them: `tool.execute`, `models.apiKey`, the extension event bus and session actions;
+  - filesystem grants scoped to paths and read-only access, and network grants scoped to hosts.
 - Each instance runs under epoch interruption and a memory limit. A trapped instance is restarted and its extensions reloaded.
 
 ### Concurrency
