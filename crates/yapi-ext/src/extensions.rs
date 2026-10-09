@@ -783,7 +783,7 @@ impl Extension for JsExtension {
         })
     }
 
-    fn settle(&self) -> BoxFuture<'_, ()> {
+    fn settle(&self) -> BoxFuture<'_, u64> {
         Box::pin(self.shared.instance.settle())
     }
 

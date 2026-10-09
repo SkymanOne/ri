@@ -209,7 +209,7 @@ enum Command {
         handle: u32,
         data: String,
     },
-    Settle(oneshot::Sender<()>),
+    Settle(oneshot::Sender<u64>),
     Stop,
 }
 
@@ -345,12 +345,14 @@ impl Instance {
 
     /// Resolves once the instance has handled what was sent to it before,
     /// such as a call it is running: a call that finished has delivered its
-    /// result by then.
-    pub async fn settle(&self) {
+    /// result by then. Returns a count that grows with every call the
+    /// instance starts.
+    pub async fn settle(&self) -> u64 {
         let (done, settled) = oneshot::channel();
-        if self.commands.send(Command::Settle(done)).is_ok() {
-            let _ = settled.await;
+        if self.commands.send(Command::Settle(done)).is_err() {
+            return 0;
         }
+        settled.await.unwrap_or_default()
     }
 
     /// Delivers raw terminal input to component `handle`.
@@ -490,7 +492,7 @@ impl Actor {
                         .call_input(store, handle, &data)
                 }),
                 Command::Settle(done) => {
-                    let _ = done.send(());
+                    let _ = done.send(self.next_id);
                 }
                 Command::Stop => break,
             }

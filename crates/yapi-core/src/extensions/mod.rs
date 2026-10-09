@@ -368,9 +368,10 @@ pub trait Extension: Send + Sync {
 
     /// Resolves once the extension code that is running has finished and
     /// delivered its results. pi runs extension code to completion before it
-    /// reads the next input.
-    fn settle(&self) -> BoxFuture<'_, ()> {
-        Box::pin(async {})
+    /// reads the next input. Returns a count that grows with every call into
+    /// the extension's code.
+    fn settle(&self) -> BoxFuture<'_, u64> {
+        Box::pin(async { 0 })
     }
 
     /// The session started or was bound to a mode.
