@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "examples/custom-footer",
     "examples/hello",
+    "examples/input-hooks",
     "examples/message-renderer",
     "examples/modal-editor",
     "examples/overlay-test",

@@ -18,7 +18,8 @@ use serde_json::json;
 use yapi_ai::faux::{Faux, Response};
 use yapi_core::agent_session::{AgentSession, TreeNavigation};
 use yapi_core::extensions::{
-    CustomOptions, DialogOptions, ExtensionUi, Mode, NoUi, NotifyKind, RemoteComponent,
+    ComponentHost, CustomOptions, DialogOptions, ExtensionUi, Mode, NoUi, NotifyKind,
+    RemoteComponent,
 };
 use yapi_ext::ExtensionHost;
 use yapi_types::message::Message;
@@ -245,6 +246,8 @@ struct Terminal {
     footer: std::sync::Mutex<Option<RemoteComponent>>,
     /// Notifications and what the extension's editor reported, in order.
     events: std::sync::Mutex<Vec<String>>,
+    listeners: std::sync::Mutex<Option<Arc<dyn ComponentHost>>>,
+    completions: std::sync::Mutex<Option<Arc<dyn ComponentHost>>>,
 }
 
 impl Terminal {
@@ -314,6 +317,30 @@ impl ExtensionUi for Terminal {
 
     fn close(&self, component: RemoteComponent) {
         self.closed.lock().unwrap().push(component.key());
+    }
+
+    fn set_terminal_input(&self, _runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
+        self.event(format!("listening {}", listeners.is_some()));
+        *self.listeners.lock().unwrap() = listeners;
+    }
+
+    fn set_autocomplete(&self, providers: Arc<dyn ComponentHost>, triggers: Vec<String>) {
+        self.event(format!("autocomplete {}", triggers.join(" ")));
+        *self.completions.lock().unwrap() = Some(providers);
+    }
+
+    /// The built-in provider completes slash commands.
+    fn suggestions(&self, request: serde_json::Value) -> BoxFuture<'static, serde_json::Value> {
+        let answer = (request["lines"][0] == "/he")
+            .then(|| json!({"items": [{"value": "hello", "label": "hello"}], "prefix": "/he"}));
+        Box::pin(async move { answer.unwrap_or_default() })
+    }
+
+    /// Puts the item's value on a line of its own, the cursor after it.
+    fn apply_completion(&self, request: &serde_json::Value) -> serde_json::Value {
+        let value = request["item"]["value"].as_str().unwrap();
+        let line = format!("é {value}");
+        json!({"lines": [line], "cursorLine": 0, "cursorCol": line.encode_utf16().count()})
     }
 }
 
@@ -623,6 +650,61 @@ async fn custom_footer_toggles_a_footer_component() {
         [
             "notify Custom footer enabled",
             "notify Default footer restored"
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn input_hooks_listen_complete_and_take_a_shortcut() {
+    let dir = scratch("input-hooks");
+    let host = load(&dir, "input-hooks").await;
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let terminal = Arc::new(Terminal::default());
+    session
+        .bind_extensions(terminal.clone(), Mode::Tui, None, None)
+        .await;
+
+    // The listener replaces `a`, lets `?` through past a full editor, and
+    // consumes Ctrl+G, which it reports on with the editor's text.
+    let listeners = terminal.listeners.lock().unwrap().clone().unwrap();
+    let keys = ["b", "a", "?", "\x07"].map(str::to_owned).to_vec();
+    assert_eq!(listeners.terminal_input(keys).await, ["b", "A", "?"]);
+
+    // Variables complete after `$`, in byte columns past the `é`, and
+    // apply as the built-in provider does.
+    let providers = terminal.completions.lock().unwrap().clone().unwrap();
+    let request = json!({"lines": ["é $P"], "cursorLine": 0, "cursorCol": 4, "force": false});
+    let item = |value: &str| json!({"value": value, "label": value, "description": "environment variable"});
+    let applied = |value: &str| json!({"lines": [format!("é {value}")], "cursorLine": 0, "cursorCol": 2 + value.len()});
+    assert_eq!(
+        providers.suggestions(request).await,
+        json!({"prefix": "$P", "items": [item("$PATH"), item("$PWD")], "applied": [applied("$PATH"), applied("$PWD")]})
+    );
+    // Other text goes to the built-in provider.
+    let request = json!({"lines": ["/he"], "cursorLine": 0, "cursorCol": 3, "force": true});
+    assert_eq!(
+        providers.suggestions(request).await,
+        json!({"prefix": "/he", "items": [{"value": "hello", "label": "hello"}], "applied": [applied("hello")]})
+    );
+
+    let (shortcuts, _) = session.extension_shortcuts(&[]);
+    assert_eq!(shortcuts[0].key, "alt+k");
+    assert_eq!(shortcuts[0].description.as_deref(), Some("Count keys"));
+    session.run_shortcut(&shortcuts[0]).await.unwrap();
+
+    // Once `/quiet` drops the subscription, keys pass.
+    session.prompt("/quiet", Vec::new()).await.unwrap();
+    assert!(terminal.listeners.lock().unwrap().is_none());
+    assert_eq!(listeners.terminal_input(vec!["a".into()]).await, ["a"]);
+    assert_eq!(
+        *terminal.events.lock().unwrap(),
+        [
+            "listening true",
+            "autocomplete $",
+            "notify Saw 4 keys, editor: draft",
+            "notify Saw 4 keys",
+            "listening false",
+            "notify Stopped listening",
         ]
     );
 }

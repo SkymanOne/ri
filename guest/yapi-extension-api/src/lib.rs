@@ -39,6 +39,11 @@
 //! [`Context::custom`] shows one with keyboard focus until it finishes, and
 //! [`Context::set_widget`], [`Context::set_footer`] and
 //! [`Context::set_header`] keep one on screen.
+//!
+//! [`Context::on_terminal_input`] sees raw keys before the editor does,
+//! [`Context::add_autocomplete_provider`] completes text in the editor, and
+//! [`Api::register_shortcut`] binds a key, as Pi's `ctx.ui.onTerminalInput`,
+//! `ctx.ui.addAutocompleteProvider` and `pi.registerShortcut` do.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -47,10 +52,15 @@ use std::rc::Rc;
 
 pub use serde_json::{Value, json};
 
+mod input;
 mod process;
 mod task;
 mod ui;
 
+pub use input::{
+    AutocompleteProvider, Current, EditorState, Subscription, Suggestions, TerminalInput,
+    editor_text,
+};
 pub use process::{Process, ProcessEvent};
 use task::LocalFuture;
 pub use task::{op, sleep, spawn};
@@ -307,6 +317,8 @@ struct Flag {
 pub struct Api {
     tools: Vec<Tool>,
     commands: Vec<Command>,
+    /// Shortcuts, named by their keys.
+    shortcuts: Vec<Command>,
     flags: Vec<Flag>,
     handlers: Vec<(String, Handler<Value, Option<Value>>)>,
     message_renderers: Vec<(String, Rc<MessageRenderer>)>,
@@ -332,6 +344,27 @@ impl Api {
             name: name.into(),
             description: description.into(),
             handler: handler(run),
+        });
+    }
+
+    /// pi's `registerShortcut`: runs `run` when the user presses
+    /// `shortcut`, a key id such as `ctrl+shift+p` or `alt+k`. An empty
+    /// `description` lists it by the extension's path, as Pi does without
+    /// one.
+    pub fn register_shortcut<R>(
+        &mut self,
+        shortcut: impl Into<String>,
+        description: impl Into<String>,
+        run: impl Fn(Context) -> R + 'static,
+    ) where
+        R: Future<Output = Result<(), String>> + 'static,
+    {
+        let name = shortcut.into();
+        self.shortcuts.retain(|existing| existing.name != name);
+        self.shortcuts.push(Command {
+            name,
+            description: description.into(),
+            handler: handler(move |_args: String, ctx| run(ctx)),
         });
     }
 
@@ -406,7 +439,10 @@ impl Api {
                 "default": flag.default,
                 "description": flag.description,
             })).collect::<Vec<_>>(),
-            "shortcuts": [],
+            "shortcuts": self.shortcuts.iter().map(|shortcut| json!({
+                "shortcut": shortcut.name,
+                "description": Some(&shortcut.description).filter(|text| !text.is_empty()),
+            })).collect::<Vec<_>>(),
             "events": events,
             "messageRenderers": self.message_renderers.iter().map(|(name, _)| name).collect::<Vec<_>>(),
             "entryRenderers": [],
@@ -581,6 +617,7 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
         }
         "reload" => {
             ui::reset();
+            input::reset();
             answer(Ok(instantiate(init)))
         }
         "bind" => {
@@ -595,7 +632,14 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
             answer(Ok(Value::Null))
         }
         "component" => answer(Ok(DRAW.get().map_or(Value::Null, |draw| draw(&payload)))),
-        "shortcut" | "complete" | "resize" => answer(Ok(Value::Null)),
+        "terminalInput" => answer(Ok(input::TERMINAL_INPUT
+            .get()
+            .map_or(Value::Null, |run| run(&payload)))),
+        "autocomplete" => match input::AUTOCOMPLETE.get() {
+            Some(run) => run(payload),
+            None => answer(Ok(Value::Null)),
+        },
+        "complete" | "resize" => answer(Ok(Value::Null)),
         "flags" => {
             STATE.with(|state| {
                 let mut state = state.borrow_mut();
@@ -618,15 +662,27 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
                 Ok(result.to_json())
             })
         }
-        "command" => {
+        "command" | "shortcut" => {
             let ctx = context(&payload);
-            let name = payload["name"].as_str().unwrap_or_default().to_owned();
+            let shortcut = kind == "shortcut";
+            let name = payload[if shortcut { "shortcut" } else { "name" }]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let run = registered(|api| {
-                let command = api.commands.iter().find(|command| command.name == name)?;
+                let commands = if shortcut {
+                    &api.shortcuts
+                } else {
+                    &api.commands
+                };
+                let command = commands.iter().find(|command| command.name == name)?;
                 Some(command.handler.clone())
             });
             Box::pin(async move {
-                let run = run.ok_or_else(|| format!("Command /{name} is not registered"))?;
+                let run = run.ok_or_else(|| match shortcut {
+                    true => format!("Shortcut {name} is not registered"),
+                    false => format!("Command /{name} is not registered"),
+                })?;
                 run(payload["args"].as_str().unwrap_or_default().to_owned(), ctx).await?;
                 Ok(Value::Null)
             })

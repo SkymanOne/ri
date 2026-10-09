@@ -141,6 +141,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Api::register_tool` | Offer a tool to the model. `Tool` sets a label, prompt snippet and prompt guidelines. |
 | `Api::register_command` | Handle `/name args` |
 | `Api::register_flag` | Accept `--name` on the command line, read later with `get_flag` |
+| `Api::register_shortcut` | Run a handler when the user presses a key such as `alt+k`, as Pi's `pi.registerShortcut` does. An empty description lists the shortcut by the extension's path. |
 | `Api::on` | Handle a Pi event such as `session_start` or `tool_call`. The return value is the handler's result in Pi, for example `{"block": true, "reason": "..."}`. A handler gets a copy of the event, so a `tool_call` handler changes the call's arguments by returning them as `input` instead of editing them. |
 | `notify` | Show a notification |
 | `send_message`, `append_entry` | Add a custom message or entry to the session |
@@ -154,10 +155,11 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Component` | A piece of interface that renders lines for a width and handles keys and mouse events. See [Interface components](#interface-components). |
 | `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header`, `Context::set_editor_component` | Show components, as Pi's `ctx.ui` does |
 | `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Draw tool calls, tool results and custom messages in the transcript |
+| `Context::on_terminal_input`, `Context::add_autocomplete_provider`, `editor_text` | See raw keys before the editor does, complete text in the editor, and read the editor's text. See [Terminal input and completion](#terminal-input-and-completion). |
 | `theme`, `request_render`, `parse_key`, `terminal_size` | Style text in the session's theme, render components again, name keys, and read the terminal's size |
 | `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
-[Native extension examples](native-examples.md) walks through twelve complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
+[Native extension examples](native-examples.md) walks through thirteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
 
 ### Host requests
 
@@ -279,9 +281,57 @@ yapi-extension-api = { git = "https://github.com/SkymanOne/yapi", tag = "<releas
 
 The widgets add 100 to 300 KB to an extension that uses them. A built extension without the feature stays near 170 KB.
 
+### Terminal input and completion
+
+`Context::on_terminal_input` adds a listener for raw terminal input, as Pi's `ctx.ui.onTerminalInput` does. It sees each key before the editor and everything else, in the order listeners were added, and returns `TerminalInput::Pass` to let the key through, `Consume` to stop it, or `Replace(data)` to hand on `data` in its place, as Pi's `undefined`, `{consume: true}` and `{data}`. The listener stops when the returned `Subscription` is dropped or `unsubscribe` is called, so keep it for as long as the listener should run. `editor_text()` returns the editor's text, as Pi's `ctx.ui.getEditorText` does, so a listener can take keys only while the editor is empty:
+
+```rust
+use std::cell::RefCell;
+use yapi_extension_api::{Subscription, TerminalInput, editor_text, parse_key};
+
+thread_local! {
+    static LISTENER: RefCell<Option<Subscription>> = const { RefCell::new(None) };
+}
+
+api.on("session_start", |_event, ctx| async move {
+    let listener = ctx.on_terminal_input(|data| {
+        if parse_key(data).as_deref() == Some("down") && editor_text().is_empty() {
+            // ...
+            return TerminalInput::Consume;
+        }
+        TerminalInput::Pass
+    });
+    LISTENER.set(Some(listener));
+    Ok(None)
+});
+```
+
+`Context::add_autocomplete_provider` adds an `AutocompleteProvider` over the editor's completion, as Pi's `ctx.ui.addAutocompleteProvider` does. `suggestions` answers the `Suggestions` for an `EditorState`, with Pi's `AutocompleteItem` shapes as items, and `apply` answers the editor after an item is chosen. Each gets a `Current`, Pi's `current`, which answers for the providers added before, over the built-in completion of commands and paths. `apply` defaults to `Current::apply`, and `trigger_characters` names characters that open completion as `@` does. The cursor's column in `EditorState` counts bytes, so it slices the line directly.
+
+```rust
+use yapi_extension_api::{AutocompleteProvider, Current, EditorState, Suggestions, json};
+
+struct Tickets;
+
+impl AutocompleteProvider for Tickets {
+    async fn suggestions(&self, state: &EditorState, force: bool, current: &Current) -> Option<Suggestions> {
+        let line = &state.lines[state.cursor_line];
+        if !line[..state.cursor_col].ends_with('#') {
+            return current.suggestions(state, force).await;
+        }
+        let item = json!({"value": "#42", "label": "#42", "description": "Fix the build"});
+        Some(Suggestions { items: vec![item], prefix: "#".into() })
+    }
+}
+
+ctx.add_autocomplete_provider(Tickets);
+```
+
+As for Pi extensions in yapi, listeners run while yapi keeps drawing, so keys that arrive together pass through them together, and yapi asks providers for suggestions in the background and applies each suggestion as it asks. Each native extension runs in an instance of its own, and the listeners of every instance see input. Completion goes through the providers of one instance, the one that added a provider last. Only the interactive mode runs listeners and providers.
+
 ### Host requests for components
 
-The methods send these host requests. The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself: The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself:
+The methods send these host requests. The handles in them name components the SDK keeps, so use the methods rather than sending the requests yourself:
 
 | Kind | Payload | Effect |
 |---|---|---|
@@ -298,10 +348,12 @@ The methods send these host requests. The handles in them name components the SD
 | `ui.editorAction`, `ui.editorShortcut` | `{"action"}`, `{"data"}` | Runs an app action, or the extension shortcut bound to a key |
 | `ui.keybindings` | `{}` | `{"kitty", "bindings": {id: [key]}, "actions": [id]}` |
 | `ui.applyCompletion` | `{"lines", "cursorLine", "cursorCol", "item", "prefix"}` | The editor's lines and cursor with the completion applied |
+| `ui.setTerminalInput` | `{"listening"}` | Starts or stops passing raw input through the extension's listeners |
+| `ui.setAutocomplete` | `{"triggerCharacters"}` | Completes through the extension's providers, opened by those characters too |
 
 `CustomEditor` asks for completions with the `ui.suggestions` operation, which takes `{"lines", "cursorLine", "cursorCol", "force"}` and answers `{"items", "prefix"}` or `null`. Columns count UTF-16 units, as in Pi.
 
-yapi renders a component through the WIT world's `render` export and delivers keys through `input`. Mouse events arrive as the `mouse` call, editor operations as `editor`, and requests for transcript renders as `component`.
+yapi renders a component through the WIT world's `render` export and delivers keys through `input`. Mouse events arrive as the `mouse` call, editor operations as `editor`, and requests for transcript renders as `component`. Raw input arrives as the `terminalInput` call, `{"keys"}`, answered with each key as the listeners leave it or `null` when one consumed it. Requests for suggestions arrive as `autocomplete`, with the arguments of `ui.suggestions`, answered with `{"prefix", "items", "applied"}`, where `applied` holds the editor's lines and cursor after each item, or `null`. Shortcuts arrive as `shortcut`, `{"shortcut", "ctx"}`.
 
 ## Background work and cancellation
 
