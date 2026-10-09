@@ -1122,13 +1122,17 @@ static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 /// The most lines of extension output [`extension_output`] keeps.
 const OUTPUT_LINES: usize = 200;
 
+/// The most bytes of one kept line, before the note of what was cut.
+const OUTPUT_LINE_BYTES: usize = 4096;
+
 /// Extension output kept off the terminal, oldest first; `None` while it
 /// goes to stderr.
 static OUTPUT: Mutex<Option<VecDeque<String>>> = Mutex::new(None);
 
 /// Keeps extension output off the terminal from now on, for a mode that draws
 /// on it: each message goes to `tracing` at its level, and the last 200 stay
-/// for [`extension_output`]. Until then, extension output goes to stderr.
+/// for [`extension_output`], each cut to 4 KiB. Until then, extension output
+/// goes to stderr.
 pub fn capture_output() {
     lock(&OUTPUT).get_or_insert_default();
 }
@@ -1540,11 +1544,14 @@ impl Bridge for SessionBridge {
             "debug" => tracing::debug!(%extension, "{message}"),
             _ => tracing::info!(%extension, "{message}"),
         }
-        let line = format!(
+        let mut line = format!(
             "{} [{extension}] {level} {message}",
             yapi_types::time::now_iso()
         );
-        // ponytail: bounded by line count, not bytes; cap bytes too if huge messages matter.
+        if line.len() > OUTPUT_LINE_BYTES {
+            let end = line.floor_char_boundary(OUTPUT_LINE_BYTES);
+            line = format!("{}… ({} bytes cut)", &line[..end], line.len() - end);
+        }
         if let Some(lines) = lock(&OUTPUT).as_mut() {
             if lines.len() == OUTPUT_LINES {
                 lines.pop_front();

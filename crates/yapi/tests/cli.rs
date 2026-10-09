@@ -428,6 +428,7 @@ fn extension_output_stays_off_the_screen() {
       console.log("noisy-line");
       console.error("noisy-error");
       process.stderr.write("raw-stderr\n");
+      console.log("é".repeat(5000));
       ctx.ui.notify("noisy done", "info");
     },
   });
@@ -459,7 +460,10 @@ fn extension_output_stays_off_the_screen() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "loaded-line\nnoisy-line\nnoisy-error\nraw-stderr\n"
+        format!(
+            "loaded-line\nnoisy-line\nnoisy-error\nraw-stderr\n{}\n",
+            "é".repeat(5000)
+        )
     );
 
     let mut pty = yapi_mock::pty::Pty::spawn(
@@ -504,7 +508,7 @@ fn extension_output_stays_off_the_screen() {
         .map(|(_, rest)| rest)
         .collect();
     assert_eq!(
-        lines,
+        lines[..4],
         [
             "info loaded-line",
             "info noisy-line",
@@ -513,6 +517,14 @@ fn extension_output_stays_off_the_screen() {
         ],
         "{log}"
     );
+    // A huge line is kept cut to 4 KiB, on a character boundary.
+    let long = output.lines().nth(4).unwrap();
+    let (kept, cut) = long.split_once("… (").unwrap();
+    assert!((4095..=4096).contains(&kept.len()), "{}", kept.len());
+    let prefix = kept.trim_end_matches('é').len();
+    assert!(kept[..prefix].ends_with("noisy.ts] info "), "{kept}");
+    let total = prefix + "é".repeat(5000).len();
+    assert_eq!(cut, format!("{} bytes cut)", total - kept.len()));
 }
 
 #[test]
