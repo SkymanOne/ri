@@ -1,0 +1,35 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "message_start",
+      "message": {
+        "role": "custom",
+        "customType": "seen",
+        "content": "hello",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "custom",
+        "customType": "seen",
+        "content": "hello",
+        "display": true,
+        "timestamp": "<timestamp>"
+      }
+    },
+    {
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

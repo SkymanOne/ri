@@ -362,13 +362,18 @@ fn command_name(value: &Value) -> Option<String> {
     }
 }
 
-async fn handle_line(rpc: Rc<Rpc>, line: String) {
-    // pi runs extension code to completion before it reads the next line, so
-    // a command that such code finished answers before this one.
-    let session = rpc.session();
+/// Waits until the extensions have finished the code they are running, as pi
+/// runs extension code to completion before it reads more input. Returns a
+/// count that grows with every call into extension code.
+async fn settle(session: &AgentSession) -> u64 {
+    let mut calls = 0;
     for extension in session.extensions() {
-        extension.settle().await;
+        calls += extension.settle().await;
     }
+    calls
+}
+
+async fn handle_line(rpc: Rc<Rpc>, line: String) {
     let parsed: Value = match serde_json::from_str(&line) {
         Ok(parsed) => parsed,
         Err(error) => {
@@ -417,6 +422,10 @@ async fn handle_line(rpc: Rc<Rpc>, line: String) {
             return;
         }
     };
+    // Extensions hear of what earlier commands changed, such as the MCP
+    // servers, before this one runs: pi delivers those events before it reads
+    // the next line.
+    rpc.session().flush_announcements().await;
     if let RpcCommand::Prompt {
         message,
         images,
@@ -844,8 +853,23 @@ pub async fn run(session: AgentSession, factory: SessionFactory) -> u8 {
                     code = &mut signal => break 'read code,
                     () = rpc.ui.exit.notified() => break 'read 0,
                 };
+                // A command that extension code finished answers before the
+                // next line runs.
+                let mut calls = settle(&rpc.session()).await;
+                tokio::task::yield_now().await;
                 match read {
-                    Ok(0) | Err(_) => break 'read 0,
+                    // pi reads the end of input after that code too, so a
+                    // command answers if extension code is all it waits for.
+                    // The commands go on until a round makes no call into
+                    // extension code.
+                    Ok(0) | Err(_) => loop {
+                        let next = settle(&rpc.session()).await;
+                        if next == calls {
+                            break 'read 0;
+                        }
+                        calls = next;
+                        tokio::task::yield_now().await;
+                    },
                     Ok(_) => {
                         let mut line = String::from_utf8_lossy(&buffer).into_owned();
                         if line.ends_with('\n') {
