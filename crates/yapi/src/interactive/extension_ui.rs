@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use yapi_core::extensions::{
     ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NotifyKind, Placement,
-    RemoteComponent, ShortcutBinding, Widget, WorkingIndicator,
+    RemoteComponent, ShortcutBinding, TerminalState, Widget, WorkingIndicator,
 };
 use yapi_core::mcp::extension::McpScreen;
 use yapi_tui::color::Color;
@@ -98,8 +98,8 @@ pub(super) struct Shared {
     pub keys: yapi_tui::keys::Keys,
     /// See [`LoadTheme`].
     pub load_theme: Option<LoadTheme>,
-    /// See [`ExtensionUi::terminal_size`].
-    pub terminal_size: tokio::sync::watch::Sender<(usize, usize)>,
+    /// See [`ExtensionUi::terminal`].
+    pub terminal: tokio::sync::watch::Sender<TerminalState>,
 }
 
 /// Loads a theme by name, or from a theme document: why it cannot be used.
@@ -383,8 +383,8 @@ impl ExtensionUi for InteractiveUi {
         lock(&self.shared).footer.clone()
     }
 
-    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
-        Some(lock(&self.shared).terminal_size.subscribe())
+    fn terminal(&self) -> Option<tokio::sync::watch::Receiver<TerminalState>> {
+        Some(lock(&self.shared).terminal.subscribe())
     }
 }
 
@@ -768,11 +768,16 @@ impl ExtensionState {
         lock(&self.shared).theme = theme_json(theme);
     }
 
-    /// Mirrors the terminal's size; extension runtimes hear of a change.
-    pub fn set_terminal_size(&self, size: (usize, usize)) {
+    /// Mirrors the terminal's size and whether the prompt editor has the
+    /// keyboard; extension runtimes hear of a change.
+    pub fn set_terminal(&self, size: (usize, usize), editor_focused: bool) {
+        let state = TerminalState {
+            size,
+            editor_focused,
+        };
         lock(&self.shared)
-            .terminal_size
-            .send_if_modified(|current| std::mem::replace(current, size) != size);
+            .terminal
+            .send_if_modified(|current| std::mem::replace(current, state) != state);
     }
 
     /// Mirrors the tool expansion state.

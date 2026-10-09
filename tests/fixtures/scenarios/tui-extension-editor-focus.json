@@ -1,0 +1,19 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Extensions]",
+    "  focus.ts",
+    "",
+    " Took down from the prompt",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "~/project",
+    "0.0%/1.0M (auto)                          (anthropic) claude-sonnet-4-5 • medium",
+    "Picked Banana"
+  ]
+}

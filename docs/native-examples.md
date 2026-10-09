@@ -293,12 +293,12 @@ fn handle_input(&mut self, data: &str) {
 
 ## input-hooks
 
-A terminal input listener sees every key before the editor does. In an empty editor `?` shows help instead of being typed, `a` becomes `A`, and Ctrl+G reports how many keys the listener saw and what the editor holds. `/quiet` drops the listener's `Subscription`, which stops it. An autocomplete provider completes environment variable names after `$` and leaves other text to the providers it wraps, and Alt+K is a shortcut that reports the count too. Its terminal scenarios run the same extension in TypeScript in Pi.
+A terminal input listener sees every key before the editor does. In an empty prompt editor `?` shows help instead of being typed, and `editor_focused()` leaves it to dialogs and selectors. `a` becomes `A`, and Ctrl+G reports how many keys the listener saw and what the editor holds. `/quiet` drops the listener's `Subscription`, which stops it. An autocomplete provider completes environment variable names after `$` and leaves other text to the providers it wraps, and Alt+K is a shortcut that reports the count too. Its terminal scenarios run the same extension in TypeScript in Pi.
 
 ```rust
 fn listen(data: &str) -> TerminalInput {
     SEEN.set(SEEN.get() + 1);
-    if data == "?" && editor_text().is_empty() {
+    if data == "?" && editor_focused() && editor_text().is_empty() {
         notify("Type $ for variables, Alt+K to count keys", "info");
         return TerminalInput::Consume;
     }

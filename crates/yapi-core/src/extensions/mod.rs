@@ -14,7 +14,7 @@ mod ui;
 
 pub use ui::{
     ComponentHost, CustomOptions, DialogOptions, ExtensionUi, NoUi, NotifyKind, Placement,
-    RemoteComponent, Widget, WorkingIndicator,
+    RemoteComponent, TerminalState, Widget, WorkingIndicator,
 };
 
 use std::path::PathBuf;

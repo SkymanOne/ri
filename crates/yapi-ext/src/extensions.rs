@@ -26,8 +26,8 @@ use yapi_ai::stream::{
 use yapi_core::agent_session::{AgentSession, WeakSession};
 use yapi_core::extensions::{
     Command, ComponentHost, Context, CustomOptions, DialogOptions, Extension, Mode, ModelList,
-    NotifyKind, Placement, RemoteComponent, Renderers, SessionAction, ToolRenderers, Tools, Widget,
-    WorkingIndicator,
+    NotifyKind, Placement, RemoteComponent, Renderers, SessionAction, TerminalState, ToolRenderers,
+    Tools, Widget, WorkingIndicator,
 };
 use yapi_core::tools::{Exposure, Namespace, RegisteredTool};
 use yapi_types::auth::{Credential, OAuthCredential};
@@ -83,8 +83,8 @@ pub struct ExtensionHost {
     /// One more than the session generation the guest is bound to; 0 before
     /// the first binding.
     bound: tokio::sync::Mutex<u64>,
-    /// Sends the bound session's terminal size to the guest as it changes.
-    resizes: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Sends the bound session's terminal state to the guest as it changes.
+    terminal: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// `pi.events` emitted in other runtimes, on their way to the guest's
     /// listeners.
     events: tokio::sync::mpsc::Sender<Value>,
@@ -163,7 +163,7 @@ impl ExtensionHost {
             errors,
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
-            resizes: Mutex::new(None),
+            terminal: Mutex::new(None),
             events,
             dropping: AtomicBool::new(false),
         });
@@ -371,12 +371,9 @@ impl ExtensionHost {
                 }
             }
         }
-        // The guest reads the size as it binds; later sizes follow it.
-        let resizes = ctx
-            .ui
-            .terminal_size()
-            .map(|size| self.forward_resizes(size));
-        if let Some(previous) = std::mem::replace(&mut *lock(&self.resizes), resizes) {
+        // The guest reads the state as it binds; later states follow it.
+        let terminal = ctx.ui.terminal().map(|state| self.forward_terminal(state));
+        if let Some(previous) = std::mem::replace(&mut *lock(&self.terminal), terminal) {
             previous.abort();
         }
         if let Err(err) = self.instance.call("bind", &Value::Null).await {
@@ -422,24 +419,22 @@ impl ExtensionHost {
         }
     }
 
-    /// Sends each new terminal `size` to the guest's `resize`. Sizes that
-    /// change while the guest is busy collapse into the latest.
-    fn forward_resizes(
+    /// Sends each new terminal `state` to the guest's `terminal`. States
+    /// that change while the guest is busy collapse into the latest.
+    fn forward_terminal(
         &self,
-        mut size: tokio::sync::watch::Receiver<(usize, usize)>,
+        mut state: tokio::sync::watch::Receiver<TerminalState>,
     ) -> tokio::task::JoinHandle<()> {
         let owner = self.bridge.owner.get().cloned().unwrap_or_default();
         tokio::spawn(async move {
-            while size.changed().await.is_ok() {
-                let (columns, rows) = *size.borrow_and_update();
+            while state.changed().await.is_ok() {
+                let payload = terminal_json(&state.borrow_and_update());
                 let Some(host) = owner.upgrade() else {
                     return;
                 };
-                let resized = host
-                    .instance
-                    .call("resize", &json!({"columns": columns, "rows": rows}));
+                let sent = host.instance.call("terminal", &payload);
                 drop(host);
-                let _ = resized.await;
+                let _ = sent.await;
             }
         })
     }
@@ -1521,9 +1516,8 @@ impl SessionBridge {
             "ui.getTheme" => return ui.get_theme(&text(&payload["name"])),
             "ui.footerData" => return ui.footer_data(),
             "ui.terminalSize" => {
-                if let Some(size) = ui.terminal_size() {
-                    let (columns, rows) = *size.borrow();
-                    return json!({"columns": columns, "rows": rows});
+                if let Some(state) = ui.terminal() {
+                    return terminal_json(&state.borrow());
                 }
             }
             // The working indicator's visibility and frames are not shown.
@@ -1531,6 +1525,12 @@ impl SessionBridge {
         }
         Value::Null
     }
+}
+
+/// What the guest reads of the terminal: `{"columns", "rows", "editorFocused"}`.
+fn terminal_json(state: &TerminalState) -> Value {
+    let (columns, rows) = state.size;
+    json!({"columns": columns, "rows": rows, "editorFocused": state.editor_focused})
 }
 
 fn custom_message(message: &Value) -> CustomMessage {

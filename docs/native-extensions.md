@@ -158,7 +158,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header`, `Context::set_editor_component` | Show components, as Pi's `ctx.ui` does |
 | `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Draw tool calls, tool results and custom messages in the transcript |
 | `Context::on_terminal_input`, `Context::add_autocomplete_provider`, `editor_text` | See raw keys before the editor does, complete text in the editor, and read the editor's text. See [Terminal input and completion](#terminal-input-and-completion). |
-| `theme`, `request_render`, `parse_key`, `terminal_size` | Style text in the session's theme, render components again, name keys, and read the terminal's size |
+| `theme`, `request_render`, `parse_key`, `terminal_size`, `editor_focused` | Style text in the session's theme, render components again, name keys, read the terminal's size, and tell whether the prompt editor has the keyboard |
 | `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
 [Native extension examples](native-examples.md) walks through fifteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
@@ -291,6 +291,8 @@ yapi renders a component after each key or mouse event it handles, and paints th
 
 `terminal_size()` returns the terminal's columns and rows, as Pi's `tui.terminal.columns` and `tui.terminal.rows` give them, and follows resizes. It returns `None` without a terminal, as in print, JSON and RPC modes.
 
+`editor_focused()` tells whether the prompt editor, or an editor component in its place, has the keyboard, as Pi's `tui.focusedComponent` does. It is `false` while a selector, a dialog or a component shown with `custom` has it. A terminal input listener that takes keys from an empty prompt checks it first, so dialogs still get those keys. It returns `true` without a terminal.
+
 `parse_key` names the keys components most often handle, such as `up`, `enter`, `escape` and `ctrl+c`. yapi turns on the Kitty keyboard protocol where the terminal supports it, which encodes Escape and keys with Ctrl differently, and `parse_key` reads both encodings. Compare keys through it rather than with raw bytes such as `"\x1b"`.
 
 Only the interactive mode shows components. In RPC, print and JSON modes, `custom` resolves to `None` at once, and component widgets, footers and headers are left out. When the extension loads again for another session, yapi drops every component it showed.
@@ -382,7 +384,7 @@ The methods send these host requests. The handles in them name components the SD
 | `ui.close` | `{"handle"}` | Closes the component `ui.custom` showed |
 | `ui.requestRender` | `{}` | Renders the components again |
 | `ui.theme` | `{}` | The theme, as `{"name", "mode", "fg", "bg", "dim", "colors"}`, where `fg` and `bg` hold each token's escape sequence |
-| `ui.terminalSize` | `{}` | The terminal's size as `{"columns", "rows"}`, or `null` without a terminal |
+| `ui.terminalSize` | `{}` | The terminal's size and whether the prompt editor has the keyboard, as `{"columns", "rows", "editorFocused"}`, or `null` without a terminal |
 | `ui.setEditor` | `{"handle"}` | Shows the editor component, or the built-in editor when `handle` is `null` |
 | `ui.getEditorText` | `{}` | The built-in editor's text |
 | `ui.editorChange`, `ui.editorSubmit` | `{"text"}` | The editor component's text changed or was submitted |
