@@ -16,7 +16,9 @@ mod requests;
 mod streams;
 
 pub use engine::Engine;
-pub use extensions::{ExtensionHost, Flag, LoadError, RegisteredProvider};
+pub use extensions::{
+    ExtensionHost, Flag, LoadError, RegisteredProvider, capture_output, extension_output,
+};
 pub use instance::{Bridge, Grants, Instance, NoBridge, Options, join_stopped};
 pub use ops::reset_signal_dispositions;
 

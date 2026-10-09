@@ -256,6 +256,11 @@ async fn run(parsed: &mut args::Args) -> u8 {
         eprintln!("{err}");
         return 1;
     }
+    // The interface draws on the terminal, so extension output goes to
+    // `/debug` instead, from the first extension loaded.
+    if interactive {
+        yapi_ext::capture_output();
+    }
     let loaded = startup::load_extensions(parsed).await;
     // pi's help and model list use the extensions that loaded and report no
     // extension errors.
@@ -288,6 +293,10 @@ async fn run(parsed: &mut args::Args) -> u8 {
     let (extensions, run_settings) = match loaded {
         Ok(loaded) => loaded,
         Err(errors) => {
+            // The interface never starts, so its extensions' output is shown.
+            for line in yapi_ext::extension_output() {
+                eprintln!("{line}");
+            }
             for message in &errors.messages {
                 eprintln!("Error: {message}");
             }

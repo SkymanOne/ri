@@ -17,7 +17,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 | Terminal input listeners | Pi handles each key before the next one reaches them | They run while yapi keeps drawing, so keys that arrive together pass through them together. |
 | Autocomplete providers | The editor waits for providers | yapi's editor never waits: `applyCompletion` runs for every suggestion, and `signal` never aborts. Editors from `setEditorComponent` behave as in Pi. |
 | Failing session actions | A throwing `setup` or `withSession` callback ends interactive mode | yapi reports the error and keeps the current session. |
-| Console output | stdout and stderr | stderr only, because stdout carries print, JSON and RPC output. |
+| Console output | stdout and stderr | stderr only in print, JSON and RPC modes, because stdout carries their output. Interactive mode keeps it off the screen, and `/debug` writes its last 200 lines. |
 | Project trust | Extensions loaded before trust can answer `project_trust` | No extension loads before you trust the project. |
 | Codemode scripts | May compute without limit | Stop after 60 seconds of computing without awaiting a call. |
 | Native extensions | None | WebAssembly components written in Rust. See [Native extensions](native-extensions.md). Unstable until 1.0. |
