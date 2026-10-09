@@ -82,6 +82,8 @@ pub struct ExtensionHost {
     /// One more than the session generation the guest is bound to; 0 before
     /// the first binding.
     bound: tokio::sync::Mutex<u64>,
+    /// Sends the bound session's terminal size to the guest as it changes.
+    resizes: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for ExtensionHost {
@@ -144,6 +146,7 @@ impl ExtensionHost {
             errors,
             sessions: AtomicU64::new(0),
             bound: tokio::sync::Mutex::new(0),
+            resizes: Mutex::new(None),
         });
         let _ = extensions.bridge.owner.set(Arc::downgrade(&extensions));
         Ok(extensions)
@@ -347,12 +350,42 @@ impl ExtensionHost {
                 }
             }
         }
+        // The guest reads the size as it binds; later sizes follow it.
+        let resizes = ctx
+            .ui
+            .terminal_size()
+            .map(|size| self.forward_resizes(size));
+        if let Some(previous) = std::mem::replace(&mut *lock(&self.resizes), resizes) {
+            previous.abort();
+        }
         if let Err(err) = self.instance.call("bind", &Value::Null).await {
             ctx.ui
                 .extension_error("yapi-js", "session_start", &err.to_string(), None);
         }
         *bound = generation + 1;
         true
+    }
+
+    /// Sends each new terminal `size` to the guest's `resize`. Sizes that
+    /// change while the guest is busy collapse into the latest.
+    fn forward_resizes(
+        &self,
+        mut size: tokio::sync::watch::Receiver<(usize, usize)>,
+    ) -> tokio::task::JoinHandle<()> {
+        let owner = self.bridge.owner.get().cloned().unwrap_or_default();
+        tokio::spawn(async move {
+            while size.changed().await.is_ok() {
+                let (columns, rows) = *size.borrow_and_update();
+                let Some(host) = owner.upgrade() else {
+                    return;
+                };
+                let resized = host
+                    .instance
+                    .call("resize", &json!({"columns": columns, "rows": rows}));
+                drop(host);
+                let _ = resized.await;
+            }
+        })
     }
 }
 
@@ -1379,6 +1412,12 @@ impl SessionBridge {
             "ui.theme" => return ui.theme(),
             "ui.getTheme" => return ui.get_theme(&text(&payload["name"])),
             "ui.footerData" => return ui.footer_data(),
+            "ui.terminalSize" => {
+                if let Some(size) = ui.terminal_size() {
+                    let (columns, rows) = *size.borrow();
+                    return json!({"columns": columns, "rows": rows});
+                }
+            }
             // The working indicator's visibility and frames are not shown.
             _ => {}
         }

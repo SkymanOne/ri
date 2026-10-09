@@ -530,7 +530,17 @@
 		requestRender: () => {
 			if (bound) yapi.request("ui.requestRender", {});
 		},
-		terminal: { columns: 80, rows: 24, write() {}, setTitle: (title) => bound && yapi.request("ui.setTitle", { title }) },
+		// pi-tui's `ProcessTerminal` size.
+		terminal: {
+			get columns() {
+				return process.stdout.columns || Number(process.env.COLUMNS) || 80;
+			},
+			get rows() {
+				return process.stdout.rows || Number(process.env.LINES) || 24;
+			},
+			write() {},
+			setTitle: (title) => bound && yapi.request("ui.setTitle", { title }),
+		},
 		setFocus() {},
 		showOverlay() {
 			return overlayHandle(undefined);
@@ -539,6 +549,20 @@
 		start() {},
 		stop() {},
 	};
+	/**
+	 * The terminal's `{ columns, rows }`, or `null` without one: stdout is a
+	 * TTY of that size, which emits `resize` when it changes, as in Node.
+	 */
+	function setTerminalSize(size) {
+		const stdout = process.stdout;
+		const resized = !!size && stdout.isTTY && (stdout.columns !== size.columns || stdout.rows !== size.rows);
+		stdout.isTTY = !!size;
+		stdout.columns = size?.columns;
+		stdout.rows = size?.rows;
+		if (!resized) return;
+		tui.requestRender();
+		stdout.emit("resize");
+	}
 	function overlayHandle(handle) {
 		let hidden = false;
 		return {
@@ -1228,13 +1252,16 @@
 			}
 			let spec = null;
 			let keys = null;
+			let size = null;
 			try {
 				spec = yapi.request("ui.theme", {}) ?? null;
 				keys = yapi.request("ui.keybindings", {}) ?? null;
+				size = yapi.request("ui.terminalSize", {}) ?? null;
 			} catch {
 				// Hosts without a UI leave text plain.
 			}
 			theme.load(spec);
+			setTerminalSize(size);
 			// Components match keys as the host's bindings do.
 			if (keys) {
 				tuiModule ??= await import("@earendil-works/pi-tui");
@@ -1267,6 +1294,11 @@
 		},
 		flags(payload) {
 			for (const [name, value] of Object.entries(payload.values ?? {})) flagValues.set(name, value);
+			return null;
+		},
+		/** The terminal was resized to `{ columns, rows }`. */
+		resize(payload) {
+			setTerminalSize(payload);
 			return null;
 		},
 		emit(payload) {
@@ -1371,7 +1403,6 @@
 				editor.setPaddingX?.(payload.paddingX);
 				editor.setAutocompleteMaxVisible?.(payload.autocompleteMaxVisible);
 				if ("focused" in editor) editor.focused = !!payload.focused;
-				tui.terminal.rows = payload.rows;
 			}
 			return null;
 		},

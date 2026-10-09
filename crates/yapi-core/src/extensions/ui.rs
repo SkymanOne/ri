@@ -350,6 +350,12 @@ pub trait ExtensionUi: Send + Sync {
     /// Expands or collapses tool output.
     fn set_tools_expanded(&self, _expanded: bool) {}
 
+    /// The terminal's size in columns and rows, kept current as it is
+    /// resized; `None` without a terminal, as in print, JSON and RPC modes.
+    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
+        None
+    }
+
     /// What custom footers read: `{"gitBranch", "statuses": [[key, text]],
     /// "providers"}`.
     fn footer_data(&self) -> Value {

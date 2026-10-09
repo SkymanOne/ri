@@ -1,0 +1,22 @@
+{
+  "exitCode": 0,
+  "stdout": [
+    {
+      "type": "extension_ui_request",
+      "id": "<id-1>",
+      "method": "notify",
+      "message": "stdout undefinedxundefined"
+    },
+    {
+      "id": "<id-2>",
+      "type": "response",
+      "command": "prompt",
+      "success": true,
+      "data": {
+        "disposition": "handled"
+      }
+    }
+  ],
+  "stderr": "",
+  "requests": []
+}

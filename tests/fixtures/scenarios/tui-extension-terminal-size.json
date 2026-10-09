@@ -1,0 +1,16 @@
+{
+  "exitCode": -1,
+  "stdout": "",
+  "stderr": "",
+  "requests": [],
+  "screen": [
+    "[Extensions]",
+    "  size.ts",
+    "",
+    "tui 120x30",
+    "stdout 120x30 tty=true",
+    "",
+    "~/project",
+    "0.0%/1.0M (auto)                                                                  (anthropic) claude-sonnet-4-5 • medium"
+  ]
+}

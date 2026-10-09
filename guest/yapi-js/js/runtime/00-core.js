@@ -897,25 +897,12 @@
 		getgid: () => 0,
 		emitWarning: (warning) => yapi.log("warn", [warning]),
 		getBuiltinModule: (name) => globalThis.__yapi_builtins[String(name).replace(/^node:/, "")],
+		// An EventEmitter too. Bound to a terminal, it is a TTY with the terminal's size.
 		stdout: {
 			isTTY: false,
-			columns: 80,
-			rows: 24,
 			write(text) {
 				yapi.log("info", [String(text).replace(/\n$/, "")]);
 				return true;
-			},
-			on() {
-				return this;
-			},
-			once() {
-				return this;
-			},
-			off() {
-				return this;
-			},
-			removeListener() {
-				return this;
 			},
 		},
 		stderr: {
