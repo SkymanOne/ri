@@ -52,6 +52,7 @@ use std::rc::Rc;
 
 pub use serde_json::{Value, json};
 
+pub mod events;
 mod input;
 mod process;
 mod task;
@@ -463,7 +464,7 @@ impl Api {
 /// |---|---|---|
 /// | `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats `message` as console output from a Pi extension. |
 /// | `cwd` | `{}` | The working directory extensions see, as a string. |
-/// | `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all but `command` optional | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits. See below. |
+/// | `exec.sync` | `{"command", "args", "cwd", "env", "envAdd", "input", "timeout"}`, all but `command` optional | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits. See below. |
 /// | `ui.notify` | `{"message", "type"}`, with `type` one of `info`, `warning` and `error`, or absent | `null`. Pi's `ctx.ui.notify`. |
 /// | `session.sendMessage` | `{"message": {"customType", "content", "display", "details"}, "options": {"triggerTurn", "deliverAs"}}` | `null`. Pi's `pi.sendMessage`, with the same message and options. |
 /// | `session.appendEntry` | `{"customType", "data"}` | `null`. Pi's `pi.appendEntry`. |
@@ -471,7 +472,8 @@ impl Api {
 ///
 /// `exec.sync` runs `command` with the strings in `args` and waits for it.
 /// `cwd` defaults to yapi's working directory, `env` replaces the whole
-/// environment, `input` is written to standard input, and `timeout` kills the
+/// environment, `envAdd` sets variables on top of the inherited environment
+/// or `env`, `input` is written to standard input, and `timeout` kills the
 /// process after that many milliseconds. `code` is `null` when a signal ended
 /// the process, and `killed` is `true` when the timeout did. A process that
 /// cannot start answers `{"stdout": "", "stderr": "", "code": null, "error"}`,
@@ -546,6 +548,29 @@ pub fn exec(command: &str, args: &[&str], cwd: Option<&str>) -> Result<ExecOutpu
     })
 }
 
+/// Where the running extension was loaded from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtensionPath {
+    /// The extension's `.wasm` file.
+    pub file: String,
+    /// The root of the installed package that provides it. `None` for an
+    /// extension that yapi did not load from an installed package, such as
+    /// one given with `-e`.
+    pub package_root: Option<String>,
+}
+
+/// Where the running extension was loaded from, such as to start another
+/// yapi with `-e` and this extension.
+pub fn extension_path() -> ExtensionPath {
+    STATE.with(|state| {
+        let state = state.borrow();
+        ExtensionPath {
+            file: state.path.clone(),
+            package_root: state.package_root.clone(),
+        }
+    })
+}
+
 /// The value of flag `name`: from the command line, else its default.
 pub fn get_flag(name: &str) -> Option<Value> {
     STATE.with(|state| {
@@ -567,6 +592,7 @@ struct State {
     api: Option<Api>,
     id: u64,
     path: String,
+    package_root: Option<String>,
     flag_values: HashMap<String, Value>,
     /// Running calls the host may abort, by the host's id for them: the
     /// task and the call's id.
@@ -612,13 +638,20 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
                 let mut state = state.borrow_mut();
                 state.id = entry["id"].as_u64().unwrap_or_default();
                 state.path = entry["path"].as_str().unwrap_or_default().to_owned();
+                state.package_root = entry["baseDir"].as_str().map(str::to_owned);
             });
             answer(Ok(instantiate(init)))
         }
         "reload" => {
             ui::reset();
             input::reset();
+            events::reset();
             answer(Ok(instantiate(init)))
+        }
+        "events" => {
+            let channel = payload["channel"].as_str().unwrap_or_default();
+            events::deliver(channel, &payload["data"]);
+            answer(Ok(Value::Null))
         }
         "bind" => {
             ui::bind();

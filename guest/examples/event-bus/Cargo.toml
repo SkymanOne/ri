@@ -1,0 +1,16 @@
+[package]
+name = "event-bus"
+description = "An example native yapi extension: events between extensions over pi.events."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

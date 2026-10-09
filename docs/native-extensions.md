@@ -143,6 +143,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Api::register_flag` | Accept `--name` on the command line, read later with `get_flag` |
 | `Api::register_shortcut` | Run a handler when the user presses a key such as `alt+k`, as Pi's `pi.registerShortcut` does. An empty description lists the shortcut by the extension's path. |
 | `Api::on` | Handle a Pi event such as `session_start` or `tool_call`. The return value is the handler's result in Pi, for example `{"block": true, "reason": "..."}`. A handler gets a copy of the event, so a `tool_call` handler changes the call's arguments by returning them as `input` instead of editing them. |
+| `events::on`, `events::emit` | Subscribe to and emit events that every extension shares, Pi's `pi.events`. See [Events between extensions](#events-between-extensions). |
 | `notify` | Show a notification |
 | `send_message`, `append_entry` | Add a custom message or entry to the session |
 | `exec` | Run a process and wait for it |
@@ -150,6 +151,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `sleep` | Wait a number of milliseconds |
 | `spawn` | Run a future in the background, after the handler that started it has returned |
 | `request` | Call any host action by name with a JSON payload and get its answer at once |
+| `extension_path` | The extension's `.wasm` file, and the root of the package it was installed from |
 | `op` | Start a host operation by name, such as a dialog or an HTTP request, and await its answer |
 | `Context` | The mode, the working folder and the rest of Pi's `ctx`. `Context::update` shows a running tool's progress. |
 | `Component` | A piece of interface that renders lines for a width and handles keys and mouse events. See [Interface components](#interface-components). |
@@ -159,7 +161,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `theme`, `request_render`, `parse_key`, `terminal_size` | Style text in the session's theme, render components again, name keys, and read the terminal's size |
 | `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
-[Native extension examples](native-examples.md) walks through thirteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
+[Native extension examples](native-examples.md) walks through fifteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
 
 ### Host requests
 
@@ -169,14 +171,14 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 |---|---|---|
 | `log` | `{"level", "message"}`, with `level` one of `debug`, `info`, `warn` and `error` | `null`. yapi treats the message as console output from a Pi extension, which interactive mode keeps off the screen for `/debug`. |
 | `cwd` | `{}` | The working folder extensions see, as a string |
-| `exec.sync` | `{"command", "args", "cwd", "env", "input", "timeout"}`, all optional except `command` | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits |
+| `exec.sync` | `{"command", "args", "cwd", "env", "envAdd", "input", "timeout"}`, all optional except `command` | `{"stdout", "stderr", "code", "signal", "killed"}` once the process exits |
 | `execPath` | `{}` | The path of the running yapi binary, to start another yapi |
 | `ui.notify` | `{"message", "type"}`, with `type` one of `info`, `warning` and `error`, or left out | `null`, as Pi's `ctx.ui.notify` |
 | `session.sendMessage` | `{"message": {"customType", "content", "display", "details"}, "options": {"triggerTurn", "deliverAs"}}` | `null`, as Pi's `pi.sendMessage` |
 | `session.appendEntry` | `{"customType", "data"}` | `null`, as Pi's `pi.appendEntry` |
 | `session.read` | `{"method", "args"}` | The result of Pi's `ctx.sessionManager.<method>(...args)` |
 
-`exec.sync` runs `command` with the strings in `args` and waits for it. Without `cwd` the process starts in yapi's working folder. `env` replaces the whole environment, `input` is written to standard input, and `timeout` kills the process after that many milliseconds. `code` is `null` when a signal ended the process, and `killed` is `true` when the timeout did. A process that cannot start answers `{"stdout": "", "stderr": "", "code": null, "error"}`, where `error` is Node's spawn error, such as `spawn git ENOENT`. The request fails when the extension may not run processes.
+`exec.sync` runs `command` with the strings in `args` and waits for it. Without `cwd` the process starts in yapi's working folder. `env` replaces the whole environment, as in Node, and `envAdd` sets variables on top of the environment the process inherits, or on top of `env`. `input` is written to standard input, and `timeout` kills the process after that many milliseconds. `code` is `null` when a signal ended the process, and `killed` is `true` when the timeout did. A process that cannot start answers `{"stdout": "", "stderr": "", "code": null, "error"}`, where `error` is Node's spawn error, such as `spawn git ENOENT`. The request fails when the extension may not run processes.
 
 `session.read` takes the method's arguments as the array `args`, such as `["<entry id>"]` for `getEntry`. The methods are `getCwd`, `getSessionDir`, `getSessionId`, `getSessionFile`, `getSessionName`, `isPersisted`, `getHeader`, `getEntries`, `getEntry`, `getChildren`, `getLabel`, `getLeafId`, `getLeafEntry`, `getBranch` and `buildSessionContext`. Entries have the shapes of Pi's session files.
 
@@ -198,9 +200,48 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 
 ### Processes
 
-`Process::spawn` starts a process that runs while the extension does other work. It takes `{"command", "args", "cwd", "env", "stdin"}`, all optional except `command`. Without `cwd` the process starts in yapi's working folder, `env` replaces the whole environment, and `"stdin": "ignore"` gives it empty standard input instead of a pipe. `Process::next` waits for the next `ProcessEvent`: output on standard output or standard error, then the exit. A `next` future dropped before it finishes loses no output. `write` waits while the process has not taken the previous write, and `close_stdin` and `kill` act at once.
+`Process::spawn` starts a process that runs while the extension does other work. It takes `{"command", "args", "cwd", "env", "envAdd", "stdin"}`, all optional except `command`. Without `cwd` the process starts in yapi's working folder, `env` replaces the whole environment, `envAdd` adds variables to the inherited environment or to `env`, and `"stdin": "ignore"` gives it empty standard input instead of a pipe. `Process::next` waits for the next `ProcessEvent`: output on standard output or standard error, then the exit. A `next` future dropped before it finishes loses no output. `write` waits while the process has not taken the previous write, and `close_stdin` and `kill` act at once.
 
 Dropping a `Process` kills it, and so does stopping the extension. Starting one needs the process grant, which every extension has by default.
+
+A process inherits yapi's environment, so `envAdd` is how an extension gives it a variable without the environment grant. yapi adds the variables itself, and the extension never sees the values the process inherits:
+
+```rust
+let output = request("exec.sync", &json!({
+    "command": "sh",
+    "args": ["scripts/build.sh"],
+    "envAdd": {"BUILD_MODE": "release"},
+}))?;
+```
+
+### Where the extension is
+
+`extension_path()` returns the extension's `.wasm` file as `file`, and the root of the package it was installed from as `package_root`. `package_root` is `None` for a file given with `-e` or found in an `extensions` folder. An extension that starts another yapi with itself loaded passes `file` to `-e`, and one that ships scripts or data finds them next to `file` or under `package_root`.
+
+## Events between extensions
+
+`events::emit(channel, &data)` and `events::on(channel, handler)` are Pi's `pi.events`, a bus that every extension shares, native or Pi, whichever runtime it runs in:
+
+```rust
+use yapi_extension_api::events;
+
+fn init(api: &mut Api) {
+    events::on("deploy:done", |data| {
+        let version = data["version"].as_str().unwrap_or_default();
+        notify(&format!("Deployed {version}"), "info");
+    });
+    api.register_command("deploy", "Deploys", |_args, _ctx| async move {
+        events::emit("deploy:done", &json!({"version": "1.2.0"}));
+        Ok(())
+    });
+}
+```
+
+`emit` runs the extension's own handlers for the channel before it returns, in the order they subscribed, as Pi does. yapi then delivers the event to the handlers of every other extension, after `emit` has returned. The data reaches them as a JSON copy. Events from one extension arrive in the order it emitted them.
+
+`on` returns a `Subscription`, and `Subscription::unsubscribe` stops the handler. Dropping the `Subscription` keeps the handler. A handler runs to completion before the next one starts, so a handler that waits for host work starts it with `spawn`. When the extension loads again for another session, yapi drops every handler and the init function subscribes again, as Pi drops the handlers of a session's extensions when the session is replaced.
+
+A runtime that is busy, such as one computing in a handler, holds at most 64 events from other runtimes. yapi drops later ones until it catches up and logs a warning, so a stuck extension never holds up the others or the interface.
 
 ## Interface components
 

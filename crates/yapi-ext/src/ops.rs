@@ -25,12 +25,14 @@ const KILL_GRACE: Duration = Duration::from_secs(5);
 /// whose output nobody reads blocks writing, as in Node.
 const QUEUED_CHUNKS: usize = 16;
 
-/// A process to run: `{command, args, cwd, env, input, timeout}`.
+/// A process to run: `{command, args, cwd, env, envAdd, input, timeout}`.
 struct Spawn {
     command: String,
     args: Vec<String>,
     cwd: Option<String>,
     env: Option<Map<String, Value>>,
+    /// Variables set on top of the environment, inherited or `env`.
+    env_add: Option<Map<String, Value>>,
     input: Option<String>,
     timeout: Option<Duration>,
     /// Pipe standard input: for `input`, or to write to a running process.
@@ -56,6 +58,7 @@ impl Spawn {
                 .unwrap_or_default(),
             cwd: text("cwd"),
             env: payload["env"].as_object().cloned(),
+            env_add: payload["envAdd"].as_object().cloned(),
             input: text("input"),
             timeout: payload["timeout"]
                 .as_f64()
@@ -66,7 +69,8 @@ impl Spawn {
 
     /// The process to start, killed when dropped, with piped output and
     /// piped input when asked for. An explicit environment replaces the
-    /// process's, as in Node.
+    /// process's, as in Node, and `envAdd` adds to either without showing
+    /// the guest the variables it inherits.
     fn command(&self) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(&self.command);
         command
@@ -83,23 +87,26 @@ impl Spawn {
         if let Some(cwd) = &self.cwd {
             command.current_dir(cwd);
         }
-        if let Some(env) = self.env_pairs() {
-            command.env_clear().envs(env);
+        if let Some(env) = &self.env {
+            command.env_clear().envs(env_pairs(env));
+        }
+        if let Some(env) = &self.env_add {
+            command.envs(env_pairs(env));
         }
         command
     }
+}
 
-    fn env_pairs(&self) -> Option<Vec<(String, String)>> {
-        self.env.as_ref().map(|env| {
-            env.iter()
-                .filter_map(|(key, value)| match value {
-                    Value::String(text) => Some((key.clone(), text.clone())),
-                    Value::Null => None,
-                    other => Some((key.clone(), other.to_string())),
-                })
-                .collect()
+/// The variables of a JSON environment, with values as Node turns them into
+/// strings. `null` leaves a variable out.
+fn env_pairs(env: &Map<String, Value>) -> Vec<(String, String)> {
+    env.iter()
+        .filter_map(|(key, value)| match value {
+            Value::String(text) => Some((key.clone(), text.clone())),
+            Value::Null => None,
+            other => Some((key.clone(), other.to_string())),
         })
-    }
+        .collect()
 }
 
 /// An operation that runs on the task of the call that started it.

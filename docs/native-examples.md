@@ -1,6 +1,6 @@
 # Native extension examples
 
-The repository has thirteen native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Ten are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of the eight examples with interfaces against Pi running the TypeScript versions.
+The repository has fifteen native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Eleven are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, `event-bus` with Pi extensions in `crates/yapi-ext/tests/bus.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of nine examples against Pi running the TypeScript versions.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
@@ -10,6 +10,8 @@ The repository has thirteen native extensions in [`guest/examples`](https://gith
 | [`todo`](#todo) | State kept in tool results and rebuilt from the session branch, a component that lists it | `todo.ts` |
 | [`custom-footer`](#custom-footer) | A component in place of the footer that reads the session as it renders | `custom-footer.ts` |
 | [`repo-status`](#repo-status) | Running processes with `exec`, a startup warning | None |
+| [`event-bus`](#event-bus) | Events between extensions with `events`, native or Pi | `event-bus.ts` |
+| [`package-scripts`](#package-scripts) | The extension's own location, variables added to a process's inherited environment | None |
 | [`subagent`](#subagent) | A process read as it runs, tool progress, background work that reports in a new turn | `subagent/` |
 | [`modal-editor`](#modal-editor) | An editor component in place of the built-in editor, wrapping `CustomEditor` | `modal-editor.ts` |
 | [`question`](#question) | A tool that asks in a component with an `Editor` widget, and draws its own call and result | `question.ts` |
@@ -176,6 +178,38 @@ fn status(ctx: &Context) -> Option<(String, Vec<String>)> {
 ```
 
 `exec` needs the process grant, which every extension has by default.
+
+## event-bus
+
+Extensions talking over Pi's `pi.events`. A listener shows every `my:notification` event, from this extension or any other, native or Pi. `/emit [message]` emits one, and so does the start of a session. `/mute` stops the listener with its `Subscription`, and starts it again. Pi's example has no `/mute`.
+
+```rust
+fn listen() -> Subscription {
+    events::on("my:notification", |data| {
+        let message = data["message"].as_str().unwrap_or_default();
+        let from = data["from"].as_str().unwrap_or_default();
+        notify(&format!("Event from {from}: {message}"), "info");
+    })
+}
+```
+
+The extension's own listener hears its event while `events::emit` runs. Pi extensions and other native extensions hear it right after.
+
+## package-scripts
+
+`/script <name> [args]` runs `scripts/<name>` with `sh` and shows what it printed. The script comes from the root of the package the extension was installed from, or from the folder of its `.wasm` file when it was given with `-e`. `extension_path` says where both are. The script gets `EXTENSION_DIR`, the folder it came from, on top of the environment it inherits, so it still finds programs on `PATH`:
+
+```rust
+let output = request(
+    "exec.sync",
+    &json!({
+        "command": "sh",
+        "args": command,
+        "cwd": ctx.cwd(),
+        "envAdd": {"EXTENSION_DIR": dir},
+    }),
+)?;
+```
 
 ## subagent
 
