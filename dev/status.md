@@ -134,6 +134,16 @@ Run on Linux x86_64 after the rename to yapi.
 
 QA once saw yapi exit with SIGABRT after writing all of its output, in 2 of about 190 RPC runs with an extension loaded. It was a race on Linux between extension threads and libgcc's exit-time unwinder cleanup. yapi now joins its extension threads before it exits (#10).
 
+## Planned
+
+Capability-based isolation, with a package registry and project manifests. See AGENTS.md, "Trust and capabilities".
+
+- Package manifests declare requested grants. The user approves them at install, and settings can narrow them.
+- The loader groups JS packages into one instance per trust domain. Native extensions already run one instance each.
+- Close the grant bypasses first: `tool.execute` runs any session tool without a grant check, `models.apiKey` returns credentials to any extension, and the event bus and session actions cross instances.
+- Scoped grants: filesystem paths and read-only access through WASI preopens, and network host allowlists.
+- `yapi.toml` at a project root lists packages, extensions and skills with versions, installed together from a central registry, with a lock file.
+
 ## Open issues
 
 - CI runs the `x86_64-apple-darwin` release archive only under Rosetta on Apple silicon, not on an Intel Mac.

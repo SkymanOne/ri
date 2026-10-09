@@ -83,7 +83,7 @@ Files in a project's `.yapi` folder can change how yapi behaves and can run code
 
 yapi reads and edits files and runs commands as your user, so give it the same trust as any program you run in your shell.
 
-- Extensions run in WebAssembly instances with memory and compute limits. In v0.1 every package gets Pi's default grants, which allow file, process, network and environment access, so an extension can do what it could do in Pi. Restricting a package's grants is planned.
+- Extensions run in WebAssembly instances with memory and compute limits. In v0.1 every package gets Pi's default grants, which allow file, process, network and environment access, so an extension can do what it could do in Pi. Packages that declare the grants they need, and run with only those, are [planned](packages.md#planned-manifests-and-registry).
 - The process grant implies the other three. A process an extension starts runs as your user, outside the sandbox: it reads any file you can, reaches the network and inherits yapi's environment, API keys included. A subagent is such a process, a full yapi with your installed packages. Codemode and any instance without the process grant cannot start one.
 - yapi never runs agent sessions inside an extension's instance. A session there would run its tools and use its credentials in yapi's own process, outside the extension's grants.
 - MCP servers started over stdio run as normal processes with your permissions. An extension registers a stdio server only with the process grant, and an HTTP server only with the network grant.

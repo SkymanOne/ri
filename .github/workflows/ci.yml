@@ -19,7 +19,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Whether the change can affect the Rust build or tests. Changes only to
+  # docs, internal notes, skills and other workflows skip the jobs below,
+  # which then report as skipped. Any other file, or no base to compare with,
+  # runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          rust=true
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # CHANGELOG.md is embedded in the binary, so it counts as Rust.
+            if ! git diff --name-only "$BASE" HEAD \
+              | grep -vxE '(docs|dev|skills|assets)/.*|book\.toml|LICENSE-.*|\.gitignore|\.github/workflows/(docs|bench|release)\.yml|(README|AGENTS|CONTRIBUTING|SECURITY)\.md' \
+              | grep -q .; then
+              rust=false
+            fi
+          fi
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+
   fmt:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +62,8 @@ jobs:
       - run: cargo fmt --all --check
 
   check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +94,8 @@ jobs:
           YAPI_SETTLE_MS: "1200"
 
   deny:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

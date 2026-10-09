@@ -23,7 +23,7 @@ cargo run -p yapi --
 
 ## Checks
 
-Run these before every commit. CI runs the same checks on Linux and macOS.
+Run these before every commit. CI runs the same checks on Linux and macOS. It skips them when a change touches only documentation, internal notes, skills or other workflows.
 
 ```sh
 cargo fmt --all
