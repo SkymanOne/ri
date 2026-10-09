@@ -1581,6 +1581,8 @@ impl App {
         if let Some(selector) = &mut self.selector {
             selector.tick();
         }
+        // Extensions hear of a resize once per frame.
+        self.ext.set_terminal_size(self.size);
         let (width, height) = self.size;
         let (dock, cursor) = self.dock(width);
         // An `always` scrollbar keeps the transcript off the last column.
@@ -4237,6 +4239,7 @@ impl App {
             return;
         };
         self.ext.set_theme(&self.theme);
+        self.ext.set_terminal_size(self.size);
         self.share_themes();
         let tx = self.tx.clone();
         let actions = crate::runtime::actions(move |request| {

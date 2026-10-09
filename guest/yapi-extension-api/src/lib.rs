@@ -57,7 +57,7 @@ pub use task::{op, sleep, spawn};
 pub use ui::{
     Component, CustomOptions, Done, EditorComponent, OverlayHandle, Placement, Theme, Widget,
     editor_action, editor_changed, editor_shortcut, editor_submit, parse_key, request_render,
-    theme,
+    terminal_size, theme,
 };
 #[cfg(feature = "widgets")]
 pub mod widgets;
@@ -595,7 +595,7 @@ fn call(init: fn(&mut Api), kind: &str, payload: Value) -> LocalFuture<Result<Va
             answer(Ok(Value::Null))
         }
         "component" => answer(Ok(DRAW.get().map_or(Value::Null, |draw| draw(&payload)))),
-        "shortcut" | "complete" => answer(Ok(Value::Null)),
+        "shortcut" | "complete" | "resize" => answer(Ok(Value::Null)),
         "flags" => {
             STATE.with(|state| {
                 let mut state = state.borrow_mut();

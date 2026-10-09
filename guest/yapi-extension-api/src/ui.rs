@@ -252,6 +252,14 @@ pub fn editor_shortcut(data: &str) -> bool {
     request("ui.editorShortcut", &json!({"data": data})).is_ok_and(|ran| ran == true)
 }
 
+/// The terminal's size in columns and rows, as pi-tui's `terminal.columns`
+/// and `terminal.rows` give it; `None` without a terminal, as in print mode.
+pub fn terminal_size() -> Option<(usize, usize)> {
+    let size = request("ui.terminalSize", &json!({})).ok()?;
+    let dimension = |key: &str| size[key].as_u64().map(|value| value as usize);
+    Some((dimension("columns")?, dimension("rows")?))
+}
+
 /// Asks yapi to render the components again, as pi-tui's
 /// `tui.requestRender()` does. Call it when a component changed other than
 /// in response to input, such as from a timer.

@@ -98,6 +98,8 @@ pub(super) struct Shared {
     pub keys: yapi_tui::keys::Keys,
     /// See [`LoadTheme`].
     pub load_theme: Option<LoadTheme>,
+    /// See [`ExtensionUi::terminal_size`].
+    pub terminal_size: tokio::sync::watch::Sender<(usize, usize)>,
 }
 
 /// Loads a theme by name, or from a theme document: why it cannot be used.
@@ -379,6 +381,10 @@ impl ExtensionUi for InteractiveUi {
 
     fn footer_data(&self) -> Value {
         lock(&self.shared).footer.clone()
+    }
+
+    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
+        Some(lock(&self.shared).terminal_size.subscribe())
     }
 }
 
@@ -760,6 +766,13 @@ impl ExtensionState {
     /// Mirrors the theme.
     pub fn set_theme(&self, theme: &Theme) {
         lock(&self.shared).theme = theme_json(theme);
+    }
+
+    /// Mirrors the terminal's size; extension runtimes hear of a change.
+    pub fn set_terminal_size(&self, size: (usize, usize)) {
+        lock(&self.shared)
+            .terminal_size
+            .send_if_modified(|current| std::mem::replace(current, size) != size);
     }
 
     /// Mirrors the tool expansion state.

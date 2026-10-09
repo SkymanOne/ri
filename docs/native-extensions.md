@@ -154,7 +154,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `Component` | A piece of interface that renders lines for a width and handles keys and mouse events. See [Interface components](#interface-components). |
 | `Context::custom`, `Context::set_widget`, `Context::set_footer`, `Context::set_header`, `Context::set_editor_component` | Show components, as Pi's `ctx.ui` does |
 | `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Draw tool calls, tool results and custom messages in the transcript |
-| `theme`, `request_render`, `parse_key` | Style text in the session's theme, render components again, and name keys |
+| `theme`, `request_render`, `parse_key`, `terminal_size` | Style text in the session's theme, render components again, name keys, and read the terminal's size |
 | `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
 [Native extension examples](native-examples.md) walks through twelve complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
@@ -246,6 +246,8 @@ yapi renders a component after each key or mouse event it handles, and paints th
 
 `theme()` returns the session's theme. `Theme::fg` and `Theme::bg` color text with a token such as `accent`, `muted` or `success`, and `bold`, `italic`, `underline`, `strikethrough` and `inverse` style it. Text stays plain without a theme, as in print mode, and for a token the theme does not have.
 
+`terminal_size()` returns the terminal's columns and rows, as Pi's `tui.terminal.columns` and `tui.terminal.rows` give them, and follows resizes. It returns `None` without a terminal, as in print, JSON and RPC modes.
+
 `parse_key` names the keys components most often handle, such as `up`, `enter`, `escape` and `ctrl+c`. yapi turns on the Kitty keyboard protocol where the terminal supports it, which encodes Escape and keys with Ctrl differently, and `parse_key` reads both encodings. Compare keys through it rather than with raw bytes such as `"\x1b"`.
 
 Only the interactive mode shows components. In RPC, print and JSON modes, `custom` resolves to `None` at once, and component widgets, footers and headers are left out. When the extension loads again for another session, yapi drops every component it showed.
@@ -289,6 +291,7 @@ The methods send these host requests. The handles in them name components the SD
 | `ui.close` | `{"handle"}` | Closes the component `ui.custom` showed |
 | `ui.requestRender` | `{}` | Renders the components again |
 | `ui.theme` | `{}` | The theme, as `{"name", "mode", "fg", "bg", "dim", "colors"}`, where `fg` and `bg` hold each token's escape sequence |
+| `ui.terminalSize` | `{}` | The terminal's size as `{"columns", "rows"}`, or `null` without a terminal |
 | `ui.setEditor` | `{"handle"}` | Shows the editor component, or the built-in editor when `handle` is `null` |
 | `ui.getEditorText` | `{}` | The built-in editor's text |
 | `ui.editorChange`, `ui.editorSubmit` | `{"text"}` | The editor component's text changed or was submitted |

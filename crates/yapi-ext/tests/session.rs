@@ -13,7 +13,9 @@ use std::sync::Arc;
 use common::{cli_source, custom_entries, engine, options, scratch, session, text_of};
 use serde_json::{Value, json};
 use yapi_ai::faux::{Faux, Response};
-use yapi_core::extensions::{ExtensionUi, Mode, NoUi, NotifyKind, RemoteComponent};
+use yapi_core::extensions::{
+    ExtensionUi, Mode, NoUi, NotifyKind, Placement, RemoteComponent, Widget,
+};
 use yapi_ext::ExtensionHost;
 use yapi_types::event::AgentEvent;
 use yapi_types::message::Message;
@@ -511,12 +513,16 @@ async fn tool_updates_and_nested_calls_report_in_pi_order() {
     assert!(log.iter().all(|(task, _)| *task == log[0].0), "{log:?}");
 }
 
-/// A terminal that keeps the editor an extension puts in place and the
-/// text it last reported.
+/// A terminal that keeps the editor an extension puts in place, the text
+/// it last reported, its last component widget and how often it was asked
+/// to render.
 #[derive(Default)]
 struct Screen {
     editor: std::sync::Mutex<Option<RemoteComponent>>,
     text: std::sync::Mutex<String>,
+    widget: std::sync::Mutex<Option<RemoteComponent>>,
+    renders: std::sync::atomic::AtomicUsize,
+    size: tokio::sync::watch::Sender<(usize, usize)>,
 }
 
 impl ExtensionUi for Screen {
@@ -540,6 +546,21 @@ impl ExtensionUi for Screen {
 
     fn editor_changed(&self, text: &str) {
         text.clone_into(&mut self.text.lock().unwrap());
+    }
+
+    fn set_widget(&self, _key: &str, widget: Option<Widget>, _placement: Option<Placement>) {
+        if let Some(Widget::Component(component)) = widget {
+            *self.widget.lock().unwrap() = Some(component);
+        }
+    }
+
+    fn request_render(&self) {
+        self.renders
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
+        Some(self.size.subscribe())
     }
 }
 
@@ -591,4 +612,61 @@ export default function (pi: ExtensionAPI) {
     editor.input("\x1b[D");
     let (text, _) = insert("/tmp/photo.png", true).await;
     assert_eq!(text, "a /tmp/photo.png b");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn extensions_see_the_terminal_size_as_it_changes() {
+    let dir = scratch("terminal-size");
+    let path = dir.join("size.ts");
+    std::fs::write(
+        &path,
+        r#"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+	let resizes = 0;
+	process.stdout.on("resize", () => resizes++);
+	pi.on("session_start", (_event, ctx) => {
+		ctx.ui.setWidget("size", (tui) => ({
+			render: () => [
+				`tui ${tui.terminal.columns}x${tui.terminal.rows}`,
+				`stdout ${process.stdout.columns}x${process.stdout.rows} tty=${process.stdout.isTTY} resizes=${resizes}`,
+			],
+			invalidate() {},
+		}));
+	});
+}
+"#,
+    )
+    .unwrap();
+    let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let session = session(&Faux::new([]), &dir, host.for_session());
+    let screen = Arc::new(Screen::default());
+    screen.size.send_replace((120, 30));
+    session
+        .bind_extensions(screen.clone(), Mode::Tui, None, None)
+        .await;
+    let widget = screen.widget.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        widget.render(80).await,
+        ["tui 120x30", "stdout 120x30 tty=true resizes=0"]
+    );
+
+    // The runtime hears of the resize after the screen does, without the
+    // screen waiting for it, and asks for a render.
+    let renders = screen.renders.load(std::sync::atomic::Ordering::SeqCst);
+    screen.size.send_replace((100, 40));
+    let resized = ["tui 100x40", "stdout 100x40 tty=true resizes=1"];
+    let mut rows = Vec::new();
+    for _ in 0..500 {
+        rows = widget.render(80).await;
+        if rows == resized {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(rows, resized);
+    assert!(screen.renders.load(std::sync::atomic::Ordering::SeqCst) > renders);
 }
