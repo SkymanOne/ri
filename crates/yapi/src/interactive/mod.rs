@@ -134,6 +134,16 @@ type DockComponent = (usize, usize, usize, (u64, u32));
 /// `None` for the user's own commands.
 type Reply = Option<tokio::sync::oneshot::Sender<Result<bool, String>>>;
 
+/// Where the rows of a component `height` rows tall from row `start` of a
+/// dock part placed at `placed` show, for a dock from screen row `top`: the
+/// screen row, the component's first row shown and how many show. `None`
+/// when none shows.
+fn shown_rows(top: usize, placed: Placement, start: usize, height: usize) -> Option<Placement> {
+    let (row, first, count) = placed;
+    let (from, to) = (start.max(first), (start + height).min(first + count));
+    (from < to).then(|| (top + row + from - first, from - start, to - from))
+}
+
 /// Sends `outcome` to the extension command waiting on `reply`, if any.
 fn answer(reply: Reply, outcome: Result<bool, String>) {
     if let Some(reply) = reply {
@@ -534,6 +544,8 @@ struct App {
     last_clear: Option<Instant>,
     last_escape: Option<Instant>,
     running: bool,
+    /// Prompts started here whose `prompt` call has not returned.
+    prompts: usize,
     quit: bool,
     exit_code: u8,
     cwd: PathBuf,
@@ -1353,10 +1365,7 @@ impl App {
             .into_iter()
             .filter(|_| self.fullscreen)
             .filter_map(|(part, start, height, key)| {
-                let (row, first, count) = placed[part];
-                let (from, to) = (start.max(first), (start + height).min(first + count));
-                let shown = (top + row + from - first, from - start, to - from);
-                (from < to).then_some((key, shown, height))
+                Some((key, shown_rows(top, placed[part], start, height)?, height))
             })
             .collect();
         (rows, cursor)
@@ -1987,7 +1996,7 @@ impl App {
             // A run an extension message started has no prompt to finish:
             // as pi's `isStreaming`, the session's own state ends it.
             AgentEvent::AgentSettled => {
-                self.running = self.session.is_streaming();
+                self.running = self.prompts > 0 || self.session.is_streaming();
                 if self.shutdown_requested {
                     self.quit = true;
                 }
@@ -2181,6 +2190,7 @@ impl App {
 
     fn start_prompt(&mut self, text: String, images: Vec<ImageContent>) {
         self.running = true;
+        self.prompts += 1;
         let session = self.session.clone();
         let tx = self.tx.clone();
         let epoch = self.epoch;
@@ -3367,6 +3377,7 @@ impl App {
         self.theme_files = themes::ThemeFiles::load(&self.session.resources().themes);
         self.branch = footer::git_branch(&self.cwd);
         self.running = false;
+        self.prompts = 0;
         self.indicator = None;
         self.pending = (Vec::new(), Vec::new());
         self.pending_bash.clear();
@@ -4201,6 +4212,7 @@ impl App {
             last_clear: None,
             last_escape: None,
             running: false,
+            prompts: 0,
             quit: false,
             exit_code: 0,
             branch: footer::git_branch(&cwd),
@@ -4370,8 +4382,10 @@ impl App {
             Event::InputClosed => self.quit = true,
             Event::Agent(epoch, event) if epoch == self.epoch => self.on_agent_event(*event),
             Event::PromptDone(epoch, result) if epoch == self.epoch => {
-                self.running = false;
-                if matches!(self.indicator, Some((Indicator::Working, _))) {
+                // A run an `agent_settled` handler started may stream on.
+                self.prompts = self.prompts.saturating_sub(1);
+                self.running = self.prompts > 0 || self.session.is_streaming();
+                if !self.running && matches!(self.indicator, Some((Indicator::Working, _))) {
                     self.indicator = None;
                 }
                 if let Err(error) = result {
@@ -4514,7 +4528,12 @@ mod tests {
 
     /// A session around `manager` without a model.
     fn session_around(manager: SessionManager) -> AgentSession {
-        AgentSession::new(yapi_core::agent_session::SessionConfig {
+        AgentSession::new(config(manager))
+    }
+
+    /// The configuration of a session around `manager` without a model.
+    fn config(manager: SessionManager) -> yapi_core::agent_session::SessionConfig {
+        yapi_core::agent_session::SessionConfig {
             cwd: PathBuf::from("/work"),
             agent_dir: PathBuf::from("/agent"),
             settings: yapi_core::settings::SettingsManager::in_memory(),
@@ -4530,13 +4549,19 @@ mod tests {
             excluded_tools: Vec::new(),
             resources: yapi_core::agent_session::Resources::default(),
             docs: yapi_core::docs::Locations::default(),
-        })
+        }
     }
 
     /// An app around an in-memory session without a model, as `run` builds
     /// it, and the receiver of its events.
     pub(super) fn app() -> (App, UnboundedReceiver<Event>) {
-        let session = session_around(SessionManager::in_memory(Path::new("/work")));
+        app_with(session_around(SessionManager::in_memory(Path::new(
+            "/work",
+        ))))
+    }
+
+    /// An app around `session`, and the receiver of its events.
+    fn app_with(session: AgentSession) -> (App, UnboundedReceiver<Event>) {
         let options = Options {
             tui_mode: None,
             verbose: false,
@@ -4552,6 +4577,121 @@ mod tests {
         let colors = yapi_tui::terminal::TerminalColors::default();
         let (app, _) = App::new(session, PathBuf::from("/agent"), options, tx, colors, false);
         (app, rx)
+    }
+
+    /// Answers the first request with "one" and keeps every later one
+    /// streaming.
+    #[derive(Default)]
+    struct FirstThenStall {
+        answered: AtomicBool,
+        held: std::sync::Mutex<Vec<yapi_ai::stream::EventSender>>,
+    }
+
+    impl yapi_ai::stream::Provider for FirstThenStall {
+        fn api(&self) -> &str {
+            "faux"
+        }
+
+        fn stream(&self, request: yapi_ai::stream::Request) -> yapi_ai::stream::EventStream {
+            if !self.answered.swap(true, Ordering::SeqCst) {
+                let faux = yapi_ai::faux::Faux::new([yapi_ai::faux::Response::text("one")]);
+                return yapi_ai::stream::Provider::stream(&faux, request);
+            }
+            let (sender, stream) = yapi_ai::stream::EventStream::channel();
+            self.held.lock().unwrap().push(sender);
+            stream
+        }
+    }
+
+    /// The next event, failing the test after a few seconds without one.
+    async fn next(events: &mut UnboundedReceiver<Event>) -> Event {
+        tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .expect("an event")
+            .expect("an open channel")
+    }
+
+    fn is_agent(event: &Event, expected: fn(&AgentEvent) -> bool) -> bool {
+        matches!(event, Event::Agent(_, agent) if expected(agent))
+    }
+
+    #[tokio::test]
+    async fn a_prompt_ending_while_another_run_streams_keeps_the_app_busy() {
+        let mut config = config(SessionManager::in_memory(Path::new("/work")));
+        let model: yapi_types::model::Model = serde_json::from_value(json!({
+            "id": "faux-1", "name": "Faux", "api": "faux", "provider": "faux", "baseUrl": "",
+            "reasoning": false, "input": ["text"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 100000, "maxTokens": 8000,
+        }))
+        .unwrap();
+        config
+            .registry
+            .register_provider("faux", vec![model.clone()]);
+        config.registry.set_runtime_key("faux", "key".into());
+        config.apis.register(Arc::new(FirstThenStall::default()));
+        config.model = Some(model);
+        let session = AgentSession::new(config);
+        let (mut app, mut events) = app_with(session.clone());
+        subscribe(&session, &app.tx, app.epoch);
+        app.start_prompt("p1".into(), Vec::new());
+        let mut p1 = Vec::new();
+        loop {
+            let event = next(&mut events).await;
+            let done = matches!(event, Event::PromptDone(..));
+            p1.push(event);
+            if done {
+                break;
+            }
+        }
+        let done = p1.pop().unwrap();
+        let settled = p1
+            .iter()
+            .position(|event| is_agent(event, |e| matches!(e, AgentEvent::AgentSettled)))
+            .unwrap();
+        let settled = p1.remove(settled);
+        // An `agent_settled` handler starts a turn, as `sendMessage` with
+        // `triggerTurn` does. Extensions hear the event first, so the new
+        // run's start arrives before P1's settle and P1's end.
+        tokio::spawn({
+            let session = session.clone();
+            async move { session.prompt("r2", Vec::new()).await }
+        });
+        let start = loop {
+            let event = next(&mut events).await;
+            if is_agent(&event, |e| matches!(e, AgentEvent::AgentStart)) {
+                break event;
+            }
+        };
+        for event in p1.into_iter().chain([start, settled, done]) {
+            app.on_event(event);
+        }
+        assert!(app.running);
+        // The next prompt steers the run, as in pi, instead of failing.
+        app.on_submit("p3".into());
+        loop {
+            match next(&mut events).await {
+                Event::Agent(_, event) => {
+                    if let AgentEvent::QueueUpdate { steering, .. } = *event
+                        && steering == ["p3"]
+                    {
+                        break;
+                    }
+                }
+                Event::PromptDone(_, result) => panic!("p3 was prompted: {result:?}"),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn dock_components_outside_the_rows_shown_take_no_rows() {
+        // A part placed at dock row 1 that shows its rows 2 and 3.
+        let placed = (1, 2, 2);
+        assert_eq!(shown_rows(10, placed, 0, 2), None);
+        assert_eq!(shown_rows(10, placed, 5, 3), None);
+        assert_eq!(shown_rows(10, placed, 1, 2), Some((11, 1, 1)));
+        assert_eq!(shown_rows(10, placed, 2, 4), Some((11, 0, 2)));
     }
 
     #[tokio::test]
