@@ -68,8 +68,8 @@ pub(super) enum Request {
     EditorSubmit(String),
     /// An extension shortcut whose keys an extension's editor received.
     Shortcut(ShortcutBinding),
-    /// Input listeners started or stopped listening.
-    TerminalInput(Option<Arc<dyn ComponentHost>>),
+    /// A runtime's input listeners started or stopped listening.
+    TerminalInput(u64, Option<Arc<dyn ComponentHost>>),
     /// Composed autocomplete providers, with their trigger characters.
     Autocomplete(Arc<dyn ComponentHost>, Vec<char>),
     /// The providers ask for the built-in provider's suggestions.
@@ -275,8 +275,8 @@ impl ExtensionUi for InteractiveUi {
             .send(Event::EditorAction(self.epoch, action.to_owned()));
     }
 
-    fn set_terminal_input(&self, listeners: Option<Arc<dyn ComponentHost>>) {
-        self.send(Request::TerminalInput(listeners));
+    fn set_terminal_input(&self, runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
+        self.send(Request::TerminalInput(runtime, listeners));
     }
 
     /// pi's editor takes single characters as triggers.
@@ -656,11 +656,11 @@ pub(super) struct ExtensionState {
     pub footer: Option<RemoteView>,
     pub header: Option<RemoteView>,
     pub editor: Option<CustomEditor>,
-    // One runtime has listeners and providers: every Pi extension shares the
-    // JS runtime. Per-package restricted grants would add instances that
-    // overwrite these.
-    /// What runs the `onTerminalInput` listeners, while there are any.
-    pub listeners: Option<Arc<dyn ComponentHost>>,
+    /// What runs each runtime's `onTerminalInput` listeners, by runtime,
+    /// in the order they started.
+    pub listeners: Vec<(u64, Arc<dyn ComponentHost>)>,
+    // One runtime has providers: every Pi extension shares the JS runtime,
+    // and the native extension that adds providers last replaces them.
     /// What runs the providers composed with `addAutocompleteProvider`, and
     /// their trigger characters.
     pub completions: Option<(Arc<dyn ComponentHost>, Vec<char>)>,
@@ -679,7 +679,7 @@ impl ExtensionState {
         self.footer = None;
         self.header = None;
         self.editor = None;
-        self.listeners = None;
+        self.listeners.clear();
         self.completions = None;
         self.working_message = None;
         self.working_hidden = false;
@@ -902,7 +902,12 @@ impl super::App {
             }
             Request::EditorSubmit(text) => self.on_submit(text),
             Request::Shortcut(binding) => self.run_shortcut(binding),
-            Request::TerminalInput(listeners) => self.ext.listeners = listeners,
+            Request::TerminalInput(runtime, listeners) => {
+                self.ext.listeners.retain(|(id, _)| *id != runtime);
+                self.ext
+                    .listeners
+                    .extend(listeners.map(|host| (runtime, host)));
+            }
             Request::Autocomplete(providers, triggers) => {
                 self.ext.completions = Some((providers, triggers));
                 self.install_completions();

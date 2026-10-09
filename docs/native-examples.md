@@ -1,6 +1,6 @@
 # Native extension examples
 
-The repository has twelve native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Ten are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of the seven examples with interfaces against Pi running the TypeScript versions.
+The repository has thirteen native extensions in [`guest/examples`](https://github.com/SkymanOne/yapi/tree/main/guest/examples). Ten are ports of Pi's own examples, so the Rust and TypeScript versions can be read side by side. `subagent` is tested against a real yapi in `crates/yapi/tests/subagent.rs`, and the others in `crates/yapi-ext/tests/native.rs`. Terminal scenarios also compare the screens of the eight examples with interfaces against Pi running the TypeScript versions.
 
 | Example | Shows | Pi counterpart |
 |---|---|---|
@@ -16,8 +16,9 @@ The repository has twelve native extensions in [`guest/examples`](https://github
 | [`overlay-test`](#overlay-test) | An overlay with inline inputs, the cursor marker and wide characters | `overlay-test.ts` |
 | [`message-renderer`](#message-renderer) | Custom messages drawn in a box by a message renderer | `message-renderer.ts` |
 | [`select-menu`](#select-menu) | A `SelectList` widget in a custom component | None |
+| [`input-hooks`](#input-hooks) | A terminal input listener that reads the editor, an autocomplete provider and a shortcut | None |
 
-The last five use the SDK's `widgets` feature.
+Five of them, from `modal-editor` to `select-menu`, use the SDK's `widgets` feature.
 
 ## Build and try them
 
@@ -254,4 +255,29 @@ fn handle_input(&mut self, data: &str) {
         SelectEvent::Moved | SelectEvent::Ignored => {}
     }
 }
+```
+
+## input-hooks
+
+A terminal input listener sees every key before the editor does. In an empty editor `?` shows help instead of being typed, `a` becomes `A`, and Ctrl+G reports how many keys the listener saw and what the editor holds. `/quiet` drops the listener's `Subscription`, which stops it. An autocomplete provider completes environment variable names after `$` and leaves other text to the providers it wraps, and Alt+K is a shortcut that reports the count too. Its terminal scenarios run the same extension in TypeScript in Pi.
+
+```rust
+fn listen(data: &str) -> TerminalInput {
+    SEEN.set(SEEN.get() + 1);
+    if data == "?" && editor_text().is_empty() {
+        notify("Type $ for variables, Alt+K to count keys", "info");
+        return TerminalInput::Consume;
+    }
+    if data == "a" {
+        return TerminalInput::Replace("A".into());
+    }
+    // ...
+    TerminalInput::Pass
+}
+
+api.on("session_start", |_event, ctx| async move {
+    LISTENER.set(Some(ctx.on_terminal_input(listen)));
+    ctx.add_autocomplete_provider(Variables);
+    Ok(None)
+});
 ```

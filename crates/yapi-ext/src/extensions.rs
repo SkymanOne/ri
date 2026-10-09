@@ -1415,7 +1415,10 @@ impl SessionBridge {
             "ui.editorSubmit" => ui.editor_submit(&text(&payload["text"])),
             "ui.editorAction" => ui.editor_action(&text(&payload["action"])),
             "ui.setTerminalInput" => {
-                ui.set_terminal_input(self.components().filter(|_| payload["listening"] == true));
+                ui.set_terminal_input(
+                    self.runtime_id,
+                    self.components().filter(|_| payload["listening"] == true),
+                );
             }
             "ui.setAutocomplete" => {
                 if let Some(providers) = self.components() {

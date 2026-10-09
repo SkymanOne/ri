@@ -336,7 +336,7 @@ impl OverlayHandle {
 
 impl Context {
     /// Whether this mode shows components. The interactive mode does.
-    fn shows_components(&self) -> bool {
+    pub(crate) fn shows_components(&self) -> bool {
         self.has_ui() && self.data["components"] == true
     }
 
@@ -382,9 +382,9 @@ impl Context {
         if !self.shows_components() {
             return;
         }
-        let text = request("ui.getEditorText", &json!({})).unwrap_or_default();
+        let text = crate::editor_text();
         let editor = editor.map(|mut editor| {
-            editor.set_text(text.as_str().unwrap_or_default());
+            editor.set_text(&text);
             Rc::new(RefCell::new(editor))
         });
         let handle = editor

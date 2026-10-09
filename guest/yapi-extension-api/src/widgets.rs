@@ -21,6 +21,7 @@ use yapi_tui::ratatui_core::text::{Line, Span};
 use yapi_tui::screen::MouseKind;
 use yapi_tui::select_list::SelectItem;
 
+use crate::input::{byte, utf16};
 use crate::ui::{Component, EditorComponent};
 use crate::{
     editor_action, editor_changed, editor_shortcut, editor_submit, op, request, request_render,
@@ -192,22 +193,6 @@ struct Asked {
     waiting: bool,
     /// An answer arrived that the editor has not asked for again.
     arrived: bool,
-}
-
-/// UTF-16 units before byte `column` of `line`, and back.
-fn utf16(line: &str, column: usize) -> usize {
-    line.get(..column)
-        .map_or(0, |before| before.encode_utf16().count())
-}
-
-fn byte(line: &str, units: usize) -> usize {
-    let mut seen = 0;
-    line.char_indices()
-        .find(|(_, char)| {
-            seen += char.len_utf16();
-            seen > units
-        })
-        .map_or(line.len(), |(index, _)| index)
 }
 
 impl AutocompleteProvider for HostCompletions {

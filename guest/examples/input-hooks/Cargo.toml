@@ -1,0 +1,16 @@
+[package]
+name = "input-hooks"
+description = "An example native yapi extension. A terminal input listener, an autocomplete provider and a shortcut."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yapi-extension-api = { path = "../../yapi-extension-api" }
+
+[lints]
+workspace = true

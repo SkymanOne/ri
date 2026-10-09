@@ -56,11 +56,13 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
    | `Api::register_tool(Tool::new(name, description, schema, handler))` | A tool. `.label()`, `.prompt_snippet()` and `.prompt_guideline()` refine it. The handler is an `async` closure, `\|params, ctx\| async move { ... }`, that returns `ToolResult::text(...)`, optionally `.with_details(json)`. |
    | `Api::register_command(name, description, handler)` | `/name args`, with an `async` handler |
    | `Api::register_flag(name, FlagType, default, description)` | `--name`, read with `get_flag` |
+   | `Api::register_shortcut(key, description, handler)` | A key such as `alt+k`, with an `async` handler that gets the `Context` |
    | `Api::on(event, handler)` | A Pi event, with an `async` handler. Return `Ok(None)`, or `Ok(Some(json))` with the handler's result in Pi's shape, such as `{"block": true, "reason": "..."}`. |
    | `notify`, `send_message`, `append_entry`, `exec`, `request` | Host actions that answer at once: notifications, session messages and entries, processes, and any other action by name |
    | `op`, `sleep`, `Process`, `spawn` | Async work: host operations such as dialogs and `fetch`, timers, processes read as they run, and background tasks that outlive the handler |
    | `Context` | `mode()`, `has_ui()`, `cwd()`, `update()` for a tool's progress, and the rest of Pi's `ctx` as `data()` |
    | `Component`, `Context::custom`, `Context::set_widget`, `set_footer`, `set_header`, `set_editor_component` | Interface components, as Pi's `ctx.ui` shows them. A component's `render(width)` returns ANSI lines, `handle_input` gets raw keys (name them with `parse_key`), and `custom` resolves when it calls `Done::finish`. `theme()` styles text, `request_render()` redraws after changes not caused by input, and `terminal_size()` gives the terminal's columns and rows. Only the interactive mode shows components. |
+   | `Context::on_terminal_input`, `Context::add_autocomplete_provider`, `editor_text` | Raw keys before the editor sees them, and completions in the editor, as Pi's `ctx.ui.onTerminalInput` and `ctx.ui.addAutocompleteProvider`. A listener returns `TerminalInput::Pass`, `Consume` or `Replace(data)` and stops when its `Subscription` drops. An `AutocompleteProvider` suggests and applies items with byte columns, asking the providers it wraps through `Current`. `editor_text()` reads the editor. |
    | `Tool::render_call`, `Tool::render_result`, `Api::register_message_renderer` | Components that draw tool calls, results and custom messages in the transcript |
    | `widgets` (feature `widgets`) | pi-tui's widgets as yapi ports them: `tui::select_list::SelectList`, `tui::editor::Editor`, `CustomEditor` for editor components, `Text`, and `to_ansi` to turn their styled lines into a component's lines |
 
@@ -70,7 +72,7 @@ Native WebAssembly extensions are unstable until yapi 1.0. The WIT world, the Ru
    cp target/wasm32-wasip2/release/<crate>.wasm extensions/
    python3 scripts/check-extension.py .
    ```
-5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch and shown in a component, a footer component, a git status reporter, a subagent that runs another yapi in the foreground or the background, a modal editor, a question tool with its own rendering, an overlay, a message renderer and a select list.
+5. The repository's [native examples](https://skymanone.github.io/yapi/native-examples.html) show a command guard, protected paths, a todo list kept per session branch and shown in a component, a footer component, a git status reporter, a subagent that runs another yapi in the foreground or the background, a modal editor, a question tool with its own rendering, an overlay, a message renderer, a select list, and a terminal input listener with an autocomplete provider and a shortcut.
 
 ## Package and share
 

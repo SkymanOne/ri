@@ -2432,15 +2432,20 @@ impl App {
         if self.listening || self.input_queue.is_empty() {
             return;
         }
-        let keys = std::mem::take(&mut self.input_queue);
-        let Some(listeners) = self.ext.listeners.clone() else {
+        let mut keys = std::mem::take(&mut self.input_queue);
+        if self.ext.listeners.is_empty() {
             self.handle_keys(keys, terminal);
             return;
-        };
+        }
         self.listening = true;
-        let tx = self.tx.clone();
+        let (tx, listeners) = (self.tx.clone(), self.ext.listeners.clone());
         tokio::spawn(async move {
-            let keys = listeners.terminal_input(keys).await;
+            for (_, host) in listeners {
+                if keys.is_empty() {
+                    break;
+                }
+                keys = host.terminal_input(keys).await;
+            }
             let _ = tx.send(Event::TerminalInput(keys));
         });
     }
