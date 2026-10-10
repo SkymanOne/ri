@@ -659,3 +659,177 @@ fn mcp_login_and_logout() {
     server.kill().unwrap();
     server.wait().unwrap();
 }
+
+/// An Anthropic Messages reply that streams `text` one character at a time.
+fn streamed_text(text: &str) -> yapi_mock::Interaction {
+    let event = |name: &str, data: serde_json::Value| format!("event: {name}\ndata: {data}\n\n");
+    let mut chunks = vec![
+        event(
+            "message_start",
+            serde_json::json!({"type": "message_start", "message": {"id": "msg", "type": "message",
+                "role": "assistant", "model": "claude-sonnet-4-5", "content": [], "stop_reason": null,
+                "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 1}}}),
+        ),
+        event(
+            "content_block_start",
+            serde_json::json!({"type": "content_block_start", "index": 0,
+                "content_block": {"type": "text", "text": ""}}),
+        ),
+    ];
+    for char in text.chars() {
+        chunks.push(event(
+            "content_block_delta",
+            serde_json::json!({"type": "content_block_delta", "index": 0,
+                "delta": {"type": "text_delta", "text": char.to_string()}}),
+        ));
+    }
+    chunks.push(event(
+        "content_block_stop",
+        serde_json::json!({"type": "content_block_stop", "index": 0}),
+    ));
+    chunks.push(event(
+        "message_delta",
+        serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn",
+            "stop_sequence": null}, "usage": {"output_tokens": 5}}),
+    ));
+    chunks.push(event(
+        "message_stop",
+        serde_json::json!({"type": "message_stop"}),
+    ));
+    yapi_mock::Interaction {
+        request: yapi_mock::RequestMatch {
+            method: "POST".into(),
+            path: "/v1/messages".into(),
+        },
+        response: yapi_mock::Response {
+            status: 200,
+            headers: [("content-type".to_owned(), "text/event-stream".to_owned())]
+                .into_iter()
+                .collect(),
+            chunks,
+            body_base64: None,
+            chunk_delay_ms: 0,
+        },
+    }
+}
+
+/// At the end of input, RPC mode waits only for commands that have not
+/// answered. A prompt answers before its run, so a run whose events an
+/// extension handles stops there, as pi shuts down then, instead of
+/// streaming to its end.
+#[tokio::test(flavor = "multi_thread")]
+async fn rpc_end_of_input_cuts_off_a_run_extensions_follow() {
+    use std::io::Write as _;
+    let text = "x".repeat(200);
+    let server = yapi_mock::MockServer::local(yapi_mock::Cassette {
+        interactions: vec![streamed_text(&text)],
+    })
+    .await
+    .unwrap();
+    let home = common::scratch("rpc-end-of-run");
+    std::fs::create_dir_all(home.join("agent")).unwrap();
+    std::fs::write(
+        home.join("agent/models.json"),
+        format!(
+            r#"{{"providers":{{"anthropic":{{"baseUrl":"{}"}}}}}}"#,
+            server.url()
+        ),
+    )
+    .unwrap();
+    // Each update keeps the runtime busy for a while.
+    std::fs::write(
+        home.join("follow.ts"),
+        "export default function (pi) {\n\tpi.on(\"message_update\", () => {\n\t\tconst end = Date.now() + 5;\n\t\twhile (Date.now() < end) {}\n\t});\n}\n",
+    )
+    .unwrap();
+    let mut child = common::yapi(&home)
+        .args([
+            "--mode",
+            "rpc",
+            "--no-session",
+            "--model",
+            "anthropic/claude-sonnet-4-5",
+            "-e",
+            "follow.ts",
+        ])
+        .env("ANTHROPIC_API_KEY", "mock")
+        .env("PI_OFFLINE", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    writeln!(stdin, r#"{{"id":"p","type":"prompt","message":"hi"}}"#).unwrap();
+    // The input ends while the reply streams.
+    let stdout = child.stdout.take().unwrap();
+    let (lines, status) = tokio::task::spawn_blocking(move || {
+        use std::io::BufRead as _;
+        let mut lines = Vec::new();
+        let mut stdin = Some(stdin);
+        for line in std::io::BufReader::new(stdout).lines() {
+            let line: serde_json::Value = serde_json::from_str(&line.unwrap()).unwrap();
+            if line["type"] == "message_update" {
+                stdin.take();
+            }
+            lines.push(line);
+        }
+        (lines, child.wait().unwrap())
+    })
+    .await
+    .unwrap();
+    let _ = std::fs::remove_dir_all(&home);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line["type"] == "response" && line["id"] == "p" && line["success"] == true),
+        "{lines:?}"
+    );
+    let updates = lines
+        .iter()
+        .filter(|line| line["type"] == "message_update")
+        .count();
+    assert!(updates < 100, "{updates} updates: the run went on");
+    assert_eq!(status.code(), Some(0));
+}
+
+/// RPC mode exits on SIGTERM while it waits at the end of input for
+/// extension code that earlier commands started.
+#[cfg(unix)]
+#[test]
+fn rpc_exits_on_sigterm_at_the_end_of_input() {
+    use std::io::{BufRead as _, Write as _};
+    let home = common::scratch("rpc-end-signal");
+    std::fs::write(
+        home.join("spin.ts"),
+        "export default function (pi) {\n\tpi.registerCommand(\"spin\", {\n\t\tdescription: \"Computes for a while\",\n\t\thandler: async () => {\n\t\t\tpi.sendMessage({ customType: \"spin\", content: \"started\", display: true });\n\t\t\tconst end = Date.now() + 3000;\n\t\t\twhile (Date.now() < end) {}\n\t\t},\n\t});\n}\n",
+    )
+    .unwrap();
+    let mut child = common::yapi(&home)
+        .args(["--mode", "rpc", "--no-session", "-e", "spin.ts"])
+        .env("PI_OFFLINE", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    writeln!(stdin, r#"{{"id":"s","type":"prompt","message":"/spin"}}"#).unwrap();
+    drop(stdin);
+    // The command computes once its message is out.
+    let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+    let started = lines
+        .by_ref()
+        .map(|line| serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap())
+        .any(|line| line["type"] == "message_end");
+    assert!(started);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    let status = child.wait().unwrap();
+    drop(lines);
+    let _ = std::fs::remove_dir_all(&home);
+    assert_eq!(status.code(), Some(143));
+}
