@@ -260,6 +260,15 @@ pub fn terminal_size() -> Option<(usize, usize)> {
     Some((dimension("columns")?, dimension("rows")?))
 }
 
+/// Whether the prompt editor, or an editor component in its place, has the
+/// keyboard, as pi-tui's `focusedComponent` tells. `false` while a selector,
+/// a dialog or a component shown with `custom` has it, and `true` without a
+/// terminal, as in print mode. Check it in a terminal input listener before
+/// taking keys meant for the prompt.
+pub fn editor_focused() -> bool {
+    request("ui.terminalSize", &json!({})).map_or(true, |state| state["editorFocused"] != false)
+}
+
 /// Asks yapi to render the components again, as pi-tui's
 /// `tui.requestRender()` does. Call it when a component changed other than
 /// in response to input, such as from a timer.

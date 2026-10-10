@@ -31,6 +31,17 @@ impl NotifyKind {
     }
 }
 
+/// What extensions see of the terminal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TerminalState {
+    /// Its size in columns and rows.
+    pub size: (usize, usize),
+    /// The prompt editor, or an extension's editor in its place, has the
+    /// keyboard, rather than a selector, a dialog or an extension component;
+    /// what pi-tui's `focusedComponent` tells.
+    pub editor_focused: bool,
+}
+
 /// When a dialog closes on its own; pi's `ExtensionUIDialogOptions`.
 #[derive(Clone, Debug, Default)]
 pub struct DialogOptions {
@@ -351,9 +362,9 @@ pub trait ExtensionUi: Send + Sync {
     /// Expands or collapses tool output.
     fn set_tools_expanded(&self, _expanded: bool) {}
 
-    /// The terminal's size in columns and rows, kept current as it is
-    /// resized; `None` without a terminal, as in print, JSON and RPC modes.
-    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
+    /// The terminal's state, kept current as it changes; `None` without a
+    /// terminal, as in print, JSON and RPC modes.
+    fn terminal(&self) -> Option<tokio::sync::watch::Receiver<TerminalState>> {
         None
     }
 

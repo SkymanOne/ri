@@ -551,6 +551,19 @@
 			write() {},
 			setTitle: (title) => bound && yapi.request("ui.setTitle", { title }),
 		},
+		// pi-tui's focused component, which listeners check before taking keys
+		// from the prompt: an `Editor` while the prompt editor has the keyboard,
+		// another object while a selector, dialog or component has it, and
+		// `null` without a terminal.
+		get focusedComponent() {
+			if (editorFocused === null) return null;
+			if (!editorFocused) return otherFocus;
+			// This runtime's editor in the built-in one's place, else a stand-in.
+			return components.get(editorSlot.handle) ?? (editorStandIn ??= tuiModule && Object.create(tuiModule.Editor.prototype));
+		},
+		getFocusedComponent() {
+			return this.focusedComponent;
+		},
 		setFocus() {},
 		showOverlay() {
 			return overlayHandle(undefined);
@@ -559,11 +572,16 @@
 		start() {},
 		stop() {},
 	};
+	let editorFocused = null;
+	let editorStandIn;
+	const otherFocus = {};
 	/**
-	 * The terminal's `{ columns, rows }`, or `null` without one: stdout is a
-	 * TTY of that size, which emits `resize` when it changes, as in Node.
+	 * The terminal's `{ columns, rows, editorFocused }`, or `null` without
+	 * one: stdout is a TTY of that size, which emits `resize` when it
+	 * changes, as in Node.
 	 */
-	function setTerminalSize(size) {
+	function setTerminal(size) {
+		editorFocused = size ? !!size.editorFocused : null;
 		const stdout = process.stdout;
 		const resized = !!size && stdout.isTTY && (stdout.columns !== size.columns || stdout.rows !== size.rows);
 		stdout.isTTY = !!size;
@@ -1271,7 +1289,7 @@
 				// Hosts without a UI leave text plain.
 			}
 			theme.load(spec);
-			setTerminalSize(size);
+			setTerminal(size);
 			// Components match keys as the host's bindings do.
 			if (keys) {
 				tuiModule ??= await import("@earendil-works/pi-tui");
@@ -1313,9 +1331,9 @@
 			eventBus.emit(payload.channel, payload.data);
 			return null;
 		},
-		/** The terminal was resized to `{ columns, rows }`. */
-		resize(payload) {
-			setTerminalSize(payload);
+		/** The terminal changed to `{ columns, rows, editorFocused }`. */
+		terminal(payload) {
+			setTerminal(payload);
 			return null;
 		},
 		emit(payload) {

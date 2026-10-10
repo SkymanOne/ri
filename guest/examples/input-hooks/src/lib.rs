@@ -1,16 +1,16 @@
 //! Hooks into the keyboard and the editor's completion.
 //!
 //! A terminal input listener sees every key before the editor does. In an
-//! empty editor `?` shows help instead of being typed, `a` becomes `A`, and
-//! Ctrl+G reports how many keys it saw and what the editor holds. `/quiet`
-//! stops it. Typing `$` completes environment variable names, and Alt+K
-//! reports the count too.
+//! empty prompt editor `?` shows help instead of being typed, while dialogs
+//! and selectors still get it. `a` becomes `A`, and Ctrl+G reports how many
+//! keys it saw and what the editor holds. `/quiet` stops it. Typing `$`
+//! completes environment variable names, and Alt+K reports the count too.
 
 use std::cell::{Cell, RefCell};
 
 use yapi_extension_api::{
     Api, AutocompleteProvider, Current, EditorState, Subscription, Suggestions, TerminalInput,
-    editor_text, json, notify, parse_key,
+    editor_focused, editor_text, json, notify, parse_key,
 };
 
 const VARIABLES: [&str; 3] = ["$HOME", "$PATH", "$PWD"];
@@ -22,7 +22,7 @@ thread_local! {
 
 fn listen(data: &str) -> TerminalInput {
     SEEN.set(SEEN.get() + 1);
-    if data == "?" && editor_text().is_empty() {
+    if data == "?" && editor_focused() && editor_text().is_empty() {
         notify("Type $ for variables, Alt+K to count keys", "info");
         return TerminalInput::Consume;
     }

@@ -1581,8 +1581,8 @@ impl App {
         if let Some(selector) = &mut self.selector {
             selector.tick();
         }
-        // Extensions hear of a resize once per frame.
-        self.ext.set_terminal_size(self.size);
+        // Extensions hear of a resize or a focus change once per frame.
+        self.share_terminal();
         let (width, height) = self.size;
         let (dock, cursor) = self.dock(width);
         // An `always` scrollbar keeps the transcript off the last column.
@@ -2444,6 +2444,8 @@ impl App {
             self.handle_keys(keys, terminal);
             return;
         }
+        // The focus these keys meet goes out ahead of them.
+        self.share_terminal();
         self.listening = true;
         let (tx, listeners) = (self.tx.clone(), self.ext.listeners.clone());
         tokio::spawn(async move {
@@ -2455,6 +2457,13 @@ impl App {
             }
             let _ = tx.send(Event::TerminalInput(keys));
         });
+    }
+
+    /// Tells extensions the terminal's size and whether the prompt editor
+    /// has the keyboard. A selector, dialog or extension component in its
+    /// place takes the keyboard, as pi-tui's focus moves to them.
+    fn share_terminal(&self) {
+        self.ext.set_terminal(self.size, self.selector.is_none());
     }
 
     /// Handles the keys of one read, as one editor input batch.
@@ -4251,7 +4260,7 @@ impl App {
             return;
         };
         self.ext.set_theme(&self.theme);
-        self.ext.set_terminal_size(self.size);
+        self.share_terminal();
         self.share_themes();
         let tx = self.tx.clone();
         let actions = crate::runtime::actions(move |request| {

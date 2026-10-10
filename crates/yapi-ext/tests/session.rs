@@ -14,7 +14,8 @@ use common::{cli_source, custom_entries, engine, options, scratch, session, text
 use serde_json::{Value, json};
 use yapi_ai::faux::{Faux, Response};
 use yapi_core::extensions::{
-    ExtensionUi, Mode, NoUi, NotifyKind, Placement, RemoteComponent, Widget,
+    ComponentHost, ExtensionUi, Mode, NoUi, NotifyKind, Placement, RemoteComponent, TerminalState,
+    Widget,
 };
 use yapi_ext::ExtensionHost;
 use yapi_types::event::AgentEvent;
@@ -514,15 +515,16 @@ async fn tool_updates_and_nested_calls_report_in_pi_order() {
 }
 
 /// A terminal that keeps the editor an extension puts in place, the text
-/// it last reported, its last component widget and how often it was asked
-/// to render.
+/// it last reported, its last component widget, the last runtime's input
+/// listeners and how often it was asked to render.
 #[derive(Default)]
 struct Screen {
     editor: std::sync::Mutex<Option<RemoteComponent>>,
     text: std::sync::Mutex<String>,
     widget: std::sync::Mutex<Option<RemoteComponent>>,
+    listeners: std::sync::Mutex<Option<Arc<dyn ComponentHost>>>,
     renders: std::sync::atomic::AtomicUsize,
-    size: tokio::sync::watch::Sender<(usize, usize)>,
+    terminal: tokio::sync::watch::Sender<TerminalState>,
 }
 
 impl ExtensionUi for Screen {
@@ -559,8 +561,12 @@ impl ExtensionUi for Screen {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn terminal_size(&self) -> Option<tokio::sync::watch::Receiver<(usize, usize)>> {
-        Some(self.size.subscribe())
+    fn set_terminal_input(&self, _runtime: u64, listeners: Option<Arc<dyn ComponentHost>>) {
+        *self.listeners.lock().unwrap() = listeners;
+    }
+
+    fn terminal(&self) -> Option<tokio::sync::watch::Receiver<TerminalState>> {
+        Some(self.terminal.subscribe())
     }
 }
 
@@ -644,7 +650,7 @@ export default function (pi: ExtensionAPI) {
         .unwrap();
     let session = session(&Faux::new([]), &dir, host.for_session());
     let screen = Arc::new(Screen::default());
-    screen.size.send_replace((120, 30));
+    screen.terminal.send_modify(|state| state.size = (120, 30));
     session
         .bind_extensions(screen.clone(), Mode::Tui, None, None)
         .await;
@@ -657,7 +663,7 @@ export default function (pi: ExtensionAPI) {
     // The runtime hears of the resize after the screen does, without the
     // screen waiting for it, and asks for a render.
     let renders = screen.renders.load(std::sync::atomic::Ordering::SeqCst);
-    screen.size.send_replace((100, 40));
+    screen.terminal.send_modify(|state| state.size = (100, 40));
     let resized = ["tui 100x40", "stdout 100x40 tty=true resizes=1"];
     let mut rows = Vec::new();
     for _ in 0..500 {
@@ -669,4 +675,90 @@ export default function (pi: ExtensionAPI) {
     }
     assert_eq!(rows, resized);
     assert!(screen.renders.load(std::sync::atomic::Ordering::SeqCst) > renders);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn extensions_see_whether_the_prompt_editor_has_the_keyboard() {
+    let dir = scratch("editor-focus");
+    let path = dir.join("focus.ts");
+    std::fs::write(
+        &path,
+        r#"
+import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Editor } from "@mariozechner/pi-tui";
+
+export default function (pi: ExtensionAPI) {
+	let editor: CustomEditor | undefined;
+	pi.on("session_start", (_event, ctx) => {
+		ctx.ui.setWidget("focus", (tui) => ({
+			render: () => {
+				const focused = (tui as any).focusedComponent;
+				return [`editor ${focused instanceof Editor} own ${!!editor && focused === editor}`];
+			},
+			invalidate() {},
+		}));
+	});
+	pi.registerCommand("own", {
+		description: "Put an editor in place",
+		handler: async (_args, ctx) => {
+			ctx.ui.setEditorComponent((tui, theme, keybindings) => (editor = new CustomEditor(tui, theme, keybindings)));
+		},
+	});
+}
+"#,
+    )
+    .unwrap();
+    let js = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+        .await
+        .unwrap();
+    let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/input-hooks.wasm");
+    let native = ExtensionHost::load_native(&engine(), options(&dir), &cli_source(&wasm))
+        .await
+        .unwrap();
+    let mut extensions = js.for_session();
+    extensions.extend(native.for_session());
+    let session = session(&Faux::new([]), &dir, extensions);
+    let screen = Arc::new(Screen::default());
+    screen.terminal.send_replace(TerminalState {
+        size: (80, 24),
+        editor_focused: true,
+    });
+    session
+        .bind_extensions(screen.clone(), Mode::Tui, None, None)
+        .await;
+    let widget = screen.widget.lock().unwrap().clone().unwrap();
+    let listeners = screen.listeners.lock().unwrap().clone().unwrap();
+    // The JS runtime hears of a change after the screen, which never waits.
+    let shows = async |expected: &str| {
+        let mut rows = Vec::new();
+        for _ in 0..500 {
+            rows = widget.render(80).await;
+            if rows == [expected] {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(rows, [expected]);
+    };
+    // The native listener takes `?` from the empty prompt only while the
+    // prompt editor has the keyboard; a dialog gets it.
+    let help = async || listeners.terminal_input(vec!["?".into()]).await;
+    let focus = |editor_focused: bool| {
+        screen
+            .terminal
+            .send_modify(|state| state.editor_focused = editor_focused);
+    };
+
+    shows("editor true own false").await;
+    assert!(help().await.is_empty());
+    focus(false);
+    assert_eq!(help().await, ["?"]);
+    shows("editor false own false").await;
+    focus(true);
+    assert!(help().await.is_empty());
+    shows("editor true own false").await;
+
+    // An editor in the built-in one's place is the focused component.
+    session.prompt("/own", Vec::new()).await.unwrap();
+    shows("editor true own true").await;
 }
