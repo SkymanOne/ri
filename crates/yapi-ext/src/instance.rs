@@ -132,6 +132,9 @@ pub struct Options {
     /// The environment variables extensions see when the environment is
     /// granted: these alone, or with `None`, the process's own.
     pub environment: Option<std::collections::BTreeMap<String, String>>,
+    /// The terminal's columns and rows while extensions load, in a mode that
+    /// draws on it; `None` without a terminal.
+    pub terminal_size: Option<(usize, usize)>,
 }
 
 impl Options {
@@ -148,6 +151,7 @@ impl Options {
             memory_limit: 1 << 30,
             cache_dir: None,
             environment: None,
+            terminal_size: None,
         }
     }
 }

@@ -845,8 +845,12 @@ pub struct ExtensionErrors {
 /// Loads the run's settings and its pi extensions: `-e` paths, then, unless
 /// `--no-extensions`, those installed in a trusted project and in the agent
 /// directory. Applies extension flags from the command line, which must name
-/// registered flags.
-pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), ExtensionErrors> {
+/// registered flags. Extensions read `terminal_size` as they load, in a mode
+/// that draws on the terminal.
+pub async fn load_extensions(
+    args: &Args,
+    terminal_size: Option<(usize, usize)>,
+) -> Result<(Extensions, RunSettings), ExtensionErrors> {
     let fail = |message: String| ExtensionErrors {
         messages: vec![message],
         load_failed: false,
@@ -943,6 +947,7 @@ pub async fn load_extensions(args: &Args) -> Result<(Extensions, RunSettings), E
         let mut options = yapi_ext::Options::new(cwd.clone());
         options.agent_dir = agent_dir.clone();
         options.cache_dir = Some(cache.join("js"));
+        options.terminal_size = terminal_size;
         let (native, js): (Vec<SourceInfo>, Vec<SourceInfo>) = sources
             .into_iter()
             .partition(|source| is_native(Path::new(&source.path)));

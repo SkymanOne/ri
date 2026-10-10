@@ -223,10 +223,33 @@ pub(crate) fn transcript(
         components.states.remove(&key).unwrap_or_else(|| json!({}))
     });
     let component = draw(&mut state);
-    COMPONENTS.with(|components| components.borrow_mut().states.insert(key.clone(), state));
-    let handle = component.map(mount);
-    replace(kind, &key, handle);
-    json!(handle.map(|handle| json!({"handle": handle})))
+    let shown = COMPONENTS.with(|components| {
+        let mut components = components.borrow_mut();
+        components.states.insert(key.clone(), state);
+        components.shown.get(&(kind, key.clone())).copied()
+    });
+    let Some(component) = component else {
+        replace(kind, &key, None);
+        return Value::Null;
+    };
+    // The slot keeps its handle, as a JS renderer that returns its last
+    // component does, so yapi paints the old rows until the new ones come.
+    let handle = match shown {
+        Some(handle) => {
+            let previous = COMPONENTS.with(|components| {
+                let mounted = &mut components.borrow_mut().mounted;
+                mounted.insert(handle, Rc::new(RefCell::new(component)))
+            });
+            drop(previous);
+            handle
+        }
+        None => {
+            let handle = mount(component);
+            replace(kind, &key, Some(handle));
+            handle
+        }
+    };
+    json!({"handle": handle})
 }
 
 /// Sends the text an [`EditorComponent`] now holds, paste markers expanded,

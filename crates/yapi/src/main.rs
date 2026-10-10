@@ -261,7 +261,8 @@ async fn run(parsed: &mut args::Args) -> u8 {
     if interactive {
         yapi_ext::capture_output();
     }
-    let loaded = startup::load_extensions(parsed).await;
+    let size = interactive.then(yapi_tui::terminal::size);
+    let loaded = startup::load_extensions(parsed, size).await;
     // pi's help and model list use the extensions that loaded and report no
     // extension errors.
     let partial = match &loaded {
