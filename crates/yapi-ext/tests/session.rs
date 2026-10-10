@@ -496,6 +496,74 @@ async fn reported_mcp_servers_need_grants_and_their_own_names() {
     assert_eq!(servers, [("shared".to_owned(), owner_path)]);
 }
 
+/// `pi.registerMcpServer` throws pi's errors for a name, or a tool
+/// namespace, that an extension of another runtime registered, and the
+/// refused server stays out of the runtime's list. Its later registrations
+/// still reach the session.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_clashing_mcp_server_name_is_refused_in_the_registering_call() {
+    let dir = scratch("mcp-clash");
+    let owner = r#"export default function (pi) {
+	pi.registerMcpServer("shared", { command: "python3", enabled: false });
+	pi.registerMcpServer("my-docs", { command: "python3", enabled: false });
+	pi.registerCommand("owned", { description: "", handler: async () => pi.appendEntry("owner", pi.getMcpServers().map((server) => server.name)) });
+}
+"#;
+    let intruder = r#"export default function (pi) {
+	const register = (name) => {
+		try {
+			pi.registerMcpServer(name, { command: "python3", enabled: false });
+		} catch (error) {
+			pi.appendEntry("report", error.message);
+		}
+	};
+	pi.registerCommand("take", { description: "", handler: async () => {
+		register("shared");
+		register("my_docs");
+		register("own");
+		pi.appendEntry("intruder", pi.getMcpServers().map((server) => server.name));
+	} });
+}
+"#;
+    let mut extensions = Vec::new();
+    for (file, source) in [("owner.ts", owner), ("intruder.ts", intruder)] {
+        let path = dir.join(file);
+        std::fs::write(&path, source).unwrap();
+        let host = ExtensionHost::load(&engine(), options(&dir), &[cli_source(&path)])
+            .await
+            .unwrap();
+        assert!(host.errors().is_empty(), "{:?}", host.errors());
+        extensions.extend(host.for_session());
+    }
+    let session = session(&Faux::new([]), &dir, extensions);
+    session
+        .bind_extensions(Arc::new(NoUi), Mode::Print, None, None)
+        .await;
+    session.prompt("/take", Vec::new()).await.unwrap();
+    session.prompt("/owned", Vec::new()).await.unwrap();
+    let owner_path = dir.join("owner.ts").to_string_lossy().into_owned();
+    assert_eq!(
+        custom_entries(&session, "report"),
+        [
+            json!(format!(
+                "MCP server \"shared\" is already registered by extension \"{owner_path}\""
+            )),
+            json!("MCP server \"my_docs\" conflicts with registered server \"my-docs\""),
+        ]
+    );
+    assert_eq!(custom_entries(&session, "intruder"), [json!(["own"])]);
+    assert_eq!(
+        custom_entries(&session, "owner"),
+        [json!(["shared", "my-docs"])]
+    );
+    let names: Vec<String> = session
+        .mcp_servers()
+        .into_iter()
+        .map(|server| server.name)
+        .collect();
+    assert_eq!(names, ["shared", "my-docs", "own"]);
+}
+
 /// A tool's updates and the calls it makes through `ctx.executeTool()` report
 /// in pi's order, from the task that runs the tool: an update goes out after
 /// the start of a call the tool begins in the same step, and before its end

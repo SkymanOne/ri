@@ -821,7 +821,8 @@ impl AgentSession {
     /// announces `mcp_servers_change` when they changed. A runtime's first
     /// report holds the servers registered while it loaded, which the MCP
     /// extension reads when the session starts. Nothing changes when a
-    /// server's name belongs to another runtime, as pi refuses it.
+    /// server's name, or its tools' namespace, belongs to another runtime,
+    /// and the error is pi's for that registration.
     pub fn set_mcp_servers(
         &self,
         owner: u64,
@@ -836,6 +837,18 @@ impl AgentSession {
                     return Err(format!(
                         "MCP server \"{}\" is already registered by extension \"{}\"",
                         server.name, theirs.extension_path
+                    ));
+                }
+                let namespace = crate::mcp::config::namespace(&server.name);
+                if let Some(name) = registered.iter().find_map(|(name, (runtime, _))| {
+                    (*runtime != owner
+                        && *name != server.name
+                        && crate::mcp::config::namespace(name) == namespace)
+                        .then_some(name)
+                }) {
+                    return Err(format!(
+                        "MCP server \"{}\" conflicts with registered server \"{name}\"",
+                        server.name
                     ));
                 }
             }

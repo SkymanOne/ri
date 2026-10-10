@@ -233,8 +233,17 @@
 				const clash = mcpServers().find((server) => server.name !== name && mcpNamespace(server.name) === mcpNamespace(name));
 				if (clash) throw new Error(`MCP server "${name}" conflicts with registered server "${clash.name}"`);
 				// A server registered again keeps its place, as in pi's Map.
-				extension.mcpServers.set(name, { config: validated, seq: extension.mcpServers.get(name)?.seq ?? mcpServerSeq++ });
-				if (bound) reportMcpServers();
+				const previous = extension.mcpServers.get(name);
+				extension.mcpServers.set(name, { config: validated, seq: previous?.seq ?? mcpServerSeq++ });
+				if (!bound) return;
+				try {
+					reportMcpServers();
+				} catch (error) {
+					// The host refuses a name, or a tool namespace, that another runtime's extension registered.
+					if (previous) extension.mcpServers.set(name, previous);
+					else extension.mcpServers.delete(name);
+					throw error;
+				}
 			},
 			unregisterMcpServer(name) {
 				if (extension.mcpServers.delete(name) && bound) reportMcpServers();
