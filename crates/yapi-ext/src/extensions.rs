@@ -149,9 +149,11 @@ impl ExtensionHost {
             .enumerate()
             .map(|(id, source)| json!({"id": id, "path": source.path, "baseDir": source.base_dir}))
             .collect();
-        let result = instance
-            .call("load", &json!({"cwd": options.cwd, "extensions": entries}))
-            .await?;
+        let size = options
+            .terminal_size
+            .map(|(columns, rows)| json!({"columns": columns, "rows": rows}));
+        let payload = json!({"cwd": options.cwd, "extensions": entries, "terminalSize": size});
+        let result = instance.call("load", &payload).await?;
         let (loaded, errors) = split(&result);
         let (events, queued) = tokio::sync::mpsc::channel(QUEUED_EVENTS);
         let extensions = Arc::new(ExtensionHost {
@@ -1165,6 +1167,30 @@ struct Step {
     updates: Vec<crate::ops::Job>,
 }
 
+impl Step {
+    /// Sends the step to its tool call as one job. Once the call has ended,
+    /// answers a job of the nested calls alone, to run on their own: the
+    /// updates are dropped, as pi stops taking a tool's updates when it
+    /// returns.
+    fn send(self) -> Option<crate::ops::Job> {
+        let Step {
+            jobs,
+            mut calls,
+            updates,
+        } = self;
+        if jobs.is_closed() {
+            return Some(Box::pin(async move {
+                futures_util::future::join_all(calls).await;
+            }));
+        }
+        calls.extend(updates);
+        let job: crate::ops::Job = Box::pin(async move {
+            futures_util::future::join_all(calls).await;
+        });
+        jobs.send(job).err().map(|unsent| unsent.0)
+    }
+}
+
 /// Numbers the runtimes of a process, so their component handles stay apart.
 static RUNTIMES: AtomicU64 = AtomicU64::new(1);
 
@@ -1917,15 +1943,8 @@ impl Bridge for SessionBridge {
     /// go out before the job is polled again.
     fn step_ended(&self) {
         for (_, step) in std::mem::take(&mut *lock(&self.steps)) {
-            let mut jobs = step.calls;
-            jobs.extend(step.updates);
-            let job: crate::ops::Job = Box::pin(async move {
-                futures_util::future::join_all(jobs).await;
-            });
-            // Once the tool has ended, its calls run on their own and its
-            // updates go nowhere, as in pi.
-            if let Err(unsent) = step.jobs.send(job) {
-                self.spawn(unsent.0);
+            if let Some(job) = step.send() {
+                self.spawn(job);
             }
         }
     }
@@ -2192,5 +2211,32 @@ impl Bridge for SessionBridge {
             }
             None => operation,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A tool's step that ends after its call ended runs the calls it
+    /// began, and drops its updates (#100).
+    #[tokio::test]
+    async fn updates_after_the_tool_ended_are_dropped() {
+        let (jobs, queue) = tokio::sync::mpsc::unbounded_channel();
+        drop(queue);
+        let ran = Arc::new(Mutex::new(Vec::new()));
+        let job = |name: &'static str| -> crate::ops::Job {
+            let ran = ran.clone();
+            Box::pin(async move { lock(&ran).push(name) })
+        };
+        let step = Step {
+            jobs,
+            calls: vec![job("call")],
+            updates: vec![job("update")],
+        };
+        if let Some(job) = step.send() {
+            job.await;
+        }
+        assert_eq!(*lock(&ran), ["call"]);
     }
 }

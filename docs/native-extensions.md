@@ -309,7 +309,7 @@ Only the interactive mode shows components. In RPC, print and JSON modes, `custo
 
 `Tool::render_call` and `Tool::render_result` draw a tool's call and result in the transcript, as Pi's `renderCall` and `renderResult` do, and `Tool::render_shell("self")` says they draw the tool's whole box. `Api::register_message_renderer` draws custom messages of one type, as Pi's `registerMessageRenderer` does. A renderer returns a component, or `None` to keep yapi's own rendering.
 
-A tool renderer gets a `RenderContext`, with Pi's context fields such as `toolCallId`, `expanded` and `isPartial` in `data`, and a `state` value that the call's and the result's renderers share for one tool call. Pi's `lastComponent` has no counterpart, so a renderer builds a new component each time yapi asks.
+A tool renderer gets a `RenderContext`, with Pi's context fields such as `toolCallId`, `expanded` and `isPartial` in `data`, and a `state` value that the call's and the result's renderers share for one tool call. Pi's `lastComponent` has no counterpart, so a renderer builds a new component each time yapi asks. The new component takes the old one's place, and yapi shows the old one's lines until the new one has rendered.
 
 ### Widgets
 

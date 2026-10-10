@@ -586,10 +586,13 @@ async fn question_draws_its_call_and_result() {
             "something.                              ",
         ]
     );
-    // Drawing again replaces the component.
+    // Drawing again swaps the component under the same handle, so yapi
+    // keeps painting the old rows until the new ones arrive (#115).
+    let size = json!({"question": "Size?", "options": [{"label": "S"}]});
+    let call = json!({"kind": "toolCall", "name": "question", "toolCallId": "c1", "args": size, "context": {}});
     let again = extension.component(&call).await.unwrap();
-    assert_ne!(again.key(), drawn.key());
-    assert!(drawn.render(40).await.is_empty());
+    assert_eq!(again.key(), drawn.key());
+    assert!(plain(&drawn, 40).await[0].starts_with("question Size?"));
 
     let details = json!({"question": "Color?", "options": ["Red", "Blue"], "answer": "Blue", "wasCustom": false});
     let result = json!({

@@ -1263,6 +1263,10 @@
 	const kinds = {
 		async load(payload) {
 			yapi.cwd = payload.cwd;
+			// Code that runs as extensions load reads the terminal's size. Who
+			// has the keyboard is known once the session binds.
+			const size = payload.terminalSize;
+			if (size) Object.assign(process.stdout, { isTTY: true, columns: size.columns, rows: size.rows });
 			for (const [name, value] of Object.entries(payload.flags ?? {})) flagValues.set(name, value);
 			const results = [];
 			for (const entry of payload.extensions) results.push(await loadOne(entry));
