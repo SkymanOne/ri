@@ -1467,8 +1467,10 @@ impl super::App {
             "alt": event.button & 8 != 0,
             "ctrl": event.button & 16 != 0,
         });
-        if kind == "wheel" {
-            json["wheelDelta"] = json!(event.delta);
+        match event.kind {
+            MouseKind::Wheel(_) => json["wheelDelta"] = json!(event.delta),
+            MouseKind::Click => json["clickCount"] = json!(event.clicks),
+            MouseKind::Press => {}
         }
         let (tx, epoch) = (self.tx.clone(), self.epoch);
         let Some(view) = self.remote_view(key) else {

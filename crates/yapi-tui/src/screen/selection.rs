@@ -81,6 +81,9 @@ pub(super) struct Selection {
     url: Option<Arc<str>>,
     /// A press a component took: where, and whether the pointer moved since.
     press: Option<(usize, usize, bool)>,
+    /// pi's `lastComponentClick`: when the last click on a component that
+    /// took its press was, its count, and its column and row.
+    component_click: Option<(Instant, u8, usize, usize)>,
     /// The scrollbar's thumb is being dragged, held this many rows below its
     /// top.
     scrollbar_drag: Option<usize>,
@@ -119,6 +122,9 @@ pub struct MouseEvent {
     /// The transcript row under the pointer, when the transcript shows there,
     /// as pi's scroll view passes its content row to the chat.
     pub row: Option<usize>,
+    /// For a click, pi's `clickCount`: 1, 2 or 3 for a single, double or
+    /// triple click; 0 otherwise.
+    pub clicks: u8,
 }
 
 /// What [`AltScreen::mouse`] did with its input.
@@ -246,6 +252,7 @@ impl AltScreen {
             selection.autoscroll = None;
             selection.last_click = None;
             selection.press = None;
+            selection.component_click = None;
             selection.scrollbar_drag = None;
             selection.url = None;
             self.set_scrollbar_hover(false);
@@ -262,7 +269,7 @@ impl AltScreen {
         let row = (y < self.viewport)
             .then(|| self.scroll_position() + y)
             .filter(|row| *row < self.transcript_len);
-        let event = |kind, delta| MouseEvent {
+        let event = |kind, delta, clicks| MouseEvent {
             kind,
             x,
             y,
@@ -270,6 +277,7 @@ impl AltScreen {
             delta,
             overlay,
             row,
+            clicks,
         };
         if button & 64 != 0 {
             // Wheel up or down; horizontal wheels do nothing.
@@ -284,7 +292,7 @@ impl AltScreen {
             }
             // A component under the pointer may take it instead.
             let delta = direction * lines as isize;
-            if components(event(MouseKind::Wheel(direction), delta)) {
+            if components(event(MouseKind::Wheel(direction), delta, 0)) {
                 return MouseAction::Handled;
             }
             if !self.overlays.is_empty() {
@@ -296,11 +304,15 @@ impl AltScreen {
         }
         if let Some((at_x, at_y, moved)) = &mut self.selection.press {
             *moved |= (x, y) != (*at_x, *at_y);
+            if *moved {
+                self.selection.component_click = None;
+            }
             if release {
                 let click = !*moved;
                 self.selection.press = None;
                 if click {
-                    components(event(MouseKind::Click, 0));
+                    let clicks = self.component_clicks(x, y);
+                    components(event(MouseKind::Click, 0, clicks));
                 }
             }
             return MouseAction::Handled;
@@ -322,7 +334,7 @@ impl AltScreen {
         if scrollbar {
             return MouseAction::Handled;
         }
-        if left_press && components(event(MouseKind::Press, 0)) {
+        if left_press && components(event(MouseKind::Press, 0, 0)) {
             self.clear_selection();
             self.selection.press = Some((x, y, false));
             return MouseAction::Handled;
@@ -357,7 +369,12 @@ impl AltScreen {
                 self.selection.focus = None;
                 return MouseAction::Open(url.to_string());
             }
-            if click && components(event(MouseKind::Click, 0)) {
+            let clicks = self
+                .selection
+                .last_click
+                .as_ref()
+                .map_or(1, |last| last.count);
+            if click && components(event(MouseKind::Click, 0, clicks)) {
                 self.clear_selection();
                 return MouseAction::Handled;
             }
@@ -626,6 +643,24 @@ impl AltScreen {
                 ..point
             },
         )
+    }
+
+    /// pi's `getComponentClickCount`: clicks on a component on one cell
+    /// within the double-click interval count up to three, then start over.
+    // The cell stands for pi's component, which differs only when the
+    // layout moves between two clicks.
+    fn component_clicks(&mut self, x: usize, y: usize) -> u8 {
+        let now = Instant::now();
+        let count = match self.selection.component_click {
+            Some((at, count, last_x, last_y))
+                if now.duration_since(at) <= DOUBLE_CLICK && (last_x, last_y) == (x, y) =>
+            {
+                count % 3 + 1
+            }
+            _ => 1,
+        };
+        self.selection.component_click = Some((now, count, x, y));
+        count
     }
 
     /// pi's `getClickCount`: presses on the same word within the
