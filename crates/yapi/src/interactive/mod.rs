@@ -2885,7 +2885,9 @@ impl App {
         let mut copy = match action {
             MouseAction::Copy(text) => Some(text),
             MouseAction::Open(url) => {
-                yapi_ai::auth::open_browser(&url);
+                if !open_link(&url) {
+                    self.status("Not opened: only web, mail and file links open on click");
+                }
                 None
             }
             _ => None,
@@ -4463,6 +4465,49 @@ impl App {
     }
 }
 
+/// What a click on a link opens.
+#[derive(Debug, PartialEq)]
+enum LinkTarget {
+    /// A web or mail link, in the browser or mail app.
+    Url,
+    /// The file a `file:` link names, shown in its folder rather than opened.
+    File(PathBuf),
+}
+
+/// What a click on `url` opens; `None` for any other link, whose app could run
+/// a program, as a `file:` link to a script or app would if opened.
+fn link_target(url: &str) -> Option<LinkTarget> {
+    let (scheme, _) = url.split_once(':')?;
+    match scheme.to_ascii_lowercase().as_str() {
+        "http" | "https" | "mailto" => Some(LinkTarget::Url),
+        "file" => yapi_core::tools::path::file_url_path(url).map(LinkTarget::File),
+        _ => None,
+    }
+}
+
+/// Opens a clicked link without a shell: a web or mail link in its app, a
+/// file revealed in its folder. Returns false for a link it does not open.
+fn open_link(url: &str) -> bool {
+    let path = match link_target(url) {
+        Some(LinkTarget::Url) => {
+            yapi_ai::auth::open_browser(url);
+            return true;
+        }
+        Some(LinkTarget::File(path)) => path,
+        None => return false,
+    };
+    let mut command;
+    if cfg!(target_os = "macos") {
+        command = std::process::Command::new("open");
+        command.arg("-R").arg(&path);
+    } else {
+        command = std::process::Command::new("xdg-open");
+        command.arg(path.parent().unwrap_or(&path));
+    }
+    yapi_ai::auth::launch(command);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4854,5 +4899,33 @@ mod tests {
         // The status wraps to the room left, keeping its first line.
         assert_eq!(border("● Working", 0, 8), "── ● ───");
         assert_eq!(border("● Working", 0, 4), "───●");
+    }
+
+    #[test]
+    fn clicks_open_only_web_mail_and_file_links() {
+        for url in [
+            "https://example.com/a",
+            "HTTP://example.com",
+            "mailto:me@example.com",
+        ] {
+            assert_eq!(link_target(url), Some(LinkTarget::Url), "{url}");
+        }
+        assert_eq!(
+            link_target("file:///tmp/a%20b.command"),
+            Some(LinkTarget::File(PathBuf::from("/tmp/a b.command")))
+        );
+        for url in [
+            "file://host/etc/passwd",
+            "javascript:alert(1)",
+            "ssh://host",
+            "vscode://file/tmp/a",
+            "x-apple.systempreferences:com.apple.preference",
+            "/Applications/Calculator.app",
+            "-a Calculator",
+            "",
+        ] {
+            assert_eq!(link_target(url), None, "{url}");
+            assert!(!open_link(url), "{url}");
+        }
     }
 }

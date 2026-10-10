@@ -741,7 +741,10 @@ impl Renderer<'_> {
                     out.extend(under(children, style));
                     let bare = href.strip_prefix("mailto:").unwrap_or(href);
                     if text != href && text != bare {
-                        out.push(Span::styled(format!(" ({href})"), self.theme.link_url));
+                        // pulldown-cmark decodes `&#27;` in a URL to a raw
+                        // escape, which must not reach the terminal.
+                        let shown: String = href.chars().filter(|c| !c.is_control()).collect();
+                        out.push(Span::styled(format!(" ({shown})"), self.theme.link_url));
                     }
                 }
                 Inline::Break => out.push(Span::raw("\n")),
@@ -1183,6 +1186,36 @@ mod tests {
         );
         let tilde = md("~~~\nx\n~", 40);
         assert_eq!((tilde.len(), tilde[1].as_str()), (3, "  x"));
+    }
+
+    #[test]
+    fn link_urls_reach_the_terminal_without_control_characters() {
+        let render = |hyperlinks| {
+            let options = MarkdownOptions {
+                hyperlinks,
+                ..MarkdownOptions::default()
+            };
+            let lines = render(
+                "[x](<http://a&#27;[2J>)",
+                15,
+                0,
+                0,
+                &MarkdownTheme::default(),
+                options,
+            );
+            lines
+                .iter()
+                .map(crate::ansi::line_to_ansi)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            render(false),
+            ["\x1b[0m\x1b[4mx\x1b[0m (http://a[2J)\x1b[0m"]
+        );
+        assert_eq!(
+            render(true),
+            ["\x1b[0m\x1b[4mx\x1b[0m              \x1b[0m"]
+        );
     }
 
     #[test]

@@ -55,6 +55,16 @@ pub fn file_url(path: &Path) -> String {
         .unwrap_or_else(|_| format!("file://{}", path.display()))
 }
 
+/// The local path a `file:` URL names, the reverse of [`file_url`]; `None` for
+/// any other URL.
+pub fn file_url_path(url: &str) -> Option<PathBuf> {
+    let url = url::Url::parse(url).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+    url.to_file_path().ok()
+}
+
 /// `~` and `~/…` name the home directory, as in a shell.
 pub fn expand_home(text: &str) -> String {
     if text == "~" {

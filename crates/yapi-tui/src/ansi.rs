@@ -27,7 +27,12 @@ static LINKS: LazyLock<Mutex<Links>> = LazyLock::new(Mutex::default);
 /// `style` with its text linked to `url` by an OSC 8 hyperlink, as pi-tui's
 /// `hyperlink`. The link rides in the style's underline color as an id that
 /// no output writes as a color, so it never changes widths or wrapping.
+/// `style` stays unlinked when `url` holds a control character, which could
+/// end the hyperlink early and reach the terminal as its own sequence.
 pub fn link(style: Style, url: &str) -> Style {
+    if url.chars().any(char::is_control) {
+        return style;
+    }
     let mut links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
     let id = match links.ids.get(url) {
         Some(id) => *id,
@@ -346,6 +351,17 @@ mod tests {
             ]
         );
         assert_eq!(crate::lines::width(&line), 13);
+    }
+
+    #[test]
+    fn links_with_control_characters_stay_unlinked() {
+        // An OSC 8 URL ends only at BEL or ST, so it can carry other sequences.
+        let (line, _) =
+            parse_line("\x1b]8;;http://a\x1b[2J\x1b]52;c;aGk=\x1b\\click\x1b]8;;\x1b\\");
+        assert_eq!(line_to_ansi(&line), "click\x1b[0m");
+        for url in ["http://a\x07", "http://a\x7f", "http://a\u{9b}2J"] {
+            assert_eq!(link(Style::new(), url), Style::new());
+        }
     }
 
     #[test]

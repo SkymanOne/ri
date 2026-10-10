@@ -45,6 +45,7 @@ Pi extensions run unchanged, in WebAssembly rather than Node.js.
 | Tree label times | Local time | UTC, with no time zone database. |
 | Codex transport | WebSocket, then compressed SSE | Uncompressed SSE, the same requests and events as Pi's fallback. |
 | Image formats | Any format Pi's image library reads becomes PNG | Only BMP is converted. Other prompt images are left out with a note. |
+| Links | A click in fullscreen mode opens any link in its default app. Link URLs reach the terminal as written. | A click opens only `http`, `https` and `mailto` links, and shows a linked file in its folder. Opening a link to a script or an app, or with another scheme, could run a program. A link whose URL holds a control character shows as plain text, because the character could end the link and reach the terminal as a command. |
 | Mouse in fullscreen mode | Extension editors and components get mouse events. | Extension headers, message renderers and tool renderers get no mouse events. Other extension components get presses, clicks and the wheel, but no pointer moves, drags or releases, and a click does not give them the keyboard focus. |
 
 ## Open Gaps
