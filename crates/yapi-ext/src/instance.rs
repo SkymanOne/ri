@@ -86,6 +86,11 @@ pub trait Bridge: Send + Sync {
     /// are delivered.
     fn step_ended(&self) {}
 
+    /// The instance stopped because of `reason` and restarts: its extensions
+    /// load again, without the components they showed. Runs on the
+    /// instance's thread before the extensions load.
+    fn restarted(&self, _reason: &str) {}
+
     /// The request hooks of running extension stream `id`, for the requests
     /// it makes through yapi's wire APIs.
     fn stream_hooks(&self, _id: u64) -> yapi_ai::stream::RequestHooks {
@@ -453,9 +458,7 @@ impl Actor {
                     let id = self.next_id;
                     self.next_id += 1;
                     self.pending.insert(id, reply);
-                    if matches!(kind.as_str(), "load" | "bind" | "flags") {
-                        self.replay.push((kind.clone(), payload.clone()));
-                    }
+                    record(&mut self.replay, &kind, &payload);
                     self.guest(|bindings, store| {
                         bindings
                             .yapi_extension_guest()
@@ -519,7 +522,7 @@ impl Actor {
         {
             Ok(lines) => lines,
             Err(trap) => {
-                self.restart(&format!("{trap:#}"));
+                self.restart(&trap);
                 Vec::new()
             }
         }
@@ -558,7 +561,7 @@ impl Actor {
                     }
                 }
             }
-            Err(trap) => self.restart(&format!("{trap:#}")),
+            Err(trap) => self.restart(&trap),
         }
     }
 
@@ -577,23 +580,26 @@ impl Actor {
         });
     }
 
-    /// Replaces a trapped instance with a fresh one and replays the calls that
-    /// loaded and configured its extensions. Calls in flight fail.
-    fn restart(&mut self, reason: &str) {
+    /// Replaces an instance stopped by `trap` with a fresh one and replays
+    /// the calls that loaded and configured its extensions. Calls in flight
+    /// fail.
+    fn restart(&mut self, trap: &wasmtime::Error) {
         if self.interrupt.load(Ordering::Relaxed) {
             for (_, reply) in self.pending.drain() {
                 let _ = reply.send(Err(Error::Stopped));
             }
             return;
         }
+        let reason = format!("{trap:#}");
         self.host
             .bridge
             .log("error", &format!("Extension runtime stopped: {reason}"));
         self.host.streams.clear();
         for (_, reply) in self.pending.drain() {
-            let _ = reply.send(Err(Error::Crashed(reason.to_owned())));
+            let _ = reply.send(Err(Error::Crashed(reason.clone())));
         }
         self.generation += 1;
+        self.host.bridge.restarted(&trap.root_cause().to_string());
         match instantiate(&self.engine, &self.component, &self.host, &self.interrupt) {
             Ok((store, bindings)) => {
                 self.store = store;
@@ -616,6 +622,19 @@ impl Actor {
             });
         }
     }
+}
+
+/// Keeps call `kind` for the replay after a restart when it shapes the
+/// instance's state. Only the latest `bind` counts, as each session binds
+/// again.
+fn record(replay: &mut Vec<(String, String)>, kind: &str, payload: &str) {
+    if !matches!(kind, "load" | "bind" | "flags") {
+        return;
+    }
+    if kind == "bind" {
+        replay.retain(|(recorded, _)| recorded != "bind");
+    }
+    replay.push((kind.to_owned(), payload.to_owned()));
 }
 
 fn instantiate(
@@ -664,4 +683,21 @@ fn instantiate(
     let bindings = Extension::instantiate(&mut store, component, &engine.linker)
         .map_err(|err| Error::Instantiate(format!("{err:#}")))?;
     Ok((store, bindings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::record;
+
+    /// A long process binds once per session; a restart replays the load,
+    /// the flags and the latest binding only.
+    #[test]
+    fn the_replay_keeps_the_latest_bind() {
+        let mut replay = Vec::new();
+        for kind in ["load", "flags", "bind", "emit", "bind", "reload", "bind"] {
+            record(&mut replay, kind, kind);
+        }
+        let kinds: Vec<&str> = replay.iter().map(|(kind, _)| kind.as_str()).collect();
+        assert_eq!(kinds, ["load", "flags", "bind"]);
+    }
 }

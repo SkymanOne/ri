@@ -344,6 +344,11 @@ pub trait ExtensionUi: Send + Sync {
     /// Removes the custom component `component`.
     fn close(&self, _component: RemoteComponent) {}
 
+    /// Removes the editor, widgets, footer and header that extension runtime
+    /// `runtime` showed, which it lost when it restarted. The built-in
+    /// editor, footer and header return.
+    fn drop_components(&self, _runtime: u64) {}
+
     /// Shows a screen of the `/mcp` manager with keyboard focus, opening the
     /// manager; [`McpScreen::Close`] closes it. Without the TUI the screen
     /// is dropped, which closes its menu.

@@ -161,7 +161,7 @@ Commit or publish the built `.wasm` file, not only the Rust sources. yapi instal
 | `theme`, `request_render`, `parse_key`, `terminal_size`, `editor_focused` | Style text in the session's theme, render components again, name keys, read the terminal's size, and tell whether the prompt editor has the keyboard |
 | `widgets` | pi-tui's widgets, such as `SelectList` and `Editor`, with the `widgets` feature |
 
-[Native extension examples](native-examples.md) walks through fifteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
+[Native extension examples](native-examples.md) walks through sixteen complete extensions, from a minimal starting point to a modal editor, a question tool with its own rendering and a select list.
 
 ### Host requests
 

@@ -1706,12 +1706,13 @@ impl Bridge for SessionBridge {
             return Ok(Value::Null);
         }
         let session = self.session().ok_or_else(not_bound)?;
+        // Events the session announces reach extensions from the runtime,
+        // such as `ui_prompt_start` and `mcp_servers_change`.
+        let _runtime = self.runtime.enter();
         match kind {
             "mcp.servers" => {
                 let servers =
                     serde_json::from_value(payload["servers"].clone()).map_err(|err| err.to_string())?;
-                // The change reaches extensions from the runtime.
-                let _runtime = self.runtime.enter();
                 session.set_mcp_servers(self.runtime_id, servers)?;
                 Ok(Value::Null)
             }
@@ -1880,6 +1881,31 @@ impl Bridge for SessionBridge {
                 Ok(Value::String(yapi_core::compaction::serialize_conversation(&messages)))
             }
             _ => Err(format!("{kind} is not available in yapi extensions yet")),
+        }
+    }
+
+    /// The restarted runtime has no components: its custom components close,
+    /// as blocking dialogs that ended, and the UI drops the rest and its
+    /// input listeners. A person sees why, as pi shows extension errors.
+    fn restarted(&self, reason: &str) {
+        let Some(session) = self.session() else {
+            return;
+        };
+        let _runtime = self.runtime.enter();
+        let (ui, _) = session.extension_binding();
+        let prompts = std::mem::take(&mut *lock(&self.prompts));
+        for handle in prompts {
+            if let Some(component) = self.component(&json!(handle)) {
+                ui.close(component);
+            }
+            session.ui_prompt_closed();
+        }
+        ui.set_terminal_input(self.runtime_id, None);
+        ui.drop_components(self.runtime_id);
+        // Modes without a UI have the log on stderr already.
+        if ui.has_ui() {
+            let message = format!("Extension runtime stopped and restarted: {reason}");
+            ui.extension_error(&self.name, "restart", &message, None);
         }
     }
 

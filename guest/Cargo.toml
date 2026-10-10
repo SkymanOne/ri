@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "examples/crash-recovery",
     "examples/custom-footer",
     "examples/event-bus",
     "examples/hello",
