@@ -254,7 +254,23 @@ impl Host {
                 text(payload, "text"),
             ))),
             "codemode.definition" => Ok(crate::codemode::definition()),
-            "mcp.validate" => self.validate_mcp_server(payload),
+            "mcp.validate" => self.validate_mcp_server(
+                text(payload, "name"),
+                &payload["config"],
+                text(payload, "extension"),
+            ),
+            // The guest reports the servers it registered, checked or not.
+            "mcp.servers" => {
+                let mut servers = payload.clone();
+                for server in servers["servers"].as_array_mut().into_iter().flatten() {
+                    server["config"] = self.validate_mcp_server(
+                        text(server, "name"),
+                        &server["config"],
+                        text(server, "extensionPath"),
+                    )?;
+                }
+                self.bridge.request(kind, &servers)
+            }
             "builtin.tool" => {
                 // Declaring a tool needs no grant; running it does.
                 let tool = self.builtin_tool(payload, false)?;
@@ -336,18 +352,21 @@ impl Host {
         }
     }
 
-    /// pi's checks of `registerMcpServer({name, config})` by `extension`,
-    /// and the grant the server's transport needs: process for stdio,
-    /// network for HTTP. Answers the config with pi's legacy exposure names
+    /// pi's checks of `registerMcpServer(name, config)` by `extension`, and
+    /// the grant the server's transport needs: process for stdio, network
+    /// for HTTP. Answers the config with pi's legacy exposure names
     /// replaced.
-    fn validate_mcp_server(&self, payload: &Value) -> Result<Value, String> {
+    fn validate_mcp_server(
+        &self,
+        name: &str,
+        config: &Value,
+        extension: &str,
+    ) -> Result<Value, String> {
         use yapi_core::mcp::config::{ServerTransport, validate_server};
-        let name = text(payload, "name");
-        let config = validate_server(name, &payload["config"]).map_err(|problem| {
-            let extension = text(payload, "extension");
+        let checked = validate_server(name, config).map_err(|problem| {
             format!("Invalid MCP server registered by extension \"{extension}\": {problem}")
         })?;
-        let (granted, grant) = match config.transport {
+        let (granted, grant) = match checked.transport {
             ServerTransport::Stdio { .. } => (self.options.grants.process, "process"),
             ServerTransport::Http { .. } => (self.options.grants.network, "network"),
         };
@@ -356,9 +375,7 @@ impl Host {
                 "MCP server \"{name}\" needs the {grant} grant, which this extension does not have"
             ));
         }
-        Ok(yapi_core::mcp::config::resolve_exposure_aliases(
-            &payload["config"],
-        ))
+        Ok(yapi_core::mcp::config::resolve_exposure_aliases(config))
     }
 
     /// Built-in tool `{name}` for `{cwd}`; with `run`, only when the grants

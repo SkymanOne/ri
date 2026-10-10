@@ -1712,7 +1712,7 @@ impl Bridge for SessionBridge {
                     serde_json::from_value(payload["servers"].clone()).map_err(|err| err.to_string())?;
                 // The change reaches extensions from the runtime.
                 let _runtime = self.runtime.enter();
-                session.set_mcp_servers(self.runtime_id, servers);
+                session.set_mcp_servers(self.runtime_id, servers)?;
                 Ok(Value::Null)
             }
             "session.sendMessage" => {
