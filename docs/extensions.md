@@ -49,7 +49,7 @@ Some Node features have no counterpart in the runtime. Native addons, `net` and 
 
 Each extension instance runs with a memory limit and a compute limit. yapi checks every file, process, network and environment access against the extension's grants. Every package receives Pi's defaults for now, which allow all four, so extensions behave as they do in Pi. Per-package restrictions in settings are planned. The [security model](configuration.md#security-model) covers the rest of yapi.
 
-Packages with full grants share one runtime instance. Each native extension gets an instance of its own. A crashed instance restarts and its extensions reload. yapi reports the crash as an extension error and removes what the instance showed. Its dialogs close, its widgets go away, and the built-in editor, footer and header return.
+Packages with full grants share one runtime instance. Each native extension gets an instance of its own. A crashed instance restarts and its extensions reload. yapi reports the crash as an extension error and removes what the instance showed. Its dialogs close, its widgets go away, and the built-in editor, footer and header return. Tool calls and messages it drew in the transcript keep their rows and ask the restarted instance to draw them again.
 
 ## Loading extensions
 

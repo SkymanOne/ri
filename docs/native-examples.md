@@ -319,7 +319,7 @@ api.on("session_start", |_event, ctx| async move {
 
 ## crash-recovery
 
-An editor in place of the built-in one, and a `/fragile` dialog, that panic when their text is `panic`. A panic stops the extension's runtime. yapi reports it, restarts the runtime and loads the extension again, without what it showed. The dialog closes and the built-in editor takes the keys. The editor that `session_start` installed stays away until the next session.
+An editor in place of the built-in one, a `/fragile` dialog, and notes that `/note` adds to the transcript, that panic when their text is `panic`. A panic stops the extension's runtime. yapi reports it, restarts the runtime and loads the extension again, without what it showed. The dialog closes and the built-in editor takes the keys. The editor that `session_start` installed stays away until the next session. Notes draw again, except one that panicked as it first drew.
 
 ```rust
 fn render(&mut self, _width: usize) -> Vec<String> {

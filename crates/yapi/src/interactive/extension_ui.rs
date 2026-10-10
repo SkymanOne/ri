@@ -464,6 +464,8 @@ struct ViewState {
     rendered: Option<usize>,
     requested: Option<usize>,
     dirty: bool,
+    /// See [`RemoteView::retire`].
+    retired: bool,
 }
 
 impl RemoteView {
@@ -482,6 +484,36 @@ impl RemoteView {
     /// See [`RemoteComponent::key`].
     pub fn key(&self) -> (u64, u32) {
         self.component.key()
+    }
+
+    /// A view of `component` that paints `old`'s rows until its own
+    /// arrive, as pi draws a renderer's new component at once.
+    pub fn replacing(
+        component: RemoteComponent,
+        tx: UnboundedSender<Event>,
+        epoch: u64,
+        old: Option<&RemoteView>,
+    ) -> RemoteView {
+        let view = RemoteView::new(component, tx, epoch);
+        if let Some(old) = old {
+            view.state.borrow_mut().rows = old.state.borrow().rows.clone();
+        }
+        view
+    }
+
+    /// Keeps the last rows and asks for no more, as the runtime that drew
+    /// them restarted without the component. Returns whether to ask for a
+    /// new component: this one had drawn and was not retired yet.
+    pub fn retire(&self) -> bool {
+        let mut state = self.state.borrow_mut();
+        let drew = !state.retired && state.rendered.is_some();
+        state.retired = true;
+        drew
+    }
+
+    /// See [`RemoteView::retire`].
+    pub fn retired(&self) -> bool {
+        self.state.borrow().retired
     }
 
     /// Marks the rows stale.
@@ -513,7 +545,10 @@ impl RemoteView {
     /// The rows of the last render at `width`, and the cursor among them.
     pub fn render(&self, width: usize) -> (Vec<StyledLine>, Option<(usize, usize)>) {
         let mut state = self.state.borrow_mut();
-        if (state.dirty || state.rendered != Some(width)) && state.requested.is_none() {
+        if (state.dirty || state.rendered != Some(width))
+            && state.requested.is_none()
+            && !state.retired
+        {
             state.dirty = false;
             state.requested = Some(width);
             let render = self
@@ -529,8 +564,12 @@ impl RemoteView {
     }
 
     /// Takes the lines of a render at `width`; `false` when they change
-    /// nothing.
+    /// nothing. A retired view takes none: its handle may be another
+    /// component's in the restarted runtime.
     pub fn rendered(&self, width: usize, lines: &[String]) -> bool {
+        if self.retired() {
+            return false;
+        }
         let mut cursor = None;
         let rows: Vec<StyledLine> = lines
             .iter()
@@ -990,6 +1029,7 @@ impl super::App {
                 self.ext.drop_runtime(runtime);
                 // The built-in header may be back.
                 self.flat_key = None;
+                self.redraw_runtime(runtime);
             }
             Request::Render => {
                 for view in self.ext.views() {
@@ -1288,8 +1328,17 @@ impl super::App {
         let place = |current: &mut Option<RemoteView>| match component {
             Some(component) => match current {
                 // The renderer returned its last component.
-                Some(view) if view.key() == component.key() => view.invalidate(),
-                _ => *current = Some(RemoteView::new(component, tx, epoch)),
+                Some(view) if view.key() == component.key() && !view.retired() => {
+                    view.invalidate();
+                }
+                _ => {
+                    *current = Some(RemoteView::replacing(
+                        component,
+                        tx,
+                        epoch,
+                        current.as_ref(),
+                    ))
+                }
             },
             None => *current = None,
         };
@@ -1352,13 +1401,35 @@ impl super::App {
     /// Asks again for every drawn item's components, as pi does when tool
     /// output expands or collapses.
     pub(super) fn redraw_transcript(&mut self) {
-        use super::chat::Item;
         for index in 0..self.chat.len() {
-            match &self.chat[index] {
-                Item::Tool(_) => self.draw_tool(index),
-                Item::Custom(custom) if custom.renderer.is_some() => self.draw_custom(index),
-                _ => {}
+            self.redraw_item(index);
+        }
+    }
+
+    fn redraw_item(&mut self, index: usize) {
+        use super::chat::Item;
+        match &self.chat[index] {
+            Item::Tool(_) => self.draw_tool(index),
+            Item::Custom(custom) if custom.renderer.is_some() => self.draw_custom(index),
+            _ => {}
+        }
+    }
+
+    /// Asks again for the transcript components of extension runtime
+    /// `runtime`, which lost them as it restarted. Their last rows show
+    /// until the new ones arrive. A component that never drew is not asked
+    /// for again, so a renderer that panics as it draws cannot restart its
+    /// runtime over and over.
+    fn redraw_runtime(&mut self, runtime: u64) {
+        let mut items = Vec::new();
+        for (index, view) in self.transcript_views() {
+            if view.key().0 == runtime && view.retire() {
+                items.push(index);
             }
+        }
+        items.dedup();
+        for index in items {
+            self.redraw_item(index);
         }
     }
 }

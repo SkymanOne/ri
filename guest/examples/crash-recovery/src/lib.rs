@@ -1,18 +1,20 @@
-//! An editor in place of the built-in one, and a `/fragile` dialog, that
-//! panic when their text is `panic`. A panic stops the extension's runtime:
-//! yapi reports it and restarts the runtime, the dialog closes, and the
-//! built-in editor takes the keys again. Components shown from
-//! `session_start` stay gone until the next session.
+//! An editor in place of the built-in one, a `/fragile` dialog, and notes
+//! that `/note` adds to the transcript, that panic when their text is
+//! `panic`. A panic stops the extension's runtime: yapi reports it and
+//! restarts the runtime, the dialog closes, and the built-in editor takes
+//! the keys again. Components shown from `session_start` stay gone until
+//! the next session. Notes draw again.
 
 use yapi_extension_api::{
-    Api, Component, CustomOptions, Done, EditorComponent, editor_changed, editor_submit, parse_key,
+    Api, Component, CustomOptions, Done, EditorComponent, editor_changed, editor_submit, json,
+    parse_key, request,
 };
 
 /// One line of typed text, which panics as it renders `panic`.
 #[derive(Default)]
 struct Fragile {
     text: String,
-    /// Ends the dialog it is; `None` for the editor.
+    /// Ends the dialog it is; `None` for the editor and notes.
     done: Option<Done<()>>,
 }
 
@@ -63,6 +65,23 @@ fn init(api: &mut Api) {
             };
             ctx.custom(build, CustomOptions::default()).await;
             Ok(())
+        },
+    );
+    api.register_message_renderer("fragile-note", |message, _options| {
+        let text = message["content"].as_str().unwrap_or_default().to_owned();
+        Some(Box::new(Fragile { text, done: None }))
+    });
+    api.register_command(
+        "note",
+        "Add a note that panics as it draws `panic`",
+        |args, _ctx| async move {
+            let message =
+                json!({"customType": "fragile-note", "content": args.trim(), "display": true});
+            request(
+                "session.sendMessage",
+                &json!({"message": message, "options": {}}),
+            )
+            .map(|_| ())
         },
     );
 }

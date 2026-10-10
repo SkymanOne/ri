@@ -5085,6 +5085,110 @@ mod tests {
         assert!(app.ext.footer.is_none() && app.ext.header.is_none());
     }
 
+    /// The rows of each transcript component at width 20; asks for a render
+    /// when they are stale.
+    fn transcript_rows(app: &App) -> Vec<Vec<String>> {
+        app.transcript_views()
+            .into_iter()
+            .map(|(_, view)| view.render(20).0.iter().map(text).collect())
+            .collect()
+    }
+
+    /// Whether `event` reports an extension runtime's restart.
+    fn is_restart(event: &Event) -> bool {
+        matches!(event, Event::ExtensionError(message, _) if message.contains("restarted"))
+    }
+
+    /// Handles events until a runtime restarts and the first transcript
+    /// item's new component draws `rows`, checking that the item shows them
+    /// throughout. Returns the restarts reported meanwhile.
+    async fn redrawn(
+        app: &mut App,
+        events: &mut UnboundedReceiver<Event>,
+        rows: &[String],
+    ) -> usize {
+        let mut restarts = 0;
+        loop {
+            let event = next(events).await;
+            let drew = matches!(&event, Event::Rendered(_, _, _, lines) if *lines == rows);
+            restarts += usize::from(is_restart(&event));
+            app.on_event(event);
+            assert_eq!(transcript_rows(app)[0], rows);
+            // A retired view takes no renders.
+            if restarts > 0 && drew && !app.transcript_views()[0].1.retired() {
+                return restarts;
+            }
+        }
+    }
+
+    /// A runtime that restarts draws the transcript items it drew again, and
+    /// they show their last rows meanwhile. A note whose component never
+    /// drew is not drawn again, so a renderer that panics as it draws stops
+    /// its runtime once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_restarted_runtime_draws_its_transcript_items_again() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../yapi-ext/tests/fixtures/crash-recovery.wasm");
+        let source = yapi_types::rpc::SourceInfo {
+            path: fixture.to_string_lossy().into_owned(),
+            source: "cli".into(),
+            scope: "temporary".into(),
+            origin: "top-level".into(),
+            base_dir: None,
+        };
+        let engine = yapi_ext::Engine::new(None).unwrap();
+        let options = yapi_ext::Options::new(PathBuf::from("/work"));
+        let host = yapi_ext::ExtensionHost::load_native(&engine, options, &source)
+            .await
+            .unwrap();
+        let mut config = config(SessionManager::in_memory(Path::new("/work")));
+        config.extensions = host.for_session();
+        let session = AgentSession::new(config);
+        let (mut app, mut events) = app_with(session.clone());
+        let ui = extension_ui::InteractiveUi {
+            tx: app.tx.clone(),
+            epoch: app.epoch,
+            shared: app.ext.shared.clone(),
+        };
+        session
+            .bind_extensions(Arc::new(ui), Mode::Tui, None, None)
+            .await;
+        let note = |text: &str| {
+            serde_json::from_value(json!({
+                "customType": "fragile-note", "content": text, "display": true, "timestamp": 1,
+            }))
+            .unwrap()
+        };
+        let kept = vec!["> kept".to_owned()];
+        app.push_custom(note("kept"));
+        while app.ext.editor.is_none() || transcript_rows(&app) != [kept.clone()] {
+            app.on_event(next(&mut events).await);
+        }
+
+        // The editor panics as it draws `panic`. The note draws again.
+        let editor = &app.ext.editor.as_ref().unwrap().view;
+        for key in ["p", "a", "n", "i", "c"] {
+            editor.input(key);
+        }
+        editor.render(20);
+        assert_eq!(redrawn(&mut app, &mut events, &kept).await, 1);
+        assert!(app.ext.editor.is_none());
+
+        // So does a note, which stops the runtime once and draws nothing.
+        app.push_custom(note("panic"));
+        let mut restarts = redrawn(&mut app, &mut events, &kept).await;
+        while restarts == 1
+            && let Ok(Some(event)) =
+                tokio::time::timeout(Duration::from_millis(300), events.recv()).await
+        {
+            restarts += usize::from(is_restart(&event));
+            app.on_event(event);
+            transcript_rows(&app);
+        }
+        assert_eq!(restarts, 1);
+        assert_eq!(transcript_rows(&app), [kept, Vec::new()]);
+    }
+
     #[test]
     fn status_border_matches_pi_layouts() {
         assert_eq!(border("● Working", 0, 20), "── ● Working ───────");

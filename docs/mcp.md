@@ -28,7 +28,7 @@ Inside yapi, `/mcp` opens a manager that lists the servers with their state, too
 
 An extension adds a server for the session with `pi.registerMcpServer(name, config)`, where `config` takes the same settings as an entry in `mcp.json`. The server connects when the session starts, or right away when registered later, and `pi.unregisterMcpServer(name)` disconnects it. A server of the same name in `mcp.json` takes precedence, and `/mcp` notes the registration it overrides. Exposure and enabled changes to a registered server in `/mcp` apply to the session only and are never saved.
 
-A stdio server needs the extension's process grant and an HTTP server its network grant. Without it, `registerMcpServer` throws an error that names the missing grant. Every package has both grants by default, as in Pi.
+A stdio server needs the extension's process grant and an HTTP server its network grant. Without it, `registerMcpServer` throws an error that names the missing grant. Every package has both grants by default, as in Pi. As in Pi, it also throws for a name that another extension registered, or for one whose tools would share that server's prefix, such as `my_docs` after `my-docs`. The refused server is not registered.
 
 ## Signing in
 
