@@ -18,10 +18,57 @@ const LINK_CLOSE: &str = "\x1b]8;;\x1b\\";
 #[derive(Default)]
 struct Links {
     ids: HashMap<Arc<str>, u32>,
-    urls: Vec<Arc<str>>,
+    /// Each id's URL, and whether it was linked or drawn since the last sweep.
+    urls: HashMap<u32, (Arc<str>, bool)>,
+    /// The next id to give, wrapping at 24 bits.
+    next: u32,
+    /// How many URLs the registry holds before it sweeps, at least
+    /// [`LINKS_KEPT`].
+    limit: usize,
 }
 
-// ponytail: grows by each distinct URL drawn and never shrinks; a session draws few.
+/// How many URLs the registry gains between sweeps. A sweep forgets the URLs
+/// neither linked nor drawn since the previous one, so the registry holds the
+/// links in use and at most twice this many others.
+const LINKS_KEPT: usize = 1 << 12;
+
+impl Links {
+    /// The id of `url`, given a new one when it has none.
+    fn id(&mut self, url: &str) -> u32 {
+        if let Some(&id) = self.ids.get(url) {
+            if let Some((_, used)) = self.urls.get_mut(&id) {
+                *used = true;
+            }
+            return id;
+        }
+        if self.urls.len() >= self.limit.max(LINKS_KEPT) {
+            self.urls
+                .retain(|_, (_, used)| std::mem::replace(used, false));
+            let urls = &self.urls;
+            self.ids.retain(|_, id| urls.contains_key(id));
+            self.limit = self.urls.len() + LINKS_KEPT;
+        }
+        // Ids are given in turn and come back only after all 2^24, so text
+        // whose link was forgotten shows unlinked, not linked to a newer URL.
+        while self.urls.contains_key(&self.next) {
+            self.next = (self.next + 1) & 0xff_ffff;
+        }
+        let id = self.next;
+        self.next = (id + 1) & 0xff_ffff;
+        let url: Arc<str> = url.into();
+        self.ids.insert(Arc::clone(&url), id);
+        self.urls.insert(id, (url, true));
+        id
+    }
+
+    /// The URL with `id`, marked as drawn.
+    fn url(&mut self, id: u32) -> Option<Arc<str>> {
+        let (url, used) = self.urls.get_mut(&id)?;
+        *used = true;
+        Some(Arc::clone(url))
+    }
+}
+
 static LINKS: LazyLock<Mutex<Links>> = LazyLock::new(Mutex::default);
 
 /// `style` with its text linked to `url` by an OSC 8 hyperlink, as pi-tui's
@@ -34,31 +81,18 @@ pub fn link(style: Style, url: &str) -> Style {
         return style;
     }
     let mut links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
-    let id = match links.ids.get(url) {
-        Some(id) => *id,
-        None => {
-            let id = links.urls.len() as u32;
-            if id >= 1 << 24 {
-                return style;
-            }
-            let url: Arc<str> = url.into();
-            links.ids.insert(Arc::clone(&url), id);
-            links.urls.push(url);
-            id
-        }
-    };
-    let [_, r, g, b] = id.to_be_bytes();
+    let [_, r, g, b] = links.id(url).to_be_bytes();
     style.underline_color(Color::Rgb(r, g, b))
 }
 
-/// The URL `style` links to.
+/// The URL `style` links to. `None` also for a link that was neither drawn
+/// nor linked again while thousands of other URLs were linked.
 pub fn link_url(style: Style) -> Option<Arc<str>> {
     let Some(Color::Rgb(r, g, b)) = style.underline_color else {
         return None;
     };
-    let id = u32::from_be_bytes([0, r, g, b]) as usize;
-    let links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
-    links.urls.get(id).cloned()
+    let mut links = LINKS.lock().unwrap_or_else(PoisonError::into_inner);
+    links.url(u32::from_be_bytes([0, r, g, b]))
 }
 
 /// The 16 named colors in SGR order: 30-37, then the bright 90-97.
@@ -380,5 +414,21 @@ mod tests {
             line_to_ansi(&line),
             "a\x1b[0m\x1b[1;38;2;1;2;3mb\x1b[0m\x1b[48;5;4mc\x1b[0m"
         );
+    }
+
+    #[test]
+    fn the_link_registry_stays_bounded() {
+        let mut links = Links::default();
+        let drawn = links.id("https://drawn");
+        let forgotten = links.id("https://forgotten");
+        // A component whose link changes every frame, beside a link on screen.
+        for frame in 0..10 * LINKS_KEPT {
+            links.id(&format!("https://example.com/{frame}"));
+            assert_eq!(links.url(drawn).as_deref(), Some("https://drawn"));
+            assert!(links.urls.len() <= 2 * LINKS_KEPT + 1);
+            assert_eq!(links.ids.len(), links.urls.len());
+        }
+        assert_eq!(links.url(forgotten), None);
+        assert_ne!(links.id("https://forgotten"), forgotten);
     }
 }
